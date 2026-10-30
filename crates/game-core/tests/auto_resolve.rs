@@ -57,7 +57,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenResolution, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, MockRegistry, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically
@@ -258,14 +258,11 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
 /// clue behind `shroud` — the board an Investigate action needs. Bag is a
 /// single `Numeric(0)`.
 fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, LocationId) {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 1;
-    location.shroud = shroud;
     let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
         .open_turn(INV)
-        .with_location(location)
+        .with_location(location(HERE).shroud(shroud).clues(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
         .build();

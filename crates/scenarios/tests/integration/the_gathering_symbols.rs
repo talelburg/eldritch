@@ -7,10 +7,12 @@ use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, Location, LocationId, SkillKind, TokenResolution,
+    CardCode, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, act, enemy, location, seat, BoardLookup as _, Printed, StagedLocation, TestSession,
+};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 use scenarios::the_gathering;
 
@@ -24,16 +26,13 @@ fn gathering_board(token: ChaosToken, ghouls: u8, in_play: &[&str]) -> GameState
     let mut builder = GameStateBuilder::new()
         .with_registries(scenarios::TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_chaos_bag(ChaosBag::new([token]))
         .with_scenario_id(ScenarioId::new(the_gathering::ID));
     for i in 0..ghouls {
         // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.): its printed traits
-        // drive ghoul_count; test_enemy's name arg is display-only.
-        let mut e = test_support::test_enemy(u32::from(i) + 1, "Ghoul");
-        e.code = CardCode::new("01160");
-        e.current_location = Some(HERE);
-        builder = builder.with_enemy(e);
+        // drive ghoul_count.
+        builder = builder.with_enemy(enemy(u32::from(i) + 1).as_card("01160").at(HERE));
     }
     builder.open_turn(INV).build()
 }
@@ -334,8 +333,8 @@ fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
 /// `INV`'s open turn in a Gathering game holding the 1 clue a terminal act
 /// needs, with `locations` in play, so a single `AdvanceAct` latches Won and
 /// triggers the victory scan.
-fn resolvable_state(locations: impl IntoIterator<Item = Location>) -> GameState {
-    let mut state = locations
+fn resolvable_state(locations: impl IntoIterator<Item = StagedLocation<Printed>>) -> GameState {
+    locations
         .into_iter()
         .fold(
             GameStateBuilder::new()
@@ -344,30 +343,18 @@ fn resolvable_state(locations: impl IntoIterator<Item = Location>) -> GameState 
             GameStateBuilder::with_location,
         )
         .with_scenario_id(ScenarioId::new(the_gathering::ID))
-        .open_turn(INV)
-        .build();
-    state.act_deck = vec![Act {
         // Terminal because it is the only act; advancing it fires the reverse
         // that reaches R1, which is what triggers the victory-display scan.
-        code: test_support::terminal_code(1),
-        clue_threshold: 1,
-    }];
-    state
+        .with_act_deck([act(test_support::terminal_code(1), 1)])
+        .open_turn(INV)
+        .build()
 }
 
-/// The location printed as `code` at `id`, revealed or not, with `clues` on it.
-fn victory_location(id: u32, code: &str, name: &str, revealed: bool, clues: u8) -> Location {
-    let mut location = test_support::test_location(id, name);
-    location.code = CardCode::new(code);
-    location.revealed = revealed;
-    location.clues = clues;
-    location
-}
-
-/// A terminal-act Gathering state with `attic` revealed/cleared or not,
-/// so a single `AdvanceAct` latches Won and triggers the victory scan.
+/// A terminal-act Gathering state with the Attic 01113 revealed/cleared or
+/// not, so a single `AdvanceAct` latches Won and triggers the victory scan.
 fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
-    resolvable_state([victory_location(1, "01113", "Attic", revealed, clues)])
+    let attic = location(1).as_card("01113").clues(clues);
+    resolvable_state([if revealed { attic } else { attic.unrevealed() }])
 }
 
 /// Take `AdvanceAct` from the turn menu; the terminal act's reverse ends the
@@ -413,8 +400,8 @@ fn unrevealed_or_clued_victory_location_is_not_placed() {
 #[test]
 fn two_cleared_victory_locations_both_enter_display() {
     let r = advance_to_resolution(resolvable_state([
-        victory_location(1, "01113", "Attic", true, 0),
-        victory_location(2, "01114", "Cellar", true, 0),
+        location(1).as_card("01113"),
+        location(2).as_card("01114"),
     ]));
     assert!(
         r.state.victory_display.contains(&CardCode::new("01113")),

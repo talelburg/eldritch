@@ -73,16 +73,17 @@ const HERE: LocationId = LocationId(10);
 /// health 10 so the dealt damage is observable, not clamped), the mock
 /// skill in hand, a `Numeric(0)` chaos bag for a deterministic success.
 fn board() -> GameStateBuilder {
-    let mut enemy = test_support::test_enemy(GHOUL.0, "Ghoul");
-    enemy.fight = 2;
-    enemy.max_health = 10;
-
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand([SKILL]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(
+            test_support::enemy(GHOUL)
+                .fight(2)
+                .health(10)
+                .engaged_with(INV),
+        )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
 }

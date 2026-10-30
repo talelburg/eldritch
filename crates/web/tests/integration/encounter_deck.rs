@@ -37,12 +37,10 @@ fn encounter_draw_prompt() -> EngineOutcome {
 /// Mount the encounter-deck element for a game whose encounter deck holds
 /// `deck_size` cards, with `outcome` live.
 async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
+        .with_encounter_deck((0..deck_size).map(|i| CardCode::new(format!("_enc{i}"))))
         .build();
-    state.encounter_deck = (0..deck_size)
-        .map(|i| CardCode::new(format!("_enc{i}")))
-        .collect();
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();

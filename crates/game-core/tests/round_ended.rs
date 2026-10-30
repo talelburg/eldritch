@@ -8,10 +8,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{
-    Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
-};
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{agenda, location, seat, MockRegistry, SeatLookup as _, TestSession};
 
 const AGENDA: &str = "TEST-AGENDA";
 
@@ -55,31 +53,19 @@ fn registries() -> Registries {
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-/// Make the test agenda current on a built `state`; the agenda deck has no
-/// builder setter.
-fn with_test_agenda(mut state: GameState) -> GameState {
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-    state
-}
-
 #[test]
 fn round_ended_fires_agenda_forced_ability() {
     // The end of the Upkeep phase, and with it the round: settling runs step
     // 4.6, where the agenda's round-end forced fires, and play goes on into the
     // next round's Mythos phase.
-    let state = with_test_agenda(
-        GameStateBuilder::new()
-            .with_registries(registries())
-            .with_seat(seat(1).at(HERE))
-            .with_location(test_support::test_location(HERE.0, "Study"))
-            .with_seating([INV])
-            .ending_upkeep_phase()
-            .build(),
-    );
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seat(1).at(HERE))
+        .with_location(location(HERE))
+        .with_seating([INV])
+        .ending_upkeep_phase()
+        .with_agenda_deck([agenda(AGENDA, 10)])
+        .build();
     let session = TestSession::new(state, registries());
 
     // The round really ended: play is in the next round's Mythos phase.
@@ -101,22 +87,21 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // closes the run, whose `UpkeepAfterRoundEnded` continuation resumes the
     // upkeep tail — the Upkeep→Mythos transition — that a terminal close would
     // have dropped.
-    let state = with_test_agenda(
-        GameStateBuilder::new()
-            .with_registries(registries())
-            .with_seat(
-                seat(1)
-                    .at(HERE)
-                    .actions(0)
-                    // Non-empty deck so the upkeep 4.4 draw doesn't fire a
-                    // deckout horror penalty and muddy the horror assertion.
-                    .deck(["filler-card"])
-                    .threat_area([DISSONANT]),
-            )
-            .with_location(test_support::test_location(HERE.0, "Study"))
-            .open_turn(INV)
-            .build(),
-    );
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .actions(0)
+                // Non-empty deck so the upkeep 4.4 draw doesn't fire a
+                // deckout horror penalty and muddy the horror assertion.
+                .deck(["filler-card"])
+                .threat_area([DISSONANT]),
+        )
+        .with_location(location(HERE))
+        .open_turn(INV)
+        .with_agenda_deck([agenda(AGENDA, 10)])
+        .build();
     let dissonant = state.card(INV, DISSONANT);
 
     // EndTurn drives Investigation → Enemy → Upkeep and reaches step 4.6,

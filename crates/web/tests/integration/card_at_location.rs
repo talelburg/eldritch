@@ -21,7 +21,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
     Owner as CardOwner,
 };
-use game_core::test_support;
+use game_core::test_support::{self, location};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ServerMessage;
@@ -40,23 +40,19 @@ const FOG: CardInstanceId = CardInstanceId(61);
 /// The Parlor with Lita Chantler at it, the investigator standing in it, and — when
 /// `attached` — Obscuring Fog 01168 attached to the location.
 fn parlor_state(attached: bool) -> GameState {
-    let mut parlor = test_support::test_location(5, "Parlor");
-    parlor.code = CardCode::new("01115");
-    parlor.revealed = true;
-    parlor.cards_at_location.push(CardInPlay::enter_play(
-        CardCode::new("01117"),
-        LITA,
-        CardOwner::Scenario,
-    ));
-    if attached {
-        parlor.attachments.push(CardInPlay::enter_play(
-            CardCode::new("01168"),
-            FOG,
-            CardOwner::EncounterDeck,
-        ));
-    }
+    let fog = attached
+        .then(|| CardInPlay::enter_play(CardCode::new("01168"), FOG, CardOwner::EncounterDeck));
+    let parlor = location(PARLOR)
+        .as_card("01115")
+        .cards_at_location([CardInPlay::enter_play(
+            CardCode::new("01117"),
+            LITA,
+            CardOwner::Scenario,
+        )])
+        .attachments(fog);
     let inv = test_support::test_investigator(1);
     GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
         .with_location(parlor)
         .with_investigator_at(inv, PARLOR)
         .build()

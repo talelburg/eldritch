@@ -60,7 +60,7 @@ fn session_with_threat_area(threat: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area(threat.iter().copied()))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

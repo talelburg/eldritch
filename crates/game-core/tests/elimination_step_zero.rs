@@ -151,7 +151,7 @@ fn board_seated(seated: Seat, code: &str, clues_on_card: u8, in_threat_area: boo
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seated)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build()
 }

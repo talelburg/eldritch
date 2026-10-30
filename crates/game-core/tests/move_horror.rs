@@ -117,7 +117,7 @@ fn registries() -> Registries {
 fn board(seated: impl Into<Seat<Either>>) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_seat(seated)
         .open_turn(INV)
         .build()

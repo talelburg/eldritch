@@ -35,7 +35,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
     RecordedModifierKind, SkillKind,
 };
-use game_core::test_support::{self, seat, test_investigator_card, MockRegistry, TestSession};
+use game_core::test_support::{location, seat, test_investigator_card, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Elder sign: modifier `+2`, and an `on_success` arm that gains 2 resources.
@@ -93,12 +93,10 @@ fn session(code: &str, clues: u8) -> TestSession {
 
 /// The board [`session`] starts from.
 fn board(code: &str, clues: u8) -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.clues = clues;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).as_card(code).at(HERE))
-        .with_location(here)
+        .with_location(location(HERE).clues(clues))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .open_turn(INV)
         .build()

@@ -26,10 +26,11 @@ use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget, R
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    self, Act, Agenda, CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Owner,
+    self, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
+use game_core::test_support::{
+    act, agenda, enemy, location, seat, MockRegistry, Seat, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const WRITE_THEN_SUSPEND_ACT: &str = "_ncx_act_write_then_suspend";
@@ -275,26 +276,17 @@ fn state_with_act(act: &str) -> GameState {
 /// [`state_with_act`], seating `seat` (placed [`HERE`], with a filler deck) on
 /// `builder`. The filler deck keeps Upkeep 4.4's draw from dealing empty-deck
 /// horror once the enemy phase has ended.
-fn state_with(act: &str, seat: Seat, builder: GameStateBuilder) -> GameState {
-    let mut state = builder
+fn state_with(act_code: &str, seat: Seat, builder: GameStateBuilder) -> GameState {
+    builder
         .with_registries(registries())
         .with_seat(seat.at(HERE).deck(["filler-card"]))
-        .with_location(test_support::test_location(HERE.0, "Start"))
-        .with_location(test_support::test_location(NEAR.0, "Near"))
-        .with_location(test_support::test_location(FAR.0, "Far"))
+        .with_location(location(HERE))
+        .with_location(location(NEAR))
+        .with_location(location(FAR))
         .open_turn(INV)
-        .build();
-    // No builder setter stages the act and agenda decks.
-    state.act_deck = vec![Act {
-        code: CardCode::new(act),
-        clue_threshold: 99,
-    }];
-    state.act_index = 0;
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("TEST-AGENDA"),
-        doom_threshold: 10,
-    }];
-    state
+        .with_act_deck([act(act_code, 99)])
+        .with_agenda_deck([agenda("TEST-AGENDA", 10)])
+        .build()
 }
 
 /// End the lead's turn, and with it the Investigation phase, so play runs into
@@ -442,13 +434,11 @@ fn a_value_returning_exit_after_deal_harm_is_rejected_and_rolled_back() {
 
 #[test]
 fn an_exit_after_an_enemy_defeat_lands_before_the_after_defeat_window_opens() {
-    let mut foe = test_support::test_enemy(FOE.0, "Foe");
-    foe.current_location = Some(FAR);
     let session = end_enemy_phase(TestSession::new(
         state_with(
             DEFEAT_THEN_WRITE_ACT,
             seat(1).resources(2),
-            GameStateBuilder::new().with_enemy(foe),
+            GameStateBuilder::new().with_enemy(enemy(FOE).at(FAR)),
         ),
         registries(),
     ));

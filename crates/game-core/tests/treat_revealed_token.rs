@@ -81,7 +81,7 @@ fn investigator(id: u32, in_play: &[&str]) -> Seat {
 fn board(token: ChaosToken, seats: impl IntoIterator<Item = Seat>) -> GameState {
     let mut builder = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([token]));
     for seat in seats {
         builder = builder.with_seat(seat);

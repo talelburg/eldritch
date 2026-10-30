@@ -47,10 +47,10 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// Synthetic **asset** printing the same residual effect twice — once under a
 /// **Fight** designator, once under none. The pair is the control: only the
@@ -162,19 +162,17 @@ fn registries() -> Registries {
 /// to draw from once it performs — the assertion is taken before the test
 /// resolves either way.
 fn board() -> GameState {
-    let mut parlor = test_support::test_location(HERE.0, "Parlor");
-    parlor.code = CardCode::new(PARLOR);
-
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Mob Enforcer");
-    attacker.code = CardCode::new(ENFORCER);
-    attacker.attack_damage = 1;
-    attacker.attack_horror = 0;
-
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play([SATCHEL]))
-        .with_location(parlor)
-        .with_enemy_engaged(attacker, MINE)
+        .with_location(location(HERE).code(PARLOR))
+        .with_enemy(
+            enemy(ATTACKER)
+                .code(ENFORCER)
+                .attack_damage(1)
+                .attack_horror(0)
+                .engaged_with(MINE),
+        )
         .open_turn(MINE)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

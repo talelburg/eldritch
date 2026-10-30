@@ -21,11 +21,11 @@ use game_core::engine::{InputKind, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
+    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{
-    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
+    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, StagedEnemy, TestSession,
 };
 use std::sync::LazyLock;
 
@@ -140,13 +140,13 @@ const GHOUL: EnemyId = EnemyId(100);
 
 /// A Ghoul (fight 3, health 3) at `location`, engaged with the controller when
 /// `engaged`.
-fn ghoul(id: EnemyId, location: LocationId, engaged: bool) -> Enemy {
-    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
-    enemy.current_location = Some(location);
-    enemy.engaged_with = engaged.then_some(INV);
-    enemy
+fn ghoul(id: EnemyId, location: LocationId, engaged: bool) -> StagedEnemy {
+    let ghoul = test_support::enemy(id).fight(3).health(3).at(location);
+    if engaged {
+        ghoul.engaged_with(INV)
+    } else {
+        ghoul
+    }
 }
 
 /// Board: `asset` in play for the controller, whose turn is open at [`HERE`],
@@ -160,7 +160,7 @@ fn board(asset: SeatCard, enemy_count: u32, engaged: bool) -> GameStateBuilder {
             |builder, n| builder.with_enemy(ghoul(EnemyId(GHOUL.0 + n), HERE, engaged)),
         )
         .with_seat(seat(INV.0).at(HERE).in_play([asset]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
 }
@@ -290,7 +290,7 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
     // is submitted off the menu, as a client could send it, to prove the
     // handler itself rejects it.
     let session = board(loaded_weapon(), 0, false)
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::location(ELSEWHERE))
         .with_enemy(ghoul(GHOUL, ELSEWHERE, false))
         .session();
     let action = activate(session.state(), WEAPON);
