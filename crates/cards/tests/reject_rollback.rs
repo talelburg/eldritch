@@ -73,7 +73,7 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(here).hand([PROBE]))
-        .with_location(test_support::test_location(here.0, "Study"))
+        .with_location(test_support::location(here))
         .open_turn(id)
         .session();
 

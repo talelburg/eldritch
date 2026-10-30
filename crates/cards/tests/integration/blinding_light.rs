@@ -21,10 +21,10 @@ use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BLINDING_LIGHT: &str = "01066";
@@ -42,11 +42,8 @@ const PLAY: TurnAction = TurnAction::PlayCard {
 };
 
 /// An evade-3, health-3 enemy coded `id`.
-fn enemy(id: EnemyId) -> Enemy {
-    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
-    enemy.evade = 3;
-    enemy.max_health = 3;
-    enemy
+fn evasive_enemy(id: EnemyId) -> StagedEnemy {
+    test_support::enemy(id).evade(3).health(3)
 }
 
 /// The investigator: Blinding Light in hand with the resources to play it, at
@@ -69,11 +66,11 @@ fn staged(investigator: Seat, token: ChaosToken, engaged: &[EnemyId]) -> GameSta
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]));
     for &id in engaged {
-        builder = builder.with_enemy_engaged(enemy(id), INV);
+        builder = builder.with_enemy_engaged(evasive_enemy(id), INV);
     }
     builder
 }
@@ -251,8 +248,7 @@ fn under_frozen_in_fear_the_play_is_surcharged_as_an_evade_action() {
 #[test]
 fn it_cannot_be_played_without_an_engaged_enemy() {
     // An unengaged enemy at the location is no evade target.
-    let mut bystander = enemy(ENEMY);
-    bystander.current_location = Some(HERE);
+    let bystander = evasive_enemy(ENEMY).at(HERE);
     let state = staged(caster(), ChaosToken::Numeric(0), &[])
         .with_enemy(bystander)
         .build();

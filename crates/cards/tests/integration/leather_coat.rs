@@ -32,7 +32,7 @@ fn board(hand: &[&str], coat_in_play: bool) -> TestSession {
     };
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat)
         .open_turn(INV)
         .session()

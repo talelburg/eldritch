@@ -104,10 +104,11 @@ fn reverse_branches_on_the_act_deck_after_the_agenda_advances() {
 /// *"If the investigators are at Act 3"* against a zero-based cursor.
 #[test]
 fn the_act_three_predicate_reads_the_zero_based_cursor() {
-    let mut state = GameStateBuilder::new().build();
     let ctx = EvalContext::for_controller(InvestigatorId(1));
     for (act_index, expected) in [(0, false), (1, false), (ACT_THREE_INDEX, true)] {
-        state.act_index = act_index;
+        let state = GameStateBuilder::new()
+            .with_current_act(act_index)
+            .build();
         assert_eq!(
             at_act_three(&state, &ctx),
             expected,

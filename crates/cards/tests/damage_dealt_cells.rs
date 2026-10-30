@@ -33,7 +33,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// A soaking asset (health 2, no sanity) with a `DamageDealt` reaction in the
@@ -141,13 +141,13 @@ fn registries() -> Registries {
 /// play and [`PLACED`] in their threat area, engaged by one ready attacker
 /// dealing 1 damage and 1 horror. `EndTurn` cascades into the Enemy phase.
 fn board_with(asset: &str) -> GameStateBuilder {
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
-    attacker.code = CardCode::new("_dd_attacker");
-    attacker.attack_damage = 1;
-    attacker.attack_horror = 1;
+    let attacker = test_support::enemy(ATTACKER)
+        .code("_dd_attacker")
+        .attack_damage(1)
+        .attack_horror(1);
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

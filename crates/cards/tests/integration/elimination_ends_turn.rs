@@ -29,10 +29,8 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
-use game_core::state::{
-    Continuation, Enemy, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
-};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::state::{Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
+use game_core::test_support::{self, seat, StagedEnemy, TestSession};
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -43,12 +41,11 @@ const HERE: LocationId = LocationId(101);
 const ELSEWHERE: LocationId = LocationId(102);
 
 /// A ready enemy hitting for 3 damage.
-fn ready_attacker() -> Enemy {
-    let mut e = test_support::test_enemy(7, "Attacker");
-    e.attack_damage = 3;
-    e.attack_horror = 0;
-    e.max_health = 5;
-    e
+fn ready_attacker() -> StagedEnemy {
+    test_support::enemy(7)
+        .attack_damage(3)
+        .attack_horror(0)
+        .health(5)
 }
 
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
@@ -58,8 +55,8 @@ fn ready_attacker() -> Enemy {
 fn board(seating: &[InvestigatorId]) -> GameStateBuilder {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(ELSEWHERE))
         // 7 + 3 ≥ 8 = max_health
         .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]).harm(7, 0));
     let builder = if seating.contains(&SURVIVOR) {

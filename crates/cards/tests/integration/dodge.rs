@@ -16,10 +16,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
-    Owner,
+    CardCode, CardInPlay, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
@@ -31,11 +30,10 @@ const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
 
 /// A ready enemy dealing 2 damage / 1 horror.
-fn ready_attacker() -> Enemy {
-    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
-    e.attack_damage = 2;
-    e.attack_horror = 1;
-    e
+fn ready_attacker() -> StagedEnemy {
+    test_support::enemy(ATTACKER)
+        .attack_damage(2)
+        .attack_horror(1)
 }
 
 /// Investigator 1 at the Study with `DODGE` in hand.
@@ -54,10 +52,10 @@ fn holding_dodge() -> Seat {
 /// window auto-skips (Dodge is a reaction event — `check_play_card` rejects a
 /// standalone play, so it is not a framework Fast play), then the attack loop
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
-fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
+fn dodge_board(investigator: Seat, attacker: impl Into<StagedEnemy<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator)
         .with_enemy_engaged(attacker, INV)
         .open_turn(INV)
@@ -73,25 +71,18 @@ fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
 /// ```
 const ACOLYTE: &str = "01102";
 
-/// The `dodge_board` with the attacker replaced by a real Silver Twilight
-/// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
-/// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
-/// rather than read from metadata, matching the rest of this file's fixtures;
-/// the both-tracks-cancelled claim is `ready_attacker`'s to prove, since this
-/// enemy prints no horror to cancel.
+/// The `dodge_board` with the attacker replaced by the printed Silver Twilight
+/// Acolyte and an agenda, 01105, for it to place doom on. It prints 1 damage
+/// and 0 horror (`data/arkhamdb-snapshot/pack/core/core.json`), so the
+/// both-tracks-cancelled claim is `ready_attacker`'s to prove: this enemy
+/// prints no horror to cancel.
 fn acolyte_session() -> TestSession {
-    let mut acolyte = ready_attacker();
-    acolyte.code = CardCode::new(ACOLYTE);
-    acolyte.attack_damage = 1;
-    acolyte.attack_horror = 0;
-    let mut state = dodge_board(holding_dodge(), acolyte).build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    TestSession::new(state, TEST_REGISTRIES)
+    dodge_board(
+        holding_dodge(),
+        test_support::enemy(ATTACKER).as_card(ACOLYTE),
+    )
+    .with_agenda_deck(["01105"])
+    .session()
 }
 
 /// The anchor of `holder`'s Dodge in a reaction window's prompt.
@@ -333,8 +324,8 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
     // before-attack window that offers seat 2 their Dodge.
     let opened = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(HALLWAY))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE).hand([DODGE]))
         .with_seating([attacked, dodger])

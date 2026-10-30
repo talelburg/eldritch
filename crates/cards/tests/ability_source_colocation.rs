@@ -43,7 +43,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder,
+    AbilityAddress, AbilitySource, CardInstanceId, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
@@ -125,17 +125,11 @@ fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetad
 /// difference between the reachable one and the unreachable one is where its
 /// bearer stands.
 fn board() -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Hall");
-    here.code = CardCode::new(HALL);
-    let mut there = test_support::test_location(THERE.0, "Far Hall");
-    there.code = CardCode::new(HALL);
+    let here = test_support::location(HERE).code(HALL);
+    let there = test_support::location(THERE).code(HALL);
 
-    let mut nearby_cultist = test_support::test_enemy(CULTIST_HERE.0, "Cultist");
-    nearby_cultist.code = CardCode::new(CULTIST);
-    nearby_cultist.current_location = Some(HERE);
-    let mut distant_cultist = test_support::test_enemy(CULTIST_THERE.0, "Far Cultist");
-    distant_cultist.code = CardCode::new(CULTIST);
-    distant_cultist.current_location = Some(THERE);
+    let nearby_cultist = test_support::enemy(CULTIST_HERE).code(CULTIST).at(HERE);
+    let distant_cultist = test_support::enemy(CULTIST_THERE).code(CULTIST).at(THERE);
 
     GameStateBuilder::new()
         .with_registries(registries())

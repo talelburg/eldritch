@@ -87,10 +87,12 @@ use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase, SkillKind,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, act, agenda, seat, MockRegistry, Seat, SeatLookup as _, TestSession,
+};
 use game_core::{assert_event, assert_no_event};
 use std::sync::LazyLock;
 
@@ -195,20 +197,14 @@ fn board() -> GameState {
 /// Investigation, so the window must be the only thing that permits the
 /// activation (see the module header).
 fn board_seating(mine: Seat) -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Ten-Acre Meadow");
-    here.code = CardCode::new(HALL);
-    let mut there = test_support::test_location(THERE.0, "Far Meadow");
-    there.code = CardCode::new(HALL);
-    let mut far = test_support::test_location(FAR.0, "Empty Field");
-    far.code = CardCode::new(EMPTY_HALL);
+    let here = test_support::location(HERE).code(HALL);
+    let there = test_support::location(THERE).code(HALL);
+    let far = test_support::location(FAR).code(EMPTY_HALL);
 
-    let mut nearby = test_support::test_enemy(CULTIST_HERE.0, "Cultist");
-    nearby.code = CardCode::new(CULTIST);
-    let mut distant = test_support::test_enemy(CULTIST_THERE.0, "Far Cultist");
-    distant.code = CardCode::new(CULTIST);
-    distant.current_location = Some(THERE);
+    let nearby = test_support::enemy(CULTIST_HERE).code(CULTIST);
+    let distant = test_support::enemy(CULTIST_THERE).code(CULTIST).at(THERE);
 
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(registries())
         .with_phase(Phase::Mythos)
         .with_mythos_draw_remaining([MINE])
@@ -223,18 +219,9 @@ fn board_seating(mine: Seat) -> GameState {
         .with_active_investigator(MINE)
         .with_seating([MINE, NEIGHBOUR, STRANGER])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .build();
-    state.act_deck = vec![Act {
-        code: CardCode::new(ACT),
-        clue_threshold: 99,
-    }];
-    state.act_index = 0;
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA),
-        doom_threshold: 99,
-    }];
-    state.agenda_index = 0;
-    state
+        .with_act_deck([act(ACT, 99)])
+        .with_agenda_deck([agenda(AGENDA, 99)])
+        .build()
 }
 
 /// The [`WARD`] in `bearer`'s threat area.

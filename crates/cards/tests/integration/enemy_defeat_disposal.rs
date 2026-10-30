@@ -34,10 +34,9 @@
 //! - **Ghoul Priest 01116** (`core_encounter.json`) — "**Prey** - Highest
 //!   \\[combat\\].\nHunter. Retaliate."; printed health 5 *per investigator*
 //!   (`"health_per_investigator": true`), fight 4, Victory 2. These tests are
-//!   solo, so the spawned health the engine would compute is 5 — the number the
-//!   fixture uses.
+//!   solo, so its health on the board is 5.
 //!
-//! The enemies are built as fixtures rather than spawned from the corpus, each
+//! The enemies are staged from their printed cards rather than spawned, each
 //! with the owner it would enter play with: the encounter deck for Ghoul Minion
 //! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`) —
 //! the owner a weakness enemy drawn from its bearer's deck spawns with.
@@ -47,8 +46,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::ApplyResult;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, SkillKind, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -63,27 +62,28 @@ const ATTACHMENT: &str = "_enemy_attachment";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
+/// The investigator's card attached to the enemy under test. A seat places no
+/// enemy attachment, so its id is named here.
+const ATTACHMENT_ID: CardInstanceId = CardInstanceId(900);
 const HERE: LocationId = LocationId(10);
 
-/// A solo investigator engaged with `code`, one point of damage short of
-/// defeat, with combat high enough that the Fight test cannot fail against the
-/// bag's single `Numeric(0)` token. The unarmed Fight deals 1 damage — enough
-/// to defeat. A spare deck card lets a test end the turn and play on through
-/// Upkeep step 4.4's draw.
+/// A solo investigator engaged with the printed enemy `code` — owned by
+/// `owner`, carrying `attachments` — whose printed health is `health`, with
+/// one point of damage short of defeat on it, and with combat high enough
+/// that the Fight test cannot fail against the bag's single `Numeric(0)`
+/// token. The unarmed Fight deals 1 damage — enough to defeat. A spare deck
+/// card lets a test end the turn and play on through Upkeep step 4.4's draw.
 fn solo_investigator_facing(
     code: &str,
     owner: Owner,
     health: u8,
-    fight: i8,
-    victory: Option<u8>,
+    attachments: impl IntoIterator<Item = CardInPlay>,
 ) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Enemy under test");
-    enemy.code = CardCode::new(code);
-    enemy.fight = fight;
-    enemy.max_health = health;
-    enemy.damage = health - 1;
-    enemy.victory = victory;
-    enemy.owner = owner;
+    let enemy = test_support::enemy(ENEMY)
+        .as_card(code)
+        .owner(owner)
+        .damage(health - 1)
+        .attachments(attachments);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -92,7 +92,7 @@ fn solo_investigator_facing(
         // Fight is location-gated; an engaged enemy is at its
         // investigator's location.
         .with_enemy_engaged(enemy, INV)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .build()
@@ -129,8 +129,7 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
         GHOUL_MINION,
         Owner::EncounterDeck,
         2,
-        2,
-        None,
+        [],
     ));
 
     assert_eq!(
@@ -177,8 +176,7 @@ fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
         MOB_ENFORCER,
         Owner::Investigator(INV),
         3,
-        4,
-        None,
+        [],
     ))
     .state;
 
@@ -207,8 +205,7 @@ fn defeated_victory_enemy_goes_to_the_victory_display_and_no_discard_pile() {
         GHOUL_PRIEST,
         Owner::EncounterDeck,
         5,
-        4,
-        Some(2),
+        [],
     ))
     .state;
 
@@ -220,21 +217,13 @@ fn defeated_victory_enemy_goes_to_the_victory_display_and_no_discard_pile() {
     assert!(after.investigators[&INV].discard.is_empty());
 }
 
-/// Attach an investigator-owned card to the enemy under test. A seat places
-/// no enemy attachment, so it goes on the built state, with an id minted from
-/// its counter.
-fn attach_investigators_card(state: &mut GameState) {
-    let id = state.card_instance_ids.mint();
-    state
-        .enemies
-        .get_mut(&ENEMY)
-        .expect("the enemy under test")
-        .attachments
-        .push(CardInPlay::enter_play(
-            CardCode::new(ATTACHMENT),
-            id,
-            Owner::Investigator(INV),
-        ));
+/// An investigator-owned card, to attach to the enemy under test.
+fn investigators_card() -> CardInPlay {
+    CardInPlay::enter_play(
+        CardCode::new(ATTACHMENT),
+        ATTACHMENT_ID,
+        Owner::Investigator(INV),
+    )
 }
 
 /// **A defeated enemy's attachment is discarded by its own owner.**
@@ -246,8 +235,12 @@ fn attach_investigators_card(state: &mut GameState) {
 /// follow `EnemyDefeated`, the enemy's first.
 #[test]
 fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
-    let mut state = solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
-    attach_investigators_card(&mut state);
+    let state = solo_investigator_facing(
+        GHOUL_MINION,
+        Owner::EncounterDeck,
+        2,
+        [investigators_card()],
+    );
     let result = defeated(state);
 
     assert_eq!(
@@ -281,8 +274,12 @@ fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
 /// to any other.
 #[test]
 fn a_defeated_victory_enemys_attachment_is_discarded_by_its_owner() {
-    let mut state = solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
-    attach_investigators_card(&mut state);
+    let state = solo_investigator_facing(
+        GHOUL_PRIEST,
+        Owner::EncounterDeck,
+        5,
+        [investigators_card()],
+    );
     let result = defeated(state);
 
     assert_eq!(

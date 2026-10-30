@@ -32,9 +32,9 @@
 //!   further effects"* (<https://arkhamdb.com/card/01118>) — is the off-board
 //!   case, pinned separately by `enemy_spawn_no_location.rs`; here the Attic is
 //!   in play.
-//! - **Attic 01113** — the spawn location, built through the engine from its own
-//!   corpus metadata (`GameState::add_location`) rather than hand-stamped onto a
-//!   `test_location`, which is the impersonation ADR 0016 forbids. Its
+//! - **Attic 01113** — the spawn location, staged from its own printed card
+//!   (`location(..).as_card(..)`) rather than hand-stamped onto a stock
+//!   location, which is the impersonation ADR 0016 forbids. Its
 //!   *"**Forced** - After you enter the Attic: Take 1 horror."* is live in the
 //!   registry and simply never fires — only the Move action emits
 //!   `EnteredLocation`, and these tests place their investigators. Its ruling —
@@ -48,7 +48,7 @@ use game_core::state::{
     CardCode, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner,
     Phase,
 };
-use game_core::test_support::{seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
@@ -58,17 +58,21 @@ const ATTIC: &str = "01113";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
+/// The Attic's id on the board.
+const ATTIC_ID: LocationId = LocationId(1);
+
 /// The board every test starts from: Mythos step 1.4 with investigator 1 to
 /// draw, one Flesh-Eater on the encounter deck, and the Attic in play with
-/// the `seated` investigators (seated in that order) standing in it. Returns the
-/// minted [`LocationId`] alongside, since `add_location` mints it on the built
-/// state, which is also why the investigators are placed there afterwards.
+/// the `seated` investigators (seated in that order) standing in it. Returns
+/// the Attic's [`LocationId`] alongside.
 fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
-    let mut state = seated
+    let session = seated
         .iter()
         .fold(
-            GameStateBuilder::new().with_registries(TEST_REGISTRIES),
-            |builder, id| builder.with_seat(seat(id.0)),
+            GameStateBuilder::new()
+                .with_registries(TEST_REGISTRIES)
+                .with_location(location(ATTIC_ID).as_card(ATTIC)),
+            |builder, id| builder.with_seat(seat(id.0).at(ATTIC_ID)),
         )
         .with_seating(seated.iter().copied())
         .with_phase(Phase::Mythos)
@@ -76,13 +80,9 @@ fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
-        .build();
-    let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
-    for inv in state.investigators.values_mut() {
-        inv.current_location = Some(attic);
-    }
-    state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
-    (TestSession::new(state, TEST_REGISTRIES), attic)
+        .with_encounter_deck([FLESH_EATER])
+        .session();
+    (session, ATTIC_ID)
 }
 
 /// **An enemy drawn from the encounter deck is the encounter deck's**

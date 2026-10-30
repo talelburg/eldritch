@@ -11,15 +11,16 @@
 //! lose 1 action from your total pool of actions for the turn. If you then play
 //! a second copy of the card, you gain a further additional action."*
 
-use card_dsl::card_data::CardKind;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::state::{
-    AbilityAddress, AbilitySource, Agenda, CardCode, CardInstanceId, Enemy, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, seat, Either, Seat, SeatLookup as _, StagedEnemy, TestSession,
+};
 
 const LEO: &str = "01048";
 const SKIDS: &str = "01003";
@@ -51,17 +52,14 @@ fn staged(investigator: impl Into<Seat<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
 }
 
 /// A ready enemy whose attack deals 2 damage and no horror: enough to defeat
 /// Leo's 2 health.
-fn ghoul() -> Enemy {
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.attack_damage = 2;
-    enemy.attack_horror = 0;
-    enemy
+fn ghoul() -> StagedEnemy {
+    test_support::enemy(100).attack_damage(2).attack_horror(0)
 }
 
 /// The actions they can still take this turn: standard plus additional.
@@ -255,7 +253,7 @@ fn leo_grants_nothing_outside_his_controllers_turn() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(with_leo())
         .with_seat(seat(2).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .open_turn(OTHER)
         .session();
     assert_eq!(actions(session.state()), standard_actions(session.state()));
@@ -265,21 +263,9 @@ fn leo_grants_nothing_outside_his_controllers_turn() {
 #[test]
 fn leo_grants_again_on_his_controllers_next_turn() {
     let session = staged(with_leo().deck([EMERGENCY_CACHE]))
-        .session()
-        .edit_state(|state| {
-            let threshold = match cards::by_code(RISE_OF_THE_GHOULS)
-                .expect("agenda in corpus")
-                .kind
-            {
-                CardKind::Agenda { doom_threshold } => doom_threshold,
-                ref kind => panic!("{RISE_OF_THE_GHOULS} is not an Agenda ({kind:?})"),
-            };
-            state.agenda_deck = vec![Agenda {
-                code: CardCode::new(RISE_OF_THE_GHOULS),
-                doom_threshold: threshold,
-            }];
-            state.encounter_deck = [CardCode::new(ANCIENT_EVILS)].into_iter().collect();
-        });
+        .with_agenda_deck([RISE_OF_THE_GHOULS])
+        .with_encounter_deck([ANCIENT_EVILS])
+        .session();
     let session = session.take(&RESOURCE);
     assert_eq!(actions(session.state()), 3, "his action used this turn");
 

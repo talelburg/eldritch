@@ -1,7 +1,8 @@
 //! Shared helpers for the card integration tests.
 
+use cards::TEST_REGISTRIES;
 use game_core::state::LocationId;
-use game_core::test_support::TestSession;
+use game_core::test_support::{location, TestSession};
 
 /// The Attic 01113: *"**Forced** - After you enter the Attic: Take 1 horror."*
 const ATTIC: &str = "01113";
@@ -15,10 +16,14 @@ pub(crate) fn with_attic(
 ) -> (TestSession, LocationId) {
     let mut attic = None;
     let session = session.edit_state(|state| {
-        let id = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
-        let added = state.locations.get_mut(&id).expect("just added");
-        added.revealed = true;
-        added.connections = connected_to.to_vec();
+        let id = state.location_ids.mint();
+        state.place(
+            location(id)
+                .as_card(ATTIC)
+                .connections(connected_to.to_vec()),
+            TEST_REGISTRIES,
+        );
+        // The way back: each location already on the board gains the Attic.
         for other in connected_to {
             state
                 .locations

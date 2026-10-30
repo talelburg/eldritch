@@ -9,9 +9,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Owner, SkillKind,
+    LocationId, Owner, SkillKind,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, StagedLocation, TestSession};
 
 const DR_MILAN: &str = "01033";
 /// Obscuring Fog.
@@ -26,10 +26,9 @@ const FOG_ID: CardInstanceId = CardInstanceId(2);
 /// The investigator's turn at a 1-clue Study of shroud 2 (`study` adds to
 /// it), with base intellect `intellect`, Dr. Milan in play, and a
 /// `Numeric(0)` bag.
-fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
-    let mut loc = test_support::test_location(HERE.0, "Study"); // shroud 2 by default
-    loc.clues = 1;
-    study(&mut loc);
+fn board(intellect: i8, study: impl FnOnce(StagedLocation) -> StagedLocation) -> TestSession {
+    // shroud 2 by default
+    let loc = study(test_support::location(HERE).clues(1));
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -65,7 +64,7 @@ fn investigate_to_dr_milans_window(session: TestSession) -> (TestSession, Option
 /// constant ability is load-bearing here.
 #[test]
 fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
-    let session = board(1, |_| {});
+    let session = board(1, |loc| loc);
     let resources_before = session.state().investigators[&INV].resources;
 
     // Investigate → commit nothing → intellect 1 + Dr. Milan's +1 = 2 ≥ shroud
@@ -93,11 +92,11 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     // Effective shroud is 2 (printed) + 2 (Obscuring Fog) = 4. Intellect 4 +
     // Dr. Milan's +1 = 5 ≥ 4 → success with a Numeric(0) draw.
     let session = board(4, |loc| {
-        loc.attachments.push(CardInPlay::enter_play(
+        loc.attachments([CardInPlay::enter_play(
             CardCode::new(OBSCURING_FOG),
             FOG_ID,
             Owner::EncounterDeck,
-        ));
+        )])
     });
 
     // Investigate → commit nothing → success; Dr. Milan's reaction window is

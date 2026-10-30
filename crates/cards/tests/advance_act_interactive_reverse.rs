@@ -10,8 +10,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::InputKind;
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::state::{GameStateBuilder, InvestigatorId};
+use game_core::test_support::{act, seat, MockRegistry};
 use std::sync::LazyLock;
 
 const IACT: &str = "_iact";
@@ -46,30 +46,18 @@ fn registries() -> Registries {
 #[test]
 fn interactive_act_reverse_resolves_cleanly() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
+    let session = GameStateBuilder::new()
         .with_registries(registries())
         // 1 clue funds the AdvanceAct clue-spend (threshold 1 below).
         .with_seat(seat(1).clues(1))
         .open_turn(inv)
-        .build();
-    // Two acts: the leaving one (_iact) carries the interactive reverse; a
-    // successor so the advance is non-terminal. _iact has a positive clue
-    // threshold (the AdvanceAct action requires one) and the
-    // investigator is funded for it above.
-    state.act_deck = vec![
-        Act {
-            code: CardCode(IACT.into()),
-            clue_threshold: 1,
-        },
-        Act {
-            code: CardCode("_iact_2".into()),
-            clue_threshold: 3,
-        },
-    ];
-    state.act_index = 0;
-
-    let session =
-        TestSession::new(state, registries()).take(&TurnAction::AdvanceAct { investigator: inv });
+        // Two acts: the leaving one (_iact) carries the interactive reverse; a
+        // successor so the advance is non-terminal. _iact has a positive clue
+        // threshold (the AdvanceAct action requires one) and the
+        // investigator is funded for it above.
+        .with_act_deck([act(IACT, 1), act("_iact_2", 3)])
+        .session()
+        .take(&TurnAction::AdvanceAct { investigator: inv });
 
     // The act's interactive reverse is the live prompt (it did not strand); the
     // act cursor has NOT bumped yet (Finalize runs after the choice).

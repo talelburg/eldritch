@@ -51,16 +51,15 @@ const PARLOR: &str = "01115";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const PARLOR_ID: LocationId = LocationId(1);
+/// Lita, put into play in the Parlor.
+const LITA_ID: CardInstanceId = CardInstanceId(900);
 
 /// The investigator's turn in the revealed Parlor with Lita put into play
 /// there, scenario-owned — act 01109b's *"Put the set-aside Lita Chantler into
 /// play in the Parlor"*. A `0` token makes the Parley's intellect 5 vs 4
 /// succeed. Returns Lita's instance id with the state.
 fn parlor_with_lita() -> (GameState, CardInstanceId) {
-    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
-    parlor.code = CardCode::new(PARLOR);
-    parlor.revealed = true;
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         // A filler deck card so the round's Upkeep step-4.4 draw doesn't deal
         // empty-deck horror.
@@ -70,24 +69,24 @@ fn parlor_with_lita() -> (GameState, CardInstanceId) {
                 .skill(SkillKind::Intellect, 5)
                 .deck(["01088"]),
         )
-        .with_location(parlor)
+        // A seat cannot place a card at a location, so Lita's id is named
+        // here.
+        .with_location(
+            test_support::location(PARLOR_ID)
+                .as_card(PARLOR)
+                .cards_at_location([CardInPlay::enter_play(
+                    CardCode::new(LITA),
+                    LITA_ID,
+                    Owner::Scenario,
+                )]),
+        )
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        // Crypt Chill waits on top of the encounter deck for the next Mythos
+        // phase; nothing draws from it before then.
+        .with_encounter_deck([CRYPT_CHILL])
         .build();
-    // A seat cannot place a card at a location, so Lita is put there by a
-    // state edit, with an id minted from the state's counter.
-    let lita = state.card_instance_ids.mint();
-    state
-        .locations
-        .get_mut(&PARLOR_ID)
-        .expect("the Parlor is on the board")
-        .cards_at_location
-        .push(CardInPlay::enter_play(
-            CardCode::new(LITA),
-            lita,
-            Owner::Scenario,
-        ));
-    (state, lita)
+    (state, LITA_ID)
 }
 
 /// Win the Parley, so the investigator controls Lita.
@@ -109,12 +108,12 @@ fn parley(state: GameState, lita: CardInstanceId) -> TestSession {
 }
 
 /// Reveal Crypt Chill against the investigator, failing its test: with Crypt
-/// Chill on top of the encounter deck and only auto-fail in the bag, end the
-/// turn so the next round's Mythos step 1.4 draws it, and commit nothing.
+/// Chill on top of the encounter deck ([`parlor_with_lita`] staged it) and
+/// only auto-fail in the bag, end the turn so the next round's Mythos step
+/// 1.4 draws it, and commit nothing.
 fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
-    state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
     let drawing = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     drawing.assert_at_encounter_draw();
     drawing.confirm().commit(&[])

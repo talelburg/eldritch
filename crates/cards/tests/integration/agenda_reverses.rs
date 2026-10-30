@@ -11,8 +11,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::PromptNature;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Zone,
+    CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 
@@ -29,26 +28,17 @@ const AGENDAS: [(&str, u8); 3] = [("01105", 3), ("01106", 7), ("01107", 10)];
 /// `AGENDAS[index]` current and one doom short of its threshold, and
 /// `encounter_deck` on the encounter deck, top first.
 fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> GameState {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_seat(lead.at(HERE))
         .with_seating([LEAD])
         .ending_upkeep_phase()
-        .build();
-    state.agenda_deck = AGENDAS
-        .iter()
-        .map(|&(code, doom_threshold)| Agenda {
-            code: CardCode::new(code),
-            doom_threshold,
-        })
-        .collect();
-    state.agenda_index = index;
-    state.agenda_doom = AGENDAS[index].1 - 1;
-    for code in encounter_deck {
-        state.encounter_deck.push_back(CardCode::new(*code));
-    }
-    state
+        .with_agenda_deck(AGENDAS.map(|(code, _)| code))
+        .with_current_agenda(index)
+        .with_agenda_doom(AGENDAS[index].1 - 1)
+        .with_encounter_deck(encounter_deck.iter().copied())
+        .build()
 }
 
 /// 01105's reverse is an interactive `ChooseOne`, made by the lead investigator:

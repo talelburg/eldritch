@@ -24,8 +24,8 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{board, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Agenda, CardCode, CardInstanceId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
 use game_core::test_support::{self, doom, seat, Seat, SeatLookup as _, TestSession};
 
@@ -37,7 +37,7 @@ const SHRIVELLING: &str = "01060";
 /// Guts — a skill, not a Spell (filler).
 const GUTS: &str = "01089";
 /// Rise of the Ghouls (doom 7), then They're Getting Out! (doom 10).
-const AGENDAS: [(&str, u8); 2] = [("01106", 7), ("01107", 10)];
+const AGENDAS: [&str; 2] = ["01106", "01107"];
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -46,7 +46,7 @@ const HERE: LocationId = LocationId(10);
 fn turn(investigator: Seat) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator.at(HERE))
         .open_turn(INV)
         .session()
@@ -55,41 +55,29 @@ fn turn(investigator: Seat) -> TestSession {
 /// `investigator`'s turn, alone at `HERE`, with Rise of the Ghouls current and
 /// `agenda_doom` on it.
 fn turn_with_agenda(investigator: Seat, agenda_doom: u8) -> TestSession {
-    let state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator.at(HERE))
         .open_turn(INV)
-        .build();
-    TestSession::new(with_agendas(state, agenda_doom), TEST_REGISTRIES)
+        .with_agenda_deck(AGENDAS)
+        .with_agenda_doom(agenda_doom)
+        .session()
 }
 
 /// `investigator` seated at the end of the Upkeep phase with Rise of the
 /// Ghouls current and `agenda_doom` on it, so settling runs the next Mythos
 /// phase: step 1.2 places 1 doom, step 1.3 checks the threshold.
 fn ending_the_round(investigator: Seat, agenda_doom: u8) -> TestSession {
-    let state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator.at(HERE))
         .with_seating([INV])
         .ending_upkeep_phase()
-        .build();
-    TestSession::new(with_agendas(state, agenda_doom), TEST_REGISTRIES)
-}
-
-/// `state` with [`AGENDAS`] as its agenda deck, the first current with
-/// `agenda_doom` on it.
-fn with_agendas(mut state: GameState, agenda_doom: u8) -> GameState {
-    state.agenda_deck = AGENDAS
-        .iter()
-        .map(|&(code, doom_threshold)| Agenda {
-            code: CardCode::new(code),
-            doom_threshold,
-        })
-        .collect();
-    state.agenda_doom = agenda_doom;
-    state
+        .with_agenda_deck(AGENDAS)
+        .with_agenda_doom(agenda_doom)
+        .session()
 }
 
 fn initiate(session: &TestSession) -> CardInstanceId {
