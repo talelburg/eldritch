@@ -73,11 +73,9 @@ fn registries() -> Registries {
 /// threat area, at the end of round 1: settling runs the Upkeep phase end
 /// into the round-end coordinator, which offers the lead the forced run.
 fn round_ends_holding(codes: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(LOCATION.0, "Mock location");
-    location.clues = LOCATION_CLUES;
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(location)
+        .with_location(test_support::location(LOCATION).clues(LOCATION_CLUES))
         .with_seat(seat(1).at(LOCATION).threat_area(codes.iter().copied()))
         .with_seating([INV])
         .with_round(1)

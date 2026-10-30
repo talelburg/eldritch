@@ -14,8 +14,8 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::state::{self, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{agenda, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const AGENDA: &str = "TEST-AGENDA";
@@ -60,19 +60,13 @@ fn registries() -> Registries {
 /// keeps Upkeep 4.4's draw from dealing empty-deck horror once the enemy phase
 /// has ended.
 fn state_with_agenda(code: &str, doom: u8) -> GameState {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).deck(["filler-card"]))
         .open_turn(INV)
-        .build();
-    // No builder setter stages the agenda deck.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(code),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-    state.agenda_doom = doom;
-    state
+        .with_agenda_deck([agenda(code, 10)])
+        .with_agenda_doom(doom)
+        .build()
 }
 
 /// End the lead's turn, and with it the Investigation phase, so play runs into

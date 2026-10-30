@@ -31,10 +31,10 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    MythosPhaseFrame, MythosResume, Phase,
+    CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const WARD: &str = "01065";
@@ -86,33 +86,21 @@ fn mythos_draw_with(
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seating(ids.clone())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining(ids);
-    let mut state = edit(builder).build();
-    stage(&mut state, encounter);
-    TestSession::new(state, TEST_REGISTRIES)
+    edit(builder)
+        .with_agenda_deck(["01105"])
+        .with_encounter_deck(encounter.iter().copied())
+        .session()
 }
 
 fn mythos_draw(seats: Vec<impl Into<Seat<Either>>>, encounter: &[&str]) -> TestSession {
     mythos_draw_with(seats, encounter, |builder| builder)
-}
-
-/// The agenda and the top of the encounter deck, which the builder does not
-/// stage.
-fn stage(state: &mut GameState, encounter: &[&str]) {
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    for code in encounter {
-        state.encounter_deck.push_back(CardCode::new(*code));
-    }
 }
 
 fn ward(investigator: InvestigatorId) -> OptionTarget {
@@ -120,13 +108,6 @@ fn ward(investigator: InvestigatorId) -> OptionTarget {
         investigator,
         code: CardCode::new(WARD),
     }
-}
-
-/// A 3-health enemy, so Agnes's 1 damage does not defeat it.
-fn enemy() -> Enemy {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Whisperer");
-    enemy.max_health = 3;
-    enemy
 }
 
 #[test]
@@ -206,7 +187,7 @@ fn drawing_an_enemy_does_not_offer_ward() {
 fn drawing_a_weakness_treachery_does_not_offer_ward() {
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seat(warded(1).actions(3).deck([COVER_UP, GUTS]))
         .open_turn(INV)
         .session()
@@ -251,7 +232,8 @@ fn agnes_reaction_is_offered_for_wards_horror() {
         .resources(5)
         .deck([GUTS]);
     let s = mythos_draw_with(vec![agnes], &[ANCIENT_EVILS], |builder| {
-        builder.with_enemy_engaged(enemy(), INV)
+        // 3 health, so Agnes's 1 damage does not defeat it.
+        builder.with_enemy_engaged(enemy(ENEMY).health(3), INV)
     })
     .confirm()
     .pick(ward(INV));
@@ -297,11 +279,9 @@ fn heirloom_is_offered_after_ward_resolves() {
 /// offers Ward, and the play goes on to discover its 2 clues.
 #[test]
 fn ward_cancels_the_treachery_drawn_by_drawn_to_the_flame() {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.clues = 3;
-    let mut state = GameStateBuilder::new()
+    let drawn = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(here)
+        .with_location(location(HERE).clues(3))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -309,13 +289,13 @@ fn ward_cancels_the_treachery_drawn_by_drawn_to_the_flame() {
                 .resources(5),
         )
         .open_turn(INV)
-        .build();
-    stage(&mut state, &[ANCIENT_EVILS]);
-
-    let drawn = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
-        investigator: INV,
-        source: PlaySource::Hand(0),
-    });
+        .with_agenda_deck(["01105"])
+        .with_encounter_deck([ANCIENT_EVILS])
+        .session()
+        .take(&TurnAction::PlayCard {
+            investigator: INV,
+            source: PlaySource::Hand(0),
+        });
     assert_eq!(drawn.offered_at(&ward(INV)), 1, "Ward is offered");
     let s = drawn.pick(ward(INV));
 

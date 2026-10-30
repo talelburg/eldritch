@@ -11,8 +11,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, NativeCx, OptionId, Registries};
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{seat, TEST_REGISTRY};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{agenda, seat, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const AGENDA: &str = "TEST-AGENDA";
@@ -57,17 +57,12 @@ fn registries(cards: &'static CardRegistry) -> Registries {
 /// The lead's open turn under the agenda. A filler deck keeps Upkeep's draw
 /// from dealing empty-deck horror.
 fn state() -> GameState {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(registries(&TEST_REGISTRY))
         .with_seat(seat(1).deck(["filler-card"]))
         .open_turn(INV)
-        .build();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-    state
+        .with_agenda_deck([agenda(AGENDA, 10)])
+        .build()
 }
 
 /// End the lead's turn — the only investigator, so the Investigation phase

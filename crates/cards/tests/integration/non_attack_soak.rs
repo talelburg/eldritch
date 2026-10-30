@@ -9,10 +9,9 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{
-    CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase,
+    ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
@@ -32,7 +31,7 @@ enum Onto {
 fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSession {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).in_play([soaker]))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
@@ -40,9 +39,9 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSe
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck([treachery])
         .build();
     state.chaos_bag.tokens = vec![token];
-    state.encounter_deck.push_back(CardCode::new(treachery));
     TestSession::new(state, TEST_REGISTRIES)
 }
 

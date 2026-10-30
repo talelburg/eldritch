@@ -18,8 +18,8 @@ use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase,
+    Continuation, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume,
+    Phase,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -69,19 +69,18 @@ const HERE: LocationId = LocationId(1);
 #[test]
 fn enemy_encounter_card_spawns_via_the_disposition_frame() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, the enemy.
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck([ENEMY])
         .build();
-    // No builder setter stages the encounter deck.
-    state.encounter_deck.push_back(CardCode::new(ENEMY));
     let drawing = TestSession::new(state, registries());
     drawing.assert_at_encounter_draw();
 

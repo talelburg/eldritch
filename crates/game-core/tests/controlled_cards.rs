@@ -102,7 +102,7 @@ fn pass_on_the_elder_sign(investigator: Seat<Printed>) -> TestSession {
     let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .open_turn(INV)
         .build();

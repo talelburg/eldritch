@@ -82,7 +82,7 @@ fn board(damage: u8, horror: u8) -> GameState {
                 .harm(damage, horror)
                 .in_play([MODAL_HEAL_ON_SUCCESS]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

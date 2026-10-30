@@ -28,10 +28,10 @@ use game_core::engine::{EngineOutcome, InputKind, NativeCx, PromptNature, Regist
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, SkillKind, SkillSubstitution,
+    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind, SkillSubstitution,
 };
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::test_support::{self, act, agenda, seat, MockRegistry, TestSession};
 
 /// Registers the round-scoped substitution at the end of the enemy phase.
 const SUBSTITUTE_ACT: &str = "_rl_act_substitute";
@@ -98,10 +98,10 @@ fn registries() -> Registries {
 }
 
 /// The lead on their open turn, with the substitution act current and
-/// `agenda` as the current agenda. A filler deck keeps Upkeep 4.4's draw from
+/// `agenda_code` as the current agenda. A filler deck keeps Upkeep 4.4's draw from
 /// dealing empty-deck horror.
-fn board(agenda: &str) -> TestSession {
-    let mut state: GameState = GameStateBuilder::new()
+fn board(agenda_code: &str) -> TestSession {
+    let state: GameState = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
             seat(1)
@@ -109,21 +109,12 @@ fn board(agenda: &str) -> TestSession {
                 .skill(SkillKind::Intellect, 5)
                 .deck(["filler-card"]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
+        .with_act_deck([act(SUBSTITUTE_ACT, 99)])
+        .with_agenda_deck([agenda(agenda_code, 10)])
         .build();
-    // No builder setter stages the act or agenda deck.
-    state.act_deck = vec![Act {
-        code: CardCode::new(SUBSTITUTE_ACT),
-        clue_threshold: 99,
-    }];
-    state.act_index = 0;
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(agenda),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
     TestSession::new(state, registries())
 }
 

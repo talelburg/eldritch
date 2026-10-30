@@ -29,10 +29,10 @@ use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, Location,
-    LocationId, SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
+    SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const AMULET: &str = "01014";
@@ -64,19 +64,13 @@ const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
 /// `investigator`'s open turn at `HERE`, solo, with The Gathering's first
 /// agenda current (Dark Memory places its doom there).
 fn board(investigator: Seat) -> TestSession {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
-        .build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_agenda_deck(["01105"])
+        .session()
 }
 
 fn codes(codes: &[&str]) -> Vec<CardCode> {
@@ -138,7 +132,7 @@ fn another_investigators_amulet_does_not_redirect_your_event() {
     let s = TestSession::new(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE))
             .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]))
             .with_seat(seat(2).at(HERE).in_play([AMULET]))
             .with_seating([INV, INV2])
@@ -194,14 +188,10 @@ fn an_after_you_play_reaction_still_fires_after_placement() {
 /// deckbuilding-validated.
 #[test]
 fn an_event_discarded_from_play_goes_to_the_bottom_of_the_deck() {
-    let mut here = test_support::test_location(HERE.0, "Study");
-    here.connections = vec![THERE];
-    let mut there: Location = test_support::test_location(THERE.0, "Hallway");
-    there.connections = vec![HERE];
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(here)
-        .with_location(there)
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -302,12 +292,9 @@ fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
 /// application of that action's effect upon the game state."*).
 #[test]
 fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity() {
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
-    attacker.attack_damage = 1;
-    attacker.attack_horror = 0;
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -316,7 +303,7 @@ fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity
                 .deck([GUTS]),
         )
         .open_turn(INV)
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy_engaged(enemy(ATTACKER).attack_damage(1).attack_horror(0), INV)
         .session();
     let resources = s.state().investigators[&INV].resources;
 
@@ -374,13 +361,10 @@ fn without_the_amulet_the_discard_pile_offers_nothing() {
 /// A shroud-4 Study with 3 clues, intellect 2, 5 resources and an empty hand:
 /// an Investigate fails by 2.
 fn failed_investigation_board(investigator: Seat) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.shroud = 4;
-    study.clues = 3;
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(study)
+        .with_location(location(HERE).shroud(4).clues(3))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

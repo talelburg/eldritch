@@ -11,10 +11,10 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, LocationId,
+    CardCode, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, LocationId,
     MythosPhaseFrame, MythosResume, Phase, Zone,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count};
 
 /// Holy Rosary 01059 — a real corpus asset.
@@ -27,34 +27,33 @@ const HERE: LocationId = LocationId(20);
 
 /// Common board: Mythos step 1.4, with `investigator` at a location about to
 /// draw, the named treachery on top of the encounter deck, a single rigged
-/// chaos token, and `agenda` as the agenda deck.
+/// chaos token, and the printed `agenda` cards as the agenda deck.
 fn board_seating(
     investigator: Seat,
     treachery: &str,
     token: ChaosToken,
-    agenda: Vec<Agenda>,
+    agenda: &[&str],
 ) -> TestSession {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck([treachery])
+        .with_agenda_deck(agenda.iter().copied())
         .build();
     state.chaos_bag.tokens = vec![token];
-    state.encounter_deck.push_back(CardCode::new(treachery));
-    // The builder stages no agenda deck.
-    state.agenda_deck = agenda;
     TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// [`board_seating`] with a plain investigator at `HERE` and no agenda.
 fn board_with(treachery: &str, token: ChaosToken) -> TestSession {
-    board_seating(seat(1).at(HERE), treachery, token, Vec::new())
+    board_seating(seat(1).at(HERE), treachery, token, &[])
 }
 
 /// Draw the encounter card for investigator 1, committing no cards at the
@@ -169,7 +168,7 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
         seat(1).at(HERE).in_play([HOLY_ROSARY]),
         "01167",
         ChaosToken::AutoFail,
-        Vec::new(),
+        &[],
     ));
     let inv = &session.state().investigators[&INV];
     assert_eq!(inv.damage(), 0, "controlled an asset → no damage");
@@ -194,7 +193,7 @@ fn crypt_chill_with_two_assets() -> TestSession {
         seat(1).at(HERE).in_play([HOLY_ROSARY, MAGNIFYING_GLASS]),
         "01167",
         ChaosToken::AutoFail,
-        Vec::new(),
+        &[],
     )
 }
 
@@ -264,10 +263,7 @@ fn ancient_evils_places_doom_on_the_current_agenda_then_discards() {
         seat(1).at(HERE),
         "01166",
         ChaosToken::Numeric(0),
-        vec![Agenda {
-            code: CardCode::new("01105"),
-            doom_threshold: 3,
-        }],
+        &["01105"],
     );
     let doom_before = drawing.state().agenda_doom;
 

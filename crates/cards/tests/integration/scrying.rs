@@ -30,7 +30,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, uses, Seat, SeatLookup as _, TestSession};
 
 const SCRYING: &str = "01061";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -66,15 +66,11 @@ fn seer(deck: &[&str]) -> Seat {
 fn board(investigator: Seat, encounter: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
+        .with_encounter_deck(encounter.iter().copied())
         .session()
-        .edit_state(|state| {
-            state
-                .encounter_deck
-                .extend(encounter.iter().map(|c| CardCode::new(*c)));
-        })
 }
 
 fn scrying(session: &TestSession) -> CardInstanceId {

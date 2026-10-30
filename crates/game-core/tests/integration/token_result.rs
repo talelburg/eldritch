@@ -88,12 +88,10 @@ const REGISTRIES: Registries = Registries {
 /// A willpower-3 investigator at `HERE` (holding `clues` clues), drawing only
 /// `token`, takes a difficulty-`difficulty` willpower test and commits nothing.
 fn perform(token: ChaosToken, clues: u8, difficulty: i8) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.clues = clues;
     let state = GameStateBuilder::new()
         .with_registries(REGISTRIES)
         .with_seat(seat(1).skill(SkillKind::Willpower, 3).at(HERE))
-        .with_location(here)
+        .with_location(test_support::location(HERE).clues(clues))
         .with_chaos_bag(ChaosBag::new([token]))
         .with_scenario_id(ScenarioId::new(SCENARIO))
         .open_turn(INV)

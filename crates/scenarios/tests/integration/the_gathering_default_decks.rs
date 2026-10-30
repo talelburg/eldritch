@@ -27,7 +27,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
     InvestigatorId, Phase, SkillKind, Zone,
 };
-use game_core::test_support::{SeatLookup as _, TestSession};
+use game_core::test_support::{BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 use scenarios::the_gathering;
 

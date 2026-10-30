@@ -104,7 +104,7 @@ fn board(investigator: Seat) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(investigator.at(HERE).deck([FILLER]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build()
 }

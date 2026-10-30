@@ -86,7 +86,7 @@ fn torch_into_full_hands() -> TestSession {
                 .threat_area([CHARM])
                 .hand([TORCH]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session();
     session.take(&TurnAction::PlayCard {

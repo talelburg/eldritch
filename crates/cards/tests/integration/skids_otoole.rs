@@ -15,16 +15,16 @@
 //! investigator to lose one or more actions, that investigator has that many
 //! fewer standard actions to take that turn"*.
 
-use card_dsl::card_data::CardKind;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, Either, Printed, Seat, TestSession};
+use game_core::test_support::{self, enemy, location, seat, Either, Printed, Seat, TestSession};
+
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const SKIDS: &str = "01003";
@@ -54,15 +54,11 @@ fn skids() -> Seat<Printed> {
 
 /// `skids`'s open turn at `HERE`, which connects to `THERE`.
 fn staged(skids: impl Into<Seat<Either>>) -> GameStateBuilder {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.connections = vec![THERE];
-    let mut there = test_support::test_location(THERE.0, "There");
-    there.connections = vec![HERE];
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids)
-        .with_location(here)
-        .with_location(there)
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .open_turn(INV)
 }
 
@@ -188,7 +184,7 @@ fn the_ability_is_refused_outside_his_turn() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids())
         .with_seat(seat(2).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .open_turn(OTHER)
         .session();
     let buy = buy(session.state());
@@ -202,10 +198,8 @@ fn the_ability_is_refused_outside_his_turn() {
 /// would offer his if it could.
 #[test]
 fn the_ability_is_not_offered_in_the_enemy_phase() {
-    let mut ghoul = test_support::test_enemy(7, GHOUL_MINION);
-    ghoul.code = CardCode::new(GHOUL_MINION);
     let paused = staged(skids().in_play([BEAT_COP]).deck([EMERGENCY_CACHE]))
-        .with_enemy_engaged(ghoul, INV)
+        .with_enemy_engaged(enemy(7).as_card(GHOUL_MINION), INV)
         .session()
         .take(&TurnAction::EndTurn);
     assert_eq!(paused.state().phase, Phase::Enemy);
@@ -302,21 +296,9 @@ fn an_action_costing_two_spends_the_additional_action_and_a_standard_one() {
 #[test]
 fn an_unused_additional_action_is_gone_at_the_end_of_his_turn() {
     let session = staged(skids().deck([EMERGENCY_CACHE]))
-        .session()
-        .edit_state(|state| {
-            let threshold = match cards::by_code(RISE_OF_THE_GHOULS)
-                .expect("agenda in corpus")
-                .kind
-            {
-                CardKind::Agenda { doom_threshold } => doom_threshold,
-                ref kind => panic!("{RISE_OF_THE_GHOULS} is not an Agenda ({kind:?})"),
-            };
-            state.agenda_deck = vec![Agenda {
-                code: CardCode::new(RISE_OF_THE_GHOULS),
-                doom_threshold: threshold,
-            }];
-            state.encounter_deck = [CardCode::new(ANCIENT_EVILS)].into_iter().collect();
-        });
+        .with_agenda_deck([RISE_OF_THE_GHOULS])
+        .with_encounter_deck([ANCIENT_EVILS])
+        .session();
     let round = session.state().round;
     let buy = buy(session.state());
     let session = session.take(&buy);
@@ -351,13 +333,10 @@ fn an_unused_additional_action_is_gone_at_the_end_of_his_turn() {
 
 /// Skids investigating with only the elder sign in the bag: intellect 3, +2.
 fn investigate_on_the_elder_sign(shroud: u8) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.shroud = shroud;
-    here.clues = 1;
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids())
-        .with_location(here)
+        .with_location(location(HERE).shroud(shroud).clues(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .open_turn(INV)
         .session()

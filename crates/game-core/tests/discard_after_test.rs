@@ -125,9 +125,6 @@ fn registries() -> Registries {
 /// Board: `weapon` in play under a combat-5 investigator engaged with a
 /// fight-3, health-3 enemy, drawing only `token`.
 fn board(weapon: &str, token: ChaosToken) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -136,8 +133,13 @@ fn board(weapon: &str, token: ChaosToken) -> GameState {
                 .skill(SkillKind::Combat, 5)
                 .in_play([weapon]),
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(test_support::location(HERE))
+        .with_enemy(
+            test_support::enemy(ENEMY)
+                .fight(3)
+                .health(3)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build()

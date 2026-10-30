@@ -18,7 +18,7 @@ use game_core::state::{
     CardCode, CardInstanceId, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Status,
     Zone,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{location, seat, Seat, TestSession};
 use game_core::{assert_event_count, assert_event_sequence, assert_no_event};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
@@ -64,12 +64,10 @@ fn holding(hand: &[&str]) -> Seat {
 /// A one-investigator scenario at `investigator`'s turn menu, at the Study,
 /// which holds `clues` clues.
 fn play_board(investigator: Seat, clues: u8) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = clues;
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(location)
+        .with_location(location(HERE).clues(clues))
         .open_turn(INV)
         .session()
 }

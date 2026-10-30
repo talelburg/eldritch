@@ -35,16 +35,16 @@
 //! designator's attack-of-opportunity exemption).
 
 use cards::TEST_REGISTRIES;
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, EliminationCause, GameStateBuilder, InvestigatorId,
-    LocationId, Status,
+    AbilityAddress, AbilitySource, CardCode, EliminationCause, EnemyId, GameStateBuilder,
+    InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::seat;
-use game_core::{assert_event, test_support};
+use game_core::test_support::{enemy, location, seat};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
@@ -68,10 +68,6 @@ const RESIGN: u8 = 0;
 /// in the Hallway so the scenario keeps running. `solo` drops the survivor,
 /// which is what makes Elimination step 6 reachable.
 fn board(solo: bool) -> GameStateBuilder {
-    let mut parlor = test_support::test_location(PARLOR.0, "Parlor");
-    parlor.code = CardCode::new(PARLOR_CODE);
-    parlor.clues = 1;
-
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -82,7 +78,7 @@ fn board(solo: bool) -> GameStateBuilder {
                 .hand([ROSARY])
                 .in_play([MACHETE]),
         )
-        .with_location(parlor)
+        .with_location(location(PARLOR).as_card(PARLOR_CODE).clues(1))
         .open_turn(RESIGNER);
 
     if solo {
@@ -90,7 +86,7 @@ fn board(solo: bool) -> GameStateBuilder {
     } else {
         builder
             .with_seat(seat(SURVIVOR.0).at(HALLWAY))
-            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
+            .with_location(location(HALLWAY))
             .with_seating([RESIGNER, SURVIVOR])
     }
 }
@@ -203,10 +199,9 @@ fn the_resigners_cards_are_removed_from_the_game() {
 /// **fight**, to **evade**, or to activate a **parley** or **resign** ability"*.
 #[test]
 fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
-    let ghoul = test_support::test_enemy(1, "Ghoul Minion");
-    let ghoul_id = ghoul.id;
+    let ghoul_id = EnemyId(1);
 
-    let result = resign(board(false).with_enemy_engaged(ghoul, RESIGNER));
+    let result = resign(board(false).with_enemy_engaged(enemy(ghoul_id), RESIGNER));
 
     assert_eq!(
         result.state.enemies[&ghoul_id].engaged_with, None,
