@@ -201,7 +201,7 @@ deleted rather than kept: `crates/cards/tests/integration/cover_up.rs` tests the
 included.
 
 **Naming stops implying a shared fixture that is not there.** Test-local codes take
-a per-binary prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
+a per-file prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
 `_ea_*` / `SRC*` / `_mpp_*`. Under the shared `_synth_` prefix, `_synth_enemy` had
 four independent definitions with independently hand-written stats, and three
 `_synth_*` codes were defined nowhere at all.

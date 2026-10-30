@@ -10,24 +10,16 @@ use game_core::test_support;
 use leptos::prelude::{ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
-use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::registry::provide_cards;
 use web::store::{self, ClientState};
-use web_sys::Element;
 
-/// The HTML of the last `.store-root` container mounted: this test's own, not
-/// the whole body, which the browser tests share and nothing unmounts.
+use crate::common;
+
+/// The HTML of the `.store-root` container this test mounted.
 fn root_html() -> String {
-    let roots = prelude::document()
-        .query_selector_all(".store-root")
-        .expect("query");
-    roots
-        .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .store-root")
-        .inner_html()
+    common::last_mounted(".store-root").inner_html()
 }
 
 #[wasm_bindgen_test]

@@ -2,8 +2,6 @@
 //! `Applied` to every connection, rejected submits return `Rejected`
 //! to the sender only.
 
-use crate::common;
-
 use std::time::Duration;
 
 use game_core::action::{InputResponse, PlayerAction};
@@ -14,7 +12,7 @@ use server::session::GameSession;
 use sqlx::SqlitePool;
 use tokio::time;
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
     GameSession::create(

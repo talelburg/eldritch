@@ -8,14 +8,12 @@
 //! in-memory created session is not held), so the events must survive the
 //! round-trip through the persisted column — not just live in memory.
 
-use crate::common;
-
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use protocol::ServerMessage;
 use server::session::GameSession;
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 #[tokio::test]
 async fn hello_carries_setup_events_after_reload_from_db() {

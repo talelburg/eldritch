@@ -25,6 +25,8 @@ use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, PointerEvent, PointerEventInit};
 
+use crate::common;
+
 fn base_game() -> GameState {
     GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
@@ -276,13 +278,8 @@ async fn the_backdrop_does_not_dismiss_it() {
     // clicking it leaves the modal exactly where it was.
     let (store, mut rx) = mount_modal();
     resolve_a_test(store, acknowledge_pause()).await;
-    // The last scrim is this test's: earlier tests' modals stay in the page.
-    let scrims = document()
-        .query_selector_all(".str-backdrop")
-        .expect("query");
-    scrims
-        .item(scrims.length() - 1)
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+    common::last_mounted(".str-backdrop")
+        .dyn_into::<HtmlElement>()
         .expect("a scrim renders behind the modal")
         .click();
     task::tick().await;

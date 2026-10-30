@@ -2,8 +2,6 @@
 //! the created game is persisted and loadable (proving the lazy-rehydrate
 //! path a later WS connect relies on).
 
-use crate::common;
-
 use axum::body;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -14,7 +12,7 @@ use server::session::GameSession;
 use server::AppState;
 use tower::ServiceExt as _;
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {

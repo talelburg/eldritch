@@ -10,8 +10,6 @@
 //! 3. restarting the server (fresh in-memory rooms, same database) and
 //!    reconnecting reproduces the exact state via action-log replay.
 
-use crate::common;
-
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -20,7 +18,7 @@ use game_core::state::GameState;
 use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 fn submit(action: PlayerAction) -> ClientMessage {
     ClientMessage::Submit { action }

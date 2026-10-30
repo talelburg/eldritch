@@ -1,5 +1,7 @@
 //! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
-//! client. Declared once, in the integration root, so a helper no test uses is flagged as dead code.
+//! client.
+//!
+//! Declared once, in the integration root, so a helper no test uses is flagged as dead code.
 
 use std::net::SocketAddr;
 

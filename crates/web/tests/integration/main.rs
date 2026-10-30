@@ -19,6 +19,8 @@ mod board_is_the_input_surface;
 mod board_surfaces;
 mod card;
 mod card_at_location;
+#[cfg(target_arch = "wasm32")]
+mod common;
 mod context_menu;
 mod encounter_deck;
 mod enemy_card;

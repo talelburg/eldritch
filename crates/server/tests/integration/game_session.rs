@@ -6,8 +6,6 @@
 //! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
 //! selecting a non-existent card is rejected).
 
-use crate::common;
-
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
@@ -15,7 +13,7 @@ use game_core::state::{CardCode, InvestigatorId};
 use protocol::GameId;
 use server::session::{GameSession, SessionError};
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 /// Regression test for the load bug: a game with zero logged actions whose
 /// seed outcome is `AwaitingInput` must load as `AwaitingInput`, not `Done`.

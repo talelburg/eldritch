@@ -6,8 +6,6 @@
 //! from `common`. It also creates a game from every roster the picker can send:
 //! each default deck, with its fixed weakness and with a random one.
 
-use crate::common;
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cards::decks::{self, WeaknessChoice};
@@ -17,6 +15,8 @@ use protocol::CreateGameRequest;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
 use server::AppState;
 use tower::ServiceExt as _;
+
+use crate::common;
 
 /// A real card with both corpus metadata and a hand-written `abilities()`
 /// impl — Dr. Milan Christopher 01033.

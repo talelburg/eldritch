@@ -28,15 +28,16 @@ use game_core::state::{
     InvestigatorId, Owner as CardOwner, Skills,
 };
 use game_core::test_support;
-use leptos::prelude::{document, provide_context, ClassAttribute, ElementChild, RwSignal, Update};
+use leptos::prelude::{provide_context, ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
-use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::Element;
+
+use crate::common;
 
 /// Roland Banks — 9 health / 5 sanity, per
 /// `data/arkhamdb-snapshot/pack/core/core.json`.
@@ -75,18 +76,6 @@ fn roland(id: u32) -> Investigator {
     inv
 }
 
-/// The last mounted element matching `sel` (DOM accumulates across tests on the
-/// shared page — scope to the latest subtree).
-fn last_mounted(sel: &str) -> Element {
-    let nodes = document()
-        .query_selector_all(sel)
-        .expect("query_selector_all");
-    nodes
-        .item(nodes.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .unwrap_or_else(|| panic!("at least one {sel}"))
-}
-
 /// Visible text of `el`'s descendant matching `sel`.
 ///
 /// Names are asserted against `text_content` rather than `inner_html` because
@@ -107,8 +96,7 @@ fn count_in(el: &Element, sel: &str) -> u32 {
 
 /// Mount `BoardView` against a fresh store and feed it one `Hello`
 /// carrying `state`. Ticks once so CSR effects flush, then returns the HTML
-/// of the `.board-root` container it mounted (not the whole body: the page is
-/// shared with every other browser test, and nothing unmounts).
+/// of the `.board-root` container it mounted.
 async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
     // the investigator capacity the panel reads.
@@ -129,7 +117,7 @@ async fn render_state(state: GameState) -> String {
         );
     });
     task::tick().await;
-    let html = last_mounted(".board-root").inner_html();
+    let html = common::last_mounted(".board-root").inner_html();
     // The guard that keeps this file honest. `Card` renders
     // `card--unknown` for a code the registry cannot resolve
     // (`crates/web/src/card.rs:324-331`), and that element still matches
@@ -162,7 +150,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     // `crates/web/tests/integration/act_agenda.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
     // earns its own name, rather than asserting only thresholds.
-    let board = last_mounted(".board");
+    let board = common::last_mounted(".board");
     let text = board.text_content().unwrap_or_default();
     assert!(text.contains("Trapped"), "act name missing: {text}");
     assert!(
@@ -230,12 +218,11 @@ async fn investigators_panel_renders_stats_and_hand() {
 
     let html = render_state(state).await;
 
-    // Every assertion is scoped to this test's own panel. DOM accumulates
-    // across tests on the shared page, and now that real card *text* renders
-    // too, a bare `html.contains(..)` shares the page with the printed text of
-    // four cards — a false pass from a collision is the same failure mode as
+    // Every assertion is scoped to this test's own panel. Real card *text*
+    // renders too, so a bare `html.contains(..)` shares the board with the
+    // printed text of four cards — a false pass from a collision is the same failure mode as
     // an assertion riding the unresolved-code fallback.
-    let inv_el = last_mounted(".investigator");
+    let inv_el = common::last_mounted(".investigator");
 
     // Identity + folded vitals (skills + hp/san) live in the investigator block.
     assert_eq!(text_of(&inv_el, ".inv-name"), "Roland Banks");
@@ -316,7 +303,7 @@ async fn empty_board_renders_placeholder_without_panels() {
 
     // Scope to only the last mounted <section class="board"> so that
     // accumulated DOM from earlier tests does not pollute this assertion.
-    let html = last_mounted(".board").inner_html();
+    let html = common::last_mounted(".board").inner_html();
 
     assert!(
         html.contains("&lt;no game&gt;"),
@@ -342,7 +329,7 @@ async fn resolution_banner_names_the_resolution_point() {
     // The banner names the ending the player takes to the campaign guide, not
     // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
     // that "lost" is a standalone-mode projection this client does not make.
-    let html = last_mounted(".resolution").inner_html();
+    let html = common::last_mounted(".resolution").inner_html();
     assert!(
         html.contains("Resolution 3"),
         "banner must name the resolution point: {html}"
@@ -363,7 +350,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
     // RR Elimination step 6's ending has its own campaign-guide entry ("If no
     // resolution was reached"), and an investigator who got here by resigning
     // is "not considered to have been defeated".
-    let html = last_mounted(".resolution").inner_html();
+    let html = common::last_mounted(".resolution").inner_html();
     assert!(
         html.contains("no resolution reached"),
         "no-resolution banner text missing: {html}"
@@ -384,7 +371,7 @@ async fn map_and_investigators_are_inside_board_main() {
 
     // Scope to the last mounted .game so DOM accumulation from earlier tests
     // does not pollute this assertion.
-    let last_game = last_mounted(".game");
+    let last_game = common::last_mounted(".game");
 
     assert!(
         last_game
@@ -417,7 +404,7 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 
     let html = render_state(state).await;
 
-    let last_game = last_mounted(".game");
+    let last_game = common::last_mounted(".game");
     let card = last_game
         .query_selector(".threat .card-row .card")
         .expect("query_selector");
@@ -444,7 +431,7 @@ async fn threat_area_treachery_renders_as_card() {
 
     let html = render_state(state).await;
 
-    let last_game = last_mounted(".game");
+    let last_game = common::last_mounted(".game");
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
     // it renders the generic rectangle (`crates/web/src/card.rs:416-433`).
     // Asserting `card--generic` rather than the bare `.card` is what

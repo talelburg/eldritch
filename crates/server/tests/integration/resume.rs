@@ -9,8 +9,6 @@
 //! outcome, `ResolveInput` is just another `Submit`). No new server code
 //! is needed — these prove the pieces compose.
 
-use crate::common;
-
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
@@ -18,7 +16,7 @@ use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
-use crate::common::TEST_SCENARIO_ID;
+use crate::common::{self, TEST_SCENARIO_ID};
 
 async fn seed(pool: &SqlitePool, game_id: &str) {
     GameSession::create(
