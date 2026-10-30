@@ -16,7 +16,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
     Owner as CardOwner,
 };
-use game_core::test_support::{self, location};
+use game_core::test_support::{self, location, seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ServerMessage;
@@ -76,15 +76,9 @@ fn parlor_board(
     let mut builder = GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
         .with_location(parlor);
-    for (i, (name, code)) in [("Roland Banks", "01001"), ("Daisy Walker", "01002")]
-        .into_iter()
-        .take(investigators)
-        .enumerate()
-    {
-        let mut inv = test_support::test_investigator(u32::try_from(i).expect("small index") + 1);
-        inv.name = name.to_string();
-        inv.investigator_card.code = CardCode::new(code);
-        builder = builder.with_investigator_at(inv, PARLOR);
+    // Roland Banks 01001 and Daisy Walker 01002.
+    for (id, code) in (1..).zip(["01001", "01002"]).take(investigators) {
+        builder = builder.with_seat(seat(id).as_card(code).at(PARLOR));
     }
     builder
 }

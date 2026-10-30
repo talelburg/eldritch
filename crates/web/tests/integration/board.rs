@@ -23,11 +23,8 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
-    InvestigatorId, Owner as CardOwner, Skills,
-};
-use game_core::test_support::{self, enemy, location};
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{clues, enemy, location, seat, Printed, Seat};
 use leptos::prelude::{provide_context, ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
@@ -62,18 +59,15 @@ const ACT_TRAPPED: &str = "01108";
 /// The Gathering agenda 1, "What's Going On?!" — printed `doom: 3`.
 const AGENDA_WHATS_GOING_ON: &str = "01105";
 
-/// `test_support::test_investigator(id)` carrying Roland Banks as its investigator card.
+/// Seat `id` as Roland Banks, from his printed card.
 ///
 /// Every investigator this file renders needs a code the real registry knows:
 /// the panel reads `max_health()` / `max_sanity()`, and `investigator_capacity`
 /// panics on a code the registry cannot resolve rather than defaulting
-/// (`crates/game-core/src/state/investigator.rs:211-220`). The fixture's own
-/// `TEST_INV` is absent from the corpus, so it is replaced here rather than at
-/// each of the six call sites.
-fn roland(id: u32) -> Investigator {
-    let mut inv = test_support::test_investigator(id);
-    inv.investigator_card.code = CardCode::new(ROLAND);
-    inv
+/// (`crates/game-core/src/state/investigator.rs:211-220`). The stock seat's
+/// `TEST_INV` is absent from the corpus, so every seat here is Roland.
+fn roland(id: u32) -> Seat<Printed> {
+    seat(id).as_card(ROLAND)
 }
 
 /// Visible text of `el`'s descendant matching `sel`.
@@ -135,7 +129,7 @@ async fn render_state(state: GameState) -> String {
 async fn act_agenda_cards_render_name_and_thresholds() {
     let state = GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
-        .with_investigator(roland(1))
+        .with_seat(roland(1))
         .with_act_deck([ACT_TRAPPED])
         .with_agenda_deck([AGENDA_WHATS_GOING_ON])
         .with_agenda_doom(1)
@@ -165,7 +159,8 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 #[wasm_bindgen_test]
 async fn map_renders_location_name_shroud_clues() {
     let state = GameStateBuilder::new()
-        .with_investigator(roland(1))
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1))
         .with_location(location(7).name("Rivertown").shroud(3).clues(2))
         .build();
 
@@ -186,29 +181,18 @@ async fn map_renders_location_name_shroud_clues() {
 
 #[wasm_bindgen_test]
 async fn investigators_panel_renders_stats_and_hand() {
-    let mut inv = roland(1);
-    inv.name = "Roland Banks".to_string();
-    inv.skills = Skills {
-        willpower: 5,
-        intellect: 4,
-        combat: 3,
-        agility: 2,
-    };
-    inv.investigator_card.accumulated_damage = 2; // hp 2/9
-    inv.investigator_card.accumulated_horror = 1; // san 1/5
-    inv.clues = 3;
-    inv.resources = 4;
-    inv.actions_remaining = 2;
-    inv.hand = vec![
-        CardCode::new(ROLANDS_38_SPECIAL),
-        CardCode::new(MAGNIFYING_GLASS),
-    ];
-    inv.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(MAGNIFYING_GLASS),
-        CardInstanceId(0),
-        CardOwner::Investigator(inv.id),
-    )];
-    let state = GameStateBuilder::new().with_investigator(inv).build();
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(
+            roland(1)
+                .harm(2, 1) // hp 2/9, san 1/5
+                .clues(3)
+                .resources(4)
+                .actions(2)
+                .hand([ROLANDS_38_SPECIAL, MAGNIFYING_GLASS])
+                .in_play([MAGNIFYING_GLASS]),
+        )
+        .build();
 
     let html = render_state(state).await;
 
@@ -220,7 +204,8 @@ async fn investigators_panel_renders_stats_and_hand() {
 
     // Identity + folded vitals (skills + hp/san) live in the investigator block.
     assert_eq!(text_of(&inv_el, ".inv-name"), "Roland Banks");
-    assert_eq!(text_of(&inv_el, ".inv-skills"), "W5 I4 C3 A2");
+    // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2.
+    assert_eq!(text_of(&inv_el, ".inv-skills"), "W3 I3 C4 A2");
     assert_eq!(text_of(&inv_el, ".inv-hp"), "hp 2/9");
     assert_eq!(text_of(&inv_el, ".inv-san"), "san 1/5");
     // Meta cluster: actions as pips.
@@ -315,7 +300,10 @@ async fn empty_board_renders_placeholder_without_panels() {
 
 #[wasm_bindgen_test]
 async fn resolution_banner_names_the_resolution_point() {
-    let mut state = GameStateBuilder::new().with_investigator(roland(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1))
+        .build();
     state.ending = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
 
     let _ = render_state(state).await;
@@ -336,7 +324,10 @@ async fn resolution_banner_names_the_resolution_point() {
 
 #[wasm_bindgen_test]
 async fn resolution_banner_renders_no_resolution_reached() {
-    let mut state = GameStateBuilder::new().with_investigator(roland(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1))
+        .build();
     state.ending = Some(ScenarioEnding::NoResolution);
 
     let _ = render_state(state).await;
@@ -358,7 +349,8 @@ async fn resolution_banner_renders_no_resolution_reached() {
 #[wasm_bindgen_test]
 async fn map_and_investigators_are_inside_board_main() {
     let state = GameStateBuilder::new()
-        .with_investigator(roland(1))
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1))
         .with_location(location(1))
         .build();
     let _ = render_state(state).await;
@@ -390,12 +382,9 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
     // the registry is consulted only for the printed card's optional traits
     // and ability text, and a missing card never renders `card--unknown`.
     let state = GameStateBuilder::new()
-        .with_investigator(roland(1))
-        .with_enemy(
-            enemy(1)
-                .name("Ghoul Priest")
-                .engaged_with(InvestigatorId(1)),
-        )
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1))
+        .with_enemy(enemy(1).name("Test Brute").engaged_with(InvestigatorId(1)))
         .build();
 
     let html = render_state(state).await;
@@ -408,22 +397,17 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
         card.is_some(),
         "engaged enemy should render as a card: {html}"
     );
-    assert!(html.contains("Ghoul Priest"), "enemy name missing: {html}");
+    assert!(html.contains("Test Brute"), "enemy name missing: {html}");
 }
 
 #[wasm_bindgen_test]
 async fn threat_area_treachery_renders_as_card() {
-    let mut inv = roland(1);
     // Seeded the way its Revelation puts it into play — "with 3 clues on it" —
     // so the state matches the card rather than merely occupying the zone.
-    let mut cover_up = CardInPlay::enter_play(
-        CardCode::new(COVER_UP),
-        CardInstanceId(0),
-        CardOwner::Investigator(InvestigatorId(1)),
-    );
-    cover_up.clues = 3;
-    inv.threat_area = vec![cover_up];
-    let state = GameStateBuilder::new().with_investigator(inv).build();
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(roland(1).threat_area([(COVER_UP, clues(3))]))
+        .build();
 
     let html = render_state(state).await;
 

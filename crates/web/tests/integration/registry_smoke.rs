@@ -2,9 +2,9 @@
 //! board rendering reads it.
 #![cfg(target_arch = "wasm32")]
 
-use cards::TEST_REGISTRY;
-use game_core::state::CardCode;
-use game_core::test_support;
+use cards::{TEST_REGISTRIES, TEST_REGISTRY};
+use game_core::state::{GameStateBuilder, InvestigatorId};
+use game_core::test_support::seat;
 use wasm_bindgen_test::*;
 
 /// Against `cards::TEST_REGISTRY` (the real corpus), verify that
@@ -13,8 +13,11 @@ use wasm_bindgen_test::*;
 ///   Roland Banks (01001): health = 9, sanity = 5.
 #[wasm_bindgen_test]
 fn roland_banks_capacity_resolves_with_real_registry() {
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new("01001");
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).as_card("01001"))
+        .build();
+    let inv = &state.investigators[&InvestigatorId(1)];
 
     assert_eq!(
         inv.max_health(&TEST_REGISTRY),

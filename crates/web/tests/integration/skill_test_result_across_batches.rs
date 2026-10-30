@@ -50,10 +50,10 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionId, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner as CardOwner, SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, SkillKind,
 };
-use game_core::test_support::{self, enemy, location};
+use game_core::test_support::{enemy, location, seat};
 use protocol::ServerMessage;
 use web::skill_test_result;
 use web::store::{self, ClientState};
@@ -125,25 +125,17 @@ static PROBE_REGISTRIES: Registries = Registries {
 /// acknowledge. Everything else — the `+0` bag that makes the attack succeed,
 /// the `[[Monster]]` probe, both investigators in the Parlor — is fixed.
 fn board(lita_in_play: bool) -> GameState {
-    let mut keeper = test_support::test_investigator(1);
-    keeper.current_location = Some(PARLOR);
-    keeper.skills.combat = 3;
-    if lita_in_play {
-        keeper.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(LITA),
-            CardInstanceId(50),
-            CardOwner::Scenario,
-        ));
-    }
-
-    let mut other = test_support::test_investigator(2);
-    other.current_location = Some(PARLOR);
-    other.skills.combat = 3;
+    let keeper = seat(1).at(PARLOR);
+    let keeper = if lita_in_play {
+        keeper.in_play([LITA])
+    } else {
+        keeper
+    };
 
     let mut state = GameStateBuilder::new()
         .with_registries(PROBE_REGISTRIES)
-        .with_investigator(keeper)
-        .with_investigator(other)
+        .with_seat(keeper)
+        .with_seat(seat(2).at(PARLOR))
         .with_location(location(PARLOR).name("Parlor"))
         .with_enemy(enemy(GHOUL).as_card(PROBE_MONSTER).engaged_with(OTHER))
         .with_seating([KEEPER, OTHER])
@@ -183,15 +175,9 @@ const MILAN: &str = "01033";
 /// investigating against a `+0` bag: intellect 3 + 1 succeeds, and his `after`
 /// reaction opens a window between the result and the acknowledge.
 fn investigate_with_milan() -> Vec<Pause> {
-    let mut keeper = test_support::test_investigator(1);
-    keeper.current_location = Some(PARLOR);
-    keeper.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(MILAN),
-        CardInstanceId(50),
-        CardOwner::Investigator(KEEPER),
-    ));
     let mut state = GameStateBuilder::new()
-        .with_investigator(keeper)
+        .with_registries(PROBE_REGISTRIES)
+        .with_seat(seat(1).at(PARLOR).in_play([MILAN]))
         .with_location(location(PARLOR).name("Parlor").shroud(2).clues(3))
         .with_seating([KEEPER])
         .open_turn(KEEPER)

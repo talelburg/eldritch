@@ -33,7 +33,7 @@ fn last_card() -> Element {
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_stats_keywords_exhausted() {
     let e = enemy(1)
-        .name("Ghoul Priest")
+        .name("Test Brute")
         .fight(4)
         .evade(4)
         .health(2)
@@ -58,7 +58,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
         "exhausted class missing: {classes}"
     );
     let html = card.inner_html();
-    assert!(html.contains("Ghoul Priest"), "name missing: {html}");
+    assert!(html.contains("Test Brute"), "name missing: {html}");
     assert!(html.contains("fight 4"), "fight chip missing: {html}");
     assert!(html.contains("health 0/2"), "health chip missing: {html}");
     assert!(html.contains("evade 4"), "evade chip missing: {html}");
