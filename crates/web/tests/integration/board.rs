@@ -28,7 +28,7 @@ use game_core::state::{
     InvestigatorId, Owner as CardOwner, Skills,
 };
 use game_core::test_support;
-use leptos::prelude::{document, provide_context, RwSignal, Update};
+use leptos::prelude::{document, provide_context, ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;

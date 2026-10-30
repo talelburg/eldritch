@@ -7,7 +7,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
 use game_core::test_support;
-use leptos::prelude::{RwSignal, Update};
+use leptos::prelude::{ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
