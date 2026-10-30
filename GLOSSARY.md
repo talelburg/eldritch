@@ -225,7 +225,7 @@ An account that has opened a game's link; the link is the invitation, and the al
 _Avoid_: Reading membership as control. A member answers prompts only for investigators assigned to them.
 
 **Stored game**:
-What the server keeps of a game: its creation inputs (scenario, roster, lead, RNG seed) and its action log, each logged answer carrying the option and prompt it answered. Never its state. Loading re-runs setup and replays the log, checking each step.
+What the server keeps of a game: its creation inputs (scenario, roster, lead, RNG seed, whether skill-test results wait to be acknowledged) and its action log, each logged answer carrying the option and prompt it answered. Never its state. Loading re-runs setup and replays the log, checking each step.
 _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored game isn't, and **Snapshot** already names the vendored card data.
 
 **Setup fingerprint**:
@@ -233,5 +233,5 @@ The record, made when a game is created, of what setup decided: every hand, ever
 _Avoid_: "Seed" for it. The seed is the RNG input; the fingerprint is what setup produced from it.
 
 **Unresumable game**:
-A stored game whose load fails: an unknown format version, a different setup fingerprint, or a logged answer that no longer replays. It is kept, not deleted, so rolling the deploy back recovers it.
+A stored game whose load fails: an unknown format version, a setup that no longer runs from its inputs, a different setup fingerprint, or a logged answer that no longer replays. It is kept, not deleted, so rolling the deploy back recovers it.
 _Avoid_: "Corrupt" or "broken". Nothing is wrong with its rows; this build can't replay them. And never report it as a missing game.

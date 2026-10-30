@@ -124,6 +124,27 @@ async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
 }
 
 #[tokio::test]
+async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "unregistered").await;
+    session.apply(keep_opening_hand()).await.unwrap();
+    // As if a PR had removed the game's scenario from the registry.
+    sqlx::query("UPDATE games SET scenario_id = 'no-such-scenario' WHERE game_id = ?")
+        .bind("unregistered")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reason = expect_unresumable(&pool, "unregistered").await;
+
+    assert_eq!(
+        reason,
+        UnresumableReason::Setup("unknown scenario: no-such-scenario".to_owned()),
+    );
+    assert_eq!(common::stored_rows(&pool, "unregistered").await, (1, 1));
+}
+
+#[tokio::test]
 async fn a_game_stored_in_another_format_version_is_a_version_error() {
     // 1 is the format before a logged answer named what it answered.
     for version in [0_i64, 1, 99] {
