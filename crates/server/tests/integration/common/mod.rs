@@ -14,6 +14,7 @@ use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuild
 use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
 use server::db::MIGRATOR;
+use server::session::GameSession;
 use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -60,6 +61,21 @@ pub(crate) fn roster() -> Vec<RosterEntry> {
         deck: vec![],
         random_basic_weaknesses: 0,
     }]
+}
+
+/// Create a game of the mock scenario with [`roster`], led by its one
+/// investigator, and return the live session at the mulligan prompt.
+pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
+    GameSession::create(
+        pool.clone(),
+        REGISTRIES,
+        game_id,
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+        0,
+    )
+    .await
+    .expect("create game")
 }
 
 /// A migrated single-connection in-memory pool.

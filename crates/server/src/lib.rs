@@ -7,6 +7,7 @@
 
 pub mod config;
 pub mod db;
+pub mod fingerprint;
 mod id;
 pub mod lifecycle;
 pub mod session;

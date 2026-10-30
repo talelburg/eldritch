@@ -1,11 +1,14 @@
 //! `GameSession`: the host wrapper pairing the pure engine with the
 //! `SQLite` action log.
 //!
-//! A game is a seed [`GameState`] (the scenario's `setup()` output after
-//! seating runs) plus an ordered sequence of applied actions. The live
-//! session keeps the derived state in memory and appends each accepted
-//! action to the log; [`GameSession::load`] reconstructs a session by
-//! replaying that log over the seed, reproducing state bit-for-bit.
+//! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
+//! the `interactive_acknowledge` flag) plus an ordered log of applied actions
+//! (ADR 0022). No engine state is stored. The live session keeps the derived
+//! state in memory and appends each accepted action to the log;
+//! [`GameSession::load`] re-runs setup from the inputs, checks it against the
+//! stored [`SetupFingerprint`], and replays the log, reproducing state
+//! bit-for-bit. A stored game that fails a check is an **unresumable game**:
+//! the load fails with [`SessionError::Unresumable`] and its rows are kept.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,11 +17,18 @@ use game_core::engine::{self, EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
-use game_core::state::GameState;
+use game_core::state::game_state::GameState;
 use protocol::GameId;
 use sqlx::SqlitePool;
 
-use crate::{id, store};
+use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
+use crate::store::{self, GameRow};
+use crate::id;
+
+/// The version of the stored shape: the creation inputs and a log entry. Bumped
+/// whenever either changes; a game stored under any other version is
+/// unresumable ([`UnresumableReason::Version`]).
+pub const FORMAT_VERSION: i64 = 1;
 
 /// Errors from [`GameSession`] persistence operations.
 #[derive(Debug, thiserror::Error)]
@@ -27,7 +37,7 @@ pub enum SessionError {
     /// A database / persistence failure.
     #[error("database error: {0}")]
     Db(#[from] sqlx::Error),
-    /// (De)serializing state or action JSON failed.
+    /// (De)serializing a stored column or an action's JSON failed.
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
     /// No scenario module is registered for the requested id.
@@ -39,15 +49,39 @@ pub enum SessionError {
     /// an already-started seed).
     #[error("seating rejected: {0}")]
     Seating(String),
-    /// A logged action was rejected while replaying it over the seed state, so
-    /// the reconstructed session would not be the session that was played.
+    /// A stored game exists but this build can't rebuild it as it was played.
     ///
-    /// The action log carries no schema version, so an engine change to
-    /// what an action *means* — the activation payload's shape, or the turn
-    /// menu that `ResolveInput(PickSingle(OptionId))` addresses by position —
-    /// can leave an old log deserializable but not replayable.
-    /// Failing here is deliberate: a partially reconstructed session is a
-    /// silently wrong one.
+    /// Failing is deliberate: a partially or differently reconstructed session
+    /// is a silently wrong board. The game's rows are left as they are, so
+    /// rolling the deploy back recovers it.
+    #[error("game {} is unresumable: {reason}", .game_id.as_str())]
+    Unresumable {
+        /// The game that failed to load.
+        game_id: GameId,
+        /// Why it can't be resumed.
+        reason: UnresumableReason,
+    },
+}
+
+/// Why a stored game is unresumable.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum UnresumableReason {
+    /// The game was stored in a format version this build doesn't load.
+    #[error("stored in format version {found}, and this build loads only version {FORMAT_VERSION}")]
+    Version {
+        /// The version the game was stored in.
+        found: i64,
+    },
+    /// Setup no longer runs from the stored inputs: the scenario is no longer
+    /// registered, or the engine now rejects the roster.
+    #[error("setup no longer runs from the stored inputs: {0}")]
+    Setup(String),
+    /// Setup runs but now decides something different from what it decided
+    /// when the game was created.
+    #[error("setup now decides differently: {0}")]
+    Fingerprint(FingerprintMismatch),
+    /// A logged action was rejected on replay.
     #[error("replay rejected at action {seq}: {reason}")]
     Replay {
         /// Zero-based position of the offending action in the log.
@@ -63,17 +97,13 @@ pub struct GameSession {
     pub game_id: GameId,
     /// Current derived state.
     pub state: GameState,
-    /// Outcome of the most recent apply, or — for a freshly created game
-    /// with no actions yet — the seed outcome (the setup mulligan prompt,
-    /// i.e. `AwaitingInput`).
+    /// Outcome of the most recent apply, or — for a game with no actions yet —
+    /// setup's outcome (the setup mulligan prompt, i.e. `AwaitingInput`).
     pub outcome: EngineOutcome,
-    /// Events emitted during `seat_and_open` at creation time, surfaced to
-    /// newly-connecting clients via `ServerMessage::Hello` so the event log
-    /// can show opening draws, shuffles, and the weakness set-aside. Persisted
-    /// in the `setup_events` column and restored by [`load`](Self::load), so a
-    /// session reloaded from the DB carries the same list (the action log can't
-    /// reproduce them — setup isn't an action). A row created before migration
-    /// 0003 loads as empty (the column defaults to `'[]'`).
+    /// Events emitted during `seat_and_open`, surfaced to newly-connecting
+    /// clients via `ServerMessage::Hello` so the event log can show opening
+    /// draws, shuffles, and the weakness set-aside. [`load`](Self::load)
+    /// re-runs setup, so a session reloaded from the DB carries the same list.
     pub setup_events: Vec<Event>,
     /// Next sequence number to assign to a persisted action — equal to
     /// the number of actions already in the log.
@@ -84,10 +114,53 @@ pub struct GameSession {
     registries: Registries,
 }
 
+/// What a game's creation inputs set up: the seated, mulligan-pending state,
+/// its outcome, and the events setup emitted.
+struct Opened {
+    state: GameState,
+    outcome: EngineOutcome,
+    events: Vec<Event>,
+}
+
+/// Why setup didn't run from a game's creation inputs.
+enum SetupFailure {
+    UnknownScenario(ScenarioId),
+    Seating(String),
+}
+
+/// Run scenario setup from a game's creation inputs. `create` and `load` both
+/// set a game up through here, so a reload re-runs exactly what creation ran.
+fn open(
+    registries: Registries,
+    scenario_id: &ScenarioId,
+    roster: &[RosterEntry],
+    lead: usize,
+    seed: u64,
+    interactive_acknowledge: bool,
+) -> Result<Opened, SetupFailure> {
+    let module = (registries.scenarios.module_for)(scenario_id)
+        .ok_or_else(|| SetupFailure::UnknownScenario(scenario_id.clone()))?;
+    let mut setup = (module.setup)();
+    // The scenario's setup() builds with a fixed builder seed (game-core is
+    // no-I/O, so it can't source randomness itself); the game's own seed
+    // replaces it, so every game gets its own shuffle and draw order.
+    setup.rng = RngState::new(seed);
+    setup.interactive_acknowledge = interactive_acknowledge;
+    let result = engine::seat_and_open(setup, roster, lead, registries);
+    match result.outcome {
+        EngineOutcome::Rejected { reason } => Err(SetupFailure::Seating(reason.to_string())),
+        outcome => Ok(Opened {
+            state: result.state,
+            outcome,
+            events: result.events,
+        }),
+    }
+}
+
 impl GameSession {
     /// Create a new game: seats the roster into the scenario's `setup()`
-    /// state, persists the seated seed and its outcome, and returns a live
-    /// session at the mulligan prompt.
+    /// state, stores the game's creation inputs and its setup fingerprint,
+    /// and returns a live session at the mulligan prompt.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
@@ -99,8 +172,8 @@ impl GameSession {
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
     ///   roster, a `lead` index past its end, unknown investigator code, unimplemented deck card, more
     ///   random basic weaknesses than the weakness pool holds, etc.).
-    /// - [`SessionError::Serde`] / [`SessionError::Db`] if persisting the seed
-    ///   state fails.
+    /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
+    ///   fails.
     pub async fn create(
         db: SqlitePool,
         registries: Registries,
@@ -109,54 +182,50 @@ impl GameSession {
         roster: Vec<RosterEntry>,
         lead: usize,
     ) -> Result<Self, SessionError> {
-        let module = (registries.scenarios.module_for)(&scenario_id)
-            .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
-
-        let mut setup = (module.setup)();
-        // Seed the setup shuffle with fresh host entropy. The scenario's
-        // setup() builds with a fixed builder seed (game-core is no-I/O, so it
-        // can't source randomness itself); without this override every game would
-        // share one shuffle/draw order. seat_and_open runs the shuffle below, and
-        // the resulting post-shuffle RngState is frozen into seed_state, so replay
-        // stays deterministic from the seed alone (the seed needs no separate
-        // recording).
-        setup.rng = RngState::new(id::random_seed());
+        let seed = id::random_seed();
         // Human play surfaces skill-test results with a Confirm-to-dismiss
         // step; the engine gates that pause on this flag (default off for tests
-        // and non-interactive consumers). The flag persists through seating.
-        setup.interactive_acknowledge = true;
-        let result = engine::seat_and_open(setup, &roster, lead, registries);
-        let outcome = match result.outcome {
-            EngineOutcome::Rejected { reason } => {
-                return Err(SessionError::Seating(reason.to_string()))
-            }
-            other => other,
+        // and non-interactive consumers).
+        let interactive_acknowledge = true;
+        let opened = open(
+            registries,
+            &scenario_id,
+            &roster,
+            lead,
+            seed,
+            interactive_acknowledge,
+        )
+        .map_err(|failure| match failure {
+            SetupFailure::UnknownScenario(id) => SessionError::UnknownScenario(id),
+            SetupFailure::Seating(reason) => SessionError::Seating(reason),
+        })?;
+        // Seating accepted `lead`, so it indexes the roster and fits.
+        let lead = i64::try_from(lead)
+            .map_err(|_| SessionError::Seating(format!("lead {lead} is past the roster")))?;
+        let row = GameRow {
+            format_version: FORMAT_VERSION,
+            scenario_id: scenario_id.as_str().to_owned(),
+            roster: serde_json::to_string(&roster)?,
+            lead,
+            rng_seed: i64::from_ne_bytes(seed.to_ne_bytes()),
+            interactive_acknowledge,
+            setup_fingerprint: serde_json::to_string(&SetupFingerprint::of(&opened.state))?,
         };
-        let setup_events = result.events;
-        let state = result.state;
-        let seed_state = serde_json::to_string(&state)?;
-        let seed_outcome = serde_json::to_string(&outcome)?;
-        // Persist the setup events so a reloaded session can still surface them
-        // in the client's event log — the action log doesn't contain
-        // them (setup isn't an action; the seed state is already post-setup).
-        let seed_setup_events = serde_json::to_string(&setup_events)?;
         let game_id = game_id.into();
         store::insert_game(
             &db,
             &game_id,
-            &scenario_id,
-            &seed_state,
-            &seed_outcome,
-            &seed_setup_events,
-            &unix_millis_string(),
+            &row,
+            protocol::build_id(),
+            &unix_millis().to_string(),
         )
         .await?;
 
         Ok(Self {
             game_id,
-            state,
-            outcome,
-            setup_events,
+            state: opened.state,
+            outcome: opened.outcome,
+            setup_events: opened.events,
             seq: 0,
             db,
             registries,
@@ -184,7 +253,8 @@ impl GameSession {
 
         if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
             let action_json = serde_json::to_string(&logged)?;
-            store::insert_action(&self.db, &self.game_id, self.seq, &action_json).await?;
+            store::insert_action(&self.db, &self.game_id, self.seq, &action_json, unix_millis())
+                .await?;
             self.seq += 1;
             self.state = result.state;
             self.outcome = result.outcome.clone();
@@ -193,49 +263,83 @@ impl GameSession {
         Ok((result.events, result.outcome))
     }
 
-    /// Reconstruct a session by replaying its action log over the seed
-    /// state against `registries`. Returns `None` if no game with `game_id`
-    /// exists.
+    /// Rebuild a stored game against `registries`: re-run setup from its
+    /// creation inputs, check what setup decided against the stored setup
+    /// fingerprint, and replay its action log. Returns `None` if no game with
+    /// `game_id` exists.
     ///
-    /// `outcome` is initialised from the persisted seed outcome (not
-    /// `Done`), so a freshly-created game with an empty log — whose seed
-    /// is already `AwaitingInput` (the setup mulligan) — loads correctly.
-    /// Each replayed action overwrites `outcome` exactly as today.
+    /// Each replayed action overwrites `outcome`; with an empty log the
+    /// session is at setup's outcome, the mulligan prompt.
     ///
     /// # Errors
     ///
-    /// [`SessionError::Db`] if a query fails, [`SessionError::Serde`] if the
-    /// persisted seed state or a logged action fails to deserialize, or
-    /// [`SessionError::Replay`] if a logged action replays to a rejection.
+    /// - [`SessionError::Unresumable`] if the game exists but can't be
+    ///   rebuilt as it was played: it was stored in another format version,
+    ///   setup no longer runs from its inputs or decides differently, or a
+    ///   logged action is rejected on replay. Its rows are left untouched.
+    /// - [`SessionError::Db`] if a query fails, or [`SessionError::Serde`] if
+    ///   a stored column or a logged action fails to deserialize.
     pub async fn load(
         db: SqlitePool,
         registries: Registries,
         game_id: &GameId,
     ) -> Result<Option<Self>, SessionError> {
-        let Some((_scenario_id, seed_state, seed_outcome, seed_setup_events)) =
-            store::load_game(&db, game_id).await?
-        else {
+        let Some(row) = store::load_game(&db, game_id).await? else {
             return Ok(None);
         };
+        let unresumable = |reason| SessionError::Unresumable {
+            game_id: game_id.clone(),
+            reason,
+        };
+        if row.format_version != FORMAT_VERSION {
+            return Err(unresumable(UnresumableReason::Version {
+                found: row.format_version,
+            }));
+        }
+        let roster: Vec<RosterEntry> = serde_json::from_str(&row.roster)?;
+        let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
+        let lead = usize::try_from(row.lead).map_err(|_| {
+            unresumable(UnresumableReason::Setup(format!(
+                "stored lead {} is not a roster index",
+                row.lead
+            )))
+        })?;
+        let opened = open(
+            registries,
+            &ScenarioId::new(row.scenario_id),
+            &roster,
+            lead,
+            u64::from_ne_bytes(row.rng_seed.to_ne_bytes()),
+            row.interactive_acknowledge,
+        )
+        .map_err(|failure| {
+            unresumable(UnresumableReason::Setup(match failure {
+                SetupFailure::UnknownScenario(id) => {
+                    format!("unknown scenario: {}", id.as_str())
+                }
+                SetupFailure::Seating(reason) => format!("seating rejected: {reason}"),
+            }))
+        })?;
+        if let Some(mismatch) =
+            stored_fingerprint.first_difference(&SetupFingerprint::of(&opened.state))
+        {
+            return Err(unresumable(UnresumableReason::Fingerprint(mismatch)));
+        }
 
-        let mut state: GameState = serde_json::from_str(&seed_state)?;
-        let mut outcome: EngineOutcome = serde_json::from_str(&seed_outcome)?;
-        // Setup events were captured at create time; replaying the
-        // action log doesn't reproduce them (setup isn't an action), so they
-        // come straight from the persisted column.
-        let setup_events: Vec<Event> = serde_json::from_str(&seed_setup_events)?;
+        let mut state = opened.state;
+        let mut outcome = opened.outcome;
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
             let result = engine::apply(state, action, registries);
             // A rejection means the log does not reproduce the session it
             // recorded. Stop loudly rather than serving the prefix that did
-            // replay — see `SessionError::Replay`.
+            // replay.
             if let EngineOutcome::Rejected { reason } = &result.outcome {
-                return Err(SessionError::Replay {
+                return Err(unresumable(UnresumableReason::Replay {
                     seq,
                     reason: reason.to_string(),
-                });
+                }));
             }
             state = result.state;
             outcome = result.outcome;
@@ -246,7 +350,7 @@ impl GameSession {
             game_id: game_id.clone(),
             state,
             outcome,
-            setup_events,
+            setup_events: opened.events,
             seq,
             db,
             registries,
@@ -254,10 +358,12 @@ impl GameSession {
     }
 }
 
-/// Milliseconds since the Unix epoch, as a string, for the `created_at`
-/// column. Diagnostic only — never replay-load-bearing.
-fn unix_millis_string() -> String {
+/// Milliseconds since the Unix epoch, for the `created_at` and `at` columns.
+/// Never replay-load-bearing.
+fn unix_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or_else(|_| "0".to_string(), |d| d.as_millis().to_string())
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }

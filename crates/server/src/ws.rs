@@ -43,7 +43,8 @@ pub(crate) fn rooms() -> Rooms {
 
 /// Get the room for `game_id`, lazily loading it from the action log on
 /// a cache miss (e.g. first access, or after a server restart). Returns
-/// `None` if no such game exists — and also if its log cannot be replayed,
+/// `None` if no such game exists — and also if it fails to load (an
+/// unresumable game, say),
 /// which is logged at `error` first rather than passed off as absence.
 /// A session that cannot be reconstructed is never served half-built.
 async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<GameRoom>> {
@@ -57,7 +58,7 @@ async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<Game
             tracing::error!(
                 game_id = game_id.as_str(),
                 error = %err,
-                "refusing to attach: this game's action log cannot be replayed",
+                "refusing to attach: this game failed to load",
             );
             return None;
         }

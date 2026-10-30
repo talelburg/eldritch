@@ -11,7 +11,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::GameId;
-use server::session::{GameSession, SessionError};
+use server::session::{GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
@@ -255,14 +255,12 @@ async fn load_replays_log_to_reproduce_live_state() {
     assert!(missing.is_none());
 }
 
-/// A log the engine does not accept must fail the load, not produce a
-/// half-reconstructed session.
+/// A log the engine does not accept must fail the load as an unresumable game,
+/// not produce a half-reconstructed session.
 ///
-/// The action log carries no schema version and addresses the turn menu
-/// by position, so an engine change to what an action *means* can leave a row
-/// perfectly deserializable and not replayable. Simulated here by
-/// appending a row the engine rejects — the same observable a stale log
-/// produces.
+/// An engine change to what an action *means* can leave a row perfectly
+/// deserializable and not replayable. Simulated here by appending a row the
+/// engine rejects — the same observable a stale log produces.
 #[tokio::test]
 async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let pool = common::memory_pool().await;
@@ -285,10 +283,11 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         },
     }))
     .unwrap();
-    sqlx::query("INSERT INTO actions (game_id, seq, action) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO actions (game_id, seq, action, at) VALUES (?, ?, ?, ?)")
         .bind("stale")
         .bind(0_i64)
         .bind(&doomed)
+        .bind(0_i64)
         .execute(&pool)
         .await
         .unwrap();
@@ -297,8 +296,14 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         panic!("a log that cannot be replayed must fail the load");
     };
     assert!(
-        matches!(err, SessionError::Replay { seq: 0, .. }),
-        "the failure must name the offending action, got {err:?}",
+        matches!(
+            &err,
+            SessionError::Unresumable {
+                game_id,
+                reason: UnresumableReason::Replay { seq: 0, .. },
+            } if game_id.as_str() == "stale"
+        ),
+        "the failure must name the game and the offending action, got {err:?}",
     );
 }
 
