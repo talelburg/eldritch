@@ -302,10 +302,10 @@ impl GameSession {
 
     /// Rebuild a stored game against `registries`: re-run setup from its
     /// creation inputs, check what setup decided against the stored setup
-    /// fingerprint, and replay its action log. Returns `None` if no game with
-    /// `game_id` exists.
+    /// fingerprint, and replay its action log, running the replay checks on
+    /// each logged answer. Returns `None` if no game with `game_id` exists.
     ///
-    /// Each replayed action overwrites `outcome`; with an empty log the
+    /// Each replayed answer overwrites `outcome`; with an empty log the
     /// session is at setup's outcome, the mulligan prompt.
     ///
     /// # Errors
@@ -313,9 +313,10 @@ impl GameSession {
     /// - [`SessionError::Unresumable`] if the game exists but can't be
     ///   rebuilt as it was played: it was stored in another format version,
     ///   setup no longer runs from its inputs or decides differently, or a
-    ///   logged action is rejected on replay. Its rows are left untouched.
+    ///   logged answer fails a replay check ([`ReplayFailure`]). Its rows are
+    ///   left untouched.
     /// - [`SessionError::Db`] if a query fails, or [`SessionError::Serde`] if
-    ///   a stored column or a logged action fails to deserialize.
+    ///   a stored column or a logged answer fails to deserialize.
     pub async fn load(
         db: SqlitePool,
         registries: Registries,

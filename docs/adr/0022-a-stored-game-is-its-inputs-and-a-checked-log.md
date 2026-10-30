@@ -19,7 +19,7 @@ Each log entry is a server-owned type that records what it answered: the respons
 3. **The engine accepts it.** A rejection fails the load.
 4. **The RNG checkpoint matches.** `draws` must equal the recorded value, so the first action whose randomness differs fails rather than every later pull drifting silently.
 
-Until #1263 lands, a log entry is the engine's `Action` JSON and only check 3 runs. #1263's entry format bumps `format_version` to 2, and this paragraph goes.
+Recording and checks 1 and 2 are one pure, I/O-free module, `server::logged_answer`, so the session core can lift it unchanged; `answered_options` is the one lookup from a response to the options it picked. An `actions` row holds the logged answer as JSON in `answer` and the checkpoint in its own `draws` column. An action the engine accepts but the log can't record is refused at `apply` like a rejection, so a game never holds a move it couldn't replay.
 
 ## An unresumable game is kept
 

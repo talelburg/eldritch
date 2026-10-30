@@ -8,12 +8,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId, Responder};
 use game_core::event::Event;
 use game_core::state::game_state::GameState;
 use game_core::state::investigator::InvestigatorId;
 use protocol::GameId;
 use server::fingerprint::{FingerprintMismatch, Zone};
+use server::logged_answer::ReplayFailure;
 use server::session::{GameSession, SessionError, UnresumableReason};
 use sqlx::{Row as _, SqlitePool};
 
@@ -124,7 +125,8 @@ async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
 
 #[tokio::test]
 async fn a_game_stored_in_another_format_version_is_a_version_error() {
-    for version in [0_i64, 99] {
+    // 1 is the format before a logged answer named what it answered.
+    for version in [0_i64, 1, 99] {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
         session.apply(keep_opening_hand()).await.unwrap();
@@ -152,7 +154,14 @@ async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
     session.apply(pick(gain)).await.unwrap();
     // As if a PR had reordered the turn menu: the logged pick now carries the
     // id that is End turn's, but still names Gain resource.
-    common::set_logged(&pool, "reordered", 1, "$.response.PickSingle.option.id", end_turn.0).await;
+    common::set_logged(
+        &pool,
+        "reordered",
+        1,
+        "$.response.PickSingle.option.id",
+        end_turn.0,
+    )
+    .await;
 
     let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("reordered"))
         .await
@@ -161,6 +170,107 @@ async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
 
     assert_eq!(loaded.state, session.state);
     assert_eq!(loaded.outcome, session.outcome);
+}
+
+#[tokio::test]
+async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "renamed").await;
+    session.apply(keep_opening_hand()).await.unwrap();
+    session
+        .apply(pick(turn_option(&session, "Gain resource")))
+        .await
+        .unwrap();
+    // As if a PR had renamed the option.
+    common::set_logged(
+        &pool,
+        "renamed",
+        1,
+        "$.response.PickSingle.option.label",
+        "Take a resource",
+    )
+    .await;
+
+    let reason = expect_unresumable(&pool, "renamed").await;
+
+    assert!(
+        matches!(
+            &reason,
+            UnresumableReason::Replay {
+                seq: 1,
+                reason: ReplayFailure::OptionNotFound { option, matches: 0 },
+            } if option.label == "Take a resource"
+        ),
+        "the pick finds no option at seq 1, got {reason:?}",
+    );
+    assert_eq!(common::stored_rows(&pool, "renamed").await, (1, 2));
+}
+
+#[tokio::test]
+async fn an_answer_to_a_changed_prompt_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "reprompted").await;
+    session.apply(keep_opening_hand()).await.unwrap();
+    session
+        .apply(pick(turn_option(&session, "Gain resource")))
+        .await
+        .unwrap();
+    // As if the turn menu had been asked of someone else when it was logged.
+    common::set_logged(
+        &pool,
+        "reprompted",
+        1,
+        "$.prompt.responder",
+        Responder::Investigator(InvestigatorId(2)),
+    )
+    .await;
+
+    let reason = expect_unresumable(&pool, "reprompted").await;
+
+    assert!(
+        matches!(
+            &reason,
+            UnresumableReason::Replay {
+                seq: 1,
+                reason: ReplayFailure::PromptChanged { recorded, now: Some(now) },
+            } if recorded.responder == Responder::Investigator(InvestigatorId(2))
+                && now.responder == Responder::Investigator(InvestigatorId(1))
+        ),
+        "the prompt differs at seq 1, got {reason:?}",
+    );
+    assert_eq!(common::stored_rows(&pool, "reprompted").await, (1, 2));
+}
+
+#[tokio::test]
+async fn an_action_that_now_draws_differently_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "redrawn").await;
+    session.apply(keep_opening_hand()).await.unwrap();
+    session
+        .apply(pick(turn_option(&session, "Gain resource")))
+        .await
+        .unwrap();
+    let draws = session.state.rng.draws;
+    // As if the action had drawn once more when it was logged.
+    sqlx::query("UPDATE actions SET draws = draws + 1 WHERE game_id = ? AND seq = 1")
+        .bind("redrawn")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reason = expect_unresumable(&pool, "redrawn").await;
+
+    assert_eq!(
+        reason,
+        UnresumableReason::Replay {
+            seq: 1,
+            reason: ReplayFailure::Draws {
+                recorded: draws + 1,
+                now: draws,
+            },
+        },
+    );
+    assert_eq!(common::stored_rows(&pool, "redrawn").await, (1, 2));
 }
 
 #[tokio::test]

@@ -207,7 +207,10 @@ impl fmt::Display for ReplayFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PromptChanged { recorded, now } => {
-                write!(f, "it answered {recorded:?}, and the engine now asks {now:?}")
+                write!(
+                    f,
+                    "it answered {recorded:?}, and the engine now asks {now:?}"
+                )
             }
             Self::OptionNotFound { option, matches } => write!(
                 f,
@@ -233,7 +236,10 @@ impl fmt::Display for ReplayFailure {
 /// [`ReplayFailure::PromptChanged`] if `request`'s identity differs from the
 /// logged one, or [`ReplayFailure::OptionNotFound`] if a logged pick matches
 /// no option or several.
-pub fn replay(request: &InputRequest, answer: &LoggedAnswer) -> Result<InputResponse, ReplayFailure> {
+pub fn replay(
+    request: &InputRequest,
+    answer: &LoggedAnswer,
+) -> Result<InputResponse, ReplayFailure> {
     let now = PromptIdentity::of(request);
     if now != answer.prompt {
         return Err(ReplayFailure::PromptChanged {
@@ -265,5 +271,47 @@ fn find(options: &[ChoiceOption], logged: &LoggedOption) -> Result<OptionId, Rep
             option: logged.clone(),
             matches: usize::from(first.is_some()) + rest,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pick_finds_the_option_offered_to_its_investigator() {
+        let request = InputRequest::pick_single(
+            "Trigger a reaction?",
+            vec![
+                ChoiceOption::new(OptionId(0), "Trigger")
+                    .at(OptionTarget::Act)
+                    .offered_to(InvestigatorId(1)),
+                ChoiceOption::new(OptionId(1), "Trigger")
+                    .at(OptionTarget::Act)
+                    .offered_to(InvestigatorId(2)),
+            ],
+        )
+        .answered_by(Responder::Several);
+        // Logged when investigator 2's option sat first.
+        let answer = LoggedAnswer {
+            response: LoggedResponse::PickSingle {
+                option: LoggedOption {
+                    id: OptionId(0),
+                    label: "Trigger".to_owned(),
+                    target: Some(OptionTarget::Act),
+                    investigator: Some(InvestigatorId(2)),
+                },
+            },
+            prompt: PromptIdentity {
+                kind: InputKind::PickSingle,
+                target: None,
+                responder: Responder::Several,
+            },
+        };
+
+        assert_eq!(
+            replay(&request, &answer),
+            Ok(InputResponse::PickSingle(OptionId(1))),
+        );
     }
 }
