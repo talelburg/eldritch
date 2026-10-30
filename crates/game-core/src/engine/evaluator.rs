@@ -1671,7 +1671,7 @@ fn eval_quantity(
         // Clues are only 'at' a location if they are physically on that
         // location."* Guarded end-to-end by
         // `clues_on_a_threat_area_card_are_not_clues_at_the_location` in
-        // `crates/cards/tests/roland_elder_sign.rs`.
+        // `crates/cards/tests/integration/roland_elder_sign.rs`.
         Quantity::CluesAtControllerLocation => state
             .investigators
             .get(&controller)

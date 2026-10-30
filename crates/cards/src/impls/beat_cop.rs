@@ -15,7 +15,7 @@
 //!
 //! The `health: 2, sanity: 2` soak the printed ally also carries is corpus
 //! metadata; soak is engine-modeled from it, so there is nothing to declare in
-//! `abilities()` (see `crates/cards/tests/non_attack_soak.rs`).
+//! `abilities()` (see `crates/cards/tests/integration/non_attack_soak.rs`).
 
 use card_dsl::dsl::{self, Ability, Cost, EnemyTarget, ModifierScope, Stat};
 

@@ -15,7 +15,7 @@
 //! discarded when its capacity is spent. Nothing about soak needs
 //! declaring in `abilities()` — this impl ships the "+1 willpower
 //! while in play" modifier; the soak half rides on metadata. See
-//! `crates/cards/tests/non_attack_soak.rs` / `soak_distribution.rs`.
+//! `crates/cards/tests/integration/non_attack_soak.rs` / `soak_distribution.rs`.
 
 use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 

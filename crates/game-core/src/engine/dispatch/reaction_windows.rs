@@ -339,7 +339,7 @@ fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTi
 /// itself, rather than demanding a pick for a condition that is no longer
 /// happening. The enemy attack has forced `when` abilities of its own — Dodge
 /// 01023's ruling is stated about a **Forced** ability, and
-/// `crates/cards/tests/dodge.rs` proves it against Silver Twilight Acolyte
+/// `crates/cards/tests/integration/dodge.rs` proves it against Silver Twilight Acolyte
 /// 01102. `0` for any other top frame, so the callers need no guard.
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     if !coordinator::condition_is_prevented(cx) {

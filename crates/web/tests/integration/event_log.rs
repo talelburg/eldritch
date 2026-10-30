@@ -1,0 +1,95 @@
+//! Headless render test for `EventLogView`: seed the store with one
+//! `LogBatch` and assert the panel renders the batch header and an event's
+//! `Debug` text.
+//!
+//! wasm32-only (browser DOM).
+#![cfg(target_arch = "wasm32")]
+
+use game_core::event::Event;
+use leptos::prelude::*;
+use leptos::task;
+use wasm_bindgen::JsCast as _;
+use wasm_bindgen_test::*;
+use web::event_log::EventLogView;
+use web::store::{ClientState, LogBatch};
+use web_sys::{Element, HtmlElement};
+
+#[wasm_bindgen_test]
+async fn renders_batches_with_headers_and_event_debug() {
+    let store = RwSignal::new(ClientState::default());
+    mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <EventLogView/> }
+    });
+    store.update(|s| {
+        s.log.push(LogBatch {
+            header: "Move to Cellar".into(),
+            events: vec![Event::ScenarioStarted],
+        });
+    });
+    task::tick().await;
+
+    let logs = document().query_selector_all(".event-log").expect("query");
+    assert!(logs.length() >= 1, "no .event-log element rendered");
+    let panel = logs
+        .item(logs.length() - 1)
+        .expect("an .event-log panel")
+        .dyn_into::<Element>()
+        .expect("Element");
+    let text = panel.text_content().unwrap_or_default();
+    assert!(text.contains("Move to Cellar"), "header rendered: {text}");
+    assert!(
+        text.contains("ScenarioStarted"),
+        "event Debug rendered: {text}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn log_collapses_and_expands() {
+    // Mount EventLogView (use the file's existing mount helper / store setup).
+    let store = RwSignal::new(ClientState::default());
+    mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <EventLogView/> }
+    });
+    task::tick().await;
+
+    let logs = document()
+        .query_selector_all(".event-log")
+        .expect("query ok");
+    let panel = logs
+        .item(logs.length() - 1)
+        .expect("an .event-log panel")
+        .dyn_into::<Element>()
+        .expect("Element");
+
+    let scroll = panel
+        .query_selector(".log-scroll")
+        .expect("query ok")
+        .expect(".log-scroll present");
+    assert!(
+        !scroll.class_name().contains("hidden"),
+        "log body should start visible: {}",
+        scroll.class_name()
+    );
+
+    let toggle = panel
+        .query_selector(".log-toggle")
+        .expect("query ok")
+        .expect(".log-toggle present")
+        .dyn_into::<HtmlElement>()
+        .expect("HtmlElement");
+    toggle.click();
+    task::tick().await;
+    assert!(
+        scroll.class_name().contains("hidden"),
+        "log body should be hidden after collapse: {}",
+        scroll.class_name()
+    );
+    // The panel itself collapses to a thin strip (frees the left side).
+    assert!(
+        panel.class_name().contains("collapsed"),
+        "panel should carry the collapsed class: {}",
+        panel.class_name()
+    );
+}

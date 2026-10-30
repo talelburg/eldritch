@@ -1,7 +1,7 @@
 //! Resolution with no scenario module registered.
 //!
 //! The tests that need a module's `apply_resolution` hook live in
-//! `tests/resolution_module.rs`, which names one.
+//! `tests/integration/resolution_module.rs`, which names one.
 
 use super::*;
 use crate::test_support::TEST_REGISTRIES;

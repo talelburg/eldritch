@@ -63,7 +63,7 @@
 //! above; nothing contests this cell.
 //!
 //! This objective is unit-tested here and played end to end in
-//! `crates/scenarios/tests/the_gathering.rs`.
+//! `crates/scenarios/tests/integration/the_gathering.rs`.
 //!
 //! # Module gap
 //!

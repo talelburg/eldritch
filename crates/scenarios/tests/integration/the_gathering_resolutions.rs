@@ -1,0 +1,899 @@
+//! Drive solo Roland through The Gathering to a genuine engine-latched Won
+//! and Lost resolution, against the real `scenarios` + `cards` registries.
+//!
+//! Hybrid fidelity: drive the cheap, deterministic
+//! real progression and seed only the expensive preconditions, so the
+//! resolution itself is always engine-latched. Test-determinism stand-ins
+//! (a controlled chaos bag, a minimal roster deck, seeded health/act state)
+//! are called out at their use sites.
+
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{
+    ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature,
+};
+use game_core::event::{Event, TraumaKind};
+use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::state::{
+    CardCode, ChaosBag, ChaosToken, EliminationCause, EnemyId, GameState, InvestigatorId, Phase,
+    Status,
+};
+use game_core::test_support::{self, TestSession};
+use game_core::{assert_event, assert_no_event};
+use scenarios::the_gathering;
+
+const ROLAND: &str = "01001";
+/// The Parlor, which enters play only via act 2 (01109)'s reverse.
+const PARLOR: &str = "01115";
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// The Gathering set up + solo Roland seated and past the mulligan, ready
+/// to act in the Investigation phase. Determinism stand-in: the random
+/// Standard bag (which contains `AutoFail`) is replaced with a single-token
+/// `Numeric(0)` bag so skill tests resolve predictably.
+fn seated_roland() -> GameState {
+    let mut state = the_gathering::setup();
+    // Stand-in: deterministic chaos bag (production serves Standard).
+    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+
+    // Stand-in: a minimal deck (the resolution paths don't read deck
+    // contents). Eight copies of a real neutral event so the opening hand
+    // of 5 draws cleanly.
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(ROLAND),
+        deck: vec![CardCode::new("01088"); 8],
+        random_basic_weaknesses: 0,
+    }];
+    // seat_and_open opens the mulligan prompt; the session settles at it, and
+    // Roland keeps his opening hand before the turn's actions begin.
+    let started = game_core::engine::seat_and_open(state, &roster, 0, scenarios::TEST_REGISTRIES);
+    let session = TestSession::new(started.state, scenarios::TEST_REGISTRIES);
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
+        "seat_and_open opens the mulligan prompt"
+    );
+    let session = session.choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
+    session.finish().state
+}
+
+#[test]
+fn solo_roland_is_seated_in_the_study_ready_to_act() {
+    let state = seated_roland();
+    assert_eq!(state.round, 1);
+    assert!(
+        state.investigators.contains_key(&INV),
+        "Roland seated as investigator 1"
+    );
+    assert!(state.ending.is_none(), "no resolution latched at setup");
+}
+
+/// Ended with *no resolution reached* via the real all-investigators-eliminated
+/// latch: Roland is seeded one hit from death with an engaged Ghoul Minion,
+/// then a real Enemy-phase attack defeats him and `check_all_eliminated` latches
+/// [`ScenarioEnding::NoResolution`] — Rules Reference `Elimination` step 6,
+/// which the campaign guide answers under "If no resolution was reached (each
+/// investigator resigned or was defeated)". Not a loss: in campaign play the
+/// players proceed "regardless of the outcome".
+#[test]
+fn enemy_attack_defeats_roland_and_latches_no_resolution() {
+    let mut state = seated_roland();
+
+    // Seed: Roland one hit from death. accumulated_damage is the source of
+    // truth; max_health() reads from cards::REGISTRY (9 for Roland).
+    {
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.investigator_card.accumulated_damage =
+            roland.max_health(scenarios::TEST_REGISTRIES.cards) - 1;
+    }
+    let loc = state.investigators[&INV]
+        .current_location
+        .expect("Roland is at a location");
+
+    // Seed: a Ghoul Minion engaged with Roland (the `test_enemy` fixture
+    // defaults to attack_damage 1 ≥ his 1 remaining health → lethal).
+    let enemy_id = EnemyId(900);
+    let mut minion = test_support::test_enemy(900, "Ghoul Minion");
+    minion.code = CardCode::new("01160");
+    minion.current_location = Some(loc);
+    minion.engaged_with = Some(INV);
+    state.enemies.insert(enemy_id, minion);
+
+    // Drive: end Roland's turn → tick into the Enemy phase → the engaged
+    // enemy attacks → Roland defeated → no remaining players → NoResolution.
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
+
+    assert_event!(session.events(), Event::AllInvestigatorsEliminated);
+    assert_event!(session.events(), Event::ScenarioResolved { .. });
+    assert_eq!(
+        session.state().ending,
+        Some(ScenarioEnding::NoResolution),
+        "no investigator remains, so no resolution point was reached",
+    );
+}
+
+/// Drive acts 1 and 2 for real, leaving Roland in round 2's Investigation phase
+/// with the terminal act 3 (01110) current and the real Ghoul Priest on the
+/// board. Extracted so the test below reads as the terminal-act claim it makes.
+fn advance_to_the_terminal_act(state: GameState) -> GameState {
+    // --- Act 1 (real): spend clues to advance → the reverse builds the board
+    // and relocates Roland to the Hallway (the act-2 contributor location).
+    let advanced = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
+    assert_eq!(advanced.state().act_index, 1, "act 1 advanced to act 2");
+
+    // --- Act 2 (real): end the round → the round-end clue-spend window
+    // opens (Roland holds 3 clues in the Hallway) → spending them on the act
+    // advances it, and its reverse spawns the real Ghoul Priest (01116).
+    let round_end = advanced.take(&TurnAction::EndTurn);
+    // The round has not ended yet — the window is its `when` — and the act's
+    // clue spend is offered on the act card, as a reaction the player may pass.
+    assert_eq!(
+        round_end.state().round,
+        1,
+        "the window sits on round 1's end"
+    );
+    assert_eq!(
+        round_end.state().phase,
+        Phase::Upkeep,
+        "the round ends at the close of Upkeep"
+    );
+    assert_eq!(
+        round_end.offered_at(&OptionTarget::Act),
+        1,
+        "EndTurn should open the act-2 round-end window, got {:?}",
+        round_end.prompt(),
+    );
+    assert!(round_end.prompt().skippable, "a reaction window");
+    let after_spend = round_end.pick(OptionTarget::Act);
+    assert_eq!(
+        after_spend.state().act_index,
+        2,
+        "act 2 advanced to the terminal act 3 (01110)"
+    );
+
+    // Round 2 begins in the Mythos phase; draw the seeded Ancient Evils
+    // (1 doom) to advance into Investigation, where Roland can take the Fight.
+    let investigation = after_spend.confirm();
+    investigation.assert_at_turn_menu(INV);
+    investigation.finish().state
+}
+
+/// Won via the real progression + defeat→advance→win latch. Drives act 1
+/// (`AdvanceAct`) and act 2 (the round-end clue-spend window) for real —
+/// act 2's reverse spawns the **real** Ghoul Priest — then fights that
+/// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
+/// act → `ScenarioEnding::Resolution(R1)`.
+///
+/// Two seeds, both off the resolution path: clues (acquiring them via
+/// Attic/Cellar investigation is unit-tested elsewhere — the focus here is
+/// the act-advancement chain), and the spawned Priest's health (solo Roland
+/// has no weapon and 5 sanity, so he cannot out-damage a 5-health Retaliate
+/// Hunter dealing 2 horror/attack without going insane first — the kill is
+/// the one necessary shortcut). The encounter deck is emptied so round-2's
+/// Mythos draw doesn't inject random interference.
+#[test]
+fn act_progression_and_ghoul_priest_defeat_reaches_r1() {
+    drive_the_ghoul_priest_defeat_and_pick(0, 1);
+}
+
+/// Regression for #775: the second printed bullet — *"This hell-pit is my
+/// home! No way are we burning it! (→R2)"* — is reachable down the same real
+/// path, because the act's reverse offers the choice rather than latching R1.
+///
+/// The banner the player ends on is a pure function of this `ResolutionId`
+/// (`crates/web/tests/integration/board.rs::resolution_banner_names_the_resolution_point`),
+/// so pinning the id here is what pins the two endings apart on screen.
+#[test]
+fn picking_the_second_bullet_reaches_r2_down_the_same_path() {
+    drive_the_ghoul_priest_defeat_and_pick(1, 2);
+}
+
+/// Drive solo Roland to the Ghoul Priest's defeat, answer act 01110's printed
+/// choice with its `pick`th bullet, and assert the scenario ends at Resolution
+/// `expected`.
+fn drive_the_ghoul_priest_defeat_and_pick(pick: usize, expected: u8) {
+    let mut state = seated_roland();
+    {
+        // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.clues = 5;
+    }
+    // Seed: round-2's Mythos draws exactly one benign card — Ancient Evils
+    // (01166), whose Revelation only places 1 doom (threshold 3, so it can't
+    // advance to a loss), keeping the Mythos deterministic and harmless.
+    state.encounter_deck.clear();
+    state.encounter_deck.push_back(CardCode::new("01166"));
+
+    let mut state = advance_to_the_terminal_act(state);
+
+    // --- Seed only the spawned Priest's health + engagement (see doc above).
+    let priest_id = {
+        let priest = state
+            .enemies
+            .values_mut()
+            .find(|e| e.code.as_str() == "01116")
+            .expect("act 2's reverse spawned the real Ghoul Priest");
+        priest.damage = priest.max_health - 1; // one hit from death
+        priest.engaged_with = Some(INV);
+        priest.id
+    };
+    // Ensure Roland is mid-Investigation with an action for the Fight.
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .actions_remaining = 3;
+
+    // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 → success
+    // → deal 1 → defeated → act 3 advances → its reverse reaches R1.
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: priest_id,
+        })
+        .commit(&[]);
+
+    assert_event!(session.events(), Event::EnemyDefeated { .. });
+    // The terminal act flips like every other one before the ending lands, and
+    // holds its cursor because there is no next act (ADR 0013).
+    assert_event!(session.events(), Event::ActAdvanced { from } if *from == 2);
+    assert_eq!(
+        session.state().act_index,
+        2,
+        "terminal: cursor does not bump"
+    );
+
+    // The flipped act prints *"The lead investigator must decide (choose
+    // one):"*, so solo Roland is asked which printed point to reach — the
+    // scenario has not ended yet.
+    let request = session.prompt();
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "It was never much of a home. Burn it down! (→R1)",
+            "This hell-pit is my home! No way are we burning it! (→R2)",
+        ],
+    );
+    assert!(
+        request
+            .options
+            .iter()
+            .all(|o| o.target == Some(OptionTarget::Act)),
+        "the choice renders on the act card it is printed on (#555): {request:?}",
+    );
+    assert!(
+        session.state().ending.is_none(),
+        "nothing latches before the pick"
+    );
+
+    // The bullets are alternatives printed on the one act: a Decision.
+    let result = session.pick_nth(pick).finish();
+    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(expected))),
+        "act 01110's reverse reaches the campaign guide's (→R{expected})",
+    );
+
+    // Advancing act 3 reaches a resolution point, so the scenario ends
+    // *during* the defeat that triggered it — and Roland Banks' "After you
+    // defeat an enemy: Discover 1 clue at your location" window must never open.
+    // Act 01110's ruling is explicit that its Forced objective "will trigger as
+    // soon as you defeat the Ghoul Priest, before any 'After you defeat an
+    // enemy' reactions can be used"; the queued reaction window sits *beneath*
+    // that objective's effect frame, so only cancelling it on the way back down
+    // honours the ruling.
+    assert_eq!(
+        result.outcome,
+        EngineOutcome::Done,
+        "the ended scenario must not surface Roland's after-defeat window",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending — in particular no open \
+         after-defeat reaction window: {:?}",
+        result.state.continuations,
+    );
+}
+
+/// Drive solo Roland to the Ghoul Priest's defeat with `interactive_acknowledge`
+/// **on**, answering the Fight's own skill-test result acknowledge on the way.
+/// Returns the result the defeat produced, so the caller's assertions start at
+/// the first prompt the *advance* raises.
+///
+/// Acts 1 and 2 run through `advance_to_the_terminal_act` with the flag still
+/// off: their prompts are not what the act-3 click count is about, and leaving
+/// them interactive would put the whole scenario's acknowledges in front of it.
+fn interactive_ghoul_priest_defeat() -> TestSession {
+    let mut state = seated_roland();
+    {
+        // Same two seeds as the non-interactive walk, for the same reasons.
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.clues = 5;
+    }
+    state.encounter_deck.clear();
+    state.encounter_deck.push_back(CardCode::new("01166"));
+    let mut state = advance_to_the_terminal_act(state);
+
+    state.interactive_acknowledge = true;
+    let priest_id = {
+        let priest = state
+            .enemies
+            .values_mut()
+            .find(|e| e.code.as_str() == "01116")
+            .expect("act 2's reverse spawned the real Ghoul Priest");
+        priest.damage = priest.max_health - 1;
+        priest.engaged_with = Some(INV);
+        priest.id
+    };
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .actions_remaining = 3;
+
+    let s = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: priest_id,
+        })
+        .commit(&[]);
+    // The Fight's own result acknowledge — the skill test's, not the advance's.
+    assert_eq!(s.prompt().prompt, "Acknowledge the skill-test result.");
+    s.confirm()
+}
+
+/// Regression for #562: act 3 (01110) advances in **two** clicks — the flip,
+/// then the reverse — and its printed choice follows the second without a third.
+///
+/// The flip pick is the click that advances: the act glows, you click it,
+/// and it turns over. The reverse's own acknowledge is the click that
+/// resolves what you have just read. What sat in front of both was a *third*
+/// prompt, the acknowledge for 01110's Objective — a forced ability whose
+/// entire effect is the advance — and on this card it renders under the very same
+/// text as the reverse's, because both are printed on What Have You Done?. The
+/// suppression removes it, leaving 01110 with the agenda's shape.
+///
+/// The non-interactive walk of this same path is
+/// `act_progression_and_ghoul_priest_defeat_reaches_r1`; this one turns the flag
+/// on and counts what the player is asked.
+#[test]
+fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
+    let s = interactive_ghoul_priest_defeat();
+
+    // Click 1 — the flip. The Objective fired and raised nothing of its own, so
+    // the first thing the player meets is the advance's own on-card pick, with
+    // the act still showing its front (the client reads `AwaitAck`). The
+    // Objective's acknowledge would read "Forced — What Have You Done?"; the
+    // flip's prompt standing here is what shows it suppressed.
+    assert_event!(s.events(), Event::EnemyDefeated { .. });
+    assert_event!(s.events(), Event::ActAdvanced { from } if *from == 2);
+    let request = s.prompt();
+    assert_eq!(
+        request.prompt, "Act 3 advanced — acknowledge.",
+        "the Objective's own acknowledge is suppressed, so the advance's flip is \
+         the first prompt",
+    );
+    assert_eq!(request.options.len(), 1, "one option: {request:?}");
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Act),
+        "the flip pick anchors to the act card",
+    );
+    assert!(
+        s.state().ending.is_none(),
+        "nothing latched before the flip"
+    );
+
+    // Click 2 — the flipped reverse's own acknowledge, on the reverse face.
+    let s = s.pick(OptionTarget::Act);
+    assert_eq!(
+        s.prompt().prompt,
+        "Forced — What Have You Done?",
+        "the reverse"
+    );
+    assert!(s.state().ending.is_none(), "nor before the reverse runs");
+
+    // …and its ChooseOne follows immediately, with no third click in between.
+    let s = s.pick(OptionTarget::Act);
+    let request = s.prompt();
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "It was never much of a home. Burn it down! (\u{2192}R1)",
+            "This hell-pit is my home! No way are we burning it! (\u{2192}R2)",
+        ],
+        "the choice itself is unchanged",
+    );
+    assert_eq!(
+        request.nature,
+        PromptNature::Decision,
+        "and it presents itself as a decision, so the modal is the surface (ADR 0015)",
+    );
+
+    let done = s.pick_nth(0);
+    assert_eq!(
+        done.state().ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
+    );
+}
+
+/// Agenda 3 turns up on a doom clock that does not read the act deck, so a group
+/// still on act 1 or 2 meets 01107's enemy-phase-end Forced with no Parlor on
+/// the board. That is a no-op — `move_ghouls_toward_parlor`'s own doc carries the
+/// rules argument — and what this pins is the part only a full turn can show:
+/// because a rejection rolls the whole apply back, a `Rejected` here would land
+/// on the *player's* action, and the scenario would be unplayable from the
+/// moment agenda 3 turned up. The no-op itself is pinned at the unit.
+#[test]
+fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
+    let mut state = seated_roland();
+    // Agenda 3 current while the act deck is still on act 1 — the reachable
+    // board state, and the one the Parlor is absent on.
+    state.agenda_index = 2;
+    assert_eq!(state.act_index, 0, "still act 1: act 2's reverse never ran");
+    assert!(
+        !state.locations.values().any(|l| l.code.as_str() == PARLOR),
+        "the Parlor is not in play",
+    );
+    state.encounter_deck.clear();
+
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
+
+    // A rejected EndTurn would leave Roland at his turn menu; play instead runs
+    // on through the enemy phase and the round end to round 2's encounter draw.
+    session.assert_at_encounter_draw();
+    assert_no_event!(session.events(), Event::EnemyMoved { .. });
+}
+
+/// Doomed out on the **terminal agenda** (01107): the agenda advances like any
+/// other — `AgendaAdvanced` is emitted and its reverse fires — and the reverse
+/// is what reaches the printed `(→R3)` (ADR 0013).
+///
+/// `back_text` verbatim (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+///
+/// > - If the investigators are at Act 1 or 2, they are trapped inside the house
+/// >   as the ghouls tear them apart. **(→R3)**
+///
+/// Roland is at act 1 here, so R3 is the branch the card prints for him; the
+/// act-3 branch is the two tests below.
+///
+/// The doom threshold advances the agenda and emits `AgendaAdvanced` before the
+/// ending latches, so the player sees which agenda ended their game.
+///
+/// Here rather than in `crates/cards/tests/` — which is where the rest of 01107's
+/// integration coverage lives — because reaching agenda 3 needs
+/// `the_gathering::setup()`, and `scenarios` depends on `cards`, not the
+/// other way round. This target names `cards::REGISTRY` too (in
+/// `scenarios::TEST_REGISTRIES`), so it is the same
+/// real-corpus seam.
+#[test]
+fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
+    let mut state = seated_roland();
+    // Seed the terminal agenda as current, one doom short of its threshold, so
+    // Mythos step 1.2's single doom tips it at 1.3.
+    state.agenda_index = 2;
+    assert_eq!(
+        state.agenda_deck[2].code.as_str(),
+        "01107",
+        "agenda 3 is the terminal agenda"
+    );
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    // No encounter draws to interfere; the ending cancels 1.4 anyway.
+    state.encounter_deck.clear();
+
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
+
+    assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
+    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
+        "the reverse reached the campaign guide's Resolution 3",
+    );
+    assert_eq!(
+        result.state.agenda_index, 2,
+        "a terminal agenda does not bump the cursor — there is no next agenda",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending: {:?}",
+        result.state.continuations,
+    );
+}
+
+/// Act **2** is the other half of the card's first bullet — *"If the
+/// investigators are at Act 1 or 2"* — so it reaches the same printed `(→R3)`.
+/// Seeded rather than driven: the act-progression path is
+/// [`act_progression_and_ghoul_priest_defeat_reaches_r1`]'s subject, and what
+/// this pins is the branch predicate's boundary, one index below the act-3 arm.
+#[test]
+fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
+    let mut state = seated_roland();
+    state.act_index = 1; // the card's Act 2 (zero-based cursor)
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
+
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
+        "act 2 is still the (→R3) bullet",
+    );
+}
+
+/// Dooming out at **act 3** reaches *no resolution point at all*.
+///
+/// `back_text` verbatim (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+///
+/// > - If the investigators are at Act 3, they barely escape with their lives,
+/// >   allowing the ghouls to run rampant. Each investigator that has not
+/// >   resigned is defeated and suffers 1 physical trauma.
+///
+/// No `(→R#)` is printed on this bullet, and none is latched. Solo Roland is
+/// defeated by the card ability, which drains Rules Reference p.10 Elimination
+/// step 6 — *"If there are no remaining players, the scenario ends. Refer to 'no
+/// resolution was reached' entry for that scenario in the campaign guide."* —
+/// and *that* is what ends the scenario. The ending is
+/// [`ScenarioEnding::NoResolution`], the campaign guide's own untitled entry,
+/// rather than the Resolution 3 the act-1/2 branch reaches.
+#[test]
+fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_resolution() {
+    let mut state = seated_roland();
+    state.act_index = 2; // the card's Act 3 (zero-based cursor)
+    assert_eq!(
+        state.act_deck[2].code.as_str(),
+        "01110",
+        "act 3 is the terminal act"
+    );
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
+
+    assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
+    assert_event!(
+        result.events,
+        Event::InvestigatorEliminated { investigator, cause }
+            if *investigator == INV && *cause == EliminationCause::CardAbility
+    );
+    assert_eq!(
+        result.state.investigators[&INV].status,
+        Status::Defeated,
+        "defeated by a card ability — neither killed nor driven insane",
+    );
+    assert_event!(
+        result.events,
+        Event::TraumaSuffered { investigator, kind, amount }
+            if *investigator == INV && *kind == TraumaKind::Physical && *amount == 1
+    );
+    assert_event!(result.events, Event::AllInvestigatorsEliminated);
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::NoResolution),
+        "the act-3 bullet prints no (→R#), so no resolution point is reached",
+    );
+    // No numbered resolution is ever latched.
+    assert_no_event!(
+        result.events,
+        Event::ScenarioResolved {
+            ending: ScenarioEnding::Resolution(_)
+        }
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending: {:?}",
+        result.state.continuations,
+    );
+}
+
+/// The player gets to read the terminal agenda's reverse before the result panel
+/// replaces the board: the advance-flip acknowledge surfaces on the
+/// terminal agenda exactly as it does on 01105 and 01106, and the ending is not
+/// latched until it is answered.
+#[test]
+fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
+    let mut state = seated_roland();
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+    state.interactive_acknowledge = true;
+
+    // Ending the round fires 01107's two Forced *fronts* first — the
+    // enemy-phase-end Ghoul move and the round-end doom — each raising its own
+    // acknowledge before the Mythos doom tips the threshold.
+    let mut s = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
+    for _ in 0..2 {
+        assert_eq!(
+            s.prompt().prompt,
+            "Forced — They're Getting Out!",
+            "01107's own fronts resolve before the agenda advances",
+        );
+        s = s.pick(OptionTarget::Agenda);
+    }
+
+    // Then the flip: a single on-card option anchored to the agenda, with the
+    // ending still unlatched — the player reads the reverse before the result
+    // panel replaces the board.
+    let request = s.prompt();
+    assert_eq!(request.prompt, "Agenda 3 advanced — acknowledge.");
+    assert_eq!(request.options.len(), 1, "one option: {request:?}");
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Agenda),
+        "it anchors to the agenda card the player is being asked to read",
+    );
+    assert!(
+        s.state().ending.is_none(),
+        "nothing latched before the flip"
+    );
+
+    // Answering the flip fires the reverse, which is a Forced like 01105's and
+    // acknowledges the same way — and only running it latches the ending.
+    let s = s.pick(OptionTarget::Agenda);
+    assert_eq!(
+        s.prompt().prompt,
+        "Forced — They're Getting Out!",
+        "the reverse"
+    );
+    assert!(s.state().ending.is_none(), "nor before the reverse runs");
+
+    let done = s.pick(OptionTarget::Agenda).finish();
+    assert_eq!(
+        done.outcome,
+        EngineOutcome::Done,
+        "the reverse's acknowledge is the last of them",
+    );
+    assert_eq!(
+        done.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
+    );
+}
+
+// The replay walk below is the one place in this file that sends hand-built
+// `ResolveInput`s, positional `OptionId`s included, through `engine::apply`
+// rather than a `TestSession`. Its subject is the recorded wire-action log
+// itself — what a server persists and a replay re-sends — so it builds and
+// keeps those actions by hand; a session neither exposes nor replays the
+// actions it sends.
+
+/// The seeded start the replay-determinism walk below runs from. Both seeds are
+/// applied *before* the first logged action, so replaying the log rebuilds the
+/// identical starting point: clues to clear both act thresholds (as the R1 walk
+/// seeds them, and for the same reason), and an encounter deck of four Ancient
+/// Evils 01166. Four, not the R1 walk's benign one — the doom they place is
+/// load-bearing here, since it is what tips agenda 1 and ends the walk.
+fn walk_start() -> GameState {
+    let mut state = seated_roland();
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .clues = 5;
+    state.encounter_deck.clear();
+    for _ in 0..4 {
+        state.encounter_deck.push_back(CardCode::new("01166"));
+    }
+    state
+}
+
+/// Apply `action`, recording it in `log` and asserting it was not `Rejected` so a
+/// mis-ordered step fails here (naming the action) rather than later as a
+/// confusing state mismatch.
+fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> ApplyResult {
+    log.push(action.clone());
+    let r = game_core::engine::apply(state, action, scenarios::TEST_REGISTRIES);
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "logged action {:?} was rejected: {:?}",
+        log.last(),
+        r.outcome,
+    );
+    r
+}
+
+/// Drive one open-turn action the way `TestSession::take` does — enumerate,
+/// find its option id — but record the resulting `ResolveInput(PickSingle)` wire
+/// action, which is what a replay actually re-sends. That recording is why this
+/// re-does the enumeration rather than taking the action through a session,
+/// which does not hand back the wire actions it sends.
+fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> ApplyResult {
+    let legal = enumerate::legal_actions(&state, scenarios::TEST_REGISTRIES.cards);
+    let idx = legal
+        .iter()
+        .position(|a| a == action)
+        .unwrap_or_else(|| panic!("logged_turn: {action:?} is not legal; offered: {legal:?}"));
+    let wire = Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(
+            u32::try_from(idx).expect("action index fits u32"),
+        )),
+    });
+    apply_logged(state, wire, log)
+}
+
+/// Drive the walk once from [`walk_start`], recording every wire action. Returns
+/// the log, the index the round-trip splits at, and the state the walk ends in.
+///
+/// The walk is real Gathering content throughout: act 1 advances on spent clues,
+/// act 2 advances through the round-end clue-spend window and its reverse spawns
+/// the real Ghoul Priest 01116, round 2's Mythos draws the seeded Ancient Evils,
+/// and Roland then investigates the Hallway with the Priest engaged — provoking
+/// the Priest's attack of opportunity — before ending the round into another
+/// Enemy phase, Mythos draw, and turn.
+fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
+    let commit_nothing = || {
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })
+    };
+    let confirm = || {
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        })
+    };
+
+    let mut log: Vec<Action> = Vec::new();
+    let mut state = walk_start();
+
+    // --- Act 1: spend clues to advance; the reverse builds the board and moves
+    // Roland to the Hallway.
+    state = logged_turn(
+        state,
+        &TurnAction::AdvanceAct { investigator: INV },
+        &mut log,
+    )
+    .state;
+    assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
+
+    // --- Act 2: end the round, then Confirm the round-end clue-spend window —
+    // act 2 advances and its reverse spawns the real Ghoul Priest.
+    state = logged_turn(state, &TurnAction::EndTurn, &mut log).state;
+    state = apply_logged(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+        &mut log,
+    )
+    .state;
+    assert_eq!(state.act_index, 2, "act 2 advanced to the terminal act 3");
+
+    // --- Round 2 Mythos: draw the seeded Ancient Evils into Investigation.
+    state = apply_logged(state, confirm(), &mut log).state;
+
+    // --- The split point: Investigate opens a skill test and suspends inside its
+    // commit window, so the state serialized here carries an in-flight test.
+    state = logged_turn(
+        state,
+        &TurnAction::Investigate { investigator: INV },
+        &mut log,
+    )
+    .state;
+    let split = log.len();
+
+    // --- Continue past the split: resolve the test, then end the round. Doom
+    // tips agenda 1 (01105) at Mythos 1.2 and its reverse asks the card's
+    // printed ChooseOne, answered here with the second branch.
+    state = apply_logged(state, commit_nothing(), &mut log).state;
+    let ended = logged_turn(state, &TurnAction::EndTurn, &mut log);
+    let EngineOutcome::AwaitingInput { request, .. } = &ended.outcome else {
+        panic!("expected 01105's ChooseOne, got {:?}", ended.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Each investigator discards 1 card at random from his or her hand",
+            "The lead investigator takes 2 horror",
+        ],
+        "agenda 1 advanced and its reverse asked its printed choice",
+    );
+    state = apply_logged(
+        ended.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(1)),
+        }),
+        &mut log,
+    )
+    .state;
+
+    // That horror is Roland's sixth against 5 sanity — the Priest's attack of
+    // opportunity on the Investigate and its Enemy-phase attack dealt the first
+    // four — so the walk ends the way a real one can: driven insane, no
+    // investigator remaining, and the campaign guide's no-resolution entry.
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
+    assert_eq!(state.ending, Some(ScenarioEnding::NoResolution));
+
+    (log, split, state)
+}
+
+/// Replay determinism on real scenario content: the same action log, replayed
+/// from the same seeded start, ends in a byte-identical state — even when the
+/// replay is serialized to JSON and rebuilt from it partway through.
+///
+/// It holds on a real Gathering walk, which is the substrate ADR 0016 asks for.
+/// The serde step at the split is the *only* delta from a straight second drive
+/// of the log, so the comparison isolates round-trip fidelity — the property the
+/// server's persistence depends on, since it persists a seed state plus a
+/// `ResolveInput`-only action log — on top of the seeded-`rng` replay path both
+/// runs share.
+#[test]
+fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
+    let (log, split, walked) = drive_the_walk();
+
+    let mut state = walk_start();
+    for action in &log[..split] {
+        state = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES).state;
+    }
+
+    // The split is genuinely in-flight, not a settled resting point: a skill test
+    // is suspended mid-resolution, so the round-trip exercises serde of the
+    // engine's continuation stack rather than only of a clean board.
+    assert!(
+        state.current_skill_test().is_some(),
+        "the split must land inside a suspended skill test: {:?}",
+        state.continuations,
+    );
+
+    let json = serde_json::to_string(&state).expect("serialize mid-walk state");
+    let mut state: GameState = serde_json::from_str(&json).expect("deserialize mid-walk state");
+
+    for action in &log[split..] {
+        state = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES).state;
+    }
+
+    assert_eq!(
+        walked, state,
+        "a real Gathering walk must replay identically across a serialize round-trip",
+    );
+}
+
+/// `Done` means the game is over: across a real Gathering walk replayed from
+/// its log, every apply that returns `Done` leaves the continuation stack empty
+/// — every other resting point is a prompt the client is asked to answer.
+#[test]
+fn every_done_in_a_real_gathering_walk_comes_with_an_empty_stack() {
+    let (log, _, _) = drive_the_walk();
+
+    let mut state = walk_start();
+    let mut dones = 0;
+    for action in &log {
+        let r = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES);
+        if r.outcome == EngineOutcome::Done {
+            dones += 1;
+            assert!(
+                r.state.continuations.is_empty(),
+                "{action:?} returned Done with frames left on the stack: {:?}",
+                r.state.continuations,
+            );
+        }
+        state = r.state;
+    }
+
+    assert_eq!(state.ending, Some(ScenarioEnding::NoResolution));
+    assert_eq!(
+        dones, 1,
+        "only the walk's last apply, which ends the game, is Done"
+    );
+}

@@ -8,7 +8,7 @@ use crate::test_support::TEST_REGISTRIES;
 // `submit_off_menu` (bypassing the enumeration gate) and assert it
 // rejects — testing the handler's defensive validation. (The *positive*
 // PlayCard enumeration + the registry-backed flow live in `enumerate.rs`
-// and `crates/cards/tests/play_card.rs`.)
+// and `crates/cards/tests/integration/play_card.rs`.)
 const CARD: &str = "01059";
 
 fn play(hand_index: u8) -> TurnAction {

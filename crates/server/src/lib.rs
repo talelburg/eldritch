@@ -65,7 +65,7 @@ impl AppState {
 /// the real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
 /// hands them to [`AppState::new`]. Tests pass their own pairing instead and
 /// build any mock scenario module locally
-/// (`crates/server/tests/common/mod.rs`); there is no shared fixture
+/// (`crates/server/tests/integration/common/mod.rs`); there is no shared fixture
 /// crate-side (ADR 0016).
 pub const REGISTRIES: Registries = Registries {
     cards: &cards::REGISTRY,

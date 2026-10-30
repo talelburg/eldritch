@@ -4,7 +4,7 @@
 //!
 //! The corpus carrier is The Necronomicon 01009, *"It cannot leave play while
 //! it has 1 or more horror on it."*, covered end to end in
-//! `crates/cards/tests/the_necronomicon.rs`. `glossary/Cannot.md`: *"The word
+//! `crates/cards/tests/integration/the_necronomicon.rs`. `glossary/Cannot.md`: *"The word
 //! "cannot" is absolute, and cannot be countermanded by other abilities."*
 //! The one override is `glossary/Elimination.md` step 0: *"For the purpose of
 //! resolving weakness cards, the game has ended for the eliminated

@@ -134,7 +134,7 @@ fn a_later_cells_window_is_untouched() {
 /// closes itself instead of demanding a pick for a condition that is no
 /// longer happening. The unit half of the shape Dodge 01023's ruling is
 /// stated about; the corpus half — dodging Silver Twilight Acolyte 01102 —
-/// is `crates/cards/tests/dodge.rs`.
+/// is `crates/cards/tests/integration/dodge.rs`.
 #[test]
 fn a_forced_run_in_the_when_cell_empties_too() {
     let mut state = state_with_window_of(discovery(), EventTiming::When, TimingMode::Forced, true);

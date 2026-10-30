@@ -5,7 +5,7 @@ use crate::{assert_event, assert_no_event};
 
 // The suspended-Revelation-into-skill-test discard, and its margin-damage
 // math, are integration-tested by
-// `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*` (01162).
+// `crates/cards/tests/integration/revelation_treacheries.rs::grasping_hands_*` (01162).
 
 /// A plain (non-revelation) skill test disposes of no encounter card — the
 /// skill-test driver does not touch encounter disposal at all.

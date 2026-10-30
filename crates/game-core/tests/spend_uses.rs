@@ -6,7 +6,7 @@
 //! effect did not, so a card whose last use leaves through its effect would
 //! have stayed in play with none. (Forbidden Knowledge 01058's uses leave by a
 //! *move*, not a spend, through `NativeCx::move_uses_to_resource_pool`, which
-//! ends in the same discard; `crates/cards/tests/forbidden_knowledge.rs`.)
+//! ends in the same discard; `crates/cards/tests/integration/forbidden_knowledge.rs`.)
 //!
 //! Each native sits on its own mock act as a forced ability at the end of the
 //! enemy phase, the `native_effect.rs` idiom, and spends from a synthetic

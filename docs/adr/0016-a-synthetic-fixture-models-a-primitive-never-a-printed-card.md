@@ -22,7 +22,7 @@ encounter-deck content) reads:
 The real impl opens with `revelation(put_into_threat_area_with_clues(CODE, 3))`
 (`cover_up.rs:71`). The synthetic has no `Trigger::Revelation` at all. That gap was
 found, and documented rather than closed, by a later test author
-(`crates/cards/tests/upkeep_draw_revelation.rs:14-17`):
+(`crates/cards/tests/integration/upkeep_draw_revelation.rs:14-17`):
 
 > Uses the real `cards::REGISTRY` because the synthetic Cover Up fixture has no
 > `Trigger::Revelation` (it would push nothing and never trip the bug); only the
@@ -36,11 +36,13 @@ evidence about a card and is evidence about a hand-written approximation of one.
 Nothing checks a synthetic against the snapshot, because there is nothing to
 check it against.
 
-Two more instances, in two other crates. `crates/scenarios/tests/opening_hand_weaknesses.rs:60-63`
-pads a player deck with `01001`–`01004` — Roland Banks, Daisy Walker, "Skids"
-O'Toole and Agnes Baker, four real *investigator* cards, in a zone none of them
-can legally occupy — because the test needs four opaque tokens and reached for
-real codes. And `crates/web/tests/board.rs:161` asserted
+Two more instances, in two other crates. The opening-hand weaknesses test, then
+in `scenarios` and since moved to
+`crates/cards/tests/integration/opening_hand_weaknesses.rs`, padded a player
+deck with `01001`–`01004` — Roland Banks, Daisy Walker, "Skids" O'Toole and
+Agnes Baker, four real *investigator* cards, in a zone none of them can legally
+occupy — because the test needed four opaque tokens and reached for real codes.
+And `crates/web/tests/integration/board.rs:161` asserted
 `html.contains("_synth_fast_event")` — over a hand seeded at `:119-122` — while
 the file's test registry (`:33`)
 knew only `TEST_INV` and the terminal act/agenda cards: the assertion
@@ -97,7 +99,7 @@ already working; this ADR names it rather than inventing it.
 `layout: &[]`, and the local scenario registry — is identical across every reader,
 so where several tests in one crate need it, it is shared *there*, in that crate's
 own `tests/common/`. The `setup()` *state* is local, composed per test with
-`GameStateBuilder`. `crates/server/tests/common/mod.rs` demonstrates this: a
+`GameStateBuilder`. `crates/server/tests/integration/common/mod.rs` demonstrates this: a
 ten-line mock scenario, with a comment naming exactly where the shared
 fixture's shape was wrong for it — *"`seat_and_open` seats the investigators at creation,
 so neither the pre-seeded investigator nor the seating is injected here."*
@@ -113,7 +115,7 @@ built for looked at the fixture, wanted a different shape, and wrote its own.
 The feature existed because cargo compiles integration-test binaries without
 `cfg(test)` on their own crate, so a `#[cfg(any(test, feature = "test_fixtures"))]`
 gate is inactive there. Every reader instead builds the `ScenarioModule` shell it
-needs locally — the pattern `crates/server/tests/common/mod.rs` already uses — which
+needs locally — the pattern `crates/server/tests/integration/common/mod.rs` already uses — which
 is the more honest thing for them to do: they test the engine's resolution hook,
 not the crate's routing table. **The fixture is deleted, and the feature with it.**
 
@@ -195,13 +197,13 @@ exercise scenario data*, not *is it a full walk*; a full-walk rule would evict
 **A test with no card dependency lives in `crates/game-core/tests/`.** The upkeep,
 hand-size, resolution and hunter-movement tests need a scenario module, not a card,
 and build that shell locally. A scenario test that duplicated a corpus test is
-deleted rather than kept: `crates/cards/tests/cover_up.rs` tests the real 01007,
+deleted rather than kept: `crates/cards/tests/integration/cover_up.rs` tests the real 01007,
 `issue_476_fast_window.rs` covers the Fast window with Magnifying Glass 01030, and
 `the_gathering_resolutions.rs` covers the full walks, its replay-determinism walk
 included.
 
 **Naming stops implying a shared fixture that is not there.** Test-local codes take
-a per-binary prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
+a per-file prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
 `_ea_*` / `SRC*` / `_mpp_*`. Under the shared `_synth_` prefix, `_synth_enemy` had
 four independent definitions with independently hand-written stats, and three
 `_synth_*` codes were defined nowhere at all.

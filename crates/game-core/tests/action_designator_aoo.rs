@@ -34,8 +34,8 @@
 //!
 //! The real-corpus half — Machete 01020 (**Fight**, exempt), Flashlight 01087
 //! (**Investigate**, not exempt), First Aid 01019 (no designator, not exempt) —
-//! is `crates/cards/tests/activate_ability_aoo.rs`, and the attack-of-opportunity
-//! table over every way of taking an action is `crates/cards/tests/taking_an_action.rs`.
+//! is `crates/cards/tests/integration/activate_ability_aoo.rs`, and the attack-of-opportunity
+//! table over every way of taking an action is `crates/cards/tests/integration/taking_an_action.rs`.
 
 use std::sync::LazyLock;
 

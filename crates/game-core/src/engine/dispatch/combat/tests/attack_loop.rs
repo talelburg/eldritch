@@ -73,7 +73,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
 /// still exhausts."* A cancelled attack reaches here having dealt no damage
 /// (the coordinator abandoned its sequence before the resolve step), which
 /// this fixture reproduces by parking the loop with no damage applied. The
-/// end-to-end cancel is `crates/cards/tests/dodge.rs`.
+/// end-to-end cancel is `crates/cards/tests/integration/dodge.rs`.
 #[test]
 fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     let inv_id = InvestigatorId(1);
