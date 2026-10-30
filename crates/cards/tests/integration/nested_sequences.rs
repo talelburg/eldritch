@@ -65,7 +65,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, SeatLookup as _, StagedEnemy, TestSession};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -106,6 +106,17 @@ fn has_in_play(state: &GameState, code: &str) -> bool {
         .any(|c| c.code == CardCode::new(code))
 }
 
+/// The Goat Spawn's stand-in: ready, **2 damage already on it** and 3 health,
+/// so Guard Dog's 1 retaliate damage defeats it — the example's setup exactly.
+/// Its attack deals 1 damage and no horror.
+fn goat_spawn() -> StagedEnemy {
+    enemy(SPAWN)
+        .health(3)
+        .damage(2)
+        .attack_damage(1)
+        .attack_horror(0)
+}
+
 #[test]
 fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // A clue at the location for Roland's reaction to discover — the marker
@@ -124,17 +135,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
                 // convention).
                 .in_play([GUARD_DOG, ROLAND]),
         )
-        // The Goat Spawn's stand-in: ready, **2 damage already on it** and 3
-        // health, so Guard Dog's 1 retaliate damage defeats it — the
-        // example's setup exactly. Its attack deals 1 damage and no horror.
-        .with_enemy(
-            enemy(SPAWN)
-                .health(3)
-                .damage(2)
-                .attack_damage(1)
-                .attack_horror(0)
-                .engaged_with(INV),
-        )
+        .with_enemy_engaged(goat_spawn(), INV)
         .open_turn(INV)
         .session();
     let dog = session.state().in_play(INV, GUARD_DOG);
