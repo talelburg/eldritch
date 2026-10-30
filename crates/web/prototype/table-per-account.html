@@ -87,9 +87,9 @@
   body.d { padding-bottom: 0; overflow: hidden; }
   body.d .switcher { bottom: auto; top: 0.4rem; }
   body.d .notes { top: 3rem; right: 3.6rem; }
-  .d-screen { height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+  .d-screen { height: 100vh; display: grid; grid-template-columns: 1fr 3rem; grid-template-rows: auto 1fr auto; }
+  .d-screen > header.app, .d-screen > .d-board, .d-screen > .dock { grid-column: 1; }
   .d-screen header.app { margin: 2.9rem 1rem 0.2rem; }
-  .d-mid { display: grid; grid-template-columns: 1fr 3rem; min-height: 0; position: relative; }
   .d-board { overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; min-height: 0; }
   .actagenda { display: flex; gap: 0.5rem; font-size: 0.78rem; }
   .actagenda span { border: 1px solid #999; border-radius: 4px; padding: 0.15rem 0.5rem; background: #fff; }
@@ -104,16 +104,20 @@
   .snode .tok { font-size: 0.72rem; padding: 0 0.3rem; border-radius: 0.5rem; background: #dde6ff; cursor: pointer; }
   .snode .tok.mine { background: #cfeccf; } .snode .tok.focus { outline: 2px solid #333; }
   /* the phase band */
-  .band { border-left: 1px solid #ddd; background: #fafafa; font-size: 0.68rem; text-align: center; overflow: auto; position: relative; }
-  .band .ph { font-weight: bold; color: #444; margin-top: 0.35rem; border-top: 1px solid #ddd; padding-top: 0.15rem; }
-  .band .st { position: relative; padding: 0.08rem 0; color: #777; cursor: default; }
+  /* Full height down the right edge, beside header, map and dock alike; its rows
+     share the height evenly, so it never scrolls. */
+  .band { grid-column: 2; grid-row: 1 / 4; border-left: 1px solid #ddd; background: #fafafa; font-size: 0.68rem; text-align: center;
+          display: flex; flex-direction: column; justify-content: space-evenly; overflow: hidden; padding: 0.2rem 0; }
+  .band .ph { font-weight: bold; color: #444; border-top: 1px solid #ddd; }
+  .band .st { position: relative; color: #777; cursor: default; }
   .band .st.win { color: #bbb; }
   .band .st.now { background: #f2d264; color: #000; font-weight: bold; border-radius: 3px; }
   .band .ph.now { color: #000; background: #fff4d0; }
   .tip { position: fixed; background: #222; color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; z-index: 20; }
-  .popout { position: absolute; right: 3rem; top: 0; width: 22rem; max-height: 100%; overflow: auto; background: #fff; border: 1px solid #aaa; box-shadow: -3px 3px 12px #0003; font-size: 0.8rem; padding: 0.4rem 0.6rem; z-index: 5; }
-  .popout .ph { font-weight: bold; margin-top: 0.3rem; } .popout .now { background: #f2d264; font-weight: bold; }
-  .popout .win { color: #999; font-style: italic; }
+  /* A card's hover text: the printed text the compact card leaves out. */
+  .tip.cardtip { white-space: normal; width: 20rem; background: #fff; color: #222; border: 1px solid #333; box-shadow: 0 3px 12px #0004; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+  .cardtip .fl { font-style: italic; color: #666; margin-top: 0.3rem; }
+  [data-card] { cursor: help; }
   /* the dock */
   .dock { border-top: 2px solid #888; background: #fdfdfd; }
   .table-strip { padding: 0.3rem 0.8rem; font-size: 0.85rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #ddd; }
@@ -230,10 +234,10 @@ const STEPS = {
 const params = new URLSearchParams(location.search);
 const VARIANTS = [['A', 'Stacked panels'], ['B', 'My board + table rail'], ['C', 'Around the table'], ['D', 'Docked panel + tabs (round 2)']];
 // D's open question: are the tabs for investigators I control marked, and how?
-const MARKS = [['badge', 'tabs name the account'], ['colour', 'my tabs tinted'], ['none', 'no marking']];
+const MARKS = [['colour', 'my tabs tinted (chosen)'], ['badge', 'tabs name the account'], ['none', 'no marking']];
 let st = {
   variant: params.get('variant') || 'D', as: params.get('as') || 'you', s: +(params.get('s') || 1),
-  mark: params.get('mark') || 'badge', popout: false,
+  mark: params.get('mark') || 'colour',
   expanded: {}, focus: null, selected: new Set(), notesMin: (params.get('variant') || 'D') === 'D',
 };
 function push() {
@@ -453,6 +457,17 @@ function variantC() {
 const D_POS = { Attic: [0, 0], Hallway: [0, 1], Cellar: [1, 1], Parlor: [0, 2] };
 const D_EDGES = [['Hallway', 'Attic'], ['Hallway', 'Cellar'], ['Hallway', 'Parlor']];
 const D_SHROUD = { Hallway: 1, Attic: 1, Cellar: 4, Parlor: 2 };
+// Hover text for the compact cards, verbatim from the snapshot
+// (data/arkhamdb-snapshot/pack/core/core_encounter.json). The agenda's 1a side
+// prints only flavor; the unrevealed Parlor shows its unrevealed side.
+const CARD_TEXT = {
+  Hallway: { title: 'Hallway (01112) · shroud 1', fl: 'The walls of your house are splattered with mud, and your hardwood floor is gone, replaced with a dirt path.' },
+  Attic: { title: 'Attic (01113) · shroud 1 · 2 clues per investigator', text: '<b>Forced</b> - After you enter the Attic: Take 1 horror.', fl: 'The bloody carcass of a malformed beast swings from a meat hook chained to the ceiling. Blood drains slowly from the carcass, dripping into a small barrel.' },
+  Cellar: { title: 'Cellar (01114) · shroud 4 · 2 clues per investigator', text: '<b>Forced</b> - After you enter the Cellar: Take 1 damage.', fl: 'Your cellar seems to have been replaced with an underground network of icy tunnels and caverns. The cold chills you to the bone.' },
+  Parlor: { title: 'Parlor (01115) · unrevealed', text: 'The entrance to the Parlor is blocked by a darkly glowing unfathomable barrier. You cannot move into the Parlor.' },
+  agenda: { title: "Agenda 1a · What's Going On?! (01105) · doom threshold 3", fl: 'It is late at night. You are holed up in your study, researching the bloody disappearances that have been taking place in the region. A few hours into your research, you hear the sound of strange chanting coming from your parlor, down the hall. At the same time, you hear dirt churning, as if something were digging beneath the floor.' },
+  act: { title: 'Act 2a · The Barrier (01109) · clues 3', text: '<b>Objective</b> - When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance.', fl: "A glowing barrier blocks the path to your parlor. As you move toward it, intense heat forces you to back away. Picking up a handful of dirt, you toss it as the barrier and watch in horror as the dirt incinerates. Perhaps there's something in the cellar or attic that can help." },
+};
 const CW = 270, CH = 100, LW = 130, LH = 60;
 const ROUND = [
   ['Mythos', ['1.1 Round begins. Mythos phase begins.', '1.2 Place 1 doom on the current agenda.', '1.3 Check doom threshold.', '1.4 Each investigator draws 1 encounter card.', 'W', '1.5 Mythos phase ends.']],
@@ -471,7 +486,7 @@ function dMap() {
       .map(i => `<span class="tok ${mine(i) ? 'mine' : ''} ${i === dFocus() ? 'focus' : ''}" onclick="setFocus('${i}')">${INV[i].short}</span>`).join('');
     const ens = scn().enemies.filter(e => e.at === l).map(e => `<span class="card enemy">${e.name}</span>`).join('');
     const un = UNREVEALED.includes(l);
-    return `<div class="snode ${un ? 'unrev' : ''}" style="left:${D_POS[l][0] * CW}px;top:${D_POS[l][1] * CH}px">
+    return `<div class="snode ${un ? 'unrev' : ''}" data-card="${l}" style="left:${D_POS[l][0] * CW}px;top:${D_POS[l][1] * CH}px">
       <div class="lc">${un ? '' : `<span class="shroud" title="shroud">${D_SHROUD[l]}</span>`}<b>${l}</b>${un ? '<br><span class="muted">unrevealed</span>' : ''}</div>
       <div class="rail">${toks}${ens}</div></div>`;
   }).join('');
@@ -482,14 +497,7 @@ function dBand() {
     list.map(t => t === 'W'
       ? `<div class="st win" data-tip="${WIN_TEXT}">◇</div>`
       : `<div class="st ${isNow(ph, t) ? 'now' : ''}" data-tip="${esc(t)}">${t.split(' ')[0]}</div>`).join('')).join('');
-  return `<aside class="band"><button class="link" title="Pop the round out" onclick="st.popout=!st.popout;render()">${st.popout ? '⇥' : '⇤'}</button>${steps}</aside>`;
-}
-function dPopout() {
-  if (!st.popout) return '';
-  return `<div class="popout"><b>Round 3</b> <button class="link" style="float:right" onclick="st.popout=false;render()">pop back ⇥</button>
-    ${ROUND.map(([ph, list]) => `<div class="ph">${ph}</div>` + list.map(t => t === 'W'
-      ? `<div class="win">${WIN_TEXT}</div>`
-      : `<div class="${isNow(ph, t) ? 'now' : ''}">${esc(t)}${isNow(ph, t) && scn().active ? ` (${INV[scn().active].short})` : ''}</div>`).join('')).join('')}</div>`;
+  return `<aside class="band">${steps}</aside>`;
 }
 function dFocus() {
   return st.focus || focusDefault();
@@ -539,9 +547,9 @@ function variantD() {
     </div></div>`;
   return `<div class="d-screen">
     <header class="app"><h1>Eldritch</h1><span class="muted">signed in as ${ACCOUNTS[st.as].name}${ACCOUNTS[st.as].holds.length ? '' : ' (viewer)'}</span></header>
-    <div class="d-mid"><div class="d-board">
-        <div class="actagenda"><span>Agenda 1a · What's Going On?! · doom 2/3</span><span>Act 2a · The Barrier</span></div>
-        ${dMap()}</div>${dBand()}${dPopout()}</div>
+    <div class="d-board">
+        <div class="actagenda"><span data-card="agenda">Agenda 1a · What's Going On?! · doom 2/3</span><span data-card="act">Act 2a · The Barrier</span></div>
+        ${dMap()}</div>${dBand()}
     <section class="dock">${strip}<div class="dtabs">${tabs}</div>${panel}</section>
   </div>`;
 }
@@ -589,13 +597,22 @@ document.addEventListener('keydown', e => {
 // The phase band's hover text: instant, unlike a native `title`.
 let tipEl = null;
 document.addEventListener('mouseover', e => {
-  const t = e.target.closest && e.target.closest('[data-tip]');
+  const t = e.target.closest && e.target.closest('[data-tip], [data-card]');
   if (tipEl) { tipEl.remove(); tipEl = null; }
   if (!t) return;
   const r = t.getBoundingClientRect();
-  tipEl = document.createElement('div'); tipEl.className = 'tip'; tipEl.textContent = t.dataset.tip;
-  document.body.appendChild(tipEl);
-  tipEl.style.top = r.top + 'px'; tipEl.style.left = (r.left - tipEl.offsetWidth - 6) + 'px';
+  tipEl = document.createElement('div');
+  if (t.dataset.card) {
+    const c = CARD_TEXT[t.dataset.card];
+    tipEl.className = 'tip cardtip';
+    tipEl.innerHTML = `<b>${esc(c.title)}</b>${c.text ? `<div>${c.text}</div>` : ''}${c.fl ? `<div class="fl">${esc(c.fl)}</div>` : ''}`;
+    document.body.appendChild(tipEl);
+    tipEl.style.top = (r.bottom + 4) + 'px'; tipEl.style.left = r.left + 'px';
+  } else {
+    tipEl.className = 'tip'; tipEl.textContent = t.dataset.tip;
+    document.body.appendChild(tipEl);
+    tipEl.style.top = r.top + 'px'; tipEl.style.left = (r.left - tipEl.offsetWidth - 6) + 'px';
+  }
 });
 render();
 </script>
