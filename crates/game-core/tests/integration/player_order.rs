@@ -11,8 +11,8 @@
 
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support::{self, seat, TestSession, TEST_REGISTRIES, TEST_TREACHERY};
+use game_core::state::{GameStateBuilder, InvestigatorId, Phase};
+use game_core::test_support::{self, enemy, seat, TestSession, TEST_REGISTRIES, TEST_TREACHERY};
 
 const FIRST_SEAT: InvestigatorId = InvestigatorId(1);
 const LEAD: InvestigatorId = InvestigatorId(2);
@@ -28,14 +28,11 @@ fn lead_on_the_second_seat() -> GameStateBuilder {
         )
 }
 
-/// Settle `board`, with the two treacheries on the encounter deck (no builder
-/// setter stages it).
+/// Settle `board`, with the two treacheries on the encounter deck.
 fn session(board: GameStateBuilder) -> TestSession {
-    let mut state = board.build();
-    state.encounter_deck = [TEST_TREACHERY, TEST_TREACHERY]
-        .into_iter()
-        .map(CardCode::new)
-        .collect();
+    let state = board
+        .with_encounter_deck([TEST_TREACHERY, TEST_TREACHERY])
+        .build();
     TestSession::new(state, TEST_REGISTRIES)
 }
 
@@ -88,14 +85,10 @@ fn investigation_turns_start_at_the_lead() {
 /// next player."* The phase ends on seat 1's turn, the last in player order.
 #[test]
 fn enemy_attacks_start_at_the_lead() {
-    let mut on_first = test_support::test_enemy(1, "Engaged with seat 1");
-    on_first.attack_damage = 1;
-    let mut on_lead = test_support::test_enemy(2, "Engaged with the lead");
-    on_lead.attack_damage = 1;
     let session = session(
         lead_on_the_second_seat()
-            .with_enemy_engaged(on_first, FIRST_SEAT)
-            .with_enemy_engaged(on_lead, LEAD)
+            .with_enemy(enemy(1).attack_damage(1).engaged_with(FIRST_SEAT))
+            .with_enemy(enemy(2).attack_damage(1).engaged_with(LEAD))
             .open_turn(FIRST_SEAT),
     )
     .take(&TurnAction::EndTurn);

@@ -155,7 +155,7 @@ fn harm_lands_on_the_investigator_card() {
 fn the_scalar_and_zone_setters_fill_what_they_name() {
     let state = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -269,7 +269,7 @@ fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
 fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -301,7 +301,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
     ));
     let session = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_investigator(investigator)
         .open_turn(INV)
         .session()

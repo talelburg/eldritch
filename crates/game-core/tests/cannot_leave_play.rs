@@ -100,7 +100,7 @@ fn board(horror_on_it: u8) -> TestSession {
                 .threat_area([(PINNED, horror(horror_on_it))])
                 .hand([TWO_HANDED]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session()
 }

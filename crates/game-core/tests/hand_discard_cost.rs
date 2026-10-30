@@ -142,8 +142,6 @@ fn registries() -> Registries {
 /// `INV`'s open turn at `HERE` (3 clues), with `in_play` in play and `hand` in
 /// hand.
 fn session(in_play: &[&str], hand: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 3;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -152,7 +150,7 @@ fn session(in_play: &[&str], hand: &[&str]) -> TestSession {
                 .in_play(in_play.iter().copied())
                 .hand(hand.iter().copied()),
         )
-        .with_location(location)
+        .with_location(test_support::location(HERE).clues(3))
         .open_turn(INV)
         .session()
 }

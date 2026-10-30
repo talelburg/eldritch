@@ -145,12 +145,10 @@ const ATTACKER: EnemyId = EnemyId(7);
 /// this turn rather than reached by a real attack or discovery (see each
 /// test), so the session comes back to the turn menu afterwards.
 fn session_holding(codes: &[&str], location_clues: u8) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Mock location");
-    location.clues = location_clues;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(INV.0).at(HERE).threat_area(codes.iter().copied()))
-        .with_location(location)
+        .with_location(test_support::location(HERE).clues(location_clues))
         .open_turn(INV)
         .session()
 }
@@ -342,9 +340,6 @@ fn a_fast_event_played_in_an_enemy_attack_damage_window_names_the_attacking_enem
     // A real attack: drawing a card while engaged provokes the enemy's attack
     // of opportunity, whose damage opens the window the Fast event is played
     // in. (Draw rather than Resource, whose resource gain `marks` would count.)
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
-    attacker.attack_damage = 1;
-    attacker.attack_horror = 0;
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -353,8 +348,13 @@ fn a_fast_event_played_in_an_enemy_attack_damage_window_names_the_attacking_enem
                 .hand([NAMES_ATTACKER])
                 .deck(["filler-card"]),
         )
-        .with_location(test_support::test_location(HERE.0, "Mock location"))
-        .with_enemy_engaged(attacker, INV)
+        .with_location(test_support::location(HERE))
+        .with_enemy(
+            test_support::enemy(ATTACKER)
+                .attack_damage(1)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .session()
         .take(&TurnAction::Draw { investigator: INV });

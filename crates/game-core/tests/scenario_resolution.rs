@@ -26,10 +26,9 @@ use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
+use game_core::test_support::{self, act, agenda, MockRegistry, TestSession, TEST_INV};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).
 const PREFIX: &str = "_sr_";
@@ -88,38 +87,23 @@ fn registries() -> Registries {
 /// encounter card, and two-card act and agenda decks whose **last** card is the
 /// synthetic terminal card (ADR 0013) — act → R1, agenda → R2.
 fn setup() -> GameState {
-    let mut location = test_support::test_location(10, "Resolution Location");
-    location.code = CardCode::new(format!("{PREFIX}loc"));
-
     let mut state = GameStateBuilder::new()
-        .with_location(location)
+        .with_location(test_support::location(10).code(format!("{PREFIX}loc")))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(SCENARIO_ID))
+        .with_encounter_deck([TREACHERY])
+        .with_agenda_deck([
+            agenda(format!("{PREFIX}agenda_1"), 2),
+            agenda(test_support::terminal_code(2), 2),
+        ])
+        .with_act_deck([
+            act(format!("{PREFIX}act_1"), 2),
+            act(test_support::terminal_code(1), 2),
+        ])
         .build();
     // `seat_and_open` places roster investigators at `starting_location` and
     // reveals it; point it at the already-revealed location above.
     state.starting_location = Some(LocationId(10));
-    state.encounter_deck.push_back(CardCode::new(TREACHERY));
-    state.agenda_deck = vec![
-        Agenda {
-            code: CardCode::new(format!("{PREFIX}agenda_1")),
-            doom_threshold: 2,
-        },
-        Agenda {
-            code: test_support::terminal_code(2),
-            doom_threshold: 2,
-        },
-    ];
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new(format!("{PREFIX}act_1")),
-            clue_threshold: 2,
-        },
-        Act {
-            code: test_support::terminal_code(1),
-            clue_threshold: 2,
-        },
-    ];
     state
 }
 
