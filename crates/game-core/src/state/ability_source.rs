@@ -168,11 +168,9 @@ mod tests {
     use super::*;
     use crate::state::{ActionResume, CandidateSource};
 
-    /// The descriptor rides the wire twice: inside a parked
-    /// [`ActionResume::ActivateAbility`] frame in serialized game state, and in
-    /// the seed state the server replays its action log over. A change to it
-    /// carries no migration (persisted games are discarded), so what the shape
-    /// *is* wants pinning.
+    /// The descriptor rides the wire inside a parked
+    /// [`ActionResume::ActivateAbility`] frame in serialized game state, so
+    /// what the shape *is* wants pinning.
     #[test]
     fn a_source_round_trips_through_serialization() {
         let source = AbilitySource::InPlay(CardInstanceId(7));

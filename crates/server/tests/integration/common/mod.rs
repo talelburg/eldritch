@@ -13,7 +13,9 @@ use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRe
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
+use serde::Serialize;
 use server::db::MIGRATOR;
+use server::session::GameSession;
 use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -60,6 +62,21 @@ pub(crate) fn roster() -> Vec<RosterEntry> {
         deck: vec![],
         random_basic_weaknesses: 0,
     }]
+}
+
+/// Create a game of the mock scenario with [`roster`], led by its one
+/// investigator, and return the live session at the mulligan prompt.
+pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
+    GameSession::create(
+        pool.clone(),
+        REGISTRIES,
+        game_id,
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+        0,
+    )
+    .await
+    .expect("create game")
 }
 
 /// A migrated single-connection in-memory pool.
@@ -112,4 +129,43 @@ pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
             _ => {}
         }
     }
+}
+
+/// Set one JSON field, at `path`, of the answer logged at `seq` for `game_id`:
+/// the stored-row edit that simulates an engine change between `apply` and
+/// `load`.
+pub(crate) async fn set_logged(
+    pool: &SqlitePool,
+    game_id: &str,
+    seq: i64,
+    path: &str,
+    value: impl Serialize,
+) {
+    let value = serde_json::to_string(&value).expect("serialize the edited value");
+    let edited = sqlx::query(
+        "UPDATE actions SET answer = json_set(answer, ?, json(?)) WHERE game_id = ? AND seq = ?",
+    )
+    .bind(path)
+    .bind(value)
+    .bind(game_id)
+    .bind(seq)
+    .execute(pool)
+    .await
+    .expect("edit the logged answer");
+    assert_eq!(edited.rows_affected(), 1, "one logged answer is edited");
+}
+
+/// How many `games` and `actions` rows `game_id` has.
+pub(crate) async fn stored_rows(pool: &SqlitePool, game_id: &str) -> (i64, i64) {
+    let (games,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_one(pool)
+        .await
+        .expect("count games");
+    let (actions,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM actions WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_one(pool)
+        .await
+        .expect("count actions");
+    (games, actions)
 }

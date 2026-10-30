@@ -2,28 +2,30 @@
 //! load-by-replay.
 //!
 //! Driven against an in-memory `SQLite` with a mock scenario registry (seating
-//! runs at creation: the seed is round-1 mulligan-pending, so a
+//! runs at creation: a new game is round-1 mulligan-pending, so a
 //! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
 //! selecting a non-existent card is rejected).
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::{InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::GameId;
-use server::session::{GameSession, SessionError};
+use server::logged_answer::ReplayFailure;
+use server::session::{GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
-/// Regression test for the load bug: a game with zero logged actions whose
-/// seed outcome is `AwaitingInput` must load as `AwaitingInput`, not `Done`.
+/// Regression test for the load bug: a game with zero logged actions, whose
+/// setup ends `AwaitingInput` at the mulligan, must load as `AwaitingInput`,
+/// not `Done`.
 #[tokio::test]
 async fn load_restores_awaiting_input_seed_with_empty_log() {
     let pool = common::memory_pool().await;
     let session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
-        "seeded",
+        "fresh",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -37,17 +39,17 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
     ));
     assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
 
-    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("seeded"))
+    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("fresh"))
         .await
         .unwrap()
         .expect("exists");
     assert_eq!(
         loaded.state, session.state,
-        "load reproduces the seeded state"
+        "load reproduces the state setup left"
     );
     assert!(
         matches!(loaded.outcome, EngineOutcome::AwaitingInput { .. }),
-        "load must restore the seed's AwaitingInput outcome from an empty log, got {:?}",
+        "load must restore setup's AwaitingInput outcome from an empty log, got {:?}",
         loaded.outcome
     );
 }
@@ -255,50 +257,47 @@ async fn load_replays_log_to_reproduce_live_state() {
     assert!(missing.is_none());
 }
 
-/// A log the engine does not accept must fail the load, not produce a
-/// half-reconstructed session.
+/// A log the engine does not accept must fail the load as an unresumable game,
+/// not produce a half-reconstructed session.
 ///
-/// The action log carries no schema version and addresses the turn menu
-/// by position, so an engine change to what an action *means* can leave a row
-/// perfectly deserializable and not replayable. Simulated here by
-/// appending a row the engine rejects — the same observable a stale log
+/// An engine change to what an action *means* can leave a row perfectly
+/// deserializable and not replayable. Simulated here by turning the logged
+/// mulligan answer into a `Confirm`: it still answers the same prompt, which
+/// the engine rejects a `Confirm` for — the same observable a stale log
 /// produces.
 #[tokio::test]
 async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let pool = common::memory_pool().await;
-    let _session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "stale",
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .unwrap();
-
-    // A mulligan pick of a card that isn't in hand: accepted by serde, rejected
-    // by the engine.
-    let doomed = serde_json::to_string(&Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: vec![OptionId(999_999)],
-        },
-    }))
-    .unwrap();
-    sqlx::query("INSERT INTO actions (game_id, seq, action) VALUES (?, ?, ?)")
-        .bind("stale")
-        .bind(0_i64)
-        .bind(&doomed)
-        .execute(&pool)
+    let mut session = common::create_game(&pool, "stale").await;
+    session
+        .apply(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })
         .await
         .unwrap();
+    common::set_logged(&pool, "stale", 0, "$.response", "Confirm").await;
 
-    let Err(err) = GameSession::load(pool, common::REGISTRIES, &GameId::new("stale")).await else {
+    let Err(err) = GameSession::load(pool.clone(), common::REGISTRIES, &GameId::new("stale")).await
+    else {
         panic!("a log that cannot be replayed must fail the load");
     };
     assert!(
-        matches!(err, SessionError::Replay { seq: 0, .. }),
-        "the failure must name the offending action, got {err:?}",
+        matches!(
+            &err,
+            SessionError::Unresumable {
+                game_id,
+                reason: UnresumableReason::Replay {
+                    seq: 0,
+                    reason: ReplayFailure::Rejected(_),
+                },
+            } if game_id.as_str() == "stale"
+        ),
+        "the failure must name the game and the offending action, got {err:?}",
+    );
+    assert_eq!(
+        common::stored_rows(&pool, "stale").await,
+        (1, 1),
+        "an unresumable game's rows are kept",
     );
 }
 
@@ -308,7 +307,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
 async fn create_randomizes_the_setup_seed_per_game() {
     // The mock scenario's setup() pins a fixed
     // builder seed (42); create() must override it with host entropy, so two
-    // games created from the same module hold distinct frozen seeds.
+    // games created from the same module hold distinct seeds.
     let pool = common::memory_pool().await;
     let one = GameSession::create(
         pool.clone(),

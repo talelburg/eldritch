@@ -264,10 +264,6 @@ pub struct GameState {
     /// card a player controls but does not own has no business in it — which is
     /// exactly Lita Chantler 01117 after a Parley, whose ruling puts her here
     /// instead of in anyone's discard (<https://arkhamdb.com/card/01117>).
-    ///
-    /// `#[serde(default)]` for the same reason `interactive_acknowledge` carries
-    /// one: seeds written before the field existed still deserialize.
-    #[serde(default)]
     pub removed_from_game: Vec<CardCode>,
     /// When set, the engine suspends with an `AwaitingInput { InputKind::Confirm }`
     /// at skill-test resolution (after the result events are emitted, before the
@@ -275,9 +271,7 @@ pub struct GameState {
     /// result and wait for an acknowledgment. A *cosmetic* pause — it
     /// makes no game decision — so it is gated: the server sets it for human play,
     /// while tests and non-interactive/headless consumers leave it `false` and
-    /// resolve straight through. `#[serde(default)]` keeps already-persisted game
-    /// seeds (written before this field existed) deserializable.
-    #[serde(default)]
+    /// resolve straight through.
     pub interactive_acknowledge: bool,
 }
 

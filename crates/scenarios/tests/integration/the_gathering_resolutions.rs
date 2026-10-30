@@ -829,10 +829,9 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
 ///
 /// It holds on a real Gathering walk, which is the substrate ADR 0016 asks for.
 /// The serde step at the split is the *only* delta from a straight second drive
-/// of the log, so the comparison isolates round-trip fidelity — the property the
-/// server's persistence depends on, since it persists a seed state plus a
-/// `ResolveInput`-only action log — on top of the seeded-`rng` replay path both
-/// runs share.
+/// of the log, so the comparison isolates round-trip fidelity — the property a
+/// client's state baseline depends on, since the server sends it serialized
+/// mid-game — on top of the seeded-`rng` replay path both runs share.
 #[test]
 fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
     let (log, split, walked) = drive_the_walk();

@@ -1,10 +1,9 @@
 //! Reconnect + restart resume: a game paused at an in-flight
 //! `AwaitingInput` is delivered to a reconnecting client (and rebuilt
-//! from the persisted seed outcome after a restart), and can be resolved
-//! over the wire.
+//! by re-running setup after a restart), and can be resolved over the wire.
 //!
 //! These are acceptance tests: the mechanics fall out of the generic
-//! outcome handling built in P5.2 (`load` restores the seed outcome,
+//! outcome handling built in P5.2 (`load` starts from setup's outcome,
 //! replayed actions overwrite) and P5.3 (`Hello`/`Applied` carry the
 //! outcome, `ResolveInput` is just another `Submit`). No new server code
 //! is needed — these prove the pieces compose.
@@ -63,20 +62,20 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
 }
 
 #[tokio::test]
-async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
+async fn restart_restores_awaiting_input_by_rerunning_setup() {
     let pool = common::memory_pool().await;
     seed(&pool, "g-restart").await;
 
     // "Restart": a fresh server with empty rooms over the same database.
-    // The game has zero logged actions; AwaitingInput is restored from the
-    // persisted seed_outcome (not from log replay).
+    // The game has zero logged actions; AwaitingInput is setup's own
+    // outcome, restored by re-running setup from the stored inputs.
     let addr = common::spawn_server(pool).await;
     let mut c = common::connect(addr, "g-restart").await;
     match common::recv(&mut c).await {
         ServerMessage::Hello { outcome, .. } => {
             assert!(
                 matches!(outcome, EngineOutcome::AwaitingInput { .. }),
-                "restart must restore AwaitingInput from the seed outcome, got {outcome:?}"
+                "restart must restore setup's AwaitingInput, got {outcome:?}"
             );
         }
         other => panic!("expected Hello(AwaitingInput), got {other:?}"),

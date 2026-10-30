@@ -1,12 +1,11 @@
 //! Regression for #512: the events emitted during scenario setup
-//! (`seat_and_open`) are persisted at create time and delivered in the
-//! reconnect baseline `Hello`, so the client's event log can show the opening
+//! (`seat_and_open`) are delivered in the reconnect baseline `Hello`, so the client's event log can show the opening
 //! draws / shuffles / weakness set-aside.
 //!
 //! This is the path the live client hits: `POST /games` creates and persists
 //! the session, then the websocket connection reloads it from the DB (the
-//! in-memory created session is not held), so the events must survive the
-//! round-trip through the persisted column — not just live in memory.
+//! in-memory created session is not held), so the events must come back from
+//! the reload's re-run of setup — not just live in memory.
 
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
@@ -19,8 +18,8 @@ use crate::common::{self, TEST_SCENARIO_ID};
 async fn hello_carries_setup_events_after_reload_from_db() {
     let pool = common::memory_pool().await;
     // Create + persist a game (as `POST /games` does), then spin a server that
-    // serves it purely from the DB — proving the events come from the persisted
-    // column, not a retained in-memory session.
+    // serves it purely from the DB — proving the events come from the reload,
+    // not a retained in-memory session.
     GameSession::create(
         pool.clone(),
         common::REGISTRIES,
@@ -38,7 +37,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
         ServerMessage::Hello { events, .. } => {
             assert!(
                 !events.is_empty(),
-                "the reconnect Hello must carry the persisted setup events; \
+                "the reconnect Hello must carry the setup events; \
                  got an empty list (setup events were dropped on reload)",
             );
             // ScenarioStarted is always emitted at setup, so it must be present.

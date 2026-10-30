@@ -60,9 +60,9 @@ pub enum PlayerAction {
 /// them, and how many random basic weaknesses to shuffle into it.
 ///
 /// Crosses the wire to the host, which seats it through
-/// `engine::seat_and_open`. Seating is not a logged action: the seated state is
-/// frozen as the game's seed state, so the deck composition, drawn weaknesses
-/// included, replays deterministically.
+/// `engine::seat_and_open`. Seating is not a logged action: the host stores the
+/// roster with the game's RNG seed and re-runs seating on load, so the deck
+/// composition, drawn weaknesses included, replays deterministically.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RosterEntry {
     /// Investigator card code (e.g. `"01001"` for Roland Banks).

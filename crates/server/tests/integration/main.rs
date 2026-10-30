@@ -17,4 +17,5 @@ mod registries;
 mod resume;
 mod setup_events;
 mod static_files;
+mod stored_game;
 mod ws;

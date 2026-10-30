@@ -123,12 +123,6 @@ pub struct Investigator {
     /// during the setup draw and mulligan redraw, then drained back into
     /// `deck` (and shuffled) once the mulligan loop fully drains.
     /// Empty for all investigators once the Investigation phase begins.
-    ///
-    /// `#[serde(default)]`: this field is always empty in wire-serialized
-    /// game-in-progress states (setup is complete before any client sees the
-    /// state), so older payloads without the field deserialize to the correct
-    /// empty-vector default rather than failing.
-    #[serde(default)]
     pub setaside: Vec<CardCode>,
     /// Cards this investigator owns that have been removed from the game.
     /// Mostly elimination's (Rules Reference p.10, "Elimination," step 1):
@@ -386,6 +380,7 @@ mod threat_area_tests {
         for field in [
             "investigator_card",
             "threat_area",
+            "setaside",
             "removed_from_game",
             "action_surcharge_spent_this_round",
             "additional_actions_this_turn",

@@ -119,8 +119,8 @@ pub struct CreateGameRequest {
     /// The scenario module to set up. Serialises as its bare id string.
     pub scenario_id: ScenarioId,
     /// The investigators to seat at creation, each paired with the deck the
-    /// player chose. Seated into the persisted seed; a rejected
-    /// seating fails creation with no game row.
+    /// player chose. Seated at creation and stored as the game's roster; a
+    /// rejected seating fails creation with no game row.
     pub roster: Vec<RosterEntry>,
     /// The lead investigator, as an index into [`roster`](Self::roster):
     /// Appendix III step 3, *"Choose one of those investigators to be the lead

@@ -14,7 +14,7 @@ const WIRE_FIXTURE: &str = include_str!("fixtures/stack_wire.json");
 
 /// The stack reads today's wire format into exactly the frames that produced
 /// it, and writes them back byte for byte: a plain array of externally tagged
-/// frames, as the `web` client and the server's persisted seed state expect.
+/// frames, as the `web` client expects.
 #[test]
 fn the_stack_round_trips_the_pre_928_wire_format() {
     let stack: ContinuationStack =
