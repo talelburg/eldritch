@@ -1,0 +1,433 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not part of the web crate's build, never served.
+  Wayfinder ticket #1219, "The table as each account sees it".
+
+  Three structurally different board layouts (?variant=A|B|C), seen from each
+  account's browser (?as=you|sam|alex), across five hand-built moments of a
+  three-investigator Gathering (?s=1..5). Stub data only; buttons submit nothing.
+
+  Cast (per "Players, groups and sessions", #1214):
+    You  — holds Roland Banks (lead) and Agnes Baker
+    Sam  — holds Daisy Walker
+    Alex — a member holding no investigator: a viewer
+  Seating: Roland, Daisy, Agnes.
+
+  Why a standalone file and not ?variant= on the real board: the picker seats one
+  investigator, the protocol has no account yet, and three of the five moments
+  take many turns to reach live. The styling copies the real client's plain look.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE — the table as each account sees it</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding-bottom: 7rem; color: #222; }
+  header.app { display: flex; gap: 1rem; align-items: baseline; margin: 0.8rem 1rem; flex-wrap: wrap; }
+  header.app h1 { margin: 0; font-size: 1.3rem; }
+  .muted { color: #666; font-size: 0.85rem; }
+  .pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 1rem; background: #eef; border: 1px solid #99c; font-size: 0.85rem; }
+  .pill.turn { background: #fff4d0; border-color: #c8a020; }
+  .pill.you { background: #e3f6e3; border-color: #5a5; }
+  .badge { font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem; background: #ddd; margin-left: 0.3rem; vertical-align: middle; }
+  .badge.mine { background: #cfeccf; } .badge.lead { background: #f3e1a0; }
+  .card { display: inline-block; border: 1px solid #999; border-radius: 4px; padding: 0.2rem 0.4rem; margin: 0.15rem; font-size: 0.8rem; background: #fff; }
+  .card.back { background: repeating-linear-gradient(45deg,#6b5b95,#6b5b95 4px,#5a4a84 4px,#5a4a84 8px); color: transparent; width: 2.2rem; }
+  .card.enemy { border-color: #b33; background: #fdeaea; }
+  .card.weak { border-color: #333; background: #eee; font-style: italic; }
+  .card.sel { outline: 2px solid #2a6; }
+  h4 { margin: 0.2rem 0; font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: 0.03rem; }
+  button { font: inherit; font-size: 0.85rem; cursor: pointer; }
+  button.link { border: none; background: none; color: #36c; text-decoration: underline; padding: 0; }
+  /* map */
+  .map { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin: 0.5rem; }
+  .loc { border: 1px solid #333; border-radius: 4px; padding: 0.3rem 0.5rem; min-width: 7rem; font-size: 0.8rem; background: #fff; }
+  .loc.unrev { background: #ececec; color: #888; border-style: dashed; }
+  .loc .tok { display: inline-block; font-size: 0.72rem; padding: 0 0.3rem; border-radius: 0.5rem; background: #dde6ff; margin: 0.1rem; }
+  .loc .tok.mine { background: #cfeccf; }
+  /* investigator panel (variant A) */
+  .inv { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; margin: 0.5rem; }
+  .inv.active { border: 2px solid #c8a020; box-shadow: 0 0 0 3px #fff4d0; }
+  .inv.addressed { border: 2px solid #2a6; }
+  .inv.other { background: #fafafa; }
+  .inv .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+  .vitals { font-size: 0.8rem; }
+  /* prompt banner */
+  .banner { position: fixed; bottom: 3.4rem; left: 50%; transform: translateX(-50%); background: #fff; border: 2px solid #2a6; border-radius: 6px; padding: 0.5rem 0.8rem; box-shadow: 0 2px 10px #0003; max-width: 52rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .banner.waiting { border-color: #aaa; color: #555; background: #f6f6f6; }
+  .who { font-weight: bold; }
+  .spinner { display: inline-block; width: 0.7rem; height: 0.7rem; border: 2px solid #aaa; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* variant B */
+  .b-grid { display: grid; grid-template-columns: 1fr 19rem; gap: 0.5rem; margin: 0 0.5rem; }
+  .tabs { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+  .tab { border: 1px solid #aaa; border-bottom: none; border-radius: 6px 6px 0 0; padding: 0.3rem 0.8rem; background: #eee; position: relative; }
+  .tab.on { background: #fff; font-weight: bold; }
+  .tab .dot { position: absolute; top: -0.3rem; right: -0.3rem; background: #2a6; color: #fff; border-radius: 0.6rem; font-size: 0.65rem; padding: 0 0.3rem; }
+  .focus { border: 1px solid #aaa; border-radius: 0 6px 6px 6px; padding: 0.6rem; background: #fff; }
+  .inline-prompt { border: 2px solid #2a6; border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; background: #f1fbf1; }
+  .callout { border: 1px dashed #2a6; padding: 0.3rem 0.5rem; border-radius: 4px; margin: 0.3rem 0; background: #f1fbf1; font-size: 0.85rem; }
+  .rail .mini { border: 1px solid #ccc; border-radius: 4px; padding: 0.4rem; margin-bottom: 0.4rem; font-size: 0.82rem; background: #fafafa; }
+  .rail .mini.active { border: 2px solid #c8a020; }
+  .tracker { font-size: 0.75rem; border: 1px solid #ddd; border-radius: 4px; padding: 0.3rem; margin-bottom: 0.4rem; }
+  .tracker div { padding: 0.05rem 0.2rem; } .tracker .now { background: #fff4d0; font-weight: bold; }
+  .tracker .ph { font-weight: bold; color: #444; margin-top: 0.15rem; }
+  /* variant C */
+  .table { display: grid; grid-template-rows: auto auto auto; gap: 0.5rem; margin: 0.5rem; }
+  .seats { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; }
+  .seat { border: 1px solid #ccc; border-radius: 10px; padding: 0.5rem; background: #fafafa; position: relative; min-width: 15rem; }
+  .seat.mine { background: #fff; border-color: #5a5; min-width: 24rem; }
+  .seat.active { box-shadow: 0 0 0 4px #f2d264, 0 0 18px #f2d264; }
+  .bubble { position: relative; border: 2px solid #2a6; background: #f1fbf1; border-radius: 10px; padding: 0.4rem 0.6rem; margin: 0.3rem 0; font-size: 0.85rem; }
+  .bubble.waiting { border-color: #aaa; background: #f3f3f3; color: #555; }
+  .bubble:after { content: ""; position: absolute; left: 1.2rem; bottom: -0.6rem; border: 0.5rem solid transparent; border-top-color: inherit; border-bottom: 0; }
+  .center { text-align: center; border: 1px solid #ddd; border-radius: 50px; padding: 0.4rem; background: #fcfcf6; }
+  .fan .card.back { margin-left: -1.2rem; } .fan .card.back:first-child { margin-left: 0.15rem; }
+  /* switcher + notes */
+  .switcher { position: fixed; bottom: 0.6rem; left: 50%; transform: translateX(-50%); background: #111; color: #fff; border-radius: 2rem; padding: 0.35rem 0.9rem; display: flex; gap: 0.7rem; align-items: center; box-shadow: 0 3px 12px #0006; font-size: 0.85rem; z-index: 10; white-space: nowrap; }
+  .switcher button { background: #333; color: #fff; border: 1px solid #555; border-radius: 1rem; padding: 0.1rem 0.6rem; }
+  .switcher select { font: inherit; background: #222; color: #fff; border: 1px solid #555; border-radius: 0.5rem; }
+  .notes { position: fixed; right: 0.5rem; top: 0.5rem; width: 19rem; font-size: 0.75rem; background: #fffbe6; border: 1px solid #e0c860; border-radius: 6px; padding: 0.4rem 0.6rem; z-index: 9; }
+  .notes pre { white-space: pre-wrap; margin: 0.3rem 0 0; font-size: 0.7rem; }
+  .notes.min pre, .notes.min p { display: none; }
+  .toast { position: fixed; top: 0.6rem; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 0.3rem 0.8rem; border-radius: 4px; font-size: 0.85rem; z-index: 11; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="notes" class="notes"></div>
+<div class="switcher" id="switcher"></div>
+<script>
+// ---------- cast ----------
+const ACCOUNTS = {
+  you:  { name: 'You',  holds: ['roland', 'agnes'] },
+  sam:  { name: 'Sam',  holds: ['daisy'] },
+  alex: { name: 'Alex', holds: [] },
+};
+const OWNER = { roland: 'you', daisy: 'sam', agnes: 'you' };
+const LEAD = 'roland';
+const SEATING = ['roland', 'daisy', 'agnes'];
+const INV = {
+  roland: { name: 'Roland Banks', short: 'Roland', pron: 'his', skills: 'W3 I3 C4 A2', hp: 9, san: 5 },
+  daisy:  { name: 'Daisy Walker', short: 'Daisy',  pron: 'her', skills: 'W3 I5 C2 A2', hp: 5, san: 9 },
+  agnes:  { name: 'Agnes Baker',  short: 'Agnes',  pron: 'her', skills: 'W5 I2 C2 A3', hp: 6, san: 8 },
+};
+const BASE = {
+  roland: { dmg: 2, hor: 1, res: 4, clues: 1, actions: 3, deck: 21,
+    inPlay: ['.45 Automatic (3 ammo)', 'Guard Dog', 'Magnifying Glass'],
+    hand: ['Physical Training', 'Evidence!', 'Dodge', 'Beat Cop', 'First Aid'],
+    discard: ['Vicious Blow', 'Working a Hunch', 'Emergency Cache'] },
+  daisy: { dmg: 1, hor: 2, res: 3, clues: 2, actions: 3, deck: 19,
+    inPlay: ["Daisy's Tote Bag", 'Old Book of Lore', 'Dr. Milan Christopher'],
+    hand: ['Mind over Matter', 'Deduction', 'Barricade', 'Research Librarian', 'Medical Texts', 'Hyperawareness'],
+    discard: ['Working a Hunch', 'Knife'] },
+  agnes: { dmg: 0, hor: 3, res: 2, clues: 0, actions: 3, deck: 22,
+    inPlay: ['Heirloom of Hyperborea', 'Holy Rosary', 'Shrivelling (2 charges)'],
+    hand: ['Forbidden Knowledge', 'Scrying', 'Ward of Protection', 'Blinding Light', 'Fearless', 'Leather Coat', 'Lucky!'],
+    discard: ['Drawn to the Flame', 'Blinding Light', 'Dark Memory'] },
+};
+const LOCS = ['Study', 'Hallway', 'Attic', 'Cellar', 'Parlor'];
+const UNREVEALED = ['Parlor'];
+
+// ---------- scenarios: one hand-built moment each ----------
+// responder mirrors game-core's Responder (ADR 0019): {inv} | {lead} | {several}
+const SCN = {
+  1: { title: "Whose turn: Daisy's", phase: 'Investigation', step: '2.2.1',
+       stepText: 'Active investigator may take an action, if able.', active: 'daisy',
+       at: { roland: 'Hallway', daisy: 'Hallway', agnes: 'Hallway' }, enemies: [],
+       tweak: { daisy: { actions: 2 } },
+       prompt: { responder: { inv: 'daisy' }, turnMenu: true, text: 'Choose an action',
+                 options: ['Investigate (Hallway)', 'Move', 'Draw', 'Resource', 'Play…', 'End turn'] },
+       asks: "Does an account that isn't taking the turn know whose turn it is and who's taking it? Does Sam see the turn as plainly as today's single-investigator board shows it?" },
+  2: { title: 'A prompt for another account', phase: 'Enemy', step: '3.3',
+       stepText: 'Next investigator resolves engaged enemy attacks.', active: null,
+       at: { roland: 'Attic', daisy: 'Cellar', agnes: 'Hallway' },
+       enemies: [{ name: 'Ghoul Minion', at: 'Cellar', engaged: 'daisy' }],
+       prompt: { responder: { inv: 'daisy' }, text: 'Ghoul Minion attacks. Assign 1 horror',
+                 options: ['Daisy Walker', 'Dr. Milan Christopher'] },
+       asks: "Sam's prompt, seen from your browser and Alex's: is there a 'waiting for Sam' state, and does it say what Sam is deciding?" },
+  3: { title: 'A prompt for the lead', phase: 'Enemy', step: '3.2',
+       stepText: 'Hunter enemies move.', active: null,
+       at: { roland: 'Attic', daisy: 'Cellar', agnes: 'Cellar' },
+       enemies: [{ name: 'Swarm of Rats', at: 'Hallway', engaged: null }],
+       prompt: { responder: { lead: true }, text: 'Swarm of Rats (Hunter) can move two ways. Choose where it moves',
+                 options: ['Toward the Attic (Roland)', 'Toward the Cellar (Daisy, Agnes)'] },
+       asks: "The lead answers as the lead, not as Roland. Do Sam and Alex see that the lead is deciding a table-wide choice, and that it's you?",
+       rule: 'glossary/Lead_Investigator.md: "the lead investigator is the final arbiter in choosing among those options"' },
+  4: { title: "Others' zones and a search", phase: 'Investigation', step: '2.2.1',
+       stepText: 'Active investigator may take an action, if able.', active: 'daisy',
+       at: { roland: 'Hallway', daisy: 'Hallway', agnes: 'Attic' }, enemies: [],
+       tweak: { daisy: { actions: 1 }, roland: { deck: 18 } },
+       prompt: { responder: { inv: 'roland' }, search: { deckOf: 'roland', source: 'Old Book of Lore', by: 'daisy',
+                 cards: ['Machete', 'Guard Dog', 'Dynamite Blast'] },
+                 text: 'Old Book of Lore: draw 1 of the top 3 cards of your deck' },
+       asks: "Daisy (Sam) chose Roland, so you search Roland's deck. Sam and Alex must not see the cards (Search: \"without revealing those cards to the other players\"). Also: discard piles everywhere, and other hands as a count. Should a hand be expandable?",
+       rule: 'Old Book of Lore 01031: "That investigator searches the top 3 cards of his or her deck for a card, draws it, …". Ruling: you just look at the top 3 and draw the one you like most.' },
+  5: { title: 'Switching between my own two', phase: 'Upkeep', step: '4.5',
+       stepText: 'Each investigator checks hand size.', active: null,
+       at: { roland: 'Hallway', daisy: 'Hallway', agnes: 'Hallway' }, enemies: [],
+       tweak: { agnes: { hand: ['Forbidden Knowledge', 'Scrying', 'Ward of Protection', 'Blinding Light', 'Fearless', 'Leather Coat', 'Lucky!', 'Baseball Bat', 'Shrivelling'] } },
+       prompt: { responder: { inv: 'agnes' }, multi: 1, text: 'Hand size: discard 1 card (9 in hand, maximum 8)' },
+       asks: "You hold Roland and Agnes. The prompt is for Agnes. Does the board bring Agnes forward, and is it obvious the prompt is for Agnes rather than Roland?" },
+};
+const STEPS = {
+  Mythos: ['1.1 Round begins', '1.2 Place doom', '1.3 Check doom threshold', '1.4 Draw encounter cards', '1.5 Mythos ends'],
+  Investigation: ['2.1 Investigation begins', '2.2 Next investigator\'s turn', '2.2.1 Take an action', '2.2.2 Turn ends', '2.3 Investigation ends'],
+  Enemy: ['3.1 Enemy phase begins', '3.2 Hunter enemies move', '3.3 Enemy attacks', '3.4 Enemy phase ends'],
+  Upkeep: ['4.1 Upkeep begins', '4.2 Reset actions', '4.3 Ready cards', '4.4 Draw and gain resource', '4.5 Check hand size', '4.6 Round ends'],
+};
+
+// ---------- url state ----------
+const params = new URLSearchParams(location.search);
+const VARIANTS = [['A', 'Stacked panels'], ['B', 'My board + table rail'], ['C', 'Around the table']];
+let st = {
+  variant: params.get('variant') || 'A', as: params.get('as') || 'you', s: +(params.get('s') || 1),
+  expanded: {}, focus: null, selected: new Set(), notesMin: false,
+};
+function push() {
+  const p = new URLSearchParams({ variant: st.variant, as: st.as, s: st.s });
+  history.replaceState(null, '', '?' + p);
+  render();
+}
+
+// ---------- derived ----------
+const scn = () => SCN[st.s];
+function invState(id) { return Object.assign({}, BASE[id], (scn().tweak || {})[id] || {}); }
+const mine = id => OWNER[id] === st.as;
+const acct = id => ACCOUNTS[OWNER[id]].name;
+const youOr = a => a === st.as ? 'you' : ACCOUNTS[a].name;
+// Who answers: the investigators the prompt is for, and the accounts holding them.
+function answerers() {
+  const r = scn().prompt.responder;
+  if (r.inv) return [r.inv];
+  if (r.lead) return [LEAD];
+  return SEATING;
+}
+const canAnswer = () => answerers().some(mine);
+function waitingLine() {
+  const p = scn().prompt, who = answerers()[0], a = OWNER[who];
+  const name = a === st.as ? 'you' : ACCOUNTS[a].name;
+  if (p.responder.lead) return `Waiting for the lead investigator, ${INV[LEAD].name} (${name})`;
+  if (p.search) return `${INV[who].name} (${name}) is searching the top ${p.search.cards.length} cards of ${INV[who].pron} deck (${p.search.source})`;
+  if (p.turnMenu) return `${INV[who].name}'s turn: ${name} is choosing an action`;
+  return `Waiting for ${name}: ${INV[who].name}`;
+}
+function addressLine() {
+  const p = scn().prompt, who = answerers()[0];
+  if (p.responder.lead) return `You, as lead investigator (${INV[LEAD].short})`;
+  return INV[who].name;
+}
+function focusDefault() {
+  const mineInv = ACCOUNTS[st.as].holds;
+  if (!mineInv.length) return scn().active || answerers()[0];
+  const ans = answerers().find(mine);
+  if (ans) return ans;
+  if (scn().active && mine(scn().active)) return scn().active;
+  return mineInv[0];
+}
+
+// ---------- shared bits (kept small on purpose: each variant owns its layout) ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cardsHtml = (list, cls = '') => list.map(c => `<span class="card ${c === 'Dark Memory' ? 'weak' : ''} ${cls}">${esc(c)}</span>`).join('');
+const backs = n => Array.from({ length: n }, () => '<span class="card back">.</span>').join('');
+function badges(id) {
+  return `<span class="badge ${mine(id) ? 'mine' : ''}">${mine(id) ? 'you' : acct(id)}</span>` +
+         (id === LEAD ? '<span class="badge lead">lead</span>' : '');
+}
+function vitals(id) {
+  const s = invState(id), d = INV[id];
+  return `<span class="vitals">${d.skills} · hp ${s.dmg}/${d.hp} · san ${s.hor}/${d.san} · res ${s.res} · clues ${s.clues}${scn().active === id ? ` · actions ${'●'.repeat(s.actions)}` : ''}</span>`;
+}
+function mapHtml() {
+  return `<div class="map">${LOCS.map(l => {
+    const toks = SEATING.filter(i => scn().at[i] === l).map(i => `<span class="tok ${mine(i) ? 'mine' : ''}">${INV[i].short}</span>`).join('');
+    const ens = scn().enemies.filter(e => e.at === l).map(e => `<span class="card enemy">${e.name}</span>`).join('');
+    return `<div class="loc ${UNREVEALED.includes(l) ? 'unrev' : ''}"><b>${l}</b><br>${toks}${ens}</div>`;
+  }).join('')}</div>`;
+}
+function engagedHtml(id) {
+  return scn().enemies.filter(e => e.engaged === id).map(e => `<span class="card enemy">${e.name}</span>`).join('');
+}
+function promptControls() {
+  const p = scn().prompt;
+  if (p.search) {
+    return p.search.cards.map(c => `<button onclick="toast('Draw ${esc(c)}')">Draw ${esc(c)}</button>`).join('');
+  }
+  if (p.multi) {
+    return `<button ${st.selected.size === p.multi ? '' : 'disabled'} onclick="toast('Discard ${[...st.selected].join(', ')}')">Confirm (${st.selected.size}/${p.multi})</button>`;
+  }
+  if (p.turnMenu) return '<span class="muted">(the turn menu lives on the board, as today)</span>';
+  return p.options.map(o => `<button onclick="toast('${esc(o)}')">${esc(o)}</button>`).join('');
+}
+// The hand: mine are cards (selectable in a hand-size prompt); another's are a count.
+function handHtml(id, { expandable }) {
+  const s = invState(id), p = scn().prompt;
+  if (mine(id)) {
+    const pick = p.multi && p.responder.inv === id;
+    return s.hand.map((c, i) => `<span class="card ${st.selected.has(c) ? 'sel' : ''}" ${pick ? `style="cursor:pointer" onclick="toggleSel('${esc(c)}')"` : ''}>${esc(c)}</span>`).join('');
+  }
+  if (expandable && st.expanded[id]) return cardsHtml(s.hand) + ` <button class="link" onclick="toggleExp('${id}')">hide</button>`;
+  return `<span class="fan">${backs(s.hand.length)}</span> ${s.hand.length} cards` +
+    (expandable ? ` <button class="link" onclick="toggleExp('${id}')">show</button>` : '');
+}
+function discardHtml(id, { full }) {
+  const d = invState(id).discard;
+  if (!d.length) return '<span class="muted">empty</span>';
+  const top = d[d.length - 1];
+  if (full || st.expanded['d' + id]) return cardsHtml([...d].reverse()) + ' <span class="muted">(top first)</span>';
+  return `top: ${cardsHtml([top])} (${d.length}) <button class="link" onclick="toggleExp('d${id}')">all</button>`;
+}
+function deckHtml(id) {
+  const p = scn().prompt, s = invState(id);
+  if (p.search && p.search.deckOf === id) {
+    const n = p.search.cards.length;
+    return `deck ${s.deck - n} + ${mine(id) ? cardsHtml(p.search.cards) : backs(n)} <span class="muted">being searched</span>`;
+  }
+  return `deck ${s.deck}`;
+}
+function turnPill() {
+  const a = scn().active;
+  return `<span class="pill">Round 3 · ${scn().phase} · <b>${scn().step}</b> ${scn().stepText}</span>` +
+    (a ? ` <span class="pill turn">${INV[a].name}'s turn · ${mine(a) ? 'you' : acct(a)}</span>` : '');
+}
+
+// ---------- Variant A: stacked panels (today's board, extended) ----------
+function variantA() {
+  const panels = SEATING.map(id => {
+    const s = invState(id), active = scn().active === id, addr = answerers().includes(id) && !scn().prompt.responder.several;
+    return `<article class="inv ${mine(id) ? '' : 'other'} ${active ? 'active' : ''} ${addr ? 'addressed' : ''}">
+      <b>${INV[id].name}</b> ${badges(id)} <span class="muted">at ${scn().at[id]}</span> ${vitals(id)}
+      <div class="row">
+        <div><h4>In play</h4>${cardsHtml(s.inPlay)}</div>
+        <div><h4>Threat area</h4>${engagedHtml(id) || '<span class="muted">—</span>'}</div>
+        <div><h4>Discard</h4>${discardHtml(id, { full: false })}</div>
+        <div><h4>Deck</h4>${deckHtml(id)}</div>
+      </div>
+      <div><h4>Hand</h4>${handHtml(id, { expandable: true })}</div>
+      ${mine(id) && active ? '<button disabled>End turn</button>' : ''}
+    </article>`;
+  }).join('');
+  const banner = canAnswer() && !scn().prompt.turnMenu
+    ? `<div class="banner"><span class="who">${addressLine()}:</span> ${esc(scn().prompt.text)} ${promptControls()}</div>`
+    : (!canAnswer() ? `<div class="banner waiting"><span class="spinner"></span> ${waitingLine()}${scn().prompt.turnMenu ? '' : `: <i>${esc(scn().prompt.text)}</i>`}</div>` : '');
+  return `<header class="app"><h1>Eldritch</h1>${turnPill()} <span class="muted">signed in as ${ACCOUNTS[st.as].name}</span></header>
+    ${mapHtml()}<section>${panels}</section>${banner}`;
+}
+
+// ---------- Variant B: my board + table rail ----------
+function variantB() {
+  const holds = ACCOUNTS[st.as].holds, viewer = !holds.length;
+  const focus = st.focus && (viewer || mine(st.focus)) ? st.focus : focusDefault();
+  const tabIds = viewer ? SEATING : holds;
+  const tabs = tabIds.map(id => {
+    const ping = canAnswer() && answerers().includes(id) && !scn().prompt.turnMenu && id !== focus;
+    return `<span class="tab ${id === focus ? 'on' : ''}" onclick="setFocus('${id}')" style="cursor:pointer">
+      ${INV[id].short}${scn().active === id ? ' ▶' : ''}${id === LEAD ? ' ★' : ''}${ping ? '<span class="dot">needs you</span>' : ''}</span>`;
+  }).join('') + (viewer ? '<span class="muted" style="align-self:center">viewing; follows the active investigator</span>' : '');
+  const s = invState(focus);
+  const forFocus = canAnswer() && answerers().includes(focus) && !scn().prompt.turnMenu;
+  const otherMine = canAnswer() && !answerers().includes(focus) && answerers().some(mine);
+  const inline = forFocus
+    ? `<div class="inline-prompt"><b>${addressLine()}</b>: ${esc(scn().prompt.text)}<br>${promptControls()}</div>`
+    : otherMine ? `<div class="callout">${INV[answerers().find(mine)].short} needs you: ${esc(scn().prompt.text)} <button class="link" onclick="setFocus('${answerers().find(mine)}')">go</button></div>` : '';
+  const board = `<div class="focus">${inline}
+      <b style="font-size:1.1rem">${INV[focus].name}</b> ${badges(focus)} <span class="muted">at ${scn().at[focus]}</span><br>${vitals(focus)}
+      <div class="row" style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.4rem">
+        <div><h4>In play</h4>${cardsHtml(s.inPlay)}</div>
+        <div><h4>Threat area</h4>${engagedHtml(focus) || '<span class="muted">—</span>'}</div>
+        <div><h4>Discard</h4>${discardHtml(focus, { full: true })}</div>
+        <div><h4>Deck</h4>${deckHtml(focus)}</div>
+      </div>
+      <h4>Hand</h4>${handHtml(focus, { expandable: true })}
+      ${mine(focus) && scn().active === focus ? '<div><button>Investigate</button> <button>Move</button> <button>Draw</button> <button>Resource</button> <button>End turn</button></div>' : ''}
+    </div>`;
+  const tracker = `<div class="tracker">${Object.entries(STEPS).map(([ph, steps]) =>
+      `<div class="ph">${ph}</div>` + (ph === scn().phase ? steps.map(x => `<div class="${x.startsWith(scn().step + ' ') ? 'now' : ''}">${x}${x.startsWith(scn().step + ' ') && scn().active ? ` · ${INV[scn().active].short}` : ''}</div>`).join('') : '')).join('')}</div>`;
+  const rail = SEATING.filter(id => !tabIds.includes(id) || viewer && id !== focus).map(id => {
+    const ans = answerers().includes(id) && !canAnswer();
+    const s2 = invState(id);
+    return `<div class="mini ${scn().active === id ? 'active' : ''}">
+      <b>${INV[id].name}</b> ${badges(id)}<br><span class="muted">at ${scn().at[id]}</span> ${vitals(id)}
+      ${ans ? `<div class="callout" style="border-color:#aaa;background:#f3f3f3"><span class="spinner"></span> ${waitingLine()}${scn().prompt.turnMenu ? '' : `: <i>${esc(scn().prompt.text)}</i>`}</div>` : ''}
+      <div>in play: ${cardsHtml(s2.inPlay)}</div>${engagedHtml(id) ? `<div>engaged: ${engagedHtml(id)}</div>` : ''}
+      <div>hand: ${handHtml(id, { expandable: true })}</div>
+      <div>discard: ${discardHtml(id, { full: false })}</div>
+      <div>${deckHtml(id)}</div></div>`;
+  }).join('');
+  const leadNote = scn().prompt.responder.lead && !canAnswer() ? `<div class="callout" style="border-color:#aaa;background:#f3f3f3"><span class="spinner"></span> ${waitingLine()}: <i>${esc(scn().prompt.text)}</i></div>` : '';
+  return `<header class="app"><h1>Eldritch</h1><span class="muted">signed in as ${ACCOUNTS[st.as].name}</span></header>
+    <div class="b-grid"><div>${mapHtml()}${leadNote}<div class="tabs">${tabs}</div>${board}</div>
+    <aside class="rail">${tracker}${rail}</aside></div>`;
+}
+
+// ---------- Variant C: around the table ----------
+function variantC() {
+  const top = SEATING.filter(id => !mine(id)), bottom = SEATING.filter(mine);
+  const seat = id => {
+    const s = invState(id), ans = answerers().includes(id), m = mine(id);
+    const isLead = scn().prompt.responder.lead;
+    const bubble = ans && !(scn().prompt.turnMenu && m)
+      ? (m ? `<div class="bubble">${isLead ? '★ <b>As lead</b>: ' : ''}${esc(scn().prompt.text)}<br>${promptControls()}</div>`
+           : `<div class="bubble waiting"><span class="spinner"></span> ${isLead ? '★ <b>Lead decides</b>: ' : ''}${scn().prompt.turnMenu ? 'choosing an action…' : esc(scn().prompt.text)}${scn().prompt.search ? ` <span class="muted">(${INV[id].short} is looking at ${scn().prompt.search.cards.length} cards)</span>` : ''}</div>`)
+      : '';
+    return `<div class="seat ${m ? 'mine' : ''} ${scn().active === id ? 'active' : ''}">
+      ${bubble}
+      <b>${INV[id].name}</b> ${badges(id)} <span class="muted">at ${scn().at[id]}</span><br>${vitals(id)}
+      <div>${cardsHtml(s.inPlay)} ${engagedHtml(id)}</div>
+      <div><h4>Discard</h4>${discardHtml(id, { full: false })} · ${deckHtml(id)}</div>
+      <div><h4>Hand</h4>${handHtml(id, { expandable: false })}</div>
+      ${m && scn().active === id ? '<button disabled>End turn</button>' : ''}</div>`;
+  };
+  const viewerNote = !ACCOUNTS[st.as].holds.length ? '<div class="center muted">You are watching (no investigator). Every seat is someone else\'s.</div>' : '';
+  return `<header class="app"><h1>Eldritch</h1><span class="muted">signed in as ${ACCOUNTS[st.as].name}</span></header>
+    <div class="table">
+      <div class="seats">${top.map(seat).join('')}</div>
+      <div class="center"><b>Round 3 · ${scn().phase}</b> · ${scn().step} ${scn().stepText}
+        ${scn().active ? `<br><span class="pill turn">${INV[scn().active].short}'s turn${mine(scn().active) ? ' (you)' : ' · ' + acct(scn().active)}</span>` : ''}
+        ${mapHtml()}</div>
+      ${viewerNote}<div class="seats">${bottom.map(seat).join('')}</div>
+    </div>`;
+}
+
+// ---------- shell ----------
+function render() {
+  if (!SCN[st.s]) st.s = 1;
+  const v = { A: variantA, B: variantB, C: variantC }[st.variant] || variantA;
+  document.getElementById('root').innerHTML = v();
+  const vi = VARIANTS.findIndex(x => x[0] === st.variant);
+  document.getElementById('switcher').innerHTML = `
+    <button onclick="cycle(-1)">◀</button><b>${VARIANTS[vi][0]} (${VARIANTS[vi][1]})</b><button onclick="cycle(1)">▶</button>
+    <span>as <select onchange="st.as=this.value;st.focus=null;st.selected.clear();push()">${Object.entries(ACCOUNTS).map(([k, a]) => `<option value="${k}" ${k === st.as ? 'selected' : ''}>${a.name}${a.holds.length ? ' (' + a.holds.map(i => INV[i].short).join(', ') + ')' : ' (viewer)'}</option>`).join('')}</select></span>
+    <span>moment <select onchange="st.s=+this.value;st.focus=null;st.selected.clear();push()">${Object.entries(SCN).map(([k, x]) => `<option value="${k}" ${+k === st.s ? 'selected' : ''}>${k}. ${x.title}</option>`).join('')}</select></span>`;
+  const r = scn().prompt.responder;
+  document.getElementById('notes').className = 'notes' + (st.notesMin ? ' min' : '');
+  document.getElementById('notes').innerHTML = `<b>PROTOTYPE</b>: moment ${st.s} <button class="link" onclick="st.notesMin=!st.notesMin;render()">${st.notesMin ? 'expand' : 'collapse'}</button>
+    <p><b>Question:</b> ${esc(scn().asks)}</p>${scn().rule ? `<p class="muted">${esc(scn().rule)}</p>` : ''}
+    <pre>${esc(JSON.stringify({
+      viewing_as: ACCOUNTS[st.as].name,
+      holds: ACCOUNTS[st.as].holds.map(i => INV[i].name),
+      responder: r.inv ? `Investigator(${INV[r.inv].name})` : r.lead ? `Lead(${INV[LEAD].name})` : 'Several',
+      answered_by_account: [...new Set(answerers().map(i => ACCOUNTS[OWNER[i]].name))],
+      i_can_answer: canAnswer(),
+      active_investigator: scn().active ? INV[scn().active].name : null,
+      phase_step: `${scn().phase} ${scn().step}`,
+      assignment: Object.fromEntries(SEATING.map(i => [INV[i].name, ACCOUNTS[OWNER[i]].name])),
+    }, null, 1))}</pre>`;
+}
+function cycle(d) { const i = VARIANTS.findIndex(x => x[0] === st.variant); st.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]; push(); }
+function toggleExp(k) { st.expanded[k] = !st.expanded[k]; render(); }
+function setFocus(id) { st.focus = id; render(); }
+function toggleSel(c) { st.selected.has(c) ? st.selected.delete(c) : (st.selected.size < (scn().prompt.multi || 0) && st.selected.add(c)); render(); }
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'would submit: ' + msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 1400);
+}
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  if (e.key === 'ArrowRight') cycle(1);
+});
+render();
+</script>
+</body>
+</html>
