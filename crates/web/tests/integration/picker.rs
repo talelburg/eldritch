@@ -4,7 +4,7 @@
 //! random basic weakness once the checkbox is checked.
 //!
 //! These are the rosters
-//! `crates/scenarios/tests/the_gathering_default_decks.rs` plays and the
+//! `crates/scenarios/tests/integration/the_gathering_default_decks.rs` plays and the
 //! server's registries test creates.
 #![cfg(target_arch = "wasm32")]
 use cards::decks::{self, WeaknessChoice};
@@ -17,8 +17,6 @@ use wasm_bindgen_test::*;
 use web::picker::{CreateTx, PickerView};
 use web::store::{ClientState, ConnStatus};
 use web_sys::HtmlElement;
-
-wasm_bindgen_test_configure!(run_in_browser);
 
 /// Mount a fresh picker awaiting a roster; returns its store and the receiving
 /// end of its `CreateTx`.

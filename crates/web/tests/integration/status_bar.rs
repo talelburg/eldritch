@@ -15,8 +15,6 @@ use web::status_bar::StatusBarView;
 use web::store::{ClientState, ConnStatus};
 use web_sys::Element;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Mount `StatusBarView` against a fresh store; returns the store so a test can
 /// drive `status`/`last_rejection`.
 fn mount() -> RwSignal<ClientState> {

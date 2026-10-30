@@ -38,8 +38,6 @@ use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 const INV: InvestigatorId = InvestigatorId(1);
 const ROLAND: &str = "01001";
 const ROTTING_REMAINS: &str = "01163";

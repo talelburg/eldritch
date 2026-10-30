@@ -3,7 +3,7 @@
 //! Feed a constructed `GameState` through the store and assert on the rendered
 //! DOM. wasm32-only (browser DOM); native jobs skip this file.
 //!
-//! **This binary runs against the real corpus, `cards::TEST_REGISTRY`.** Every
+//! **This file runs against the real corpus, `cards::TEST_REGISTRY`.** Every
 //! card code it seeds resolves, so no assertion can pass on the renderer's
 //! unresolved-code fallback (`card--unknown`) rather than on card rendering, and
 //! [`render_state`] asserts as much on every render.
@@ -13,7 +13,7 @@
 //! `act_agenda::name_and_text_src`'s. The third — `names::card_name`, reached
 //! only from the map's card-at-location token (`crates/web/src/map.rs`) — is
 //! *not*, because this file seeds no `cards_at_location` and no location
-//! attachments. `crates/web/tests/card_at_location.rs` and the unit tests in
+//! attachments. `crates/web/tests/integration/card_at_location.rs` and the unit tests in
 //! `crates/web/src/names.rs` own that one.
 //!
 //! Locations and enemies stay on `game_core::test_support`'s fixtures — per
@@ -38,8 +38,6 @@ use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::Element;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Roland Banks — 9 health / 5 sanity, per
 /// `data/arkhamdb-snapshot/pack/core/core.json`.
 const ROLAND: &str = "01001";
@@ -62,10 +60,6 @@ const COVER_UP: &str = "01007";
 const ACT_TRAPPED: &str = "01108";
 /// The Gathering agenda 1, "What's Going On?!" — printed `doom: 3`.
 const AGENDA_WHATS_GOING_ON: &str = "01105";
-
-fn body_html() -> String {
-    document().body().expect("body").inner_html()
-}
 
 /// `test_support::test_investigator(id)` carrying Roland Banks as its investigator card.
 ///
@@ -112,8 +106,9 @@ fn count_in(el: &Element, sel: &str) -> u32 {
 }
 
 /// Mount `BoardView` against a fresh store and feed it one `Hello`
-/// carrying `state`. Ticks once so CSR effects flush, then returns the
-/// rendered body HTML.
+/// carrying `state`. Ticks once so CSR effects flush, then returns the HTML
+/// of the `.board-root` container it mounted (not the whole body: the page is
+/// shared with every other browser test, and nothing unmounts).
 async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
     // the investigator capacity the panel reads.
@@ -121,7 +116,7 @@ async fn render_state(state: GameState) -> String {
     mount::mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
-        leptos::view! { <BoardView/> }
+        leptos::view! { <div class="board-root"><BoardView/></div> }
     });
     store.update(|s| {
         store::reduce(
@@ -134,7 +129,7 @@ async fn render_state(state: GameState) -> String {
         );
     });
     task::tick().await;
-    let html = body_html();
+    let html = last_mounted(".board-root").inner_html();
     // The guard that keeps this file honest. `Card` renders
     // `card--unknown` for a code the registry cannot resolve
     // (`crates/web/src/card.rs:324-331`), and that element still matches
@@ -164,7 +159,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     let html = render_state(state).await;
 
     // Names come from the corpus via `act_agenda::name_and_text_src`, which
-    // `crates/web/tests/act_agenda.rs` already covers in more depth (including
+    // `crates/web/tests/integration/act_agenda.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
     // earns its own name, rather than asserting only thresholds.
     let board = last_mounted(".board");

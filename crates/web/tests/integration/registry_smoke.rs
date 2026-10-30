@@ -7,8 +7,6 @@ use game_core::state::CardCode;
 use game_core::test_support;
 use wasm_bindgen_test::*;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Against `cards::TEST_REGISTRY` (the real corpus), verify that
 /// `max_health()` / `max_sanity()` resolve correctly for Roland Banks (01001).
 /// Stats verified against `data/arkhamdb-snapshot/pack/core/core.json`:

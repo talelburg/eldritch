@@ -28,13 +28,16 @@ use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 const PARLOR: LocationId = LocationId(5);
 const LITA: CardInstanceId = CardInstanceId(60);
 
 /// Inject `style.css` once per browser session, so measurements are taken
 /// against the stylesheet the app ships rather than an unstyled DOM.
+///
+/// Every browser test shares one page, so the stylesheet stays in force for
+/// every test that runs after this one. No other web test measures layout or
+/// reads `innerText` today; a future test that does should call this itself
+/// rather than depend on whether this file ran first.
 fn inject_style() {
     let doc = document();
     if doc
@@ -47,7 +50,7 @@ fn inject_style() {
     }
     let style = doc.create_element("style").expect("create style");
     style.set_attribute("data-app-css", "1").expect("attr");
-    style.set_text_content(Some(include_str!("../style.css")));
+    style.set_text_content(Some(include_str!("../../style.css")));
     doc.head()
         .expect("head")
         .append_child(&style)

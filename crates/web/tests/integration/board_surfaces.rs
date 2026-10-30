@@ -3,7 +3,7 @@
 //! End turn / Gain resource controls.
 //!
 //! Mounted through `BoardView`, so this asserts the *wiring* — that each panel
-//! gets its own investigator's surfaces — where `tests/panel_controls.rs` covers
+//! gets its own investigator's surfaces — where `tests/integration/panel_controls.rs` covers
 //! one control's behaviour in isolation.
 #![cfg(target_arch = "wasm32")]
 
@@ -20,8 +20,6 @@ use web::interaction::PendingOptions;
 use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlButtonElement};
-
-wasm_bindgen_test_configure!(run_in_browser);
 
 /// Mount `BoardView` against a fresh store carrying `state`, and return the
 /// last-mounted wrapper so absence assertions are scoped to this test.

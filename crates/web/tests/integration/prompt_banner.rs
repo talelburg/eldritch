@@ -27,8 +27,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
 async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {

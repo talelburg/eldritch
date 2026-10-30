@@ -5,26 +5,32 @@
 #![cfg(target_arch = "wasm32")]
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::App;
 use web::registry::provide_cards;
-
-wasm_bindgen_test_configure!(run_in_browser);
+use web_sys::Element;
 
 #[wasm_bindgen_test]
 fn app_renders_greeting() {
     // Mount the app into the document body the way `main` does, registry
-    // first; it stays mounted (attached to the DOM) for the assertion.
+    // first, inside a `.smoke-root` container; it stays mounted (attached to
+    // the DOM) for the assertion. The assertion reads that container, not the
+    // whole body: the browser tests share one page and nothing unmounts.
     mount_to_body(|| {
         provide_cards(&cards::TEST_REGISTRY);
-        view! { <App/> }
+        view! { <div class="smoke-root"><App/></div> }
     });
 
-    let body = document().body().expect("document should have a <body>");
+    let roots = document().query_selector_all(".smoke-root").expect("query");
+    let root = roots
+        .item(roots.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("a .smoke-root");
 
     assert!(
-        body.inner_html().contains("Eldritch"),
+        root.inner_html().contains("Eldritch"),
         "rendered DOM should contain the greeting, got: {}",
-        body.inner_html()
+        root.inner_html()
     );
 }

@@ -23,8 +23,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 fn section_text() -> String {
     let nodes = document()
         .query_selector_all(".act-agenda")
@@ -75,7 +73,7 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
 }
 
 /// The last-mounted `.card--act` — `mount_to_body` accumulates DOM across tests in
-/// this binary, so scope to the newest card (the `last_slot`/`last_root` precedent).
+/// the shared page, so scope to the newest card (the `last_slot`/`last_root` precedent).
 fn act_card() -> Element {
     let cards = document().query_selector_all(".card--act").expect("query");
     cards
@@ -157,7 +155,7 @@ async fn act_card_inert_without_an_act_anchored_option() {
 }
 
 /// The last-mounted `.card--agenda` — `mount_to_body` accumulates DOM across tests
-/// in this binary, so scope to the newest card (the `act_card` precedent).
+/// in the shared page, so scope to the newest card (the `act_card` precedent).
 fn agenda_card() -> Element {
     let cards = document()
         .query_selector_all(".card--agenda")

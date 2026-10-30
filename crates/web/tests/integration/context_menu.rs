@@ -17,8 +17,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, NodeList};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Mount a `ContextMenu` with one `Location(10)`-anchored option, a fresh store
 /// and outbound channel, and the given initial `open` state. Returns the `open`
 /// signal and the receiver for submitted frames.

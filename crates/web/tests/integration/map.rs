@@ -21,8 +21,6 @@ use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Mount `BoardView`, feed one `Hello` carrying `state`, tick, return nothing —
 /// assertions query the live DOM via `document()`.
 async fn mount_state(state: GameState) {
@@ -45,7 +43,7 @@ async fn mount_state(state: GameState) {
     task::tick().await;
 }
 
-/// The LAST mounted `<section class="map">`. Every mount in this binary appends
+/// The LAST mounted `<section class="map">`. Every mount in the shared page appends
 /// to the same document body, so an earlier test's nodes would otherwise shadow
 /// the one under assertion.
 fn last_map() -> Element {
