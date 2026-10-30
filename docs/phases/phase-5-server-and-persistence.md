@@ -49,7 +49,7 @@ Settled in the Phase 5 brainstorm (2026-06-07):
 - **Headless demonstration.** Phase 5 proves itself with Rust WS integration-test clients, not a browser. Keeps the Phase 5 / Phase 6 boundary clean.
 - **`sqlx` + SQLite**, async, with the built-in migration runner. No `spawn_blocking` offload.
 - **Flat action-log rows** `(game_id, seq, action_json)`; replay folds `apply()` over rows ordered by `seq`. No schema churn when `Action` changes.
-- **Seed-state blob, not setup-replay.** The `setup()` output is stored once as `games.seed_state`; replay = seed-state + folded actions. Decouples replay correctness from `setup()` determinism. (`GameState.rng` is already serialized; in-play randomness is recorded as explicit `EngineRecord` actions.)
+- **Seed-state blob, not setup-replay.** The `setup()` output is stored once as `games.seed_state`; replay = seed-state + folded actions. Decouples replay correctness from `setup()` determinism. (`GameState.rng` is already serialized; in-play randomness is recorded as explicit `EngineRecord` actions.) Reversed by [ADR 0022](../adr/0022-a-stored-game-is-its-inputs-and-a-checked-log.md): a stored game is now its creation inputs, and a load re-runs setup.
 - **Anonymous hub, no enforcement.** Any connected client may submit; the server applies + broadcasts to the game's connections. Identity/seats/turn-ownership are Phase 8.
 - **Single-port static WASM serving lands in Phase 6**, not Phase 5 — the WASM bundle doesn't exist until then. Phase 5 ships the API/WS server only. (Corrects the original browser-first "done" wording below.)
 - **Snapshots deferred** to #174; build only when replay is measurably slow.
