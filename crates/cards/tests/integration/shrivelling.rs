@@ -24,7 +24,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
-use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const SHRIVELLING: &str = "01060";
@@ -38,10 +38,6 @@ const ENEMY: EnemyId = EnemyId(100);
 /// opposite sides (5 hits, 1 misses), so the test's outcome says which skill
 /// the attack used.
 fn board(token: ChaosToken) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -51,8 +47,8 @@ fn board(token: ChaosToken) -> GameState {
                 .skill(SkillKind::Combat, 1)
                 .in_play([(SHRIVELLING, uses(UseKind::Charges, 4))]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(location(HERE))
+        .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build()
@@ -168,7 +164,7 @@ fn it_enters_play_with_four_charges() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([SHRIVELLING]).resources(3))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .build();
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {

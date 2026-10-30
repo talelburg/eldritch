@@ -15,10 +15,9 @@ use game_core::engine::{
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EliminationCause, EnemyId, GameState, InvestigatorId, Phase,
-    Status,
+    CardCode, ChaosBag, ChaosToken, EliminationCause, GameState, InvestigatorId, Phase, Status,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{enemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 use scenarios::the_gathering;
 
@@ -86,18 +85,14 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
         roland.investigator_card.accumulated_damage =
             roland.max_health(scenarios::TEST_REGISTRIES.cards) - 1;
     }
-    let loc = state.investigators[&INV]
-        .current_location
-        .expect("Roland is at a location");
 
-    // Seed: a Ghoul Minion engaged with Roland (the `test_enemy` fixture
-    // defaults to attack_damage 1 ≥ his 1 remaining health → lethal).
-    let enemy_id = EnemyId(900);
-    let mut minion = test_support::test_enemy(900, "Ghoul Minion");
-    minion.code = CardCode::new("01160");
-    minion.current_location = Some(loc);
-    minion.engaged_with = Some(INV);
-    state.enemies.insert(enemy_id, minion);
+    // Seed: a Ghoul Minion 01160 engaged with Roland, at his location. It
+    // prints 1 damage and 1 horror; the 1 damage ≥ his 1 remaining health →
+    // lethal.
+    state.place(
+        enemy(900).as_card("01160").engaged_with(INV),
+        scenarios::TEST_REGISTRIES,
+    );
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
     // enemy attacks → Roland defeated → no remaining players → NoResolution.

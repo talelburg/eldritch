@@ -4,14 +4,14 @@ use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
 
 /// `INV`'s open turn at the Study, with `enemy` (if any) engaged with them.
-fn resource_board(enemy: Option<Enemy>) -> GameStateBuilder {
+fn resource_board(enemy: Option<StagedEnemy>) -> GameStateBuilder {
     let board = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).resources(5))
         .open_turn(INV);
     match enemy {
-        Some(enemy) => board.with_enemy_engaged(enemy, INV),
+        Some(enemy) => board.with_enemy(enemy.engaged_with(INV)),
         None => board,
     }
 }

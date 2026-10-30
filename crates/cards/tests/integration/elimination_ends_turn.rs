@@ -23,15 +23,14 @@
 //! it is an action and provokes an attack of opportunity (RR p.5). No rulings —
 //! it is listed in `data/arkhamdb-faq/no-rulings.txt`.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
-use game_core::state::{
-    Continuation, Enemy, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
-};
+use game_core::state::{Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use game_core::test_support::{self, seat, TestSession};
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
@@ -42,15 +41,6 @@ const SURVIVOR: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(101);
 const ELSEWHERE: LocationId = LocationId(102);
 
-/// A ready enemy hitting for 3 damage.
-fn ready_attacker() -> Enemy {
-    let mut e = test_support::test_enemy(7, "Attacker");
-    e.attack_damage = 3;
-    e.attack_horror = 0;
-    e.max_health = 5;
-    e
-}
-
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
 /// holding Emergency Cache, with the open turn. `seating` decides whether the
 /// rotation has anyone left to hand the turn to; the survivor is seated only
@@ -58,8 +48,8 @@ fn ready_attacker() -> Enemy {
 fn board(seating: &[InvestigatorId]) -> GameStateBuilder {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(ELSEWHERE))
         // 7 + 3 ≥ 8 = max_health
         .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]).harm(7, 0));
     let builder = if seating.contains(&SURVIVOR) {
@@ -70,7 +60,7 @@ fn board(seating: &[InvestigatorId]) -> GameStateBuilder {
     builder
         .with_seating(seating.iter().copied())
         .open_turn(DYING)
-        .with_enemy_engaged(ready_attacker(), DYING)
+        .with_enemy(attacker(7, 3, 0).health(5).engaged_with(DYING))
 }
 
 /// Play Emergency Cache, provoking the lethal attack of opportunity.

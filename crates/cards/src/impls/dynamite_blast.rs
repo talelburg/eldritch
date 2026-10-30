@@ -160,7 +160,7 @@ mod tests {
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a
         // one-option pick rather than auto-targeting silently.
-        let loc = test_support::test_location(HERE.0, "Lonely Spot"); // no connections by default
+        let loc = test_support::location(HERE); // no connections by default
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
@@ -190,7 +190,7 @@ mod tests {
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
             .with_seat(test_support::seat(2).at(HERE))
-            .with_location(test_support::test_location(HERE.0, "Lonely Spot"))
+            .with_location(test_support::location(HERE))
             .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) = test_support::run_native(&mut state, &crate::REGISTRY, dynamite_blast, &ctx);

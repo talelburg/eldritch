@@ -26,10 +26,10 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, MythosPhaseFrame, MythosResume, Phase,
+    AbilityAddress, AbilitySource, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 const HOSPITAL_DEBTS: &str = "01011";
@@ -47,8 +47,8 @@ const THERE: LocationId = LocationId(11);
 fn board(friend_at: LocationId, active: InvestigatorId) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(THERE.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(THERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -113,21 +113,18 @@ fn assert_third_refused(session: TestSession, investigator: InvestigatorId) {
 /// on it, and is not discarded.
 #[test]
 fn revelation_puts_it_into_the_drawers_threat_area() {
-    let mut state = GameStateBuilder::new()
+    let drawing = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([SKIDS])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([SKIDS])
-        .build();
-    state
-        .encounter_deck
-        .push_back(CardCode::new(HOSPITAL_DEBTS));
-    let drawing = TestSession::new(state, TEST_REGISTRIES);
+        .with_encounter_deck([HOSPITAL_DEBTS])
+        .session();
     drawing.assert_at_encounter_draw();
 
     // Drawing it reveals it. Once in play, its `[fast]` ability is offered at

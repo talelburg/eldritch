@@ -15,7 +15,7 @@ use game_core::state::{
     Owner, Phase, Status, Zone,
 };
 use game_core::test_support;
-use game_core::test_support::{seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 use scenarios::the_gathering;
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -237,19 +237,14 @@ const HERE: LocationId = LocationId(10);
 /// The room entered, printed as the Attic or the Cellar.
 const ENTERED: LocationId = LocationId(20);
 
-/// `INV` moves from `HERE` into the room printed as `code` (named `name`):
-/// the real Move whose arrival fires the room's `EnteredLocation` forced
-/// ability.
-fn move_into(code: &str, name: &str) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Hallway");
-    here.connections = vec![ENTERED];
-    let mut entered = test_support::test_location(ENTERED.0, name);
-    entered.code = CardCode::new(code);
+/// `INV` moves from `HERE` into the room printed as `code`: the real Move
+/// whose arrival fires the room's `EnteredLocation` forced ability.
+fn move_into(code: &str) -> TestSession {
     GameStateBuilder::new()
         .with_registries(scenarios::TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(here)
-        .with_location(entered)
+        .with_location(location(HERE).connections([ENTERED]))
+        .with_location(location(ENTERED).as_card(code))
         .open_turn(INV)
         .session()
         .take(&TurnAction::Move {
@@ -261,7 +256,7 @@ fn move_into(code: &str, name: &str) -> TestSession {
 /// Attic 01113: *"**Forced** - After you enter the Attic: Take 1 horror."*
 #[test]
 fn attic_forced_enter_deals_one_horror() {
-    let session = move_into("01113", "Attic");
+    let session = move_into("01113");
     session.assert_at_turn_menu(INV);
     let investigator = &session.state().investigators[&INV];
     assert_eq!(
@@ -279,7 +274,7 @@ fn attic_forced_enter_deals_one_horror() {
 /// Cellar 01114: *"**Forced** - After you enter the Cellar: Take 1 damage."*
 #[test]
 fn cellar_forced_enter_deals_one_damage() {
-    let session = move_into("01114", "Cellar");
+    let session = move_into("01114");
     session.assert_at_turn_menu(INV);
     let investigator = &session.state().investigators[&INV];
     assert_eq!(

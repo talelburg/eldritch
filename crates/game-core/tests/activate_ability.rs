@@ -25,7 +25,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, RecordedModifierKind,
     SkillKind, Status,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
@@ -491,16 +491,14 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
 fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
     // A seat cannot place a location attachment, so its id is named here.
     const ATTACHMENT: CardInstanceId = CardInstanceId(0);
-    let mut loc = test_support::test_location(HERE.0, "Somewhere");
-    loc.attachments.push(CardInPlay::enter_play(
-        CardCode::new(ONCE_PER_ROUND_GAIN),
-        ATTACHMENT,
-        Owner::EncounterDeck,
-    ));
     let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE))
-        .with_location(loc)
+        .with_location(location(HERE).attachments([CardInPlay::enter_play(
+            CardCode::new(ONCE_PER_ROUND_GAIN),
+            ATTACHMENT,
+            Owner::EncounterDeck,
+        )]))
         .open_turn(INV)
         .build();
     let action = activate(INV, ATTACHMENT, 0);
@@ -544,8 +542,6 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
 /// would make, and the ability is not offered again this round.
 #[test]
 fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = 2;
     let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -554,7 +550,7 @@ fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
                 .in_play([ONCE_PER_ROUND_DISCOVERY])
                 .threat_area([CANCEL_DISCOVERY]),
         )
-        .with_location(loc)
+        .with_location(location(HERE).clues(2))
         .open_turn(INV)
         .build();
     let action = activate(INV, state.in_play(INV, ONCE_PER_ROUND_DISCOVERY), 0);

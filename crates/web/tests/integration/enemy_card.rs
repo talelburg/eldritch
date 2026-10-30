@@ -1,11 +1,12 @@
 //! Headless render tests for the `EnemyCard` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
+use cards::TEST_REGISTRIES;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{CardCode, Enemy, EnemyId};
-use game_core::test_support;
+use game_core::state::{Enemy, EnemyId};
+use game_core::test_support::{self, enemy};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -31,14 +32,15 @@ fn last_card() -> Element {
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_stats_keywords_exhausted() {
-    let mut e = test_support::test_enemy(1, "Ghoul Priest");
-    e.fight = 4;
-    e.evade = 4;
-    e.max_health = 2;
-    e.damage = 0;
-    e.hunter = true;
-    e.retaliate = true;
-    e.exhausted = true;
+    let e = enemy(1)
+        .name("Test Brute")
+        .fight(4)
+        .evade(4)
+        .health(2)
+        .hunter()
+        .retaliate()
+        .exhausted()
+        .mint(TEST_REGISTRIES, 1);
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
         view! { <EnemyCard enemy=e.clone()/> }
@@ -56,7 +58,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
         "exhausted class missing: {classes}"
     );
     let html = card.inner_html();
-    assert!(html.contains("Ghoul Priest"), "name missing: {html}");
+    assert!(html.contains("Test Brute"), "name missing: {html}");
     assert!(html.contains("fight 4"), "fight chip missing: {html}");
     assert!(html.contains("health 0/2"), "health chip missing: {html}");
     assert!(html.contains("evade 4"), "evade chip missing: {html}");
@@ -75,8 +77,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 #[wasm_bindgen_test]
 async fn enemy_shows_its_printed_traits() {
     // Ghoul Minion 01160: traits "Humanoid. Monster. Ghoul."
-    let mut e = test_support::test_enemy(3, "Ghoul Minion");
-    e.code = CardCode::new("01160");
+    let e = enemy(3).as_card("01160").mint(TEST_REGISTRIES, 1);
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
         view! { <EnemyCard enemy=e.clone()/> }
@@ -93,7 +94,7 @@ async fn enemy_shows_its_printed_traits() {
 
 #[wasm_bindgen_test]
 async fn ready_enemy_is_not_dimmed() {
-    let e = test_support::test_enemy(2, "Swarm of Rats");
+    let e = enemy(2).mint(TEST_REGISTRIES, 1);
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
         view! { <EnemyCard enemy=e.clone()/> }
@@ -131,7 +132,7 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
 
 #[wasm_bindgen_test]
 async fn actionable_enemy_glows_opens_menu_and_submits() {
-    let e = test_support::test_enemy(7, "Ghoul");
+    let e = enemy(7).mint(TEST_REGISTRIES, 1);
     let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(7)))],
@@ -168,7 +169,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
 
 #[wasm_bindgen_test]
 async fn enemy_without_a_matching_option_is_inert() {
-    let e = test_support::test_enemy(7, "Ghoul");
+    let e = enemy(7).mint(TEST_REGISTRIES, 1);
     // Option anchors to a different enemy → this card stays inert.
     let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",

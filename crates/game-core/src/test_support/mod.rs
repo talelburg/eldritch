@@ -27,12 +27,15 @@ use crate::state::CardCode;
 
 pub mod assertions;
 mod deal;
+mod deck;
 mod fixtures;
+mod lookup;
 mod mock_registry;
 mod native;
 mod resolver;
 mod seat;
 mod session;
+mod stage;
 #[cfg(test)]
 mod tests;
 
@@ -263,15 +266,18 @@ fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 }
 
 pub use deal::assert_effect_deal;
+pub use deck::{act, agenda, StagedAct, StagedAgenda};
 pub use fixtures::{
     awaiting_commit_input, awaiting_commit_input_for, awaiting_confirm_input,
     awaiting_confirm_input_for, awaiting_pick_single_input, awaiting_pick_single_with,
     awaiting_request, awaiting_skippable_commit_input, awaiting_skippable_pick_single_input,
-    awaiting_skippable_pick_single_with, from_frames_unchecked, test_enemy, test_investigator,
-    test_investigator_card, test_location, test_skill_test,
+    awaiting_skippable_pick_single_with, from_frames_unchecked, test_card_metadata,
+    test_investigator, test_investigator_card, test_skill_test,
 };
+pub use lookup::BoardLookup;
 pub use mock_registry::MockRegistry;
 pub use native::run_native;
 pub use resolver::{ChoiceResolver, ScriptedResolver};
-pub use seat::{clues, doom, horror, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
+pub use seat::{clues, doom, horror, seat, uses, CardSetup, Seat, SeatCard};
 pub use session::TestSession;
+pub use stage::{enemy, location, AnyKind, Place, Printed, StagedEnemy, StagedLocation, Stock};

@@ -4,23 +4,18 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::GameStateBuilder;
-use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{enemy, location, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Two adjacent locations: investigator 1 in the Hallway (2), a ready
 /// unengaged enemy in the Attic (1). No seating yet.
 fn two_rooms() -> GameStateBuilder {
-    let enemy = {
-        let mut e = test_support::test_enemy(1, "Ghoul");
-        e.current_location = Some(LocationId(1));
-        e.engaged_with = None;
-        e
-    };
+    let enemy = enemy(1).at(LocationId(1));
     GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(LocationId(2)))
-        .with_location(test_support::test_location(1, "Attic"))
-        .with_location(test_support::test_location(2, "Hallway"))
+        .with_location(location(1))
+        .with_location(location(2))
         .with_enemy(enemy)
 }
 
@@ -38,13 +33,11 @@ fn two_room_board() -> GameState {
 
 /// [`two_room_board`] with the enemy exhausted (evaded).
 fn two_room_board_with_exhausted_enemy() -> GameState {
-    let mut state = two_room_board();
-    state
-        .enemies
-        .get_mut(&EnemyId(1))
-        .expect("enemy seeded by two_room_board")
-        .exhausted = true;
-    state
+    connected(
+        two_rooms()
+            .with_enemy(enemy(1).at(LocationId(1)).exhausted())
+            .with_seating([InvestigatorId(1)]),
+    )
 }
 
 /// `glossary/Enemy_Engagement.md`: a ready unengaged enemy immediately
@@ -126,13 +119,9 @@ fn relocate_enemy_keeps_an_existing_engagement() {
     let mut state = connected(
         two_rooms()
             .with_seat(test_support::seat(2).at(LocationId(1)))
+            .with_enemy(enemy(1).engaged_with(other))
             .with_seating([InvestigatorId(1), other]),
     );
-    state
-        .enemies
-        .get_mut(&EnemyId(1))
-        .expect("enemy seeded by two_room_board")
-        .engaged_with = Some(other);
     let mut events = Vec::new();
 
     relocate_enemy(

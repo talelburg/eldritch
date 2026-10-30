@@ -21,7 +21,7 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, seat};
+use game_core::test_support::{location, seat};
 
 const COVER_UP: &str = "01007";
 const HOLY_ROSARY: &str = "01059"; // a real non-weakness asset, deck filler
@@ -42,7 +42,7 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).deck([COVER_UP, HOLY_ROSARY, HOLY_ROSARY]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);

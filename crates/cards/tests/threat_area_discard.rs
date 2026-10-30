@@ -33,7 +33,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use std::sync::LazyLock;
 
 /// Synthetic encounter treachery that sits in a threat area and can be
@@ -90,7 +90,7 @@ fn activate(probe: &str, index: u8) -> TestSession {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([probe]))
         .with_seat(seat(2).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .open_turn(NEIGHBOUR)
         .session();
     let source = AbilitySource::InPlay(session.state().in_play(BEARER, probe));

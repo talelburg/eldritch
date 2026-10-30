@@ -9,7 +9,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 
 const MAGNIFYING_GLASS: &str = "01030";
 
@@ -27,13 +27,9 @@ const PLAY_MAGNIFYING_GLASS: TurnAction = TurnAction::PlayCard {
 /// the card's bonus (when in play) cleanly cross / miss difficulty 4 depending
 /// on whether the bonus applies.
 fn mg_in_hand() -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.shroud = 4;
-    location.clues = 1;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(location)
+        .with_location(location(HERE).shroud(4).clues(1))
         .with_seat(seat(1).at(HERE).hand([MAGNIFYING_GLASS]))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

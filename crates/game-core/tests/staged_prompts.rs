@@ -23,7 +23,7 @@ use game_core::engine::{
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, AcknowledgeForcedFrame, Act, AdditionalActionChoiceFrame,
+    AbilityAddress, AbilitySource, AcknowledgeForcedFrame, AdditionalActionChoiceFrame,
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopFrame, AttackLoopStage, CandidateSource, CardCode, CardInPlay, CardInstanceId,
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EffectPrompt,
@@ -32,7 +32,9 @@ use game_core::state::{
     SkillTestId, SlotDiscardFrame, SpawnEngagePending, Status, SubstitutionPromptFrame, TimingMode,
     TimingPointWindowFrame,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, act, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
+};
 
 /// A single-hand asset in play, holding the investigator's one hand slot
 /// beside [`GRIP`].
@@ -135,9 +137,9 @@ fn table_with(me: Seat) -> GameStateBuilder {
 fn board() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(NORTH.0, "Attic"))
-        .with_location(test_support::test_location(SOUTH.0, "Cellar"))
+        .with_location(location(HERE).name("Study"))
+        .with_location(location(NORTH).name("Attic"))
+        .with_location(location(SOUTH).name("Cellar"))
 }
 
 /// `me` seated as `INV` and `other` as `OTHER`, with `OTHER` the lead, so
@@ -199,7 +201,7 @@ fn assert_reads_as_a_game(session: &TestSession) {
 #[test]
 fn a_staged_hunter_move_asks_for_its_destination() {
     let session = table(&[])
-        .with_enemy(test_support::test_enemy(GHOUL.0, "Ghoul"))
+        .with_enemy(enemy(GHOUL).name("Ghoul"))
         .with_frame(Continuation::HunterMove(HunterChoice::Move {
             enemy: GHOUL,
             candidates: vec![NORTH, SOUTH],
@@ -228,7 +230,7 @@ fn a_staged_hunter_move_asks_for_its_destination() {
 fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
-        .with_enemy(test_support::test_enemy(GHOUL.0, "Ghoul"))
+        .with_enemy(enemy(GHOUL).name("Ghoul"))
         .with_frame(Continuation::HunterMove(HunterChoice::Engage {
             enemy: GHOUL,
             candidates: vec![INV, OTHER],
@@ -254,11 +256,9 @@ fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
 /// them.
 #[test]
 fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator() {
-    let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
-    ghoul.current_location = Some(HERE);
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
-        .with_enemy(ghoul)
+        .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
         .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
         .session();
     assert_reads_as_a_game(&session);
@@ -353,8 +353,8 @@ fn a_staged_additional_action_choice_asks_which_pays() {
 #[test]
 fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
     let session = table(&[])
-        .with_enemy_engaged(test_support::test_enemy(GHOUL.0, "Ghoul"), INV)
-        .with_enemy_engaged(test_support::test_enemy(RAT.0, "Rat"), INV)
+        .with_enemy(enemy(GHOUL).name("Ghoul").engaged_with(INV))
+        .with_enemy(enemy(RAT).name("Rat").engaged_with(INV))
         .with_frame(AttackLoopFrame {
             investigator: INV,
             remaining_attackers: vec![GHOUL, RAT],
@@ -396,17 +396,8 @@ fn a_staged_advance_acknowledge_asks_the_lead_without_announcing_again() {
             step: AdvanceStep::AwaitAck,
             trigger: AdvanceTrigger::Forced,
         })
+        .with_act_deck([act("_sp_act_1", 1), act("_sp_act_2", 1)])
         .build();
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new("_sp_act_1"),
-            clue_threshold: 1,
-        },
-        Act {
-            code: CardCode::new("_sp_act_2"),
-            clue_threshold: 1,
-        },
-    ];
     state.interactive_acknowledge = true;
     let session = TestSession::new(state, registries());
     assert_reads_as_a_game(&session);
@@ -431,17 +422,8 @@ fn an_advance_acknowledge_with_everyone_eliminated_asks_the_stored_lead() {
         step: AdvanceStep::AwaitAck,
         trigger: AdvanceTrigger::Forced,
     })
+    .with_act_deck([act("_sp_act_1", 1), act("_sp_act_2", 1)])
     .build();
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new("_sp_act_1"),
-            clue_threshold: 1,
-        },
-        Act {
-            code: CardCode::new("_sp_act_2"),
-            clue_threshold: 1,
-        },
-    ];
     state.interactive_acknowledge = true;
     let session = TestSession::new(state, registries());
     assert_eq!(anchors(&session), [Some(OptionTarget::Act)]);
@@ -506,7 +488,7 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
 fn a_staged_hand_discard_cost_asks_which_hand_card() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE).name("Study"))
         .with_seat(seat(1).at(HERE).hand([FILLER, FILLER]))
         .open_turn(INV)
         .with_frame(HandDiscardCostFrame {

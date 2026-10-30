@@ -52,7 +52,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind};
-use game_core::test_support::{seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{seat, BoardLookup as _, MockRegistry, TestSession};
 use std::sync::LazyLock;
 
 /// `at`-tagged forced: +1 resource.

@@ -33,7 +33,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// Psychosis 01099, printed: the real card's abilities and metadata.
 const PSYCHOSIS: &str = "01099";
@@ -155,7 +155,7 @@ fn registries() -> Registries {
 fn board(threat: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

@@ -32,7 +32,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use std::sync::LazyLock;
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
@@ -64,8 +64,7 @@ const HERE: LocationId = LocationId(10);
 /// the Intellect-3-vs-shroud-2 Investigate always succeeds and discovers
 /// exactly 1 clue.
 fn board_with(codes: &[&str], location_clues: u8) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = location_clues;
+    let location = test_support::location(HERE).clues(location_clues);
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(

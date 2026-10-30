@@ -47,7 +47,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 /// A probe whose only property is an activated ability costing two actions:
 /// *"\[action\]\[action\]: gain 1 resource."*
@@ -109,24 +109,22 @@ const REGISTRIES: Registries = Registries {
 /// their test against. The attacker deals 1 damage and has the health to
 /// survive any fight.
 fn board(seated: fn(Seat) -> Seat) -> GameState {
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
-    attacker.attack_damage = 1;
-    attacker.attack_horror = 0;
-    attacker.max_health = 5;
-    let mut bystander = test_support::test_enemy(BYSTANDER.0, "Bystander");
-    bystander.current_location = Some(HERE);
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_location(test_support::test_location(THERE.0, "There"))
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .with_seat(seated(seat(1).at(HERE).deck([FIRST_AID])))
-        .with_enemy(bystander)
+        .with_enemy(enemy(BYSTANDER).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
-        .with_enemy_engaged(attacker, INV)
-        .build();
-    state.connect(HERE, THERE);
-    state
+        .with_enemy(
+            enemy(ATTACKER)
+                .attack_damage(1)
+                .attack_horror(0)
+                .health(5)
+                .engaged_with(INV),
+        )
+        .build()
 }
 
 /// What a row takes: a turn action as written, or the activation of ability
@@ -351,9 +349,11 @@ fn activate_rows() -> Vec<Row> {
             name: "Activate (Resign)",
             seated: |seat| seat,
             setup: |state| {
-                let here = state.locations.get_mut(&HERE).unwrap();
-                here.code = CardCode::new(PARLOR);
-                here.revealed = true;
+                state.locations.remove(&HERE);
+                state.place(
+                    location(HERE).as_card(PARLOR).connections([THERE]),
+                    REGISTRIES,
+                );
             },
             take: Take::Action(TurnAction::ActivateAbility {
                 investigator: INV,

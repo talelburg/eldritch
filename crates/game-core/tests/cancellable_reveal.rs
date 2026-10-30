@@ -33,10 +33,10 @@ use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenResolution,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 /// Mock asset: *"\[reaction\] When you reveal a chaos token: Cancel that chaos
@@ -125,7 +125,7 @@ fn registries() -> Registries {
 fn board(in_play: &[&str], bag: impl IntoIterator<Item = ChaosToken>, seed: u64) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(INV.0)
                 .skill(SkillKind::Willpower, 3)
@@ -194,17 +194,18 @@ fn a_cancelled_token_contributes_nothing_and_a_new_token_is_revealed() {
 /// clause; the `0` revealed in its place passes the attack.
 #[test]
 fn a_cancelled_token_fires_no_reveal_clause() {
-    let mut ghoul: Enemy = test_support::test_enemy(GHOUL.0, "Ghoul");
-    ghoul.fight = 3;
-    ghoul.max_health = 3;
-    ghoul.current_location = Some(HERE);
-    ghoul.engaged_with = Some(INV);
     let mut state = board(
         &[CANCEL_AND_REDRAW, SKULL_CLAUSE_FIGHT],
         [ChaosToken::Skull, ChaosToken::Numeric(0)],
         FIRST_THEN_SECOND,
     );
-    state.enemies.insert(GHOUL, ghoul);
+    state.place(
+        test_support::enemy(GHOUL)
+            .fight(3)
+            .health(3)
+            .engaged_with(INV),
+        registries(),
+    );
     let fight = TurnAction::ActivateAbility {
         investigator: INV,
         source: AbilitySource::InPlay(state.in_play(INV, SKULL_CLAUSE_FIGHT)),

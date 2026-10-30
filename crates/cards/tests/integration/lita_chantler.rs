@@ -64,10 +64,11 @@ use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner,
+    SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
@@ -77,6 +78,8 @@ const MACHETE: &str = "01020";
 const DYNAMITE: &str = "01024";
 /// Silver Twilight Acolyte — `Humanoid. Cultist. Silver Twilight.`
 const ACOLYTE: &str = "01102";
+/// Ghoul Minion — `Humanoid. Monster. Ghoul.`
+const GHOUL_MINION: &str = "01160";
 
 /// Lita's controller.
 const KEEPER: InvestigatorId = InvestigatorId(1);
@@ -89,6 +92,14 @@ const HALLWAY: LocationId = LocationId(2);
 
 const GHOUL: EnemyId = EnemyId(100);
 const NON_MONSTER: EnemyId = EnemyId(101);
+
+/// Lita in play at the Parlor, uncontrolled.
+const PARLOR_LITA: CardInstanceId = CardInstanceId(900);
+
+/// Lita, the scenario's card, as instance `id`.
+fn lita(id: CardInstanceId) -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(LITA), id, Owner::Scenario)
+}
 
 /// How the board is arranged for one case.
 struct Board {
@@ -130,55 +141,48 @@ impl Board {
             (keeper, self.arm(other))
         };
 
-        // Health well clear of anything dealt below, so every case is read off
-        // `damage` rather than off a defeat.
-        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
-        // Engaged with the actor, so at the actor's location — which every
-        // case puts where the enemies stand.
-        let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
-        ghoul.code = CardCode::new("01160");
-        ghoul.fight = 3;
-        ghoul.max_health = 9;
+        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.): fight 2, health 2,
+        // attacking for 1 damage and 1 horror. Engaged with the actor, so at
+        // the actor's location — which every case puts where the enemies
+        // stand.
+        let ghoul = test_support::enemy(GHOUL).as_card(GHOUL_MINION);
+        // Silver Twilight Acolyte 01102: fight 2, health 3.
+        let acolyte = test_support::enemy(NON_MONSTER)
+            .as_card(ACOLYTE)
+            .at(self.enemies_at);
 
-        let mut acolyte = test_support::test_enemy(NON_MONSTER.0, "Silver Twilight Acolyte");
-        acolyte.code = CardCode::new(ACOLYTE);
-        acolyte.fight = 3;
-        acolyte.max_health = 9;
-        acolyte.current_location = Some(self.enemies_at);
+        // Lita is the scenario's card wherever she is. Uncontrolled, she is in
+        // play at the Parlor; a location stages its cards, so her id is named
+        // here.
+        let parlor = test_support::location(PARLOR);
+        let parlor = if self.controlled {
+            parlor
+        } else {
+            parlor.cards_at_location([lita(PARLOR_LITA)])
+        };
 
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(keeper)
             .with_seat(other)
-            .with_location(test_support::test_location(PARLOR.0, "Parlor"))
-            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
-            .with_enemy_engaged(ghoul, self.actor)
+            .with_location(parlor)
+            .with_location(test_support::location(HALLWAY))
+            .with_enemy(ghoul.engaged_with(self.actor))
             .with_enemy(acolyte)
             .with_seating([KEEPER, OTHER])
             .open_turn(self.actor)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .build();
-        // Lita is the scenario's card wherever she is, so she is placed on the
-        // built state rather than seated (a seat's cards are its
-        // investigator's), with an id minted from its counter.
-        let lita = CardInPlay::enter_play(
-            CardCode::new(LITA),
-            state.card_instance_ids.mint(),
-            Owner::Scenario,
-        );
+        // Controlled, she is in the keeper's play area: placed on the built
+        // state rather than seated (a seat's cards are its investigator's),
+        // with an id minted from its counter.
         if self.controlled {
+            let lita = lita(state.card_instance_ids.mint());
             state
                 .investigators
                 .get_mut(&KEEPER)
                 .expect("the keeper is seated")
                 .cards_in_play
-                .push(lita);
-        } else {
-            state
-                .locations
-                .get_mut(&PARLOR)
-                .expect("the Parlor is on the board")
-                .cards_at_location
                 .push(lita);
         }
         state
@@ -265,7 +269,7 @@ fn while_uncontrolled_the_combat_bonus_does_not_apply() {
 
 /// The anchor of the controlled Lita: her granted reaction is offered on
 /// her.
-fn lita(state: &GameState) -> OptionTarget {
+fn lita_anchor(state: &GameState) -> OptionTarget {
     state.card(KEEPER, LITA)
 }
 
@@ -285,7 +289,7 @@ fn fight(state: GameState, actor: InvestigatorId, enemy: EnemyId) -> TestSession
 fn fight_and_answer_window(state: GameState, enemy: EnemyId, fire: bool) -> TestSession {
     let window = fight(state, OTHER, enemy);
     let session = if fire {
-        let lita = lita(window.state());
+        let lita = lita_anchor(window.state());
         window.pick(lita)
     } else {
         window.skip()
@@ -326,7 +330,8 @@ fn a_co_located_attack_on_a_monster_deals_one_more_damage() {
             ..
         }
     );
-    assert_eq!(result.state().enemies[&GHOUL].damage, 2);
+    // The Ghoul Minion prints 2 health, so the second point defeats it.
+    assert_event!(result.events(), Event::EnemyDefeated { enemy: GHOUL, .. });
 }
 
 /// Declining the offered reaction leaves the base attack alone — so the `2`
@@ -396,7 +401,7 @@ fn a_designated_fight_ability_gets_the_bonus() {
     }
     .build();
     let machete = state.in_play(KEEPER, MACHETE);
-    let lita = lita(&state);
+    let lita = lita_anchor(&state);
     let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::ActivateAbility {
             investigator: KEEPER,
@@ -433,9 +438,10 @@ fn a_non_attack_damage_effect_gets_nothing() {
     .build();
     let keeper = state.investigators[&KEEPER].card_anchor();
     // Playing the event provokes the engaged ghoul's attack of opportunity,
-    // whose 1 damage asks where it goes — Lita, an ally in play, can soak it —
-    // and then so does each of the 3 points the blast deals the keeper. He
-    // takes all four himself. Nothing else is asked: no reaction window opens.
+    // whose 1 damage and 1 horror each ask where they go — Lita, an ally in
+    // play, can soak either — and then so does each of the 3 points the blast
+    // deals the keeper. He takes all five himself. Nothing else is asked: no
+    // reaction window opens.
     let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::PlayCard {
             investigator: KEEPER,
@@ -444,11 +450,16 @@ fn a_non_attack_damage_effect_gets_nothing() {
         .pick(keeper.clone())
         .pick(keeper.clone())
         .pick(keeper.clone())
+        .pick(keeper.clone())
         .pick(keeper);
     result.assert_at_turn_menu(KEEPER);
-    assert_eq!(
-        result.state().enemies[&GHOUL].damage,
-        3,
-        "the printed 3 and not a point more",
+    // The printed 3 and not a point more.
+    assert_event!(
+        result.events(),
+        Event::EnemyDamaged {
+            enemy: GHOUL,
+            amount: 3,
+            ..
+        }
     );
 }

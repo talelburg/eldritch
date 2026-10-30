@@ -19,7 +19,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameState, GameStateBuilder,
     InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 const HAUNTED: &str = "01098";
 /// Holy Rosary 01059 — a non-weakness filler for the rest of the deck.
@@ -53,7 +53,7 @@ fn skill(state: &GameState, who: InvestigatorId, skill: SkillKind) -> i32 {
 fn draw_haunted() -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -72,7 +72,7 @@ fn draw_haunted() -> TestSession {
 fn haunted_in_play(turn: InvestigatorId) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat(1).at(HERE).threat_area([HAUNTED]))
         .with_seat(seat(2).at(HERE))
         .open_turn(turn)

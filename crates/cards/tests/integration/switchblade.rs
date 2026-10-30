@@ -18,10 +18,10 @@ use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder,
+    InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 
 const SWITCHBLADE: &str = "01044";
 /// Unexpected Courage 01093: *"Max 1 committed per skill test."*, 2 wild
@@ -32,22 +32,15 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 
-/// A fight-3 enemy with enough health that no attack here defeats it.
-fn ghoul() -> Enemy {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 5;
-    enemy
-}
-
-/// `seat`'s turn at `HERE`, engaged with [`ghoul`], drawing a `Numeric(0)`
-/// token: the attack's margin is the tested skill minus 3.
+/// `seat`'s turn at `HERE`, engaged with a fight-3 enemy with enough health
+/// that no attack here defeats it, drawing a `Numeric(0)` token: the attack's
+/// margin is the tested skill minus 3.
 fn board(seat: Seat) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat.at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(ghoul(), INV)
+        .with_location(location(HERE))
+        .with_enemy(enemy(ENEMY).fight(3).health(5).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

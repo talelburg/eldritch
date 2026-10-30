@@ -50,7 +50,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const BEAT_COP: &str = "01018";
@@ -66,9 +66,6 @@ const ENEMY: EnemyId = EnemyId(100);
 /// hand, and a 1-health enemy there, engaged — so both Fight and Evade are
 /// legal against it, and one point of damage defeats it.
 fn board_with_hand(hand: &[&str]) -> TestSession {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.max_health = 1;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -77,8 +74,8 @@ fn board_with_hand(hand: &[&str]) -> TestSession {
                 .in_play([BEAT_COP])
                 .hand(hand.iter().copied()),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(location(HERE))
+        .with_enemy(enemy(ENEMY).health(1).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

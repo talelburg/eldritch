@@ -15,7 +15,7 @@
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, TEST_REGISTRIES};
+use game_core::test_support::{enemy, location, seat, TEST_REGISTRIES};
 
 /// D, where the investigator the hunter moves toward stands.
 const HERE: LocationId = LocationId(4);
@@ -23,25 +23,14 @@ const HERE: LocationId = LocationId(4);
 #[test]
 fn hunter_move_tie_break_replays_identically() {
     fn diamond_state() -> GameStateBuilder {
-        let mut loc_a = test_support::test_location(1, "A");
-        let mut loc_b = test_support::test_location(2, "B");
-        let mut loc_c = test_support::test_location(3, "C");
-        let mut loc_d = test_support::test_location(HERE.0, "D");
-        loc_a.connections = vec![LocationId(2), LocationId(3)];
-        loc_b.connections = vec![LocationId(1), HERE];
-        loc_c.connections = vec![LocationId(1), HERE];
-        loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut hunter = test_support::test_enemy(1, "Hunter");
-        hunter.hunter = true;
-        hunter.current_location = Some(LocationId(1));
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(loc_a)
-            .with_location(loc_b)
-            .with_location(loc_c)
-            .with_location(loc_d)
+            .with_location(location(1).connections([LocationId(2), LocationId(3)]))
+            .with_location(location(2).connections([LocationId(1), HERE]))
+            .with_location(location(3).connections([LocationId(1), HERE]))
+            .with_location(location(HERE).connections([LocationId(2), LocationId(3)]))
             .with_seat(seat(1).at(HERE))
-            .with_enemy(hunter)
+            .with_enemy(enemy(1).hunter().at(LocationId(1)))
             .open_turn(InvestigatorId(1))
     }
 

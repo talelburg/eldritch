@@ -35,20 +35,25 @@
 //! nothing, like Obscuring Fog 01168's, leaves the result and the acknowledge
 //! in one batch and never showed the bug.
 //!
-//! It runs against `cards::TEST_REGISTRIES`: the real corpus with the
-//! synthetic test investigator composed in.
+//! It runs against `cards::TEST_REGISTRIES` — the real corpus with the
+//! synthetic test investigator composed in — plus one probe enemy,
+//! [`PROBE_MONSTER`].
 #![cfg(not(target_arch = "wasm32"))]
 
-use cards::TEST_REGISTRIES;
+use std::sync::LazyLock;
+
+use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
+use game_core::engine::{self, EngineOutcome, InputKind, OptionId, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner as CardOwner, SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, SkillKind,
 };
-use game_core::test_support;
+use game_core::test_support::{enemy, location, seat};
 use protocol::ServerMessage;
 use web::skill_test_result;
 use web::store::{self, ClientState};
@@ -63,41 +68,76 @@ const OTHER: InvestigatorId = InvestigatorId(2);
 const PARLOR: LocationId = LocationId(1);
 const GHOUL: EnemyId = EnemyId(100);
 
+/// A probe enemy (ADR 0016): a `[[Monster]]`, so Lita's reaction is offered
+/// against it, printed fight 3 and health 9 — well clear of the attack, so the
+/// Fight resolves without a defeat queueing windows of its own. It stands in
+/// for no printed card.
+const PROBE_MONSTER: &str = "_strab_monster";
+
+static PROBE_MONSTER_METADATA: LazyLock<CardMetadata> = LazyLock::new(|| CardMetadata {
+    code: PROBE_MONSTER.to_owned(),
+    name: "Probe Monster".to_owned(),
+    traits: vec!["Monster".to_owned()],
+    text: None,
+    back_name: None,
+    back_text: None,
+    pack_code: "_mock".to_owned(),
+    weakness: None,
+    kind: CardKind::Enemy {
+        fight: 3,
+        evade: 2,
+        damage: 1,
+        horror: 0,
+        health: Some(HealthValue::Fixed(9)),
+        victory: None,
+        spawn: None,
+        surge: false,
+        peril: false,
+        hunter: false,
+        retaliate: false,
+        prey: Prey::Default,
+        quantity: 1,
+    },
+});
+
+fn probe_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    if code.as_str() == PROBE_MONSTER {
+        Some(&PROBE_MONSTER_METADATA)
+    } else {
+        (cards::TEST_REGISTRY.metadata_for)(code)
+    }
+}
+
+/// `cards::TEST_REGISTRY` with [`PROBE_MONSTER`] composed in.
+static PROBE_REGISTRY: CardRegistry = CardRegistry {
+    metadata_for: probe_metadata_for,
+    ..cards::TEST_REGISTRY
+};
+
+/// The registries every board here runs against.
+static PROBE_REGISTRIES: Registries = Registries {
+    cards: &PROBE_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
 /// The board, differing in one bit: whether Lita is in the keeper's play area,
 /// and so whether her reaction window opens between the result and the
 /// acknowledge. Everything else — the `+0` bag that makes the attack succeed,
-/// the `[[Monster]]` Ghoul, both investigators in the Parlor — is fixed.
+/// the `[[Monster]]` probe, both investigators in the Parlor — is fixed.
 fn board(lita_in_play: bool) -> GameState {
-    let mut keeper = test_support::test_investigator(1);
-    keeper.current_location = Some(PARLOR);
-    keeper.skills.combat = 3;
-    if lita_in_play {
-        keeper.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(LITA),
-            CardInstanceId(50),
-            CardOwner::Scenario,
-        ));
-    }
-
-    let mut other = test_support::test_investigator(2);
-    other.current_location = Some(PARLOR);
-    other.skills.combat = 3;
-
-    // Health well clear of the attack, so the Fight resolves without a defeat
-    // queueing windows of its own.
-    // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
-    let mut ghoul = test_support::test_enemy(100, "Ghoul");
-    ghoul.code = CardCode::new("01160");
-    ghoul.fight = 3;
-    ghoul.max_health = 9;
-    ghoul.engaged_with = Some(OTHER);
-    ghoul.current_location = Some(PARLOR);
+    let keeper = seat(1).at(PARLOR);
+    let keeper = if lita_in_play {
+        keeper.in_play([LITA])
+    } else {
+        keeper
+    };
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(keeper)
-        .with_investigator(other)
-        .with_location(test_support::test_location(1, "Parlor"))
-        .with_enemy(ghoul)
+        .with_registries(PROBE_REGISTRIES)
+        .with_seat(keeper)
+        .with_seat(seat(2).at(PARLOR))
+        .with_location(location(PARLOR).name("Parlor"))
+        .with_enemy(enemy(GHOUL).as_card(PROBE_MONSTER).engaged_with(OTHER))
         .with_seating([KEEPER, OTHER])
         .open_turn(OTHER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -135,19 +175,10 @@ const MILAN: &str = "01033";
 /// investigating against a `+0` bag: intellect 3 + 1 succeeds, and his `after`
 /// reaction opens a window between the result and the acknowledge.
 fn investigate_with_milan() -> Vec<Pause> {
-    let mut keeper = test_support::test_investigator(1);
-    keeper.current_location = Some(PARLOR);
-    keeper.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(MILAN),
-        CardInstanceId(50),
-        CardOwner::Investigator(KEEPER),
-    ));
-    let mut parlor = test_support::test_location(1, "Parlor");
-    parlor.shroud = 2;
-    parlor.clues = 3;
     let mut state = GameStateBuilder::new()
-        .with_investigator(keeper)
-        .with_location(parlor)
+        .with_registries(PROBE_REGISTRIES)
+        .with_seat(seat(1).at(PARLOR).in_play([MILAN]))
+        .with_location(location(PARLOR).name("Parlor").shroud(2).clues(3))
         .with_seating([KEEPER])
         .open_turn(KEEPER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -164,7 +195,7 @@ fn investigate_with_milan() -> Vec<Pause> {
 /// Take `action` from the turn menu and answer every prompt through the end of
 /// the test, folding each apply into a `ClientState`. See [`fight_ghoul`].
 fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
-    let idx = enumerate::legal_actions(&state, TEST_REGISTRIES.cards)
+    let idx = enumerate::legal_actions(&state, PROBE_REGISTRIES.cards)
         .iter()
         .position(|a| a == action)
         .expect("the action is legal on this board");
@@ -175,7 +206,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
                 u32::try_from(idx).expect("action index fits u32"),
             )),
         }),
-        TEST_REGISTRIES,
+        PROBE_REGISTRIES,
     );
 
     let mut client = ClientState::default();
@@ -218,7 +249,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         result = engine::apply(
             result.state.clone(),
             Action::Player(PlayerAction::ResolveInput { response }),
-            TEST_REGISTRIES,
+            PROBE_REGISTRIES,
         );
     }
     pauses

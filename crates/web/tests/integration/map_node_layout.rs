@@ -16,7 +16,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
     Owner as CardOwner,
 };
-use game_core::test_support;
+use game_core::test_support::{self, location, seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ServerMessage;
@@ -29,6 +29,7 @@ use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
 const PARLOR: LocationId = LocationId(5);
+const HALLWAY: LocationId = LocationId(6);
 const LITA: CardInstanceId = CardInstanceId(60);
 
 /// Inject `style.css` once per browser session, so measurements are taken
@@ -56,30 +57,30 @@ fn inject_style() {
         .expect("append");
 }
 
-/// The Parlor (01115) with Lita Chantler (01117) at it, and `investigators`
-/// investigators standing in it. Real card codes throughout — the real corpus
-/// is provided, so the investigator's capacity lookup needs a real code.
-fn parlor_state(investigators: usize) -> GameState {
-    let mut parlor = test_support::test_location(5, "Parlor");
-    parlor.code = CardCode::new("01115");
-    parlor.revealed = true;
-    parlor.cards_at_location.push(CardInPlay::enter_play(
-        CardCode::new("01117"),
-        LITA,
-        CardOwner::Scenario,
-    ));
-    let mut builder = GameStateBuilder::new().with_location(parlor);
-    for (i, (name, code)) in [("Roland Banks", "01001"), ("Daisy Walker", "01002")]
-        .into_iter()
-        .take(investigators)
-        .enumerate()
-    {
-        let mut inv = test_support::test_investigator(u32::try_from(i).expect("small index") + 1);
-        inv.name = name.to_string();
-        inv.investigator_card.code = CardCode::new(code);
-        builder = builder.with_investigator_at(inv, PARLOR);
+/// The Parlor (01115) with Lita Chantler (01117) at it, connected to
+/// `connections`, and `investigators` investigators standing in it. Real card
+/// codes throughout — the real corpus is provided, so the investigator's
+/// capacity lookup needs a real code.
+fn parlor_board(
+    investigators: usize,
+    connections: impl IntoIterator<Item = LocationId>,
+) -> GameStateBuilder {
+    let parlor = location(PARLOR)
+        .as_card("01115")
+        .connections(connections)
+        .cards_at_location([CardInPlay::enter_play(
+            CardCode::new("01117"),
+            LITA,
+            CardOwner::Scenario,
+        )]);
+    let mut builder = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_location(parlor);
+    // Roland Banks 01001 and Daisy Walker 01002.
+    for (id, code) in (1..).zip(["01001", "01002"]).take(investigators) {
+        builder = builder.with_seat(seat(id).as_card(code).at(PARLOR));
     }
-    builder.build()
+    builder
 }
 
 /// Mount `BoardView` with `state`, tick, and return the wrapper this mount put
@@ -122,7 +123,7 @@ async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
 /// Assert every occupancy token in the Parlor node is inside the node's client
 /// box, and that the node is not scrolling content out of sight.
 async fn assert_parlor_tokens_visible(investigators: usize) {
-    let root = mount(parlor_state(investigators)).await;
+    let root = mount(parlor_board(investigators, []).build()).await;
     let node: HtmlElement = root
         .query_selector(".map-location[data-loc=\"Parlor\"]")
         .expect("query")
@@ -188,11 +189,9 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 /// (01115, the tallest Core location) sits one row below the Hallway (01112).
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
-    let mut state = parlor_state(2);
-    let mut hallway = test_support::test_location(6, "Hallway");
-    hallway.code = CardCode::new("01112");
-    hallway.revealed = true;
-    state.locations.insert(LocationId(6), hallway);
+    let state = parlor_board(2, [])
+        .with_location(location(HALLWAY).as_card("01112"))
+        .build();
     let root = mount(state).await;
     let node = |name: &str| -> HtmlElement {
         root.query_selector(&format!(".map-location[data-loc=\"{name}\"]"))
@@ -226,12 +225,14 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
 /// space. Asserted by measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
-    let mut hallway = test_support::test_location(6, "Hallway");
-    hallway.code = CardCode::new("01112");
-    hallway.revealed = false; // the short card
-    let mut state = parlor_state(1);
-    state.locations.insert(LocationId(6), hallway);
-    state.connect(PARLOR, LocationId(6));
+    let state = parlor_board(1, [HALLWAY])
+        .with_location(
+            location(HALLWAY)
+                .as_card("01112")
+                .unrevealed() // the short card
+                .connections([PARLOR]),
+        )
+        .build();
     let root = mount(state).await;
 
     // Card boxes, in the coordinate space the SVG lines are drawn in (the `.map`
@@ -292,7 +293,7 @@ async fn only_the_card_advertises_the_location_menu() {
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Investigate").at(OptionTarget::Location(PARLOR))],
     );
-    let root = mount_with(parlor_state(1), outcome).await;
+    let root = mount_with(parlor_board(1, []).build(), outcome).await;
     let node = root
         .query_selector(".map-location[data-loc=\"Parlor\"]")
         .expect("query")

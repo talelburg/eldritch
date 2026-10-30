@@ -37,12 +37,11 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
 
 #[test]
 fn discard_self_removes_location_attachment_to_encounter_discard() {
-    let mut loc = test_support::test_location(STUDY.0, "Study");
-    loc.attachments.push(CardInPlay::enter_play(
+    let loc = location(STUDY).attachments([CardInPlay::enter_play(
         CardCode::new("01168"),
         STUDY_ATTACHMENT,
         Owner::EncounterDeck,
-    ));
+    )]);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))

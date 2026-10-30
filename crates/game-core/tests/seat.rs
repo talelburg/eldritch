@@ -8,7 +8,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
+use card_dsl::card_data::{CardKind, Class, SkillIcons, Skills};
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
@@ -16,7 +16,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
     SkillKind, Status, UseKind,
 };
-use game_core::test_support::{self, clues, seat, uses, MockRegistry, SeatLookup as _};
+use game_core::test_support::{self, clues, seat, uses, BoardLookup as _, MockRegistry};
 
 /// An investigator card printed 2/5/1/4, 7 health, 9 sanity.
 const SEAT_INV: &str = "_seat_inv";
@@ -26,24 +26,10 @@ const ASSET: &str = "_seat_asset";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-fn metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: name.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 SEAT_INV,
                 "Seat Probe",
                 CardKind::Investigator {
@@ -58,7 +44,7 @@ fn registries() -> Registries {
                     sanity: 9,
                 },
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 ASSET,
                 "Seat Asset",
                 CardKind::Asset {
@@ -123,21 +109,6 @@ fn as_card_seats_the_printed_investigator() {
 }
 
 #[test]
-fn skills_after_as_card_override_the_printed_ones() {
-    let stated = Skills {
-        willpower: 6,
-        intellect: 6,
-        combat: 6,
-        agility: 6,
-    };
-    let state = GameStateBuilder::new()
-        .with_registries(registries())
-        .with_seat(seat(1).as_card(SEAT_INV).skills(stated))
-        .build();
-    assert_eq!(state.investigators[&INV].skills, stated);
-}
-
-#[test]
 fn skill_sets_one_skill_and_keeps_the_rest() {
     let state = GameStateBuilder::new()
         .with_registries(registries())
@@ -150,23 +121,6 @@ fn skill_sets_one_skill_and_keeps_the_rest() {
             intellect: 3,
             combat: 5,
             agility: 3,
-        },
-    );
-}
-
-#[test]
-fn skill_after_as_card_overrides_that_printed_skill_alone() {
-    let state = GameStateBuilder::new()
-        .with_registries(registries())
-        .with_seat(seat(1).as_card(SEAT_INV).skill(SkillKind::Willpower, 6))
-        .build();
-    assert_eq!(
-        state.investigators[&INV].skills,
-        Skills {
-            willpower: 6,
-            intellect: 5,
-            combat: 1,
-            agility: 4,
         },
     );
 }
@@ -187,7 +141,7 @@ fn harm_lands_on_the_investigator_card() {
 fn the_scalar_and_zone_setters_fill_what_they_name() {
     let state = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -301,7 +255,7 @@ fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
 fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -333,7 +287,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
     ));
     let session = GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_investigator(investigator)
         .open_turn(INV)
         .session()

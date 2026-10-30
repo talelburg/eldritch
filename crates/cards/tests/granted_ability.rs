@@ -118,24 +118,23 @@ fn needs_you_abilities() -> Vec<Ability> {
 /// `granter_code`, with the recipient and a second card put into play there
 /// under nobody's control.
 fn board(granter_code: &str) -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Granting Place");
-    here.code = CardCode::new(granter_code);
-    here.clues = 0;
-    here.cards_at_location.push(CardInPlay::enter_play(
-        CardCode::new(RECIPIENT),
-        RECIPIENT_INST,
-        Owner::Scenario,
-    ));
-    here.cards_at_location.push(CardInPlay::enter_play(
-        CardCode::new(SECOND_HAND),
-        SECOND_INST,
-        Owner::Scenario,
-    ));
+    board_with_clues(granter_code, 0)
+}
+
+/// [`board`] with `clues` clues on [`HERE`].
+fn board_with_clues(granter_code: &str, clues: u8) -> GameState {
+    let here = test_support::location(HERE)
+        .code(granter_code)
+        .clues(clues)
+        .cards_at_location([
+            CardInPlay::enter_play(CardCode::new(RECIPIENT), RECIPIENT_INST, Owner::Scenario),
+            CardInPlay::enter_play(CardCode::new(SECOND_HAND), SECOND_INST, Owner::Scenario),
+        ]);
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_location(here)
-        .with_location(test_support::test_location(THERE.0, "Elsewhere"))
+        .with_location(test_support::location(THERE))
         .open_turn(MINE)
         .build()
 }
@@ -244,14 +243,9 @@ fn a_granted_grant_does_not_apply() {
 /// other investigator's seat.
 #[test]
 fn a_condition_needing_a_you_does_not_hold_for_an_uncontrolled_recipient() {
-    let mut state = board(NEEDS_YOU);
-    // Put a clue on the location, so the condition *would* hold for anybody who
+    // A clue on the location, so the condition *would* hold for anybody who
     // had a "you" there.
-    state
-        .locations
-        .get_mut(&HERE)
-        .expect("HERE is on the board")
-        .clues = 3;
+    let state = board_with_clues(NEEDS_YOU, 3);
 
     let address = AbilityAddress::Granted {
         granter: CardCode::new(NEEDS_YOU),

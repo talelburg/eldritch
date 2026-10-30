@@ -2,21 +2,19 @@
 //! resolved through the real `cards` registry — they stay in play, enforce
 //! their constant restriction, and discard at a forced timing point.
 
-use cards::REGISTRY;
-use cards::TEST_REGISTRIES;
-use game_core::assert_event;
-use game_core::assert_no_event;
+use cards::{REGISTRY, TEST_REGISTRIES};
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, ModifierTarget, MythosPhaseFrame, MythosResume,
-    Owner, Phase, SkillKind, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    Continuation, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    InvestigatorTurnFrame, LocationId, ModifierTarget, MythosPhaseFrame, MythosResume, Owner,
+    Phase, SkillKind, UseKind, Zone,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Obscuring Fog 01168.
 const OBSCURING_FOG: &str = "01168";
@@ -49,24 +47,21 @@ fn mythos_draw(seats: Vec<Seat>, treacheries: &[&str]) -> TestSession {
     let ids: Vec<InvestigatorId> = (1..=seats.len())
         .map(|n| InvestigatorId(u32::try_from(n).expect("a handful of seats")))
         .collect();
-    let mut state = seats
+    seats
         .into_iter()
         .fold(
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seating(ids.clone())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining(ids)
-        .build();
-    for code in treacheries {
-        state.encounter_deck.push_back(CardCode::new(*code));
-    }
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_encounter_deck(treacheries.iter().copied())
+        .session()
 }
 
 /// Investigator 1 at `HERE`, with a filler deck for Upkeep 4.4's draw.
@@ -137,17 +132,19 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     // trigger scan reads `tested_location` off that frame to match Obscuring
     // Fog's *"attached location"* scope (the lean, location-free timing event
     // derives the location from the stack rather than carrying it).
-    let mut loc = test_support::test_location(HERE.0, "Here");
-    loc.shroud = 0; // effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it
-    loc.clues = 1;
-    loc.attachments.push(CardInPlay::enter_play(
-        CardCode::new(OBSCURING_FOG),
-        FOG_ATTACHMENT,
-        Owner::EncounterDeck,
-    ));
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(loc)
+        .with_location(
+            location(HERE)
+                // Effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it.
+                .shroud(0)
+                .clues(1)
+                .attachments([CardInPlay::enter_play(
+                    CardCode::new(OBSCURING_FOG),
+                    FOG_ATTACHMENT,
+                    Owner::EncounterDeck,
+                )]),
+        )
         .with_seat(seat(1).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
@@ -223,7 +220,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
                 .hand([HOLY_ROSARY])
                 .threat_area([DISSONANT_VOICES]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .session();
     assert!(
@@ -251,30 +248,20 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // Hallway/Parlor and Dissonant Voices discards itself, both resolving in the
     // lead's chosen order rather than rejecting. Driven through the end of the
     // Upkeep phase, the production route into the round end.
-    let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
-    // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
-    let mut ghoul = test_support::test_enemy(1, "Ghoul");
-    ghoul.code = CardCode::new("01160");
-    ghoul.current_location = Some(LocationId(2)); // Hallway
-    let mut state = GameStateBuilder::new()
+    const HALLWAY: LocationId = LocationId(2);
+    // Settling ends the phase into the round end: 2+ At-forced → the lead
+    // orders them.
+    let opened = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .ending_upkeep_phase()
         .with_seat(seat(1).threat_area([DISSONANT_VOICES]))
         .with_seating([INV])
-        .with_location(loc(2, "01112", "Hallway"))
-        .with_location(loc(5, "01115", "Parlor"))
-        .with_enemy(ghoul)
-        .build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01107"),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-
-    // Settling ends the phase into the round end: 2+ At-forced → the lead
-    // orders them.
-    let opened = TestSession::new(state, TEST_REGISTRIES);
+        .with_location(location(HALLWAY).as_card("01112"))
+        .with_location(location(5).as_card("01115"))
+        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), in the Hallway.
+        .with_enemy(enemy(1).as_card("01160").at(HALLWAY))
+        .with_agenda_deck(["01107"])
+        .session();
     let dissonant_voices = opened.state().card(INV, DISSONANT_VOICES);
     let offered: Vec<_> = opened
         .prompt()
@@ -314,11 +301,9 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
 
 /// `HERE` and `ELSEWHERE`, connected.
 fn two_locations(builder: GameStateBuilder) -> GameStateBuilder {
-    let mut here = test_support::test_location(HERE.0, "A");
-    here.connections = vec![ELSEWHERE];
-    let mut elsewhere = test_support::test_location(ELSEWHERE.0, "B");
-    elsewhere.connections = vec![HERE];
-    builder.with_location(here).with_location(elsewhere)
+    builder
+        .with_location(location(HERE).connections([ELSEWHERE]))
+        .with_location(location(ELSEWHERE).connections([HERE]))
 }
 
 fn move_to(destination: LocationId) -> TurnAction {
@@ -366,8 +351,6 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     // Frozen in Fear, `actions` actions left, an engaged enemy and an
     // unengaged bystander at `HERE`.
     let board = |actions: u8| {
-        let mut bystander = test_support::test_enemy(8, "Bystander");
-        bystander.current_location = Some(HERE);
         two_locations(GameStateBuilder::new().with_registries(TEST_REGISTRIES))
             .with_seat(
                 seat(1)
@@ -376,9 +359,9 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
                     .threat_area([FROZEN_IN_FEAR])
                     .actions(actions),
             )
-            .with_enemy(bystander)
+            .with_enemy(enemy(8).at(HERE))
             .open_turn(me)
-            .with_enemy_engaged(test_support::test_enemy(7, "Engaged"), me)
+            .with_enemy(enemy(7).engaged_with(me))
     };
     let fight = TurnAction::Fight {
         investigator: me,
@@ -600,10 +583,6 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
 /// Frozen in Fear surcharges *"the first time you perform one of the following
 /// actions (move, fight, or evade) each round"*, one budget across the three.
 fn frozen_in_fear_with_weapon_board(actions: u8) -> TestSession {
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 9;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -613,8 +592,8 @@ fn frozen_in_fear_with_weapon_board(actions: u8) -> TestSession {
                 .in_play([(AUTOMATIC_45, uses(UseKind::Ammo, 4))])
                 .actions(actions),
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(location(HERE))
+        .with_enemy(enemy(100).fight(3).health(9).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()
@@ -721,8 +700,6 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
     // your turn. / Discover 1 clue at your location.") is fast-eligible on this
     // board, so an engine-opened ST.1 player window enumerates it — but
     // Dissonant Voices forbids playing events, so it must not be offered.
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = 2;
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -732,7 +709,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
                 .hand([WORKING_A_HUNCH])
                 .threat_area([DISSONANT_VOICES]),
         )
-        .with_location(loc)
+        .with_location(location(HERE).clues(2))
         .with_seating([INV])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

@@ -72,15 +72,26 @@ that catch real engine bugs.
 
 ## The three categories
 
-**Primitive builders are shared, unconditional, and mandatory.**
-`game_core::test_support::fixtures` — `test_investigator`, `test_location`,
-`test_enemy` — is not a shortcut around real cards. `Investigator` and `Location`
-are `#[non_exhaustive]`, so as the module's own doc says, *"downstream test
-crates cannot construct them via struct literal — they MUST go through these
-fixtures"* (`fixtures.rs:8-18`). Hundreds of call sites across `game-core`,
-`cards`, `scenarios` and `web` depend on that, and the layering is why:
-`game-core` cannot reach `cards` by crate direction, so there is no real-card
-alternative at the kernel. These build entities, not cards.
+**Primitive builders are shared, unconditional, and mandatory.** The stagers
+in `game_core::test_support` — `seat`, `enemy`, `location` — are not a shortcut
+around real cards. `Investigator`, `Enemy` and `Location` are `#[non_exhaustive]`,
+so downstream test crates cannot construct them via struct literal and must go
+through the stagers (the `#[non_exhaustive]` section of `test_support/fixtures.rs`).
+Hundreds of call sites across `game-core`, `cards`, `scenarios` and `web` depend
+on that, and the layering is why: `game-core` cannot reach `cards` by crate
+direction, so there is no real-card alternative at the kernel. These build
+entities, not cards.
+
+**A primitive builder takes a printed code only through the printed
+constructor.** A stager starts *stock*, a primitive whose printed fields a test
+may set. `.as_card(code)` turns it *printed*: its printed fields are read from
+the card through the constructor production uses (`Enemy::from_metadata`, the
+location mint behind `add_location`, the investigator card's printed skills),
+and the printed type has no setter for them. A stock stager handed an
+ArkhamDB-shaped code panics and names `as_card`. Putting a real code on stock
+stats is exactly the impersonation this ADR forbids: a Ghoul Minion 01160
+staged on the stock enemy attacked for 1 damage and 0 horror where the card
+prints 1 and 1. A test that needs other numbers on a printed card uses a probe.
 
 **Probe cards are test-local.** A degenerate code that isolates one mechanism has
 one reader, and belongs in that reader's file. `crates/cards/tests/` already does
@@ -208,13 +219,15 @@ a per-file prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
 four independent definitions with independently hand-written stats, and three
 `_synth_*` codes were defined nowhere at all.
 
-**The rule is enforced by review, not by a lint.** A regex banning ArkhamDB's
-`^\d{5}[a-z]?$` shape in test code would have caught the `01001`–`01004` filler,
-and would fire constantly on the many binaries that legitimately name real codes.
-Distinguishing *names 01007 because it is testing Cover Up* from *names 01001 as
-filler* needs the surrounding intent. `standards.md` is already how this repo
-binds rules the compiler cannot check, and `code-review`'s Standards axis reads
-it.
+**On a stock stager the rule is structural; elsewhere it is enforced by
+review, not by a lint.** Inside a stager the intent is known — a stock piece is
+a primitive — so the typestate and the code-shape panic hold the line there.
+Across test code at large, a regex banning ArkhamDB's `^\d{5}[a-z]?$` shape
+would have caught the `01001`–`01004` filler, and would fire constantly on the
+many binaries that legitimately name real codes. Distinguishing *names 01007
+because it is testing Cover Up* from *names 01001 as filler* needs the
+surrounding intent. `standards.md` is already how this repo binds rules the
+compiler cannot check, and `code-review`'s Standards axis reads it.
 
 **The production `server` binary does not compile `scenarios::test_fixtures`**,
 #864's original acceptance criterion, because the deletion above leaves nothing to
@@ -222,4 +235,4 @@ compile rather than because of `default-features = false`.
 
 ---
 
-*Folded: #868, #878, #1038.*
+*Folded: #868, #878, #1038, #1234.*

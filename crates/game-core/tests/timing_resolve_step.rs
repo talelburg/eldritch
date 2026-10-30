@@ -29,10 +29,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{
-    self, Act, CardCode, EmitStep, GameState, GameStateBuilder, InvestigatorId,
-};
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::state::{self, CardCode, EmitStep, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, act, seat, MockRegistry, TestSession};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.
@@ -114,17 +112,11 @@ fn lead_alone() -> GameStateBuilder {
         .with_seating([INV])
 }
 
-/// Build `board` with `act` current — the card whose declared timing is on
-/// trial (the `PhaseEnded` / `RoundEnded` forced scans read the current act).
-/// The act deck has no builder setter, so it is set on the built state.
-fn with_act(board: GameStateBuilder, act: impl Into<CardCode>, clue_threshold: u8) -> GameState {
-    let mut state = board.build();
-    state.act_deck = vec![Act {
-        code: act.into(),
-        clue_threshold,
-    }];
-    state.act_index = 0;
-    state
+/// Build `board` with `code` the current act — the card whose declared timing
+/// is on trial (the `PhaseEnded` / `RoundEnded` forced scans read the current
+/// act).
+fn with_act(board: GameStateBuilder, code: impl Into<CardCode>, clue_threshold: u8) -> GameState {
+    board.with_act_deck([act(code, clue_threshold)]).build()
 }
 
 /// The end of the Upkeep phase, and with it the round, staged with

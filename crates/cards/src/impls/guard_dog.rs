@@ -108,10 +108,9 @@ mod tests {
     #[test]
     fn retaliate_deals_1_damage_to_bound_attacker() {
         let eid = EnemyId(7);
-        let mut enemy = test_support::test_enemy(7, "Brute");
-        enemy.max_health = 3;
-        let mut state = GameStateBuilder::new().build();
-        state.enemies.insert(eid, enemy);
+        let mut state = GameStateBuilder::new()
+            .with_enemy(test_support::enemy(eid).health(3))
+            .build();
 
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_attacking_enemy(eid);

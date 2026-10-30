@@ -26,7 +26,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner,
     Status,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 const HYPOCHONDRIA: &str = "01100";
 const PSYCHOSIS: &str = "01099";
@@ -46,7 +46,7 @@ fn bearer() -> Seat {
 fn board(bearer: Seat) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(bearer)
         .open_turn(INV)
         .session()
@@ -58,7 +58,7 @@ fn board(bearer: Seat) -> TestSession {
 fn drawn_from_the_deck_it_lands_in_the_drawers_threat_area() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -124,7 +124,7 @@ fn taking_horror_does_not_fire() {
 fn a_co_located_investigator_discards_it_with_two_actions() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(bearer())
         .with_seat(seat(2).at(HERE))
         .open_turn(NEIGHBOUR)
@@ -155,7 +155,7 @@ fn a_co_located_investigator_discards_it_with_two_actions() {
 fn it_chains_with_psychosis_until_defeat() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat(1).at(HERE).threat_area([PSYCHOSIS, HYPOCHONDRIA]))
         .with_seat(seat(2).at(HERE))
         .with_seating([INV, NEIGHBOUR])

@@ -495,7 +495,9 @@ fn zone_left(placement: Placement) -> Zone {
 mod tests {
     use super::*;
     use crate::state::{GameState, GameStateBuilder, InvestigatorId, UseKind};
-    use crate::test_support::{self, seat, TEST_REGISTRIES};
+    use crate::test_support::{
+        enemy, location, seat, StagedEnemy, StagedLocation, TEST_REGISTRIES,
+    };
 
     /// The investigator whose areas the leaving cards sit in.
     const CONTROLLER: InvestigatorId = InvestigatorId(1);
@@ -530,13 +532,21 @@ mod tests {
     /// Both investigators at the Study, with a ghoul engaged there, and nothing
     /// in any zone.
     fn empty_board() -> GameState {
-        let mut ghoul = test_support::test_enemy(1, "Ghoul");
-        ghoul.current_location = Some(STUDY);
+        board_on(ghoul(), location(STUDY))
+    }
+
+    /// The ghoul at the Study, before anything is set on it.
+    fn ghoul() -> StagedEnemy {
+        enemy(GHOUL).at(STUDY)
+    }
+
+    /// [`empty_board`] with `ghoul` and `study` staged as given.
+    fn board_on(ghoul: StagedEnemy, study: StagedLocation) -> GameState {
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(CONTROLLER.0).at(STUDY))
             .with_seat(seat(OWNER.0).at(STUDY))
-            .with_location(test_support::test_location(STUDY.0, "Study"))
+            .with_location(study)
             .with_enemy(ghoul)
             .build()
     }
@@ -544,14 +554,21 @@ mod tests {
     /// The board with a card owned by `owner` in `zone`, and the address it
     /// leaves play by. In the `Enemy` row the leaving card is the ghoul itself.
     fn board_with(owner: Owner, zone: Placement) -> (GameState, LeavingCard) {
-        let mut state = empty_board();
-        let card = instance(LEAVING_CODE, LEAVING.0, owner);
+        board_with_ghoul(ghoul(), owner, zone)
+    }
+
+    /// [`board_with`], with `ghoul` staged as given.
+    fn board_with_ghoul(
+        ghoul: StagedEnemy,
+        owner: Owner,
+        zone: Placement,
+    ) -> (GameState, LeavingCard) {
         if let Placement::Enemy(id) = zone {
-            let ghoul = state.enemies.get_mut(&id).unwrap();
-            ghoul.code = CardCode::new(LEAVING_CODE);
-            ghoul.owner = owner;
+            let state = board_on(ghoul.code(LEAVING_CODE).owner(owner), location(STUDY));
             return (state, LeavingCard::Enemy(id));
         }
+        let mut state = board_on(ghoul, location(STUDY));
+        let card = instance(LEAVING_CODE, LEAVING.0, owner);
         board::instance_zone_mut(&mut state, zone)
             .unwrap_or_else(|| panic!("no card leaves play from {zone:?}"))
             .push(card);
@@ -686,13 +703,11 @@ mod tests {
     fn place_in_victory_display_takes_each_owner_from_each_zone() {
         for owner in OWNERS {
             for zone in ZONES {
-                let (mut state, card) = board_with(owner, zone);
-                state
-                    .enemies
-                    .get_mut(&GHOUL)
-                    .unwrap()
-                    .attachments
-                    .push(instance("MINE", 71, Owner::Investigator(OWNER)));
+                let (mut state, card) = board_with_ghoul(
+                    ghoul().attachments([instance("MINE", 71, Owner::Investigator(OWNER))]),
+                    owner,
+                    zone,
+                );
                 let (left, events) = run(
                     &mut state,
                     |cx, card| place_in_victory_display(cx, card, 2),
@@ -743,14 +758,14 @@ mod tests {
             discard as fn(&mut Cx, LeavingCard) -> Result<Placement, NotLeft>,
             remove,
         ] {
-            let mut state = empty_board();
-            let ghoul = state.enemies.get_mut(&GHOUL).unwrap();
-            ghoul.code = CardCode::new("GHOUL");
-            ghoul.attachments = vec![
-                instance("MINE", 71, Owner::Investigator(OWNER)),
-                instance("ENCOUNTER", 72, Owner::EncounterDeck),
-                instance("STORY", 73, Owner::Scenario),
-            ];
+            let mut state = board_on(
+                ghoul().code("GHOUL").attachments([
+                    instance("MINE", 71, Owner::Investigator(OWNER)),
+                    instance("ENCOUNTER", 72, Owner::EncounterDeck),
+                    instance("STORY", 73, Owner::Scenario),
+                ]),
+                location(STUDY),
+            );
             let (left, events) = run(&mut state, exit, GHOUL.into());
             assert_eq!(left, Ok(Placement::Enemy(GHOUL)));
             assert!(!state.enemies.contains_key(&GHOUL));
@@ -871,14 +886,16 @@ mod tests {
     /// discarded."*).
     #[test]
     fn a_removed_location_discards_its_attachments_and_cards_at_it_by_owner() {
-        let mut state = empty_board();
-        let study = state.locations.get_mut(&STUDY).unwrap();
-        study.code = CardCode::new("STUDY");
-        study.attachments = vec![
-            instance("MINE", 71, Owner::Investigator(OWNER)),
-            instance("ENCOUNTER", 72, Owner::EncounterDeck),
-        ];
-        study.cards_at_location = vec![instance("STORY", 73, Owner::Scenario)];
+        let mut state = board_on(
+            ghoul(),
+            location(STUDY)
+                .code("STUDY")
+                .attachments([
+                    instance("MINE", 71, Owner::Investigator(OWNER)),
+                    instance("ENCOUNTER", 72, Owner::EncounterDeck),
+                ])
+                .cards_at_location([instance("STORY", 73, Owner::Scenario)]),
+        );
         let mut events = Vec::new();
         let removed = remove_location_from_game(&mut Cx::for_test(&mut state, &mut events), STUDY);
 

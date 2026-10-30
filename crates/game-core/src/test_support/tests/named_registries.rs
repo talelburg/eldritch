@@ -12,8 +12,8 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::Registries;
 use crate::event::Event;
 use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
-use crate::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind};
-use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
+use crate::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, Owner};
+use crate::test_support::{act, seat, terminal_code, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);
 
@@ -154,13 +154,11 @@ fn the_board_session_ends_the_scenario_through_the_named_module() {
 
 #[test]
 fn a_session_on_a_hand_built_state_ends_the_scenario_through_the_named_module() {
-    let mut state = stamp_board().build();
-    // No builder setter for the act deck. The act is terminal (ADR 0013) and
-    // affordable, so advancing it latches `Resolution(1)`.
-    state.act_deck = vec![Act {
-        code: terminal_code(1),
-        clue_threshold: 1,
-    }];
+    // The act is terminal (ADR 0013) and affordable, so advancing it latches
+    // `Resolution(1)`.
+    let state = stamp_board()
+        .with_act_deck([act(terminal_code(1), 1)])
+        .build();
     let session =
         TestSession::new(state, STAMPING).take(&TurnAction::AdvanceAct { investigator: INV });
     assert!(session.state().ending.is_some(), "the scenario ended");
@@ -177,21 +175,6 @@ fn as_card_reads_the_printed_investigator_from_the_named_registries() {
     assert_eq!(investigator.name, "Named Probe");
     assert_eq!(investigator.skills, PROBE_SKILLS);
     assert_eq!(investigator.investigator_card.code.as_str(), PROBE_INV);
-}
-
-#[test]
-fn a_skill_set_after_as_card_still_wins_over_the_named_printed_one() {
-    let state = GameStateBuilder::new()
-        .with_registries(NAMED)
-        .with_seat(seat(1).as_card(PROBE_INV).skill(SkillKind::Intellect, 6))
-        .build();
-    assert_eq!(
-        state.investigators[&INV].skills,
-        Skills {
-            intellect: 6,
-            ..PROBE_SKILLS
-        },
-    );
 }
 
 #[test]

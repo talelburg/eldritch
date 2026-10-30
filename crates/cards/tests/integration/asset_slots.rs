@@ -11,7 +11,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Zone};
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
 const GUARD_DOG: &str = "01021"; // Guardian Ally
@@ -34,7 +34,7 @@ fn play_state(hand: &[&str]) -> TestSession {
                 .actions(6)
                 .hand(hand.iter().copied()),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session()
 }

@@ -17,7 +17,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, AnyKind, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
@@ -44,21 +44,17 @@ fn holding_evidence() -> Seat {
 /// `investigator`'s open turn, engaged with a 1-HP enemy at a location with
 /// `location_clues` clues. A successful Combat test defeats the enemy and
 /// opens the after-defeat window.
-fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-    enemy.damage = 0;
+fn fight_board(investigator: impl Into<Seat<AnyKind>>, location_clues: u8) -> GameStateBuilder {
+    let enemy = test_support::enemy(ENEMY).fight(1).health(1).damage(0);
 
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = location_clues;
+    let loc = test_support::location(HERE).clues(location_clues);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .with_seat(investigator)
         // Co-located by engagement: Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

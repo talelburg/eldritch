@@ -16,9 +16,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind, UseKind,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, UseKind,
 };
-use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, StagedLocation, TestSession};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -32,16 +32,17 @@ fn board(intellect: i8, shroud: u8, revealed: bool) -> GameStateBuilder {
 }
 
 /// The Study at `HERE`: `shroud` shroud, 1 clue, revealed or not.
-fn study(shroud: u8, revealed: bool) -> Location {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.shroud = shroud;
-    location.clues = 1;
-    location.revealed = revealed;
-    location
+fn study(shroud: u8, revealed: bool) -> StagedLocation {
+    let study = test_support::location(HERE).shroud(shroud).clues(1);
+    if revealed {
+        study
+    } else {
+        study.unrevealed()
+    }
 }
 
 /// [`board`] at `location`.
-fn board_at(location: Location, intellect: i8) -> GameStateBuilder {
+fn board_at(location: StagedLocation, intellect: i8) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -145,12 +146,11 @@ const FOG_ID: CardInstanceId = CardInstanceId(7);
 
 /// [`board`], with Obscuring Fog attached to the location.
 fn fogged_board(intellect: i8, shroud: u8) -> GameStateBuilder {
-    let mut location = study(shroud, true);
-    location.attachments.push(CardInPlay::enter_play(
+    let location = study(shroud, true).attachments([CardInPlay::enter_play(
         CardCode::new(FOG),
         FOG_ID,
         Owner::EncounterDeck,
-    ));
+    )]);
     board_at(location, intellect)
 }
 

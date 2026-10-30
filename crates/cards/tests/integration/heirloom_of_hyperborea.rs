@@ -26,8 +26,8 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
-use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 const HEIRLOOM: &str = "01012";
 /// Event. `Spell.`
@@ -60,19 +60,13 @@ fn agnes(hand: &[&str]) -> Seat {
 /// `investigator`'s open turn at `HERE`, solo, with The Gathering's first
 /// agenda current (Dark Memory places its doom there).
 fn board(investigator: Seat) -> TestSession {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
-        .build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_agenda_deck(["01105"])
+        .session()
 }
 
 const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
@@ -149,7 +143,7 @@ fn another_investigators_spell_offers_nothing() {
     let s = TestSession::new(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(test_support::location(HERE))
             .with_seat(seat(1).at(HERE).hand([SCRYING]).resources(5))
             .with_seat(seat(2).at(HERE).in_play([HEIRLOOM]).deck([GUTS]))
             .with_seating([INV, INV2])
@@ -173,14 +167,14 @@ fn another_investigators_spell_offers_nothing() {
 /// positive case, a Spell played from a window, is Ward of Protection's.
 #[test]
 fn a_non_spell_played_from_a_reaction_window_offers_nothing() {
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
-    attacker.attack_damage = 2;
-    attacker.attack_horror = 1;
+    let attacker = test_support::enemy(ATTACKER)
+        .attack_damage(2)
+        .attack_horror(1);
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(agnes(&[DODGE]))
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.engaged_with(INV))
         .open_turn(INV)
         .build();
     let dodge = OptionTarget::HandCardByCode {

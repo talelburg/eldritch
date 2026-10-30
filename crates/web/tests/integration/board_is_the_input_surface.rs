@@ -23,7 +23,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner as CardOwner, Phase, UseKind,
 };
-use game_core::test_support::{self, seat, Seat};
+use game_core::test_support::{self, location, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
@@ -182,12 +182,12 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
         // A one-token bag makes the test's outcome deterministic: +1 against
         // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(1)]))
+        // Rotting Remains 01163: "Revelation - Test [willpower] (3)." Drawing
+        // it is what carries the flow from the encounter deck into a skill
+        // test, and so to the acknowledge pause — the second of the two
+        // identical-on-the-wire `Confirm`s (ADR 0011).
+        .with_encounter_deck([ROTTING_REMAINS])
         .build();
-    // Rotting Remains 01163: "Revelation - Test [willpower] (3)." Drawing it is
-    // what carries the flow from the encounter deck into a skill test, and so to
-    // the acknowledge pause — the second of the two identical-on-the-wire
-    // `Confirm`s (ADR 0011).
-    state.encounter_deck = [CardCode::new(ROTTING_REMAINS)].into_iter().collect();
     // The cosmetic acknowledge pause is what the result modal renders on.
     state.interactive_acknowledge = true;
 
@@ -286,7 +286,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     inv.cards_in_play.push(kit);
     let state = GameStateBuilder::default()
         .with_investigator_at(inv, LocationId(10))
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(location(10))
         .with_round(1)
         .open_turn(INV)
         .build();
@@ -355,7 +355,7 @@ const INV2: InvestigatorId = InvestigatorId(2);
 
 /// Seat `id` as the printed investigator `card`, holding `hand`, over a deck
 /// of real cards a mulligan can draw.
-fn seated(id: u32, card: &str, hand: &[&str]) -> Seat {
+fn seated(id: u32, card: &str, hand: &[&str]) -> Seat<Printed> {
     seat(id)
         .as_card(card)
         .hand(hand.iter().copied())

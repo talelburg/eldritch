@@ -20,7 +20,7 @@ use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, SeatLookup as _};
+use game_core::test_support::{location, seat, BoardLookup as _};
 use web::interaction;
 
 const AMULET: &str = "01014";
@@ -36,7 +36,7 @@ const HERE: LocationId = LocationId(10);
 fn the_amulets_menu_entry_plays_the_top_event() {
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

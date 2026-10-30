@@ -54,10 +54,10 @@ use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    ModifierTarget, MythosPhaseFrame, MythosResume, Owner, Phase, SkillKind,
+    CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget,
+    MythosPhaseFrame, MythosResume, Owner, Phase, SkillKind,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{self, location, seat, TestSession};
 
 /// Lita Chantler — the set-aside `Ally` asset act 01109b puts into play.
 const LITA: &str = "01117";
@@ -87,30 +87,14 @@ fn board() -> GameState {
 
 /// The [`board`]'s act-2 contents, on `staged`'s phase and moment.
 fn act_two_board(staged: GameStateBuilder) -> GameState {
-    let mut hallway = test_support::test_location(HALLWAY_ID.0, "Hallway");
-    hallway.code = CardCode::new(HALLWAY);
-    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
-    parlor.code = CardCode::new(PARLOR);
-    parlor.revealed = false;
-
     let mut state = staged
         .with_seating([INV])
         .with_seat(seat(1).at(HALLWAY_ID))
-        .with_location(hallway)
-        .with_location(parlor)
+        .with_location(location(HALLWAY_ID).as_card(HALLWAY))
+        .with_location(location(PARLOR_ID).as_card(PARLOR).unrevealed())
+        .with_act_deck(["01109", "01110"])
         .build();
     state.set_aside_cards = vec![CardCode::new(GHOUL_PRIEST), CardCode::new(LITA)];
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new("01109"),
-            clue_threshold: 3,
-        },
-        Act {
-            code: CardCode::new("01110"),
-            clue_threshold: 0,
-        },
-    ];
-    state.act_index = 0;
     state
 }
 
@@ -252,7 +236,9 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
             .with_phase_anchor(MythosPhaseFrame {
                 resume: MythosResume::AfterDraws,
             })
-            .with_mythos_draw_remaining([INV]),
+            .with_mythos_draw_remaining([INV])
+            // Grasping Hands.
+            .with_encounter_deck(["01162"]),
     );
     // Put her into play where the investigator is standing — the strongest
     // form of the claim: co-location is not control.
@@ -263,8 +249,6 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    // Grasping Hands.
-    state.encounter_deck.push_back(CardCode::new("01162"));
     // Draw it, and commit nothing to its Agility test.
     let session = TestSession::new(state, TEST_REGISTRIES)
         .confirm()

@@ -14,15 +14,14 @@
 //! direction.
 
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
-use cards::REGISTRY;
-use cards::TEST_REGISTRIES;
+use cards::{REGISTRY, TEST_REGISTRIES};
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, SkillTestId, UsageClock,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Roland Banks.
@@ -43,13 +42,6 @@ const FIGHT: TurnAction = TurnAction::Fight {
 /// card stays the test investigator's), so his `[reaction]` is found by the
 /// in-play scan; `roland_banks_seated.rs` covers the investigator-card scan.
 fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = location_clues;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_round(round)
@@ -61,8 +53,8 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
                 .in_play([ROLAND]),
         )
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
-        .with_location(loc)
+        .with_enemy(enemy(ENEMY).fight(1).health(1).engaged_with(INV))
+        .with_location(location(HERE).clues(location_clues))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .build()

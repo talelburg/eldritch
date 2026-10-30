@@ -39,7 +39,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, TestSession};
 
 const DYNAMITE: &str = "01024";
 const DODGE: &str = "01023";
@@ -75,16 +75,6 @@ fn board(hand: &[&str], resources: u8) -> TestSession {
 /// Dynamite Blast (9 health) and deals no horror, so nothing but the play under
 /// test is in flight.
 fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Cellar");
-    here.connections = vec![HALLWAY];
-    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-    hallway.connections = vec![HERE];
-
-    let mut attacker = test_support::test_enemy(100, "Ghoul");
-    attacker.max_health = 9;
-    attacker.attack_damage = attack_damage;
-    attacker.attack_horror = 0;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -93,9 +83,15 @@ fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSe
                 .hand(hand.iter().copied())
                 .resources(resources),
         )
-        .with_location(here)
-        .with_location(hallway)
-        .with_enemy_engaged(attacker, INV)
+        .with_location(location(HERE).connections([HALLWAY]))
+        .with_location(location(HALLWAY).connections([HERE]))
+        .with_enemy(
+            enemy(100)
+                .health(9)
+                .attack_damage(attack_damage)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .session()
 }

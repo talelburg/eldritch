@@ -24,10 +24,12 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, DiscardPile, Enemy, EnemyId, GameStateBuilder,
+    AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameStateBuilder,
     InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    enemy, location, seat, BoardLookup as _, Printed, Seat, StagedEnemy, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const STRAY_CAT: &str = "01076";
@@ -45,14 +47,6 @@ const ELSEWHERE: LocationId = LocationId(11);
 const MINION: EnemyId = EnemyId(100);
 const PRIEST: EnemyId = EnemyId(101);
 
-/// A ready, unengaged enemy printed as `code`, standing at `at`.
-fn enemy(id: EnemyId, code: &str, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id.0, code);
-    e.code = CardCode::new(code);
-    e.current_location = Some(at);
-    e
-}
-
 /// Investigator 1 at `HERE` with Stray Cat in play.
 fn survivor() -> Seat {
     seat(1).at(HERE).in_play([STRAY_CAT])
@@ -60,11 +54,11 @@ fn survivor() -> Seat {
 
 /// `seat`'s board on investigator 1's open turn, with `enemies` placed
 /// unengaged where each says.
-fn board(seat: Seat, enemies: Vec<Enemy>) -> TestSession {
+fn board(seat: Seat, enemies: Vec<StagedEnemy<Printed>>) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(location(HERE))
+        .with_location(location(ELSEWHERE))
         .with_seat(seat);
     for e in enemies {
         builder = builder.with_enemy(e);
@@ -83,7 +77,10 @@ fn activate(session: &TestSession) -> TurnAction {
 
 #[test]
 fn it_evades_an_unengaged_non_elite_enemy_at_your_location() {
-    let s = board(survivor(), vec![enemy(MINION, GHOUL_MINION, HERE)]);
+    let s = board(
+        survivor(),
+        vec![enemy(MINION).as_card(GHOUL_MINION).at(HERE)],
+    );
     let action = activate(&s);
     let s = s.take(&action);
 
@@ -112,7 +109,10 @@ fn it_evades_an_unengaged_non_elite_enemy_at_your_location() {
 
 #[test]
 fn no_skill_test_is_made_for_the_evasion() {
-    let s = board(survivor(), vec![enemy(MINION, GHOUL_MINION, HERE)]);
+    let s = board(
+        survivor(),
+        vec![enemy(MINION).as_card(GHOUL_MINION).at(HERE)],
+    );
     let action = activate(&s);
     let s = s.take(&action);
 
@@ -125,9 +125,14 @@ fn no_skill_test_is_made_for_the_evasion() {
 fn it_evades_an_enemy_engaged_with_you_and_breaks_the_engagement() {
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(survivor())
-        .with_enemy_engaged(enemy(MINION, GHOUL_MINION, HERE), INV)
+        .with_enemy(
+            enemy(MINION)
+                .as_card(GHOUL_MINION)
+                .at(HERE)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .session();
     let action = activate(&s);
@@ -146,7 +151,10 @@ fn it_evades_an_enemy_engaged_with_you_and_breaks_the_engagement() {
 
 #[test]
 fn it_cannot_target_an_elite_enemy() {
-    let s = board(survivor(), vec![enemy(PRIEST, GHOUL_PRIEST, HERE)]);
+    let s = board(
+        survivor(),
+        vec![enemy(PRIEST).as_card(GHOUL_PRIEST).at(HERE)],
+    );
     let action = activate(&s);
     assert!(
         !enumerate::legal_actions(s.state(), TEST_REGISTRIES.cards).contains(&action),
@@ -162,8 +170,8 @@ fn beside_an_elite_enemy_the_non_elite_one_is_the_only_target() {
     let s = board(
         survivor(),
         vec![
-            enemy(MINION, GHOUL_MINION, HERE),
-            enemy(PRIEST, GHOUL_PRIEST, HERE),
+            enemy(MINION).as_card(GHOUL_MINION).at(HERE),
+            enemy(PRIEST).as_card(GHOUL_PRIEST).at(HERE),
         ],
     );
     let action = activate(&s);
@@ -180,7 +188,10 @@ fn beside_an_elite_enemy_the_non_elite_one_is_the_only_target() {
 
 #[test]
 fn an_enemy_at_another_location_is_not_a_target() {
-    let s = board(survivor(), vec![enemy(MINION, GHOUL_MINION, ELSEWHERE)]);
+    let s = board(
+        survivor(),
+        vec![enemy(MINION).as_card(GHOUL_MINION).at(ELSEWHERE)],
+    );
     let action = activate(&s);
     assert!(!enumerate::legal_actions(s.state(), TEST_REGISTRIES.cards).contains(&action));
 }
@@ -191,8 +202,8 @@ fn two_non_elite_enemies_ask_which_to_evade() {
     let s = board(
         survivor(),
         vec![
-            enemy(MINION, GHOUL_MINION, HERE),
-            enemy(SECOND, GHOUL_MINION, HERE),
+            enemy(MINION).as_card(GHOUL_MINION).at(HERE),
+            enemy(SECOND).as_card(GHOUL_MINION).at(HERE),
         ],
     );
     let action = activate(&s);
@@ -207,7 +218,7 @@ fn two_non_elite_enemies_ask_which_to_evade() {
 fn pickpocketing_reacts_to_the_automatic_evasion() {
     let s = board(
         survivor().in_play([PICKPOCKETING]).deck([GUTS]),
-        vec![enemy(MINION, GHOUL_MINION, HERE)],
+        vec![enemy(MINION).as_card(GHOUL_MINION).at(HERE)],
     );
     let action = activate(&s);
     let s = s.take(&action);

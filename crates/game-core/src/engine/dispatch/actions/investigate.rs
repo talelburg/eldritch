@@ -239,7 +239,7 @@ mod tests {
         Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillKind,
         SkillTestFollowUp, SkillTestId,
     };
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{self, location, TEST_REGISTRIES};
 
     /// Regression for #471: the `Investigate` follow-up pushes **one**
     /// `DiscoverClue` of
@@ -254,7 +254,7 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(loc))
-            .with_location(test_support::test_location(loc.0, "Study"))
+            .with_location(location(loc))
             .build();
         state
             .continuations

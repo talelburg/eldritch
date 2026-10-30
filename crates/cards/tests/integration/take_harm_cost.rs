@@ -20,15 +20,14 @@ use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::OptionTarget;
-use game_core::engine::Registries;
+use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CardCode, Continuation,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// *"\[fast\] Exhaust and take 1 horror: gain 1 resource."*
@@ -88,7 +87,7 @@ fn activate(state: &GameState, probe: &str) -> TurnAction {
 fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
     let state = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -166,7 +165,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
 fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
     let state = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -209,7 +208,7 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
 fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
     let state = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -251,7 +250,7 @@ fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
 fn a_harm_cost_on_an_action_ability_is_refused_by_name() {
     let state = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).actions(3).in_play([ACTION_PROBE]))
         .open_turn(INV)
         .build();

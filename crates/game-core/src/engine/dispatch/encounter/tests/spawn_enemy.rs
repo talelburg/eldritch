@@ -3,7 +3,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, Spaw
 use super::*;
 use crate::engine::outcome::OptionId;
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
-use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{location, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 /// The investigator's location.
@@ -75,10 +75,8 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
     // The investigator is at loc 10; spawn_enemy_at is told loc 11. The
     // enemy must land at 11 (the explicit location wins), unlike
     // spawn_enemy's investigator-location fallback.
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.code = CardCode("_here".into());
-    let mut there = test_support::test_location(THERE.0, "There");
-    there.code = CardCode("_there".into());
+    let here = location(HERE).code(CardCode("_here".into()));
+    let there = location(THERE).code(CardCode("_there".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -111,8 +109,7 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
 
 #[test]
 fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
-    let mut loc = test_support::test_location(HERE.0, "Loc");
-    loc.code = CardCode("_l".into());
+    let loc = location(HERE).code(CardCode("_l".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -153,8 +150,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
 
 #[test]
 fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
-    let mut loc = test_support::test_location(HERE.0, "Loc");
-    loc.code = CardCode("_l".into());
+    let loc = location(HERE).code(CardCode("_l".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -190,8 +186,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
 
 #[test]
 fn spawn_enemy_reads_victory_from_metadata() {
-    let mut loc = test_support::test_location(HERE.0, "Loc");
-    loc.code = CardCode("_l".into());
+    let loc = location(HERE).code(CardCode("_l".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -226,8 +221,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
 
 #[test]
 fn spawn_at_specific_location_with_one_investigator_engages_them() {
-    let mut loc = test_support::test_location(HERE.0, "Synth Loc");
-    loc.code = CardCode("_synth_loc".into());
+    let loc = location(HERE).code(CardCode("_synth_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -268,8 +262,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
 
 #[test]
 fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
-    let mut loc = test_support::test_location(HERE.0, "Synth Loc");
-    loc.code = CardCode("_synth_loc".into());
+    let loc = location(HERE).code(CardCode("_synth_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -337,8 +330,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
     // the one location guaranteed *not* to be empty, so the fallback
     // placement would be doubly wrong (wrong location, plus an engagement
     // that should not happen).
-    let mut loc = test_support::test_location(HERE.0, "Demo");
-    loc.code = CardCode("_demo_loc".into());
+    let loc = location(HERE).code(CardCode("_demo_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -378,8 +370,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
 
 #[test]
 fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
-    let mut loc = test_support::test_location(HERE.0, "Demo");
-    loc.code = CardCode("_demo_loc".into());
+    let loc = location(HERE).code(CardCode("_demo_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
@@ -440,8 +431,7 @@ fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location()
 fn spawn_engages_sole_colocated_investigator() {
     // The single-investigator engage-on-spawn path resolves inline under the
     // shared prey resolver.
-    let mut loc = test_support::test_location(HALL.0, "Hall");
-    loc.code = CardCode("_loc".into());
+    let loc = location(HALL).code(CardCode("_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
@@ -471,8 +461,7 @@ fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
     // instruction, the investigator drawing the enemy spawns it engaged with
     // him/her". Two investigators share the location and the drawer is not the
     // lead, so a prey resolution would tie and prompt the lead.
-    let mut loc = test_support::test_location(HALL.0, "Hall");
-    loc.code = CardCode("_loc".into());
+    let loc = location(HALL).code(CardCode("_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
@@ -513,8 +502,7 @@ fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
 
 #[test]
 fn spawn_tie_suspends_for_lead_pick() {
-    let mut loc = test_support::test_location(HALL.0, "Hall");
-    loc.code = CardCode("_loc".into());
+    let loc = location(HALL).code(CardCode("_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
@@ -552,8 +540,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     // Validate-first: a pick outside the stored candidate set rejects
     // and leaves the SpawnEngage frame intact for retry, with the
     // enemy still unengaged.
-    let mut loc = test_support::test_location(HALL.0, "Hall");
-    loc.code = CardCode("_loc".into());
+    let loc = location(HALL).code(CardCode("_loc".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
@@ -605,8 +592,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
 
 #[test]
 fn spawn_mints_distinct_enemy_ids() {
-    let mut loc = test_support::test_location(HERE.0, "L");
-    loc.code = CardCode("_l".into());
+    let loc = location(HERE).code(CardCode("_l".into()));
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))

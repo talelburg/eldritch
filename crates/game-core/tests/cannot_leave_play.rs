@@ -30,7 +30,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, horror, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, horror, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// A hand-slot weakness that cannot leave play while it has horror on it.
@@ -100,7 +100,7 @@ fn board(horror_on_it: u8) -> TestSession {
                 .threat_area([(PINNED, horror(horror_on_it))])
                 .hand([TWO_HANDED]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session()
 }

@@ -28,7 +28,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 
 const SCAVENGING: &str = "01073";
 /// Items: Flashlight (an `[intellect]` icon, so it can be committed to an
@@ -53,12 +53,10 @@ fn scavenger(intellect: i8, discard: &[&str]) -> Seat {
 }
 
 fn board(investigator: Seat) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = 1;
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(study)
+        .with_location(location(HERE).clues(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

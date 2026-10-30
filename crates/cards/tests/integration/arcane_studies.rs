@@ -23,7 +23,7 @@ use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind,
 };
-use game_core::test_support::{seat, SeatLookup as _, TestSession};
+use game_core::test_support::{seat, BoardLookup as _, TestSession};
 
 const ARCANE_STUDIES: &str = "01062";
 const INV: InvestigatorId = InvestigatorId(1);

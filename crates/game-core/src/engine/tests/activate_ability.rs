@@ -1,7 +1,6 @@
 use super::*;
 use crate::state::{MythosPhaseFrame, MythosResume};
-use crate::test_support::SeatLookup as _;
-use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{BoardLookup as _, TEST_REGISTRIES};
 
 // As with PlayCard (`play_card.rs`), the non-enumeration form is vacuous
 // here (`TEST_INV`-only registry yields no abilities for "01059", so the

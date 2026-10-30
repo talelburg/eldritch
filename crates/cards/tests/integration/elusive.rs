@@ -21,11 +21,11 @@ use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, FastWindowKind, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Location, LocationId, Owner,
-    Phase, PhaseStep,
+    CardCode, CardInPlay, CardInstanceId, EnemyId, FastWindowKind, GameStateBuilder,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Owner, Phase,
+    PhaseStep,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, StagedEnemy, StagedLocation, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 use crate::common::with_attic;
@@ -56,27 +56,21 @@ const PLAY: TurnAction = TurnAction::PlayCard {
     source: PlaySource::Hand(0),
 };
 
-/// A ready enemy whose attack deals 1 damage, so an attack of opportunity
-/// would show on the investigator.
-fn enemy(id: u32) -> Enemy {
-    test_support::test_enemy(id, "Ghoul")
-}
-
 /// `INV` at `HERE` with Elusive in hand and the resources to play it, the
 /// given extra locations in play, and `engaged` enemies engaged with `INV`.
 fn board(
-    locations: impl IntoIterator<Item = Location>,
-    engaged: impl IntoIterator<Item = Enemy>,
+    locations: impl IntoIterator<Item = StagedLocation>,
+    engaged: impl IntoIterator<Item = StagedEnemy>,
 ) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([ELUSIVE]).resources(2).actions(3))
-        .with_location(test_support::test_location(HERE.0, "Here"));
+        .with_location(location(HERE));
     for location in locations {
         builder = builder.with_location(location);
     }
     for enemy in engaged {
-        builder = builder.with_enemy_engaged(enemy, INV);
+        builder = builder.with_enemy(enemy.engaged_with(INV));
     }
     builder
 }
@@ -89,22 +83,15 @@ fn location_of(session: &TestSession) -> Option<LocationId> {
     session.state().investigators[&INV].current_location
 }
 
-fn location(id: LocationId, name: &str) -> Location {
-    test_support::test_location(id.0, name)
-}
-
 /// `builder` plus the two locations Elusive cannot move to: an unrevealed one,
 /// and a revealed one with an (exhausted, so it stays put) unengaged enemy at
 /// it.
 fn with_non_destinations(builder: GameStateBuilder) -> GameStateBuilder {
-    let mut unrevealed = location(UNREVEALED, "Unrevealed");
-    unrevealed.revealed = false;
-    let mut lurker = enemy(200);
-    lurker.current_location = Some(OCCUPIED);
-    lurker.exhausted = true;
+    let unrevealed = location(UNREVEALED).unrevealed();
+    let lurker = enemy(200).at(OCCUPIED).exhausted();
     builder
         .with_location(unrevealed)
-        .with_location(location(OCCUPIED, "Occupied"))
+        .with_location(location(OCCUPIED))
         .with_enemy(lurker)
 }
 
@@ -115,11 +102,7 @@ fn is_playable(session: &TestSession) -> bool {
 #[test]
 fn both_engaged_enemies_are_disengaged_and_stay_ready() {
     let (a, b) = (EnemyId(100), EnemyId(101));
-    let session = session(board(
-        [test_support::test_location(THERE.0, "There")],
-        [enemy(a.0), enemy(b.0)],
-    ))
-    .take(&PLAY);
+    let session = session(board([location(THERE)], [enemy(a.0), enemy(b.0)])).take(&PLAY);
 
     session.assert_at_turn_menu(INV);
     for id in [a, b] {
@@ -150,14 +133,9 @@ fn both_engaged_enemies_are_disengaged_and_stay_ready() {
 #[test]
 fn several_destinations_offer_each_revealed_enemy_free_location_connecting_or_not() {
     // `HERE` connects to `NEXT_DOOR` only; `THERE` does not connect at all.
-    let mut here = location(HERE, "Here");
-    here.connections = vec![NEXT_DOOR];
+    let here = location(HERE).connections(vec![NEXT_DOOR]);
     let session = session(with_non_destinations(board(
-        [
-            here,
-            location(THERE, "There"),
-            location(NEXT_DOOR, "Next door"),
-        ],
+        [here, location(THERE), location(NEXT_DOOR)],
         [enemy(100)],
     )))
     .take(&PLAY);
@@ -218,7 +196,7 @@ fn with_no_destination_you_stay_and_the_disengaged_enemies_engage_you_again() {
 
 #[test]
 fn playable_with_no_engaged_enemies_and_moves_you() {
-    let session = session(board([location(THERE, "There")], []));
+    let session = session(board([location(THERE)], []));
     assert!(is_playable(&session));
 
     let session = session.take(&PLAY);
@@ -250,7 +228,7 @@ const ELUSIVE_IN_HAND: OptionTarget = OptionTarget::HandCard {
 #[test]
 fn not_playable_in_another_investigators_turn() {
     let other = InvestigatorId(2);
-    let window = board([location(THERE, "There")], [])
+    let window = board([location(THERE)], [])
         .with_seat(seat(2).at(HERE).hand([MAGNIFYING_GLASS]).resources(1))
         .with_seating([INV, other])
         .with_phase(Phase::Investigation)
@@ -287,9 +265,9 @@ fn not_playable_in_the_enemy_phase() {
                 .resources(2)
                 .in_play([BEAT_COP]),
         )
-        .with_location(location(HERE, "Here"))
-        .with_location(location(THERE, "There"))
-        .with_enemy_engaged(enemy(100), INV)
+        .with_location(location(HERE))
+        .with_location(location(THERE))
+        .with_enemy(enemy(100).engaged_with(INV))
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);
@@ -308,12 +286,11 @@ fn the_move_fires_leave_and_enter_timing() {
     // Barricade 01038 at `HERE`: "Forced - When an investigator leaves attached
     // location: Discard Barricade." The Attic 01113 as the lone destination:
     // "Forced - After you enter the Attic: Take 1 horror."
-    let mut here = location(HERE, "Here");
-    here.attachments.push(CardInPlay::enter_play(
+    let here = location(HERE).attachments([CardInPlay::enter_play(
         CardCode::new(BARRICADE),
         CardInstanceId(900),
         Owner::Investigator(INV),
-    ));
+    )]);
     let (session, attic) = with_attic(session(board([here], [enemy(100)])), &[]);
     let session = session.take(&PLAY);
 

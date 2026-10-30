@@ -22,8 +22,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{
-    CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
 use game_core::test_support::{self, seat, TestSession};
 
@@ -40,21 +39,18 @@ const HERE: LocationId = LocationId(20);
 /// Mythos step 1.4: one investigator in the Study to draw, with `top` on top
 /// of the encounter deck.
 fn state_with_top_encounter(top: &str) -> GameState {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.code = CardCode::new(STUDY);
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(study)
+        .with_location(test_support::location(HERE).as_card(STUDY))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
-        .build();
-    state.encounter_deck.push_back(CardCode::new(top));
-    state
+        .with_encounter_deck([top])
+        .build()
 }
 
 /// Draw the top encounter card for investigator 1.

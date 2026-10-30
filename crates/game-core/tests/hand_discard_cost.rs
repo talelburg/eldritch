@@ -31,7 +31,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// `[reaction] When you would discover clues at your location, choose and
@@ -142,8 +142,6 @@ fn registries() -> Registries {
 /// `INV`'s open turn at `HERE` (3 clues), with `in_play` in play and `hand` in
 /// hand.
 fn session(in_play: &[&str], hand: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 3;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -152,7 +150,7 @@ fn session(in_play: &[&str], hand: &[&str]) -> TestSession {
                 .in_play(in_play.iter().copied())
                 .hand(hand.iter().copied()),
         )
-        .with_location(location)
+        .with_location(test_support::location(HERE).clues(3))
         .open_turn(INV)
         .session()
 }

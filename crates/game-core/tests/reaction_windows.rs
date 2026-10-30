@@ -24,10 +24,9 @@ use game_core::engine::{OptionId, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Location,
-    LocationId,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue
@@ -149,30 +148,25 @@ const GHOUL: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 const ELSEWHERE: LocationId = LocationId(11);
 
-/// A Mock Ghoul at 1 of 2 health, so a successful Fight defeats it.
-fn ghoul() -> Enemy {
-    let mut enemy = test_support::test_enemy(GHOUL.0, "Mock Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 2;
-    enemy.damage = 1;
-    enemy
-}
-
 /// `INV`'s open turn at a location holding `location_clues`, engaged with the
-/// Ghoul (co-located: Fight is location-gated), with `seats` seated. The
-/// test investigator's combat 3 against the Ghoul's fight 3 with a `+0` token
-/// always succeeds, so the Fight defeats it.
+/// Ghoul (co-located: Fight is location-gated), with `seats` seated. The Ghoul
+/// is at 1 of 2 health, and the test investigator's combat 3 against its
+/// fight 3 with a `+0` token always succeeds, so the Fight defeats it.
 fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> GameStateBuilder {
-    let mut location = test_support::test_location(HERE.0, "Mock Location");
-    location.clues = location_clues;
     seats
         .into_iter()
         .fold(
             GameStateBuilder::new().with_registries(registries()),
             GameStateBuilder::with_seat,
         )
-        .with_enemy_engaged(ghoul(), INV)
-        .with_location(location)
+        .with_enemy(
+            test_support::enemy(GHOUL)
+                .fight(3)
+                .health(2)
+                .damage(1)
+                .engaged_with(INV),
+        )
+        .with_location(test_support::location(HERE).clues(location_clues))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
 }
@@ -694,21 +688,14 @@ fn pick_fires_threat_area_reaction_and_closes_window() {
 // After-successful-investigate reaction window (Dr. Milan)
 // ------------------------------------------------------------------
 
-/// The 1-clue Study (shroud 2).
-fn one_clue_study() -> Location {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = 1;
-    study
-}
-
-/// `INV`'s open turn at the 1-clue Study with `in_play` in play, and a
+/// `INV`'s open turn at a 1-clue, shroud-2 location with `in_play` in play, and a
 /// `Numeric(0)` bag, so the test investigator's intellect 3 ≥ shroud 2 → the
 /// Investigate succeeds and discovers the clue.
 fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
-        .with_location(one_clue_study())
+        .with_location(test_support::location(HERE).clues(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
 }
@@ -725,8 +712,8 @@ fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(ELSEWHERE).in_play([bystander_card]))
-        .with_location(one_clue_study())
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::location(HERE).clues(1))
+        .with_location(test_support::location(ELSEWHERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_seating([INV, OTHER])
         .open_turn(INV)

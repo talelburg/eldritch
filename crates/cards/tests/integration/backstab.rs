@@ -37,10 +37,7 @@ const PLAY: TurnAction = TurnAction::PlayCard {
 /// Agility 4 hits fight 3 but would miss evade 5, and combat 1 misses fight 3,
 /// so the outcome says both which skill and which enemy value the test used.
 fn board(agility: i8) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.evade = 5;
-    enemy.max_health = 4;
+    let enemy = test_support::enemy(ENEMY).fight(3).evade(5).health(4);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -53,8 +50,8 @@ fn board(agility: i8) -> GameState {
                 .resources(3)
                 .actions(3),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(test_support::location(HERE))
+        .with_enemy(enemy.engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

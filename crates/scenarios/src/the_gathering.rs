@@ -36,23 +36,6 @@ use game_core::event::Event;
 use game_core::scenario::{LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx};
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
-/// Read an agenda's printed doom threshold from the corpus.
-fn agenda_doom(code: &str) -> u8 {
-    match cards::by_code(code).expect("agenda code in corpus").kind {
-        CardKind::Agenda { doom_threshold } => doom_threshold,
-        ref k => panic!("{code} is not an Agenda ({k:?})"),
-    }
-}
-
-/// Read an act's printed clue threshold from the corpus. Acts that
-/// advance on a non-clue objective (01110) carry `null` clues -> 0.
-fn act_clue_threshold(code: &str) -> u8 {
-    match cards::by_code(code).expect("act code in corpus").kind {
-        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(0),
-        ref k => panic!("{code} is not an Act ({k:?})"),
-    }
-}
-
 /// The encounter-deck card codes for The Gathering, grouped by the six
 /// encounter sets the campaign guide gathers (Night of the Zealot guide
 /// p.2: "The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils, and
@@ -254,9 +237,14 @@ pub fn setup() -> GameState {
     }
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
-    // corpus. 01110 advances via its Forced EnemyDefeated objective
-    // (01116; in cards::what_have_you_done), not a clue spend — its printed
-    // clue threshold is null, which the reader maps to 0.
+    // corpus by `Act::from_metadata`. 01109 advances on its objective, *"When
+    // the round ends, investigators in the hallway may, as a group, spend the
+    // requisite number of clues to advance."* 01110 advances via its Forced
+    // EnemyDefeated objective (01116; in cards::what_have_you_done), not a
+    // clue spend — its printed clue threshold is null, which reads as 0. It
+    // is terminal because it is last here; its reverse — *"The lead
+    // investigator must decide (choose one):"* between R1 and R2 — is an
+    // ability on the card (cards::what_have_you_done).
     // Act-2 (01109) reverse — reveals the Parlor, puts Lita Chantler (01117)
     // into play there and spawns the set-aside Ghoul Priest (01116) in the
     // Hallway — is cards::the_barrier. The Parlor's barrier is its own
@@ -264,45 +252,21 @@ pub fn setup() -> GameState {
     // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) are
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls).
-    state.act_deck = vec![
-        Act {
-            code: CardCode(trapped::CODE.into()),
-            clue_threshold: act_clue_threshold(trapped::CODE),
-        },
-        Act {
-            code: CardCode(the_barrier::CODE.into()),
-            clue_threshold: act_clue_threshold(the_barrier::CODE),
-            // "When the round ends, investigators in the hallway may, as a
-            // group, spend the requisite number of clues to advance."
-        },
-        Act {
-            // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
-            // Terminal because it is last here; its reverse — *"The lead
-            // investigator must decide (choose one):"* between R1 and R2 — is
-            // an ability on the card (cards::what_have_you_done).
-            code: CardCode(what_have_you_done::CODE.into()),
-            clue_threshold: act_clue_threshold(what_have_you_done::CODE),
-        },
-    ];
+    state.act_deck = [trapped::CODE, the_barrier::CODE, what_have_you_done::CODE]
+        .map(|code| Act::from_metadata(meta(code)).expect("Gathering act code is an act"))
+        .into();
 
     // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds read from the
     // corpus. 01107 is terminal because it is last; its reverse branches on
     // the current act: (→R3) at acts 1-2, and no resolution point at act 3
     // (cards::theyre_getting_out).
-    state.agenda_deck = vec![
-        Agenda {
-            code: CardCode(whats_going_on::CODE.into()),
-            doom_threshold: agenda_doom(whats_going_on::CODE),
-        },
-        Agenda {
-            code: CardCode(rise_of_the_ghouls::CODE.into()),
-            doom_threshold: agenda_doom(rise_of_the_ghouls::CODE),
-        },
-        Agenda {
-            code: CardCode(theyre_getting_out::CODE.into()),
-            doom_threshold: agenda_doom(theyre_getting_out::CODE),
-        },
-    ];
+    state.agenda_deck = [
+        whats_going_on::CODE,
+        rise_of_the_ghouls::CODE,
+        theyre_getting_out::CODE,
+    ]
+    .map(|code| Agenda::from_metadata(meta(code)).expect("Gathering agenda code is an agenda"))
+    .into();
 
     // Encounter deck: each gathered set's enemy/treachery cards at their
     // printed quantity, in deterministic construction order. The scenario

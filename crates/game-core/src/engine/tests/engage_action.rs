@@ -7,18 +7,11 @@ const ENGAGE: TurnAction = TurnAction::Engage {
     enemy: TARGET,
 };
 
-/// An enemy at `location`, engaged with no one.
-fn enemy_at(id: u32, name: &str, location: LocationId) -> Enemy {
-    let mut enemy = test_support::test_enemy(id, name);
-    enemy.current_location = Some(location);
-    enemy
-}
-
 /// `investigator`'s open turn at the Study.
 fn engage_board(investigator: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
 }
@@ -33,7 +26,7 @@ fn offers_engage(state: &GameState, enemy: EnemyId) -> bool {
 #[test]
 fn engage_action_engages_unengaged_enemy_at_location() {
     let session = engage_board(seat(1).at(HERE))
-        .with_enemy(enemy_at(TARGET.0, "Aloof Ghoul", HERE))
+        .with_enemy(enemy(TARGET).at(HERE))
         .session()
         .take(&ENGAGE);
 
@@ -57,7 +50,7 @@ fn engage_action_takes_an_enemy_from_another_investigator_disengaging_them_first
     let other = InvestigatorId(2);
     let session = engage_board(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
-        .with_enemy_engaged(test_support::test_enemy(TARGET.0, "Engaged Ghoul"), other)
+        .with_enemy(enemy(TARGET).engaged_with(other))
         .session()
         .take(&ENGAGE);
 
@@ -76,8 +69,8 @@ fn engage_action_takes_an_enemy_from_another_investigator_disengaging_them_first
 fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
     let session = engage_board(seat(1).at(HERE))
         // Not engaged yet.
-        .with_enemy(enemy_at(TARGET.0, "Target Ghoul", HERE))
-        .with_enemy_engaged(attacker(301, 1, 0), INV)
+        .with_enemy(enemy(TARGET).at(HERE))
+        .with_enemy(attacker(301, 1, 0).engaged_with(INV))
         .session()
         .take(&ENGAGE);
 
@@ -96,8 +89,8 @@ fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
 fn engage_action_rejects_enemy_not_at_location() {
     let hallway = LocationId(11);
     let state = engage_board(seat(1).at(HERE))
-        .with_location(test_support::test_location(hallway.0, "Hallway"))
-        .with_enemy(enemy_at(TARGET.0, "Distant Ghoul", hallway))
+        .with_location(location(hallway))
+        .with_enemy(enemy(TARGET).at(hallway))
         .build();
     // Enemy at a different location → Engage is not legal.
     assert!(!offers_engage(&state, TARGET));
@@ -106,7 +99,7 @@ fn engage_action_rejects_enemy_not_at_location() {
 #[test]
 fn engage_action_rejects_already_engaged_enemy() {
     let state = engage_board(seat(1).at(HERE))
-        .with_enemy_engaged(test_support::test_enemy(TARGET.0, "Engaged Ghoul"), INV)
+        .with_enemy(enemy(TARGET).engaged_with(INV))
         .build();
     // Already engaged → Engage is not legal.
     assert!(!offers_engage(&state, TARGET));
@@ -122,7 +115,7 @@ fn engage_action_rejects_unknown_enemy() {
 #[test]
 fn engage_action_rejects_no_actions_remaining() {
     let state = engage_board(seat(1).at(HERE).actions(0))
-        .with_enemy(enemy_at(TARGET.0, "Ghoul", HERE))
+        .with_enemy(enemy(TARGET).at(HERE))
         .build();
     // No actions remaining → Engage is not legal.
     assert!(!offers_engage(&state, TARGET));
@@ -131,7 +124,7 @@ fn engage_action_rejects_no_actions_remaining() {
 #[test]
 fn engage_action_rejects_when_not_active_status() {
     let mut state = engage_board(seat(1).at(HERE))
-        .with_enemy(enemy_at(TARGET.0, "Ghoul", HERE))
+        .with_enemy(enemy(TARGET).at(HERE))
         .build();
     // No seat setter carries status.
     state.investigators.get_mut(&INV).unwrap().status = Status::Defeated;

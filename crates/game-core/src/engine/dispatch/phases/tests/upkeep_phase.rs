@@ -3,7 +3,7 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
-use crate::test_support::{self, SeatLookup as _, TestSession, TEST_REGISTRIES};
+use crate::test_support::{self, enemy, location, BoardLookup as _, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
 #[test]
@@ -105,8 +105,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
 fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.exhausted = true;
+    let enemy = enemy(1).exhausted();
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).in_play(["filler0"]))
@@ -135,10 +134,9 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
 fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
-    let loc = test_support::test_location(10, "Synth Loc");
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
-    enemy.current_location = Some(LocationId(10));
+    let loc = location(10);
+    // exhausted + disengaged, e.g. survived a successful Evade
+    let enemy = enemy(1).exhausted().at(LocationId(10));
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(LocationId(10)))
@@ -167,8 +165,8 @@ fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
 
 #[test]
 fn ready_exhausted_cards_leaves_ready_cards_untouched() {
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.exhausted = false; // already ready
+    // already ready
+    let enemy = enemy(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -188,10 +186,8 @@ fn ready_exhausted_cards_leaves_ready_cards_untouched() {
 fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
     let enemy_id = EnemyId(1);
     let inv_id = InvestigatorId(1);
-    let loc = test_support::test_location(10, "Synth Loc");
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.exhausted = true;
-    enemy.current_location = Some(LocationId(10));
+    let loc = location(10);
+    let enemy = enemy(1).exhausted().at(LocationId(10));
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1)) // current_location stays None — NOT co-located
@@ -215,9 +211,8 @@ fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
 fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
     let enemy_id = EnemyId(1);
     let inv_id = InvestigatorId(1);
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.exhausted = true; // exhausted but still engaged (e.g. attacked last Enemy phase)
-    enemy.engaged_with = Some(inv_id);
+    // exhausted but still engaged (e.g. attacked last Enemy phase)
+    let enemy = enemy(1).exhausted().engaged_with(inv_id);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))

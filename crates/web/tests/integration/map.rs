@@ -7,8 +7,8 @@
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support;
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, enemy, location};
 use leptos::prelude::{document, provide_context, RwSignal, Signal, Update, With};
 use leptos::{mount, task};
 use protocol::{ClientMessage, ServerMessage};
@@ -73,12 +73,11 @@ fn line_count() -> u32 {
 
 #[wasm_bindgen_test]
 async fn connected_locations_draw_a_line() {
-    let mut state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Hallway"))
-        .with_location(test_support::test_location(11, "Attic"))
+    let state = GameStateBuilder::new()
+        .with_location(location(10).name("Hallway").connections([LocationId(11)]))
+        .with_location(location(11).name("Attic").connections([LocationId(10)]))
         .with_investigator(test_support::test_investigator(1))
         .build();
-    state.connect(LocationId(10), LocationId(11));
     mount_state(state).await;
     assert_eq!(
         line_count(),
@@ -90,7 +89,7 @@ async fn connected_locations_draw_a_line() {
 #[wasm_bindgen_test]
 async fn isolated_location_draws_no_line() {
     let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study")) // no connections
+        .with_location(location(10).name("Study")) // no connections
         .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
@@ -102,7 +101,7 @@ async fn investigator_renders_inside_its_location_node() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(location(10).name("Study"))
         .with_investigator(inv)
         .build();
     mount_state(state).await;
@@ -117,13 +116,14 @@ async fn investigator_renders_inside_its_location_node() {
 async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
-    enemy.current_location = Some(LocationId(10));
-    enemy.engaged_with = Some(InvestigatorId(1));
     let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(location(10).name("Study"))
         .with_investigator(inv)
-        .with_enemy(enemy)
+        .with_enemy(
+            enemy(100)
+                .name("Mock Ghoul")
+                .engaged_with(InvestigatorId(1)),
+        )
         .build();
     mount_state(state).await;
 
@@ -177,12 +177,8 @@ fn header_badges(loc_name: &str) -> (String, String) {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_shroud_and_clues_as_badges() {
-    let mut loc = test_support::test_location(31, "Attic Revealed");
-    loc.revealed = true;
-    loc.shroud = 2;
-    loc.clues = 5;
     let state = GameStateBuilder::new()
-        .with_location(loc)
+        .with_location(location(31).name("Attic Revealed").shroud(2).clues(5))
         .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
@@ -212,11 +208,8 @@ async fn revealed_location_shows_shroud_and_clues_as_badges() {
 /// and "no clues here" never looks like "no clue slot".
 #[wasm_bindgen_test]
 async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
-    let mut loc = test_support::test_location(32, "Empty Hallway");
-    loc.revealed = true;
-    loc.clues = 0;
     let state = GameStateBuilder::new()
-        .with_location(loc)
+        .with_location(location(32).name("Empty Hallway").clues(0))
         .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
@@ -234,12 +227,14 @@ async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
 /// revealed side's numbers.
 #[wasm_bindgen_test]
 async fn unrevealed_location_shows_placeholders_not_its_values() {
-    let mut loc = test_support::test_location(30, "Cellar Unrevealed");
-    loc.revealed = false;
-    loc.shroud = 4;
-    loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_location(loc)
+        .with_location(
+            location(30)
+                .name("Cellar Unrevealed")
+                .shroud(4)
+                .clues(3)
+                .unrevealed(),
+        )
         .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
@@ -263,10 +258,8 @@ async fn unrevealed_location_shows_placeholders_not_its_values() {
 /// The node is styled face-down by class, not by a printed "unrevealed" word.
 #[wasm_bindgen_test]
 async fn unrevealed_location_is_marked_by_class() {
-    let mut loc = test_support::test_location(21, "Parlor Unrevealed");
-    loc.revealed = false;
     let state = GameStateBuilder::new()
-        .with_location(loc)
+        .with_location(location(21).name("Parlor Unrevealed").unrevealed())
         .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
@@ -284,13 +277,10 @@ async fn unrevealed_location_is_marked_by_class() {
 
 #[wasm_bindgen_test]
 async fn unengaged_enemy_renders_inside_its_location_node() {
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
-    enemy.current_location = Some(LocationId(10));
-    enemy.engaged_with = None;
     let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(location(10).name("Study"))
         .with_investigator(test_support::test_investigator(1))
-        .with_enemy(enemy)
+        .with_enemy(enemy(100).name("Mock Ghoul").at(LocationId(10)))
         .build();
     mount_state(state).await;
     assert!(
@@ -332,19 +322,17 @@ async fn mount_interactive(
     rx
 }
 
-/// A one-location ("Study", id 10) game with investigator 1 standing on it.
+/// A one-location game — the Study 01111, id 10 — with investigator 1
+/// standing on it.
 fn study_game() -> GameState {
-    let mut loc = test_support::test_location(10, "Study");
-    loc.revealed = true;
-    loc.code = CardCode::new("01111");
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut game = GameStateBuilder::new()
+    GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_location(location(10).as_card("01111"))
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
-        .build();
-    game.locations.insert(LocationId(10), loc);
-    game
+        .build()
 }
 
 /// The `class` attribute of the last-mounted map node named `loc_name`.

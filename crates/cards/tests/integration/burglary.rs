@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const BURGLARY: &str = "01045";
@@ -46,8 +46,8 @@ fn burglar(intellect: i8) -> Seat {
 /// `investigator`'s turn at a shroud-2 Study holding `clues` clues, with a
 /// `Numeric(0)` bag.
 fn board(investigator: Seat, clues: u8) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study"); // shroud 2
-    study.clues = clues;
+    // shroud 2
+    let study = test_support::location(HERE).clues(clues);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)

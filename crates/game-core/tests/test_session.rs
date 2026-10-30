@@ -29,7 +29,7 @@ use game_core::state::{
     UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{
-    self, seat, ChoiceResolver, MockRegistry, SeatLookup as _, TestSession,
+    self, seat, BoardLookup as _, ChoiceResolver, MockRegistry, TestSession,
 };
 use game_core::{assert_event, assert_event_count};
 
@@ -131,16 +131,12 @@ fn turn_begins_window_with(code: &str) -> GameStateBuilder {
 }
 
 fn board_with(in_play: &[&str]) -> GameStateBuilder {
-    let mut first = test_support::test_enemy(FIRST.0, "First");
-    first.current_location = Some(HERE);
-    let mut second = test_support::test_enemy(SECOND.0, "Second");
-    second.current_location = Some(HERE);
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy(first)
-        .with_enemy(second)
+        .with_location(test_support::location(HERE))
+        .with_enemy(test_support::enemy(FIRST).at(HERE))
+        .with_enemy(test_support::enemy(SECOND).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
 }
 
@@ -256,7 +252,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_kept_out"]).deck(["_ts_drawn"]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session();
@@ -284,7 +280,7 @@ fn choose_from_hand_names_duplicate_copies_by_repeating_the_code() {
                 .hand([twin, kept, twin])
                 .deck([drawn, drawn]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session()
@@ -323,7 +319,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_filler"; 9]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Upkeep)
         .with_phase_anchor(UpkeepPhaseFrame {
@@ -370,7 +366,7 @@ fn commit_by_code_commits_that_card() {
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand([kept, committed]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()
         .test_skill(INV, SkillKind::Willpower, 2)
@@ -602,7 +598,7 @@ fn pick_chooses_an_investigator_by_their_card() {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).harm(1, 0).in_play([HEAL]))
         .with_seat(seat(2).at(HERE).harm(1, 0))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session();
     let session = activating(board, HEAL);

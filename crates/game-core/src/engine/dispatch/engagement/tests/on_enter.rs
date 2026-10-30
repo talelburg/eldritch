@@ -11,7 +11,7 @@ use super::*;
 use crate::assert_event;
 use crate::engine::enumerate::TurnAction;
 use crate::state::GameStateBuilder;
-use crate::test_support::{self, TEST_REGISTRIES};
+use crate::test_support::{self, enemy, location, TEST_REGISTRIES};
 
 const HALLWAY: LocationId = LocationId(1);
 const STUDY: LocationId = LocationId(2);
@@ -21,14 +21,12 @@ const ENEMY: EnemyId = EnemyId(1);
 /// Its bearer moving into its location is engaged, as by any ready enemy.
 #[test]
 fn its_bearer_entering_is_engaged_by_a_bearer_only_enemy() {
-    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-    hallway.connections = vec![STUDY];
-    let mut study = test_support::test_location(STUDY.0, "Study");
-    study.connections = vec![HALLWAY];
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Weakness");
-    enemy.prey = Prey::BearerOnly;
-    enemy.owner = Owner::Investigator(BEARER);
-    enemy.current_location = Some(STUDY);
+    let hallway = location(HALLWAY).connections(vec![STUDY]);
+    let study = location(STUDY).connections(vec![HALLWAY]);
+    let enemy = enemy(ENEMY)
+        .prey(Prey::BearerOnly)
+        .owner(Owner::Investigator(BEARER))
+        .at(STUDY);
 
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

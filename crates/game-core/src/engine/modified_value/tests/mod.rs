@@ -5,7 +5,9 @@ use crate::state::{
     Continuation, EnemyId, GameStateBuilder, InFlightSkillTest, Lifetime, LocationId, Owner,
     RecordedModifier, SkillTestId,
 };
-use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
+use crate::test_support::{
+    self, enemy, location, seat, BoardLookup as _, StagedLocation, TEST_REGISTRIES,
+};
 
 mod blank;
 mod determination;
@@ -184,11 +186,16 @@ fn recorded_for(
 /// A board carrying `test` in flight, one investigator, one location
 /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
 fn state_with_test(basis: DifficultyBasis) -> GameState {
+    state_with_test_at(basis, location(3))
+}
+
+/// [`state_with_test`], with its one location staged as `at`.
+fn state_with_test_at(basis: DifficultyBasis, at: StagedLocation) -> GameState {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
-        .with_location(test_support::test_location(3, "Study"))
-        .with_enemy(test_support::test_enemy(7, "Ghoul"))
+        .with_location(at)
+        .with_enemy(enemy(7))
         .build();
     state
         .continuations

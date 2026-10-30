@@ -264,7 +264,7 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
 /// from inv1 to inv3.
 #[test]
 fn advance_encounter_draw_skips_eliminated_middle_investigator() {
-    let mut state = GameStateBuilder::default()
+    let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2).status(Status::Defeated))
@@ -275,11 +275,9 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         })
         .with_seating([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+        // The card inv1 draws.
+        .with_encounter_deck([test_support::TEST_TREACHERY])
         .build();
-    // The card inv1 draws.
-    state
-        .encounter_deck
-        .push_back(CardCode::new(test_support::TEST_TREACHERY));
 
     // inv1 draws: the queue drops inv1 and must skip the Defeated inv2,
     // landing on inv3.

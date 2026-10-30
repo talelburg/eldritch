@@ -19,7 +19,7 @@ use crate::card_registry::NativeConditionFn;
 use crate::state::{
     AbilityAddress, CardInPlay, CardInstanceId, GameStateBuilder, LocationId, Owner,
 };
-use crate::test_support::{self, TEST_REGISTRIES};
+use crate::test_support::{self, location, TEST_REGISTRIES};
 
 /// The card carrying every ability primitive under test, one per printed index.
 const PRIMITIVES: &str = "_gate_primitives";
@@ -230,7 +230,7 @@ fn state() -> GameState {
                 .in_play_as(INSTANCE, PRIMITIVES)
                 .hand([COSTED_EVENT]),
         )
-        .with_location(test_support::test_location(LOCATION.0, "Clueless"))
+        .with_location(location(LOCATION))
         .with_seating([CONTROLLER])
         .with_round(1)
         .build()

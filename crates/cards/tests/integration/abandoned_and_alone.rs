@@ -21,7 +21,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _};
+use game_core::test_support::{self, seat, BoardLookup as _};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const ABANDONED_AND_ALONE: &str = "01015";
@@ -44,7 +44,7 @@ const HERE: LocationId = LocationId(10);
 fn drawn_it_takes_two_direct_horror_and_removes_the_discard_pile() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -101,7 +101,7 @@ fn drawn_it_takes_two_direct_horror_and_removes_the_discard_pile() {
 fn horror_that_defeats_the_bearer_leaves_nothing_in_their_discard_pile() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -140,7 +140,7 @@ fn horror_that_defeats_the_bearer_leaves_nothing_in_their_discard_pile() {
 fn the_discard_pile_is_removed_before_psychosis_reacts_to_the_horror() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

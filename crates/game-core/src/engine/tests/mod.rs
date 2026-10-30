@@ -6,11 +6,13 @@ use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::event::FailureReason;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    AbilityAddress, AbilitySource, Act, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
-    EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
-    Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
+    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
+    EliminationCause, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase,
+    RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
-use crate::test_support::{self, seat, Seat, TestSession, TEST_REGISTRIES};
+use crate::test_support::{
+    self, act, enemy, location, seat, Seat, StagedEnemy, TestSession, TEST_REGISTRIES,
+};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 mod activate_ability;
@@ -62,9 +64,7 @@ fn take_committing_nothing(board: GameStateBuilder, action: &TurnAction) -> Test
 /// `shroud`. Bag is `Numeric(0)` so the test outcome depends purely on
 /// (intellect vs shroud).
 fn investigate_board(investigator: Seat, clues: u8, shroud: u8) -> GameStateBuilder {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = clues;
-    study.shroud = shroud;
+    let study = location(HERE).clues(clues).shroud(shroud);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
@@ -82,43 +82,35 @@ fn make_test_deck(n: usize) -> Vec<CardCode> {
 /// `mover`'s open turn, with `HERE` connected to `CONNECTED` (one way:
 /// `CONNECTED` has no connection back).
 fn move_board(mover: Seat) -> GameStateBuilder {
-    let mut here = test_support::test_location(HERE.0, "A");
-    here.connections = vec![CONNECTED];
+    let here = location(HERE).connections(vec![CONNECTED]);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(mover)
         .with_location(here)
-        .with_location(test_support::test_location(CONNECTED.0, "B"))
+        .with_location(location(CONNECTED))
         .open_turn(INV)
 }
 
 /// An enemy that deals `damage` damage and `horror` horror when it attacks.
-fn attacker(id: u32, damage: u8, horror: u8) -> Enemy {
-    let mut enemy = test_support::test_enemy(id, "Engaged Ghoul");
-    enemy.attack_damage = damage;
-    enemy.attack_horror = horror;
-    enemy
+fn attacker(id: u32, damage: u8, horror: u8) -> StagedEnemy {
+    enemy(id).attack_damage(damage).attack_horror(horror)
 }
 
 /// The Fight / Evade target: fight 3, evade 3, 2 health.
-fn ghoul() -> Enemy {
-    let mut enemy = test_support::test_enemy(GHOUL.0, "Test Ghoul");
-    enemy.fight = 3;
-    enemy.evade = 3;
-    enemy.max_health = 2;
-    enemy
+fn ghoul() -> StagedEnemy {
+    enemy(GHOUL).fight(3).evade(3).health(2)
 }
 
 /// `fighter`'s open turn at `HERE`, engaged with `enemy` there: Fight is
 /// co-location-gated (RR p.12), Evade engagement-gated (RR p.11) — this
 /// satisfies both. Bag is `Numeric(0)` so the test outcome is determined
 /// purely by (skill vs fight/evade).
-fn fight_evade_board(fighter: Seat, enemy: Enemy) -> GameStateBuilder {
+fn fight_evade_board(fighter: Seat, enemy: StagedEnemy) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(fighter)
-        .with_location(test_support::test_location(HERE.0, "Test Hall"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(location(HERE))
+        .with_enemy(enemy.engaged_with(INV))
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV)
 }

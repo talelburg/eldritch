@@ -27,8 +27,8 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::state::{self, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{act, location, seat, MockRegistry, TestSession};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
@@ -176,20 +176,15 @@ const HERE: LocationId = LocationId(10);
 /// the marker act current. Mirrors `round_ended`'s fixture: `EndTurn` from here
 /// cascades Investigation → Enemy → Upkeep → Mythos through the real drive loop.
 fn mid_investigation() -> TestSession {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout penalty.
         .with_seat(seat(1).at(HERE).actions(0).deck(["filler-card"]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
+        .with_act_deck([act(ACT, 0)])
+        .with_encounter_deck([TREACHERY])
         .build();
-    // The act deck has no builder setter: edit the built state.
-    state.act_deck = vec![Act {
-        code: CardCode::new(ACT),
-        clue_threshold: 0,
-    }];
-    state.act_index = 0;
-    state.encounter_deck.push_back(CardCode::new(TREACHERY));
     TestSession::new(state, registries())
 }
 

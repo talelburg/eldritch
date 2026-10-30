@@ -11,7 +11,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameStateBuilder,
     InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const BEAT_COP: &str = "01018";
@@ -25,12 +25,10 @@ fn board(enemy_present: bool) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).in_play([BEAT_COP]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV);
     if enemy_present {
-        let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-        enemy.max_health = 3;
-        enemy.current_location = Some(HERE);
+        let enemy = test_support::enemy(ENEMY).health(3).at(HERE);
         builder = builder.with_enemy(enemy);
     }
     builder.session()

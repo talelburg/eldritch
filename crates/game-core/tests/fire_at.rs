@@ -22,8 +22,8 @@ use card_dsl::dsl::{self, Effect, EventPattern, EventTiming, InvestigatorTarget}
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget, Registries, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioRegistry};
-use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support::{seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::state::{GameStateBuilder, InvestigatorId, Phase};
+use game_core::test_support::{act, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 
 /// `Forced - At the end of the round: mark 1.`
@@ -264,18 +264,15 @@ fn lethal_damage_eliminates_the_last_investigator_and_ends_the_scenario() {
 }
 
 /// One investigator holding `held` in their threat area, `builder`'s staging,
-/// and an act carrying `act`'s ability — the phase-end scans read the current
+/// and an act carrying `act_code`'s ability — the phase-end scans read the current
 /// act — settled.
-fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
-    let mut state = builder
+fn acting(act_code: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
+    let state = builder
         .with_registries(registries())
         .with_seat(holding(held))
         .with_seating([INV])
+        .with_act_deck([act(act_code, 0)])
         .build();
-    state.act_deck = vec![Act {
-        code: CardCode::new(act),
-        clue_threshold: 0,
-    }];
     TestSession::new(state, registries())
 }
 

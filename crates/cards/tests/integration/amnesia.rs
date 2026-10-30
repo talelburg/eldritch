@@ -31,7 +31,7 @@ const HERE: LocationId = LocationId(10);
 fn draw_holding(hand: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

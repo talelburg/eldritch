@@ -21,7 +21,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{
-    self, seat, test_investigator_card, MockRegistry, Seat, TestSession,
+    self, seat, test_investigator_card, MockRegistry, Printed, Seat, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 
@@ -90,7 +90,7 @@ fn registries() -> Registries {
 }
 
 /// The counter at `HERE` with a four-card deck, drawing only `[elder_sign]`.
-fn counter() -> Seat {
+fn counter() -> Seat<Printed> {
     seat(1)
         .as_card(COUNTER)
         .at(HERE)
@@ -98,11 +98,11 @@ fn counter() -> Seat {
 }
 
 /// `investigator` passes a willpower test (3 + 0 against 3) on the elder sign.
-fn pass_on_the_elder_sign(investigator: Seat) -> TestSession {
+fn pass_on_the_elder_sign(investigator: Seat<Printed>) -> TestSession {
     let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .open_turn(INV)
         .build();

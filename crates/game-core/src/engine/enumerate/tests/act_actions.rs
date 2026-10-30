@@ -4,17 +4,12 @@ use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 /// An open-turn state with an advanceable act (threshold `t`) and the
 /// investigator holding `clues`.
 fn open_turn_with_act(threshold: u8, clues: u8) -> GameState {
-    let mut state = GameStateBuilder::default()
+    GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).clues(clues))
         .open_turn(InvestigatorId(1))
-        .build();
-    // No builder setter loads the act deck.
-    state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
-        clue_threshold: threshold,
-    }];
-    state
+        .with_act_deck([act("_test_act", threshold)])
+        .build()
 }
 
 #[test]

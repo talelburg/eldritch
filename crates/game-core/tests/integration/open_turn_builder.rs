@@ -26,7 +26,7 @@ fn an_open_turn_resumes_at_the_turn_menu_after_an_action() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(MINE)
         .session()
         .take(&TurnAction::Resource { investigator: MINE });
@@ -42,7 +42,7 @@ fn open_turn_defaults_the_seating_to_the_investigator() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(MINE)
         .build();
 
@@ -57,7 +57,7 @@ fn open_turn_respects_a_seating_already_set() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([MINE, OTHER])
         .open_turn(MINE)
         .session()
@@ -69,20 +69,21 @@ fn open_turn_respects_a_seating_already_set() {
 /// An investigator engaged with one ready enemy, at a location the enemy was
 /// never explicitly placed at.
 fn engaged_board() -> GameStateBuilder {
-    let mut attacker = test_support::test_enemy(7, "Attacker");
-    attacker.attack_damage = 2;
-    attacker.attack_horror = 0;
-    attacker.max_health = 5;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(attacker, MINE)
+        .with_location(test_support::location(HERE))
+        .with_enemy(
+            test_support::enemy(7)
+                .attack_damage(2)
+                .attack_horror(0)
+                .health(5)
+                .engaged_with(MINE),
+        )
         .open_turn(MINE)
 }
 
-/// `with_enemy_engaged` puts the enemy where its investigator stands.
+/// `.engaged_with(..)` puts the enemy where its investigator stands.
 #[test]
 fn an_engaged_enemy_is_at_its_investigators_location() {
     let state = engaged_board().build();

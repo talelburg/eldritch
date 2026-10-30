@@ -21,10 +21,13 @@ use game_core::engine::{OptionTarget, Registries, Responder, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase, Status,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, Status,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    act, agenda, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, StagedLocation,
+    TestSession,
+};
 
 /// A forced ability on `pattern` in `cell`, dealing 1 horror to the
 /// investigator it is bound to.
@@ -194,35 +197,15 @@ fn horror(state: &GameState, id: InvestigatorId) -> u8 {
     state.investigators[&id].horror()
 }
 
-fn study() -> Location {
-    test_support::test_location(STUDY.0, "Study")
-}
-
-fn hallway() -> Location {
-    test_support::test_location(HALLWAY.0, "Hallway")
-}
-
-/// `location`, with `code`'s abilities printed on it.
-fn printing(mut location: Location, code: &str) -> Location {
-    location.code = CardCode::new(code);
-    location
-}
-
 /// An encounter card `code` attached to something on the board, as `id`.
 fn attachment(code: &str, id: CardInstanceId) -> CardInPlay {
     CardInPlay::enter_play(CardCode::new(code), id, Owner::EncounterDeck)
 }
 
-/// `location`, with `code` attached to it as `id`.
-fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location {
-    location.attachments.push(attachment(code, id));
-    location
-}
-
 /// Investigators `one` and `two` seated at the Study, with `study` and
 /// `hallway` on the map and `seating` `[1, 2]` — so, unless a test names
 /// another, the lead investigator is investigator 1.
-fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
+fn board(one: Seat, two: Seat, study: StagedLocation, hallway: StagedLocation) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(one.at(STUDY))
@@ -234,27 +217,7 @@ fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateB
 
 /// [`board`] with nothing seated or printed.
 fn table() -> GameStateBuilder {
-    board(seat(ONE.0), seat(TWO.0), study(), hallway())
-}
-
-/// Make `code` the current agenda of a built `state`; the agenda deck has no
-/// builder setter.
-fn with_agenda(mut state: GameState, code: &str) -> GameState {
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(code),
-        doom_threshold: 10,
-    }];
-    state
-}
-
-/// Make `code` the current act of a built `state`; the act deck has no builder
-/// setter.
-fn with_act(mut state: GameState, code: &str) -> GameState {
-    state.act_deck = vec![Act {
-        code: CardCode::new(code),
-        clue_threshold: 10,
-    }];
-    state
+    board(seat(ONE.0), seat(TWO.0), location(STUDY), location(HALLWAY))
 }
 
 /// Mark `id` defeated on a built `state`.
@@ -308,7 +271,10 @@ fn end_the_round(state: GameState) -> TestSession {
 
 #[test]
 fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead() {
-    let state = with_agenda(table().open_turn(ONE).build(), ON_DEFEAT);
+    let state = table()
+        .open_turn(ONE)
+        .with_agenda_deck([agenda(ON_DEFEAT, 10)])
+        .build();
     let session = fire(state, defeat(Some(TWO)));
     assert_eq!(horror(session.state(), ONE), 1, "the lead takes it");
     assert_eq!(horror(session.state(), TWO), 0);
@@ -321,8 +287,8 @@ fn an_in_play_assets_forced_ability_fires_on_an_enemy_defeat_bound_to_its_contro
     let state = board(
         seat(ONE.0),
         seat(TWO.0).in_play([ON_DEFEAT]),
-        study(),
-        hallway(),
+        location(STUDY),
+        location(HALLWAY),
     )
     .open_turn(ONE)
     .build();
@@ -336,8 +302,8 @@ fn a_locations_forced_ability_fires_on_an_enemy_defeat_bound_to_the_defeating_in
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        study(),
-        printing(hallway(), ON_DEFEAT),
+        location(STUDY),
+        location(HALLWAY).code(ON_DEFEAT),
     )
     .open_turn(ONE)
     .build();
@@ -355,8 +321,8 @@ fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        study(),
-        printing(hallway(), ON_DEFEAT),
+        location(STUDY),
+        location(HALLWAY).code(ON_DEFEAT),
     )
     .open_turn(ONE)
     .build();
@@ -371,7 +337,11 @@ fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead() {
 
 #[test]
 fn an_agendas_forced_ability_binds_to_the_stored_lead_not_the_first_seat() {
-    let state = with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT);
+    let state = table()
+        .with_lead(TWO)
+        .open_turn(ONE)
+        .with_agenda_deck([agenda(ON_DEFEAT, 10)])
+        .build();
     let session = fire(state, defeat(None));
     assert_eq!(horror(session.state(), TWO), 1, "seat 2 is the lead");
     assert_eq!(horror(session.state(), ONE), 0);
@@ -380,7 +350,13 @@ fn an_agendas_forced_ability_binds_to_the_stored_lead_not_the_first_seat() {
 #[test]
 fn an_eliminated_lead_passes_the_lead_to_the_next_seat() {
     // Investigator 1 leads and is defeated, so the open turn is investigator 2's.
-    let state = defeated(with_agenda(table().open_turn(TWO).build(), ON_DEFEAT), ONE);
+    let state = defeated(
+        table()
+            .open_turn(TWO)
+            .with_agenda_deck([agenda(ON_DEFEAT, 10)])
+            .build(),
+        ONE,
+    );
     let session = fire(state, defeat(None));
     assert_eq!(horror(session.state(), TWO), 1);
 }
@@ -390,7 +366,11 @@ fn an_eliminated_lead_passes_the_lead_to_the_next_seat() {
 #[test]
 fn an_eliminated_lead_on_the_last_seat_passes_the_lead_round_to_the_first() {
     let state = defeated(
-        with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT),
+        table()
+            .with_lead(TWO)
+            .open_turn(ONE)
+            .with_agenda_deck([agenda(ON_DEFEAT, 10)])
+            .build(),
         TWO,
     );
     let session = fire(state, defeat(None));
@@ -408,8 +388,8 @@ fn entering_a_location_fires_only_that_locations_ability() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        printing(study(), ON_ENTER),
-        printing(hallway(), ON_ENTER),
+        location(STUDY).code(ON_ENTER),
+        location(HALLWAY).code(ON_ENTER),
     )
     .open_turn(ONE)
     .build();
@@ -429,8 +409,8 @@ fn leaving_a_location_fires_only_its_attachments_ability() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        attaching(study(), ON_LEAVE, STUDY_ATTACHMENT),
-        attaching(hallway(), ON_LEAVE, HALLWAY_ATTACHMENT),
+        location(STUDY).attachments([attachment(ON_LEAVE, STUDY_ATTACHMENT)]),
+        location(HALLWAY).attachments([attachment(ON_LEAVE, HALLWAY_ATTACHMENT)]),
     )
     .open_turn(ONE)
     .build();
@@ -448,18 +428,18 @@ fn leaving_a_location_fires_only_its_attachments_ability() {
 
 #[test]
 fn investigating_a_location_fires_only_its_attachments_ability() {
-    let mut studied = attaching(study(), ON_ATTACHED_INVESTIGATED, STUDY_ATTACHMENT);
-    studied.shroud = 0;
-    studied.clues = 1;
+    let studied = location(STUDY)
+        .shroud(0)
+        .clues(1)
+        .attachments([attachment(ON_ATTACHED_INVESTIGATED, STUDY_ATTACHMENT)]);
     let session = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(ONE.0).at(STUDY).actions(1))
         .with_location(studied)
-        .with_location(attaching(
-            hallway(),
-            ON_ATTACHED_INVESTIGATED,
-            HALLWAY_ATTACHMENT,
-        ))
+        .with_location(
+            location(HALLWAY)
+                .attachments([attachment(ON_ATTACHED_INVESTIGATED, HALLWAY_ATTACHMENT)]),
+        )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(ONE)
         .session()
@@ -475,13 +455,7 @@ fn investigating_a_location_fires_only_its_attachments_ability() {
 
 #[test]
 fn an_enemy_attacking_fires_only_its_own_ability() {
-    let acolyte = |id| {
-        let mut enemy = test_support::test_enemy(id, "Acolyte");
-        enemy.code = CardCode::new(ON_THIS_ATTACKS);
-        enemy.current_location = Some(STUDY);
-        enemy.attack_damage = 0;
-        enemy
-    };
+    let acolyte = |id: u32| enemy(id).code(ON_THIS_ATTACKS).at(STUDY).attack_damage(0);
     let state = table()
         .with_enemy(acolyte(1))
         .with_enemy(acolyte(2))
@@ -503,8 +477,8 @@ fn the_end_of_a_turn_fires_only_the_ending_investigators_card() {
     let state = board(
         seat(ONE.0).threat_area([ON_END_OF_TURN]),
         seat(TWO.0).threat_area([ON_END_OF_TURN]),
-        study(),
-        hallway(),
+        location(STUDY),
+        location(HALLWAY),
     )
     .open_turn(ONE)
     .build();
@@ -517,17 +491,15 @@ fn the_end_of_a_turn_fires_only_the_ending_investigators_card() {
 fn an_advance_fires_only_the_advancing_cards_ability() {
     // The same pattern on a location never hears an agenda advance: it is not
     // the agenda the ability is printed on.
-    let state = with_agenda(
-        board(
-            seat(ONE.0),
-            seat(TWO.0),
-            study(),
-            printing(hallway(), ON_AGENDA_ADVANCED),
-        )
-        .open_turn(ONE)
-        .build(),
-        ON_AGENDA_ADVANCED,
-    );
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        location(STUDY),
+        location(HALLWAY).code(ON_AGENDA_ADVANCED),
+    )
+    .open_turn(ONE)
+    .with_agenda_deck([agenda(ON_AGENDA_ADVANCED, 10)])
+    .build();
     let other = fire(
         state.clone(),
         TimingEvent::AgendaAdvanced {
@@ -561,8 +533,8 @@ fn elimination_fires_only_the_eliminated_investigators_weaknesses() {
             seat(TWO.0)
                 .threat_area([GAME_END_WEAKNESS])
                 .in_play([GAME_END_NON_WEAKNESS]),
-            printing(study(), GAME_END_WEAKNESS),
-            hallway(),
+            location(STUDY).code(GAME_END_WEAKNESS),
+            location(HALLWAY),
         )
         .open_turn(ONE)
         .build(),
@@ -584,8 +556,8 @@ fn an_eliminated_investigators_cards_are_not_walked() {
         board(
             seat(ONE.0).threat_area([ON_ROUND_END]),
             seat(TWO.0).threat_area([ON_ROUND_END]),
-            study(),
-            hallway(),
+            location(STUDY),
+            location(HALLWAY),
         )
         .ending_upkeep_phase()
         .build(),
@@ -602,22 +574,17 @@ fn an_eliminated_investigators_cards_are_not_walked() {
 
 #[test]
 fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
-    let mut ghoul = test_support::test_enemy(3, "Ghoul");
-    ghoul
-        .attachments
-        .push(attachment(ON_ROUND_END, GHOUL_ATTACHMENT));
-    let state = with_act(
-        board(
-            seat(ONE.0),
-            seat(TWO.0).threat_area([ON_ROUND_END]),
-            printing(study(), ON_ROUND_END),
-            hallway(),
-        )
-        .with_enemy(ghoul)
-        .ending_upkeep_phase()
-        .build(),
-        ON_ROUND_END,
-    );
+    let ghoul = enemy(3).attachments([attachment(ON_ROUND_END, GHOUL_ATTACHMENT)]);
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0).threat_area([ON_ROUND_END]),
+        location(STUDY).code(ON_ROUND_END),
+        location(HALLWAY),
+    )
+    .with_enemy(ghoul)
+    .ending_upkeep_phase()
+    .with_act_deck([act(ON_ROUND_END, 10)])
+    .build();
     let threat = state.in_play(TWO, ON_ROUND_END);
     let session = end_the_round(state);
     let offered: Vec<_> = session
@@ -669,8 +636,8 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        printing(study(), REACT_ON_DEFEAT),
-        hallway(),
+        location(STUDY).code(REACT_ON_DEFEAT),
+        location(HALLWAY),
     )
     .open_turn(ONE)
     .build();
@@ -710,8 +677,8 @@ fn a_reaction_on_a_location_nobody_stands_at_is_not_offered() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
-        study(),
-        printing(hallway(), REACT_ON_DEFEAT),
+        location(STUDY),
+        location(HALLWAY).code(REACT_ON_DEFEAT),
     )
     .open_turn(ONE)
     .build();
@@ -727,8 +694,8 @@ fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller()
     let state = board(
         seat(ONE.0),
         seat(TWO.0).in_play([REACT_ON_DEFEAT]),
-        study(),
-        hallway(),
+        location(STUDY),
+        location(HALLWAY),
     )
     .open_turn(ONE)
     .build();
@@ -744,14 +711,12 @@ fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller()
 
 #[test]
 fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_investigator_there() {
-    let mut ghoul = test_support::test_enemy(3, "Ghoul");
-    ghoul.code = CardCode::new(REACT_ON_DEFEAT);
-    ghoul.current_location = Some(STUDY);
+    let ghoul = enemy(3).code(REACT_ON_DEFEAT).at(STUDY);
     let state = board(
         seat(ONE.0),
         seat(TWO.0).threat_area([REACT_ON_DEFEAT]),
-        study(),
-        hallway(),
+        location(STUDY),
+        location(HALLWAY),
     )
     .with_enemy(ghoul)
     .open_turn(ONE)
@@ -770,9 +735,7 @@ fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_inves
 
 #[test]
 fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
-    let mut ghoul = test_support::test_enemy(3, "Ghoul");
-    ghoul.code = CardCode::new(REACT_ON_DEFEAT);
-    ghoul.current_location = Some(HALLWAY);
+    let ghoul = enemy(3).code(REACT_ON_DEFEAT).at(HALLWAY);
     let state = table().with_enemy(ghoul).open_turn(ONE).build();
     let session = fire(state, defeat(None));
     assert_eq!(
@@ -783,7 +746,10 @@ fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
 
 #[test]
 fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
-    let state = with_agenda(table().open_turn(ONE).build(), REACT_ON_DEFEAT);
+    let state = table()
+        .open_turn(ONE)
+        .with_agenda_deck([agenda(REACT_ON_DEFEAT, 10)])
+        .build();
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![Some(OptionTarget::Agenda)]
@@ -796,19 +762,17 @@ fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
 /// and then the Fast events in hand, which are not on the board.
 #[test]
 fn reaction_options_follow_the_board_walk_then_the_hands() {
-    let state = with_act(
-        board(
-            seat(ONE.0)
-                .in_play([REACT_ON_DEFEAT])
-                .hand([FAST_REACT_ON_DEFEAT]),
-            seat(TWO.0).in_play([REACT_ON_DEFEAT]),
-            printing(study(), REACT_ON_DEFEAT),
-            hallway(),
-        )
-        .open_turn(ONE)
-        .build(),
-        REACT_ON_DEFEAT,
-    );
+    let state = board(
+        seat(ONE.0)
+            .in_play([REACT_ON_DEFEAT])
+            .hand([FAST_REACT_ON_DEFEAT]),
+        seat(TWO.0).in_play([REACT_ON_DEFEAT]),
+        location(STUDY).code(REACT_ON_DEFEAT),
+        location(HALLWAY),
+    )
+    .open_turn(ONE)
+    .with_act_deck([act(REACT_ON_DEFEAT, 10)])
+    .build();
     let (mine, theirs) = (
         state.in_play(ONE, REACT_ON_DEFEAT),
         state.in_play(TWO, REACT_ON_DEFEAT),

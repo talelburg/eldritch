@@ -28,9 +28,7 @@ const HERE: LocationId = LocationId(10);
 /// Investigator 1 at a shroud-4 Study holding `clues` clues, with intellect
 /// `intellect`, 5 resources and "Look what I found!" in hand, on their turn.
 fn board(intellect: i8, clues: u8) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.shroud = 4;
-    study.clues = clues;
+    let study = test_support::location(HERE).shroud(4).clues(clues);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(

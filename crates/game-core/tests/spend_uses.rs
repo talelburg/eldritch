@@ -26,10 +26,10 @@ use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    self, Act, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState, GameStateBuilder,
+    self, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState, GameStateBuilder,
     InvestigatorId, Owner, UseKind, Zone,
 };
-use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::test_support::{act, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// A synthetic asset printing "Uses (secrets)", discarded when they run out.
@@ -122,12 +122,12 @@ fn registries() -> Registries {
 
 /// [`HOLDER`] (first in player order, so the forced dispatch binds the
 /// controller to them) and [`OWNER`], each with a filler deck so Upkeep 4.4's
-/// draw deals no empty-deck horror, staged by `staging`; then `act` as the
+/// draw deals no empty-deck horror, staged by `staging`; then `act_code` as the
 /// current act and — when `pool` is `Some` — [`HELD`] in the holder's play
 /// area, owned by [`OWNER`], with that uses pool.
 fn board(
     staging: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
-    act: &str,
+    act_code: &str,
     pool: Option<&[(UseKind, u8)]>,
 ) -> GameState {
     // The natives spend from `HELD` by id, so the pouch is seated at it.
@@ -142,13 +142,8 @@ fn board(
             .with_seat(seat(OWNER.0).deck(["filler-card"]))
             .with_seating([HOLDER, OWNER]),
     )
+    .with_act_deck([act(act_code, 99)])
     .build();
-    // The act deck has no builder setter.
-    state.act_deck = vec![Act {
-        code: CardCode::new(act),
-        clue_threshold: 99,
-    }];
-    state.act_index = 0;
     if let Some(pool) = pool {
         // A seat's in-play cards are its own and carry one uses kind; the pouch
         // belongs to somebody else and may carry two, so set both on the board.

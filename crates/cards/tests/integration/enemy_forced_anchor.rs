@@ -24,7 +24,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
-use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, TestSession};
 
 const LEAD: InvestigatorId = InvestigatorId(1);
@@ -33,22 +33,21 @@ const ATTACKER: EnemyId = EnemyId(7);
 
 #[test]
 fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
-    let mut attacker = test_support::test_enemy(ATTACKER.0, "Silver Twilight Acolyte");
-    attacker.code = CardCode::new("01102");
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat(1).at(HERE))
-        .with_enemy_engaged(attacker, LEAD)
+        .with_enemy(
+            test_support::enemy(ATTACKER)
+                .as_card("01102")
+                .engaged_with(LEAD),
+        )
         .open_turn(LEAD)
+        // The card places doom on the current agenda, so one must be current
+        // for the effect to have the potential to change the game state (RR
+        // p.2 initiation).
+        .with_agenda_deck(["01105"])
         .build();
-    // The card places doom on the current agenda, so one must be current for the
-    // effect to have the potential to change the game state (RR p.2 initiation).
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
     state.interactive_acknowledge = true;
 
     // Ending the turn runs into the Enemy phase, where the Acolyte attacks.

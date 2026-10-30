@@ -25,7 +25,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BASEBALL_BAT: &str = "01074";
@@ -40,9 +40,7 @@ const ENEMY: EnemyId = EnemyId(100);
 /// engaged with a fight-3, health-3 enemy, and a chaos bag holding only
 /// `token`.
 fn board(combat: i8, token: ChaosToken) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
+    let enemy = test_support::enemy(ENEMY).fight(3).health(3);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -52,8 +50,8 @@ fn board(combat: i8, token: ChaosToken) -> GameState {
                 .skill(SkillKind::Combat, combat)
                 .in_play([BASEBALL_BAT]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(enemy, INV)
+        .with_location(test_support::location(HERE))
+        .with_enemy(enemy.engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build()
@@ -159,7 +157,7 @@ fn the_bat_takes_both_hand_slots() {
                 .in_play([MACHETE])
                 .hand([BASEBALL_BAT]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session()
         .take(&TurnAction::PlayCard {

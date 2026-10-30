@@ -11,15 +11,15 @@
 //!
 //! [`apply`]: game_core::engine::apply
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
-    Owner,
+    CardCode, CardInPlay, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, AnyKind, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
@@ -29,14 +29,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
-
-/// A ready enemy dealing 2 damage / 1 horror.
-fn ready_attacker() -> Enemy {
-    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
-    e.attack_damage = 2;
-    e.attack_horror = 1;
-    e
-}
 
 /// Investigator 1 at the Study with `DODGE` in hand.
 fn holding_dodge() -> Seat {
@@ -54,12 +46,12 @@ fn holding_dodge() -> Seat {
 /// window auto-skips (Dodge is a reaction event — `check_play_card` rejects a
 /// standalone play, so it is not a framework Fast play), then the attack loop
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
-fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
+fn dodge_board(investigator: Seat, attacker: impl Into<StagedEnemy<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator)
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.into().engaged_with(INV))
         .open_turn(INV)
 }
 
@@ -73,25 +65,18 @@ fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
 /// ```
 const ACOLYTE: &str = "01102";
 
-/// The `dodge_board` with the attacker replaced by a real Silver Twilight
-/// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
-/// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
-/// rather than read from metadata, matching the rest of this file's fixtures;
-/// the both-tracks-cancelled claim is `ready_attacker`'s to prove, since this
-/// enemy prints no horror to cancel.
+/// The `dodge_board` with the attacker replaced by the printed Silver Twilight
+/// Acolyte and an agenda, 01105, for it to place doom on. It prints 1 damage
+/// and 0 horror (`data/arkhamdb-snapshot/pack/core/core.json`), so the
+/// both-tracks-cancelled claim is `ready_attacker`'s to prove: this enemy
+/// prints no horror to cancel.
 fn acolyte_session() -> TestSession {
-    let mut acolyte = ready_attacker();
-    acolyte.code = CardCode::new(ACOLYTE);
-    acolyte.attack_damage = 1;
-    acolyte.attack_horror = 0;
-    let mut state = dodge_board(holding_dodge(), acolyte).build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    TestSession::new(state, TEST_REGISTRIES)
+    dodge_board(
+        holding_dodge(),
+        test_support::enemy(ATTACKER).as_card(ACOLYTE),
+    )
+    .with_agenda_deck(["01105"])
+    .session()
 }
 
 /// The anchor of `holder`'s Dodge in a reaction window's prompt.
@@ -166,7 +151,7 @@ fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
 fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     // EndTurn → Enemy phase → the attack loop opens the before-attack cancel
     // window and suspends, offering Dodge from hand.
-    let offered = dodge_board(holding_dodge(), ready_attacker())
+    let offered = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn);
     // No damage dealt yet (the attack hasn't resolved).
@@ -199,7 +184,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 #[test]
 fn declining_the_before_attack_window_lets_the_attack_land() {
     // Skip the window → the attack resolves normally.
-    let session = dodge_board(holding_dodge(), ready_attacker())
+    let session = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn)
         .skip();
@@ -241,7 +226,7 @@ const DISSONANT_VOICES: &str = "01165";
 fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     let session = dodge_board(
         holding_dodge().threat_area([DISSONANT_VOICES]),
-        ready_attacker(),
+        attacker(ATTACKER, 2, 1),
     )
     .session()
     .take(&TurnAction::EndTurn);
@@ -265,7 +250,7 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
 /// lapsed and the attack lands.
 #[test]
 fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
-    let offered_dodge = dodge_board(holding_dodge(), ready_attacker())
+    let offered_dodge = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn);
     assert_eq!(
@@ -333,12 +318,12 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
     // before-attack window that offers seat 2 their Dodge.
     let opened = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(HALLWAY))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE).hand([DODGE]))
         .with_seating([attacked, dodger])
-        .with_enemy_engaged(ready_attacker(), attacked)
+        .with_enemy(attacker(ATTACKER, 2, 1).engaged_with(attacked))
         .open_turn(attacked)
         .session()
         .take(&TurnAction::EndTurn)

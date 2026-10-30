@@ -27,7 +27,9 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId,
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    enemy, location, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const WENDY: &str = "01005";
@@ -51,17 +53,20 @@ const ENEMY: EnemyId = EnemyId(100);
 const FIRST_THEN_SECOND: u64 = 0;
 
 /// Wendy, seated from her printed card (Willpower 4, Combat 1), at `HERE`.
-fn wendy() -> Seat {
+fn wendy() -> Seat<Printed> {
     seat(1).as_card(WENDY).at(HERE)
 }
 
 /// `wendy`'s open turn at `HERE`, drawing from `bag` under
 /// [`FIRST_THEN_SECOND`].
-fn board(wendy: Seat, bag: impl IntoIterator<Item = ChaosToken>) -> GameStateBuilder {
+fn board(
+    wendy: impl Into<Seat<AnyKind>>,
+    bag: impl IntoIterator<Item = ChaosToken>,
+) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(wendy)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_chaos_bag(ChaosBag::new(bag))
         .with_rng_seed(FIRST_THEN_SECOND)
         .open_turn(INV)
@@ -69,7 +74,7 @@ fn board(wendy: Seat, bag: impl IntoIterator<Item = ChaosToken>) -> GameStateBui
 
 /// Wendy's willpower test against `difficulty`, committing `commit`.
 fn willpower_test(
-    wendy: Seat,
+    wendy: impl Into<Seat<AnyKind>>,
     bag: impl IntoIterator<Item = ChaosToken>,
     difficulty: i8,
     commit: &[&str],
@@ -180,14 +185,11 @@ fn the_reaction_discards_the_chosen_card_cancels_the_token_and_reveals_a_new_one
 /// against fight 3: the `0` drawn in the skull's place passes the attack.
 #[test]
 fn a_cancelled_skull_does_not_discard_baseball_bat() {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
     let state = board(
         wendy().hand([EMERGENCY_CACHE]).in_play([BASEBALL_BAT]),
         [ChaosToken::Skull, ChaosToken::Numeric(0)],
     )
-    .with_enemy_engaged(enemy, INV)
+    .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
     .build();
     let bat = state.in_play(INV, BASEBALL_BAT);
     let session = TestSession::new(state, TEST_REGISTRIES)

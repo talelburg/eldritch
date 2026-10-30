@@ -438,8 +438,9 @@ mod tests {
     use crate::state::{
         CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     };
-    use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
+    use crate::test_support::{
+        self, enemy, location, BoardLookup as _, TEST_REGISTRIES, TEST_REGISTRY,
+    };
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so the mode filter keeps it in the offer. (An
@@ -593,7 +594,7 @@ mod tests {
             request.options[0].target,
             Some(OptionTarget::Enemy(EnemyId(1)))
         );
-        assert_eq!(request.options[0].label, "Ghoul Minion");
+        assert_eq!(request.options[0].label, "Test Lurker");
         assert_eq!(request.options[1].id, OptionId(1));
         assert_eq!(request.options[1].label, "Study");
     }
@@ -638,18 +639,19 @@ mod tests {
     const HERE: LocationId = LocationId(10);
 
     /// A board carrying one of every entity an entity selection anchors to:
-    /// investigator 1 in the Study ([`HERE`]), a Ghoul Minion (enemy 1) there,
-    /// and a [`test_support::TEST_ASSET`] in play (find it with [`asset`]).
+    /// investigator 1 in the Study ([`HERE`]), a stock enemy named Test Lurker
+    /// (enemy 1) there, and a [`test_support::TEST_ASSET`] in play (find it
+    /// with [`asset`]).
     fn labelled_board() -> GameState {
         GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE).name("Study"))
             .with_seat(
                 test_support::seat(1)
                     .at(HERE)
                     .in_play([test_support::TEST_ASSET]),
             )
-            .with_enemy(test_support::test_enemy(1, "Ghoul Minion"))
+            .with_enemy(enemy(1).name("Test Lurker"))
             .build()
     }
 
@@ -672,7 +674,7 @@ mod tests {
         let state = labelled_board();
         assert_eq!(
             anchor_label(&state, &TEST_REGISTRY, &OptionTarget::Enemy(EnemyId(1))),
-            "Ghoul Minion"
+            "Test Lurker"
         );
     }
 
@@ -790,8 +792,8 @@ mod tests {
     fn grounded_choice_anchors_enemy_options() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let state = GameStateBuilder::new()
-            .with_enemy(test_support::test_enemy(4, "Ghoul Minion"))
-            .with_enemy(test_support::test_enemy(9, "Ravenous Ghoul"))
+            .with_enemy(enemy(4).name("Test Lurker"))
+            .with_enemy(enemy(9).name("Test Prowler"))
             .build();
         let out = resolve_grounded_choice(
             &state,
@@ -814,13 +816,13 @@ mod tests {
             request.options[0].target,
             Some(OptionTarget::Enemy(EnemyId(4)))
         );
-        assert_eq!(request.options[0].label, "Ghoul Minion");
+        assert_eq!(request.options[0].label, "Test Lurker");
         assert_eq!(request.options[1].id, OptionId(1));
         assert_eq!(
             request.options[1].target,
             Some(OptionTarget::Enemy(EnemyId(9)))
         );
-        assert_eq!(request.options[1].label, "Ravenous Ghoul");
+        assert_eq!(request.options[1].label, "Test Prowler");
     }
 
     /// Investigator candidates anchor to their investigator card and are

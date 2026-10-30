@@ -17,7 +17,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset
@@ -37,7 +37,7 @@ fn board(deck: &[&str]) -> TestSession {
                 .hand([LIBRARIAN])
                 .deck(deck.iter().copied()),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .session()
 }

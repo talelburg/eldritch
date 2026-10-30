@@ -12,7 +12,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const SPECIAL: &str = "01006";
@@ -25,13 +25,6 @@ const ENEMY: EnemyId = EnemyId(100);
 /// (health 3). Fight 5 distinguishes the modifier branches: +3 → total 6
 /// hits, +1 → total 4 misses. A `Numeric(0)` chaos bag is deterministic.
 fn board(loc_clues: u8) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 5;
-    enemy.max_health = 3;
-
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = loc_clues;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -39,9 +32,9 @@ fn board(loc_clues: u8) -> GameState {
                 .at(HERE)
                 .in_play([(SPECIAL, uses(UseKind::Ammo, 4))]),
         )
-        .with_location(location)
+        .with_location(location(HERE).clues(loc_clues))
         // Co-located: a weapon Fight targets enemies at your location.
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy(ENEMY).fight(5).health(3).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

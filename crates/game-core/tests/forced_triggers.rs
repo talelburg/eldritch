@@ -24,11 +24,12 @@ use game_core::engine::{EngineOutcome, OptionTarget, Registries, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-    MythosPhaseFrame, MythosResume, Owner,
+    self, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner,
 };
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::test_support::{
+    act, agenda, enemy, location, seat, MockRegistry, StagedEnemy, StagedLocation, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Mock location code: one `EventPattern::EnteredLocation` forced ability
@@ -232,18 +233,9 @@ const HERE: LocationId = LocationId(10);
 const ATTIC: LocationId = LocationId(11);
 const LURKER: EnemyId = EnemyId(1);
 
-/// A location at `id` printed as `code`.
-fn location_as(id: LocationId, name: &str, code: &str) -> Location {
-    let mut location = test_support::test_location(id.0, name);
-    location.code = CardCode(code.into());
-    location
-}
-
 /// The Hallway at `HERE`, a plain location connected to the Attic.
-fn hallway() -> Location {
-    let mut hallway = test_support::test_location(HERE.0, "Hallway");
-    hallway.connections = vec![ATTIC];
-    hallway
+fn hallway() -> StagedLocation {
+    location(HERE).connections([ATTIC])
 }
 
 /// The instance id of the attachment [`hallway_with`] places. A seat cannot
@@ -252,14 +244,12 @@ fn hallway() -> Location {
 const HALLWAY_ATTACHMENT_ID: CardInstanceId = CardInstanceId(7);
 
 /// The [`hallway`] with `attachment` attached as a location attachment.
-fn hallway_with(attachment: &str) -> Location {
-    let mut hallway = hallway();
-    hallway.attachments.push(CardInPlay::enter_play(
+fn hallway_with(attachment: &str) -> StagedLocation {
+    hallway().attachments([CardInPlay::enter_play(
         CardCode(attachment.into()),
         HALLWAY_ATTACHMENT_ID,
         Owner::EncounterDeck,
-    ));
-    hallway
+    )])
 }
 
 /// The anchor of the attachment [`hallway_with`] places: the abilities printed
@@ -268,7 +258,7 @@ const HALLWAY_ATTACHMENT: OptionTarget = OptionTarget::CardInstance(HALLWAY_ATTA
 
 /// `INV`'s open turn in `hallway` (connected to the Attic), with the Attic as
 /// `attic`.
-fn move_board(hallway: Location, attic: Location) -> GameStateBuilder {
+fn move_board(hallway: StagedLocation, attic: StagedLocation) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).actions(3))
@@ -287,7 +277,7 @@ const MOVE_TO_ATTIC: TurnAction = TurnAction::Move {
 /// real Move whose arrival fires the Attic's `EnteredLocation` forced
 /// abilities.
 fn move_into_attic_as(code: &str) -> TestSession {
-    move_board(hallway(), location_as(ATTIC, "Attic", code))
+    move_board(hallway(), location(ATTIC).code(code))
         .session()
         .take(&MOVE_TO_ATTIC)
 }
@@ -340,25 +330,18 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
 
 // ── PhaseEnded tests ──────────────────────────────────────────────────────────
 
-/// Set the current act and agenda to `act` and `agenda` (either may be a code
-/// the mock registry does not know, or absent). The builder stages neither
-/// deck, so they are set on the built state.
-fn with_act_and_agenda(mut state: GameState, act: Option<&str>, agenda: Option<&str>) -> GameState {
-    if let Some(act) = act {
-        state.act_deck = vec![Act {
-            code: CardCode(act.into()),
-            clue_threshold: 3,
-        }];
-        state.act_index = 0;
-    }
-    if let Some(agenda) = agenda {
-        state.agenda_deck = vec![Agenda {
-            code: CardCode(agenda.into()),
-            doom_threshold: 3,
-        }];
-        state.agenda_index = 0;
-    }
-    state
+/// `builder` built with the current act and agenda `act_code` and
+/// `agenda_code` (either may be a code the mock registry does not know, or
+/// absent).
+fn with_act_and_agenda(
+    builder: GameStateBuilder,
+    act_code: Option<&str>,
+    agenda_code: Option<&str>,
+) -> GameState {
+    builder
+        .with_act_deck(act_code.map(|code| act(code, 3)))
+        .with_agenda_deck(agenda_code.map(|code| agenda(code, 3)))
+        .build()
 }
 
 /// One seated investigator, the lead, with a card to draw at Upkeep 4.4 so the
@@ -377,7 +360,7 @@ fn lead_alone() -> GameStateBuilder {
 /// forced abilities, and play on through Upkeep into the next round's Mythos.
 fn end_the_enemy_phase(act: Option<&str>, agenda: Option<&str>) -> TestSession {
     let session = TestSession::new(
-        with_act_and_agenda(lead_alone().ending_enemy_phase().build(), act, agenda),
+        with_act_and_agenda(lead_alone().ending_enemy_phase(), act, agenda),
         registries(),
     );
     assert_phase_ended(&session, state::Phase::Enemy);
@@ -401,8 +384,7 @@ fn end_the_mythos_phase() -> TestSession {
                 .with_phase(state::Phase::Mythos)
                 .with_phase_anchor(MythosPhaseFrame {
                     resume: MythosResume::AfterDraws,
-                })
-                .build(),
+                }),
             None,
             Some(DOOM_AGENDA),
         ),
@@ -416,11 +398,7 @@ fn end_the_mythos_phase() -> TestSession {
 /// with [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase).
 fn end_the_upkeep_phase() -> TestSession {
     let session = TestSession::new(
-        with_act_and_agenda(
-            lead_alone().ending_upkeep_phase().build(),
-            None,
-            Some(DOOM_AGENDA),
-        ),
+        with_act_and_agenda(lead_alone().ending_upkeep_phase(), None, Some(DOOM_AGENDA)),
         registries(),
     );
     assert_phase_ended(&session, state::Phase::Upkeep);
@@ -434,7 +412,7 @@ fn end_the_upkeep_phase() -> TestSession {
 /// cannot be told apart from it in one drive.
 fn fire_the_investigation_phase_end() -> TestSession {
     TestSession::new(
-        with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA)),
+        with_act_and_agenda(lead_alone().open_turn(INV), None, Some(DOOM_AGENDA)),
         registries(),
     )
     .fire_at(TimingEvent::PhaseEnded {
@@ -512,8 +490,7 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     // Nobody seated and no stored lead → no lead → early return. No real phase
     // end runs without one — every round needs one — so the timing point is
     // fired on its own, over a staged turn.
-    let mut state =
-        with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
+    let mut state = with_act_and_agenda(lead_alone().open_turn(INV), None, Some(DOOM_AGENDA));
     state.seating.clear();
     state.lead = None;
 
@@ -561,7 +538,7 @@ fn end_the_turn(threat_area: &[&str]) -> TestSession {
                 .deck(["filler-card"])
                 .threat_area(threat_area.iter().copied()),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn)
@@ -595,9 +572,6 @@ fn end_of_turn_forced_no_op_without_threat_area_card() {
 /// threat area, and commits nothing: shroud 0, the test investigator's
 /// intellect 3 and a `Numeric(0)` token always succeed.
 fn investigate_successfully(threat_area: &[&str]) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.shroud = 0;
-    study.clues = 1;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -606,7 +580,7 @@ fn investigate_successfully(threat_area: &[&str]) -> TestSession {
                 .actions(1)
                 .threat_area(threat_area.iter().copied()),
         )
-        .with_location(study)
+        .with_location(location(HERE).shroud(0).clues(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()
@@ -640,10 +614,7 @@ fn after_investigate_forced_no_op_without_threat_area_card() {
 /// `INV`'s turn in the Hallway, next to the Double-Forced Room (two forced
 /// on-enter abilities printed on the one location).
 fn double_forced_board() -> GameStateBuilder {
-    move_board(
-        hallway(),
-        location_as(ATTIC, "Double-Forced Room", DOUBLE_FORCED),
-    )
+    move_board(hallway(), location(ATTIC).code(DOUBLE_FORCED))
 }
 
 #[test]
@@ -760,10 +731,8 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
 }
 
 /// A ready enemy waiting in the Attic.
-fn lurker_in_the_attic() -> Enemy {
-    let mut enemy = test_support::test_enemy(LURKER.0, "Lurker");
-    enemy.current_location = Some(ATTIC);
-    enemy
+fn lurker_in_the_attic() -> StagedEnemy {
+    enemy(LURKER).at(ATTIC)
 }
 
 /// A `LeftLocation` forced that suspends (two attachment abilities → an ordering
@@ -779,7 +748,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
     // The destination has its own on-enter forced (1 horror) and a ready enemy.
     let paused = move_board(
         hallway_with(DOUBLE_LEFT_LOCATION),
-        location_as(ATTIC, "Attic", HORROR_ATTIC),
+        location(ATTIC).code(HORROR_ATTIC),
     )
     .with_enemy(lurker_in_the_attic())
     .session()
@@ -858,7 +827,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     // so the whole tail of the move is visible in one event log.
     let r = move_board(
         hallway_with(WHEN_LEFT_LOCATION),
-        location_as(ATTIC, "Attic", HORROR_ATTIC),
+        location(ATTIC).code(HORROR_ATTIC),
     )
     .with_enemy(lurker_in_the_attic())
     .session()
@@ -900,8 +869,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
 /// p.14 reveals a location when an investigator *enters* it.
 #[test]
 fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
-    let mut attic = location_as(ATTIC, "Attic", HORROR_ATTIC);
-    attic.revealed = false;
+    let attic = location(ATTIC).code(HORROR_ATTIC).unrevealed();
 
     let session = move_board(hallway_with(WHEN_LEFT_LOCATION), attic)
         .session()
@@ -932,16 +900,12 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
 /// departure finally lands.
 #[test]
 fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_leaving() {
-    let mut attic = test_support::test_location(ATTIC.0, "Attic");
-    attic.connections = vec![HERE];
-
-    // Engaged, and exhausted so the departure is not followed by a re-engage at
-    // the destination muddying the reading.
-    let mut enemy = test_support::test_enemy(LURKER.0, "Lurker");
-    enemy.exhausted = true;
+    let attic = location(ATTIC).connections([HERE]);
 
     let paused = move_board(hallway_with(DOUBLE_WHEN_LEFT_LOCATION), attic)
-        .with_enemy_engaged(enemy, INV)
+        // Engaged, and exhausted so the departure is not followed by a
+        // re-engage at the destination muddying the reading.
+        .with_enemy(enemy(LURKER).exhausted().engaged_with(INV))
         .session()
         .take(&MOVE_TO_ATTIC);
     assert_eq!(
@@ -994,10 +958,9 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
         GameStateBuilder::new()
             .with_registries(registries())
             .with_seat(seat(1).at(HERE))
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE))
             .with_seating([INV])
-            .ending_upkeep_phase()
-            .build(),
+            .ending_upkeep_phase(),
         Some(UPKEEP_END_ACT),
         Some(ROUND_END_AGENDA),
     );
@@ -1035,9 +998,8 @@ fn board_with_two_phase_end_forced() -> GameState {
                     // the transition.
                     .deck(["filler-card"]),
             )
-            .with_location(test_support::test_location(HERE.0, "Study"))
-            .open_turn(INV)
-            .build(),
+            .with_location(location(HERE))
+            .open_turn(INV),
         Some(DOOM_ACT),
         Some(DOOM_AGENDA),
     )

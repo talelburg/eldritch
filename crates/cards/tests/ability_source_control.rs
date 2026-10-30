@@ -17,7 +17,7 @@
 //! threat-area case is modelled as a primitive rather than through Haunted
 //! 01098 (ADR 0016). Prior art: `activation_cost_source.rs`.
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::card_data::{CardKind, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::Registries;
@@ -26,7 +26,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 use std::sync::LazyLock;
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
@@ -81,20 +81,6 @@ fn probe_abilities() -> Vec<Ability> {
     ]
 }
 
-fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_string(),
-        name: name.to_string(),
-        text: None,
-        traits: vec![],
-        back_name: None,
-        back_text: None,
-        pack_code: "test".to_string(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn asset_kind() -> CardKind {
     CardKind::Asset {
         class: Class::Neutral,
@@ -128,7 +114,7 @@ fn board() -> GameState {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([WARD]))
         .with_seat(seat(2).at(HERE).in_play([THEIRS]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([MINE, THEM])
         .open_turn(MINE)
         .build()
@@ -165,8 +151,16 @@ fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
         cards: MockRegistry::new()
-            .with_card(metadata(WARD, "Ward", treachery_kind()))
-            .with_card(metadata(THEIRS, "Theirs", asset_kind()))
+            .with_card(test_support::test_card_metadata(
+                WARD,
+                "Ward",
+                treachery_kind(),
+            ))
+            .with_card(test_support::test_card_metadata(
+                THEIRS,
+                "Theirs",
+                asset_kind(),
+            ))
             .with_abilities(TEST_INV, probe_abilities)
             .with_abilities(WARD, probe_abilities)
             .with_abilities(THEIRS, probe_abilities)

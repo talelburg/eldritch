@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::Cx;
-use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase};
-use crate::test_support::TEST_REGISTRIES;
+use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
+use crate::test_support::{enemy, location, StagedEnemy, StagedLocation, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Location "A".
@@ -37,15 +37,10 @@ fn assert_no_tie(state: &GameState, outcome: &EngineOutcome) {
 fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
     // Map: A(1)-B(2)-C(3). Investigator at C; hunter at A. Hunter moves
     // A->B (one step). No investigator at B, so no engage yet.
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    let mut c = test_support::test_location(C.0, "C");
-    a.connections = vec![B];
-    b.connections = vec![A, C];
-    c.connections = vec![B];
-    let mut ghoul = test_support::test_enemy(1, "Swarm");
-    ghoul.hunter = true;
-    ghoul.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A, C]);
+    let c = location(C).connections(vec![B]);
+    let ghoul = enemy(1).hunter().at(A);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -68,13 +63,9 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
 fn hunter_engages_when_it_moves_into_investigators_location() {
     // Map A(1)-B(2). Investigator at B; hunter at A. Hunter moves A->B
     // and engages on arrival.
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    a.connections = vec![B];
-    b.connections = vec![A];
-    let mut h = test_support::test_enemy(1, "Hunter");
-    h.hunter = true;
-    h.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A]);
+    let h = enemy(1).hunter().at(A);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -96,12 +87,9 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
 
 #[test]
 fn hunter_with_no_path_does_not_move() {
-    let mut a = test_support::test_location(A.0, "A");
-    let island = test_support::test_location(ISLAND.0, "Island");
-    a.connections = vec![];
-    let mut h = test_support::test_enemy(1, "Hunter");
-    h.hunter = true;
-    h.current_location = Some(ISLAND);
+    let a = location(A).connections(vec![]);
+    let island = location(ISLAND);
+    let h = enemy(1).hunter().at(ISLAND);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -119,14 +107,9 @@ fn hunter_with_no_path_does_not_move() {
 
 #[test]
 fn exhausted_hunter_is_skipped() {
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    a.connections = vec![B];
-    b.connections = vec![A];
-    let mut h = test_support::test_enemy(1, "Hunter");
-    h.hunter = true;
-    h.exhausted = true;
-    h.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A]);
+    let h = enemy(1).hunter().exhausted().at(A);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -144,13 +127,9 @@ fn exhausted_hunter_is_skipped() {
 
 #[test]
 fn non_hunter_enemy_does_not_move() {
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    a.connections = vec![B];
-    b.connections = vec![A];
-    let mut e = test_support::test_enemy(1, "Slug");
-    e.hunter = false;
-    e.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A]);
+    let e = enemy(1).at(A);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -170,13 +149,9 @@ fn non_hunter_enemy_does_not_move() {
 fn hunter_already_co_located_does_not_move_but_engages() {
     // Hunter and investigator both at A(1). p.12: an enemy already at a
     // location with an investigator does not move; it still engages.
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    a.connections = vec![B];
-    b.connections = vec![A];
-    let mut h = test_support::test_enemy(1, "Hunter");
-    h.hunter = true;
-    h.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A]);
+    let h = enemy(1).hunter().at(A);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
@@ -206,31 +181,26 @@ fn hunter_already_co_located_does_not_move_but_engages() {
 // driven through `apply` by `crates/cards/tests/integration/silver_twilight_acolyte.rs`.
 
 /// A line `A - B - C - D`.
-fn line() -> [Location; 4] {
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    let mut c = test_support::test_location(C.0, "C");
-    let mut d = test_support::test_location(D.0, "D");
-    a.connections = vec![B];
-    b.connections = vec![A, C];
-    c.connections = vec![B, D];
-    d.connections = vec![C];
+fn line() -> [StagedLocation; 4] {
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A, C]);
+    let c = location(C).connections(vec![B, D]);
+    let d = location(D).connections(vec![C]);
     [a, b, c, d]
 }
 
 /// A ready, unengaged bearer-only hunter at `at`, owned by [`BEARER`].
-fn bearer_only_hunter(at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(HUNTER.0, "Weakness");
-    e.hunter = true;
-    e.prey = Prey::BearerOnly;
-    e.owner = Owner::Investigator(BEARER);
-    e.current_location = Some(at);
-    e
+fn bearer_only_hunter(at: LocationId) -> StagedEnemy {
+    enemy(HUNTER)
+        .hunter()
+        .prey(Prey::BearerOnly)
+        .owner(Owner::Investigator(BEARER))
+        .at(at)
 }
 
 /// The Enemy phase's hunter step over the line, with the bearer at `bearer_at`
 /// and the other investigator at `other_at`.
-fn hunt(enemy: Enemy, bearer_at: LocationId, other_at: LocationId) -> GameState {
+fn hunt(enemy: StagedEnemy, bearer_at: LocationId, other_at: LocationId) -> GameState {
     let [a, b, c, d] = line();
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -309,9 +279,7 @@ fn bearer_only_hunter_ignores_everyone_else() {
 /// so it hunts like `Prey::Default`: toward the nearest investigator.
 #[test]
 fn bearer_only_without_an_investigator_owner_hunts_like_default() {
-    let mut enemy = bearer_only_hunter(B);
-    enemy.owner = Owner::EncounterDeck;
-    let state = hunt(enemy, D, A);
+    let state = hunt(bearer_only_hunter(B).owner(Owner::EncounterDeck), D, A);
     assert_eq!(state.enemies[&HUNTER].current_location, Some(A));
     assert_eq!(state.enemies[&HUNTER].engaged_with, Some(OTHER));
 }

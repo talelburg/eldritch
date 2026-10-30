@@ -16,7 +16,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep,
     SkillKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons
@@ -40,16 +40,13 @@ fn fighter(combat: i8, intellect: i8) -> Seat {
 /// `intellect` are set so a `Numeric(0)` draw makes substitution flip the
 /// outcome (combat fails the fight-3 test, intellect passes).
 fn board(investigator: Seat) -> TestSession {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 5; // survives so we can read `damage`
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
-        // Co-located (copied from the seat): Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
+        // Co-located (copied from the seat): Fight is location-gated. Health
+        // 5 survives, so we can read `damage`.
+        .with_enemy(enemy(ENEMY).fight(3).health(5).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()
@@ -174,7 +171,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
     let window = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).hand([MOM, MAGNIFYING_GLASS]))
         .with_active_investigator(INV)
         .with_seating([INV])

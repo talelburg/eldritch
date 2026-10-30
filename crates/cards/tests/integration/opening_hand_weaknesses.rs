@@ -33,7 +33,7 @@
 //!   to place the roster. No printed ability text and no rulings
 //!   (`data/arkhamdb-faq/no-rulings.txt`), so nothing on the board reacts to the
 //!   opening draw. Built through the engine from its own corpus metadata rather
-//!   than hand-stamped onto a `test_location`, which is the impersonation ADR
+//!   than hand-stamped onto a stock location, which is the impersonation ADR
 //!   0016 forbids.
 //!
 //! **The non-weakness filler is not a card.** Every deck below needs some

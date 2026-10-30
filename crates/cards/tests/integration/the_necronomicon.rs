@@ -49,7 +49,9 @@ use game_core::state::{
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
     TokenResolution, UseKind, Zone,
 };
-use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, enemy, horror, location, seat, uses, AnyKind, BoardLookup as _, Seat, TestSession,
+};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const NECRONOMICON: &str = "01009";
@@ -66,10 +68,10 @@ const ENEMY: EnemyId = EnemyId(100);
 
 /// `investigator`'s turn, alone at `HERE`, with no enemies (so the Draw
 /// action's attacks of opportunity are empty and it resolves synchronously).
-fn board(investigator: Seat) -> TestSession {
+fn board(investigator: impl Into<Seat<AnyKind>>) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
         .session()
@@ -182,7 +184,7 @@ fn daisy_drawing_the_elder_sign(in_threat_area: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .as_card(DAISY)
@@ -251,13 +253,10 @@ fn without_it_the_elder_sign_draws_one_card_per_tome() {
 /// Daisy reveals counts as an `[auto_fail]`, so the attack costs her 1 horror.
 #[test]
 fn a_reveal_clause_keyed_on_auto_fail_fires_on_her_elder_sign() {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .as_card(DAISY)
@@ -265,7 +264,7 @@ fn a_reveal_clause_keyed_on_auto_fail_fires_on_her_elder_sign() {
                 .in_play([(SHRIVELLING, uses(UseKind::Charges, 4))])
                 .threat_area([(NECRONOMICON, horror(3))]),
         )
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
         .open_turn(INV)
         .build();
     let shrivelling = state.in_play(INV, SHRIVELLING);

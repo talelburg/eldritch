@@ -43,10 +43,8 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget, Responder};
-use game_core::state::{
-    Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-};
-use game_core::test_support::{seat, Seat, TestSession};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{location, seat, AnyKind, Seat, TestSession};
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -66,7 +64,7 @@ const LITA: &str = "01117";
 /// the round's last turn open, so ending it runs on to the round end, where
 /// the act's objective is offered.
 fn barrier_table(
-    seats: Vec<Seat>,
+    seats: Vec<Seat<AnyKind>>,
     seating: &[InvestigatorId],
     lead: InvestigatorId,
     last: InvestigatorId,
@@ -75,30 +73,15 @@ fn barrier_table(
     for s in seats {
         builder = builder.with_seat(s.deck(["01088"]));
     }
-    let mut parlor = Location::new(PARLOR, CardCode::new("01115"), "Parlor", 2, 0);
-    parlor.revealed = false;
     let mut state: GameState = builder
-        .with_location(Location::new(
-            HALLWAY,
-            CardCode::new("01112"),
-            "Hallway",
-            1,
-            0,
-        ))
-        .with_location(parlor)
-        .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
+        .with_location(location(HALLWAY).as_card("01112"))
+        .with_location(location(PARLOR).as_card("01115").unrevealed())
+        .with_location(location(ATTIC).as_card("01113"))
         .with_seating(seating.iter().copied())
         .with_lead(lead)
         .open_turn(last)
+        .with_act_deck(["01109", "01110"])
         .build();
-    state.act_deck = ["01109", "01110"]
-        .into_iter()
-        .map(|code| Act {
-            code: CardCode::new(code),
-            clue_threshold: 3,
-        })
-        .collect();
-    state.act_index = 0;
     state.set_aside_cards = vec![CardCode::new(GHOUL_PRIEST), CardCode::new(LITA)];
     TestSession::new(state, TEST_REGISTRIES)
 }
@@ -135,8 +118,8 @@ fn with_the_lead_outside_the_hallway_the_hallway_investigator_is_offered_it() {
     // threshold in the Hallway. Seat 2's turn is the round's last.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01002").at(ATTIC).clues(1),
-            seat(2).as_card("01001").at(HALLWAY).clues(3),
+            seat(1).as_card("01002").at(ATTIC).clues(1).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(3).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_1,
@@ -161,9 +144,9 @@ fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first
     // seat 1 is first in seating. Seat 1's turn is the round's last.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01001").at(HALLWAY).clues(2),
-            seat(2).at(ATTIC),
-            seat(3).as_card("01002").at(HALLWAY).clues(2),
+            seat(1).as_card("01001").at(HALLWAY).clues(2).into(),
+            seat(2).at(ATTIC).into(),
+            seat(3).as_card("01002").at(HALLWAY).clues(2).into(),
         ],
         &[SEAT_1, SEAT_2, SEAT_3],
         SEAT_2,
@@ -187,8 +170,8 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
     // first in seating but second in player order.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(2),
-            seat(2).as_card("01001").at(HALLWAY).clues(2),
+            seat(1).as_card("01002").at(HALLWAY).clues(2).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(2).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_2,
@@ -206,8 +189,8 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
 fn two_tied_in_the_hallway_led_by(lead: InvestigatorId) -> TestSession {
     barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(3),
-            seat(2).as_card("01004").at(HALLWAY),
+            seat(1).as_card("01002").at(HALLWAY).clues(3).into(),
+            seat(2).as_card("01004").at(HALLWAY).into(),
         ],
         &[DAISY, AGNES],
         lead,

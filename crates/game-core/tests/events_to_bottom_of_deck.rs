@@ -19,7 +19,7 @@ use game_core::engine::{EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, Seat};
 use game_core::{assert_event, assert_no_event};
 
 /// An event that sits in its owner's play area.
@@ -34,22 +34,9 @@ const FILLER: &str = "TEST-FILLER";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-fn metadata(code: &str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_string(),
-        name: code.to_string(),
-        text: None,
-        traits: vec![],
-        back_name: None,
-        back_text: None,
-        pack_code: "test".to_string(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn event(code: &str) -> CardMetadata {
-    metadata(
+    test_support::test_card_metadata(
+        code,
         code,
         CardKind::Event {
             class: Class::Neutral,
@@ -64,7 +51,8 @@ fn event(code: &str) -> CardMetadata {
 }
 
 fn asset(code: &str) -> CardMetadata {
-    metadata(
+    test_support::test_card_metadata(
+        code,
         code,
         CardKind::Asset {
             class: Class::Neutral,
@@ -104,7 +92,7 @@ fn board(investigator: Seat) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(investigator.at(HERE).deck([FILLER]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build()
 }

@@ -17,20 +17,25 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, Enemy, EnemyId, GameStateBuilder,
-    InvestigatorId, Location, LocationId, Owner, Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
+    LocationId, Owner, Zone,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{
+    self, seat, Printed, Seat, StagedEnemy, StagedLocation, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
 const GHOUL_MINION: &str = "01160"; // Humanoid. Monster. Ghoul. (non-Elite)
+const SWARM_OF_RATS: &str = "01159"; // Creature. (non-Elite) + Hunter
 const INV: InvestigatorId = InvestigatorId(1);
 const A: LocationId = LocationId(1);
 const B: LocationId = LocationId(2);
-/// The ghoul every scenario here moves.
+/// The ghoul the Elite and engaged scenarios move.
 const GHOUL: EnemyId = EnemyId(100);
+/// The Swarm of Rats the non-Elite hunter scenarios move.
+const RATS: EnemyId = EnemyId(101);
 /// The first Barricade attached on a board. A seat cannot attach a card to a
 /// location, so a Barricade's id is named here, and a board with several
 /// numbers them on from this one.
@@ -42,36 +47,27 @@ const MOVE_TO_B: TurnAction = TurnAction::Move {
     destination: B,
 };
 
-/// A ready, unengaged ghoul (code `code`) at location `at`. Elite-ness drives
-/// the movement block, and it comes from the real card's printed traits
-/// (looked up by code through the registry), so pass a real code: Ghoul
-/// Priest 01116 is Elite, Ghoul Minion 01160 is not. Hunter-ness and
-/// engagement are the caller's to set — the two scenarios here want opposite
-/// answers.
-fn ghoul(code: &str, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(GHOUL.0, "Ghoul");
-    e.code = CardCode::new(code);
-    e.current_location = Some(at);
-    e.engaged_with = None;
-    e.exhausted = false;
-    e
+/// The ready, unengaged printed ghoul `code` at location `at`. Elite-ness
+/// drives the movement block, and it comes from the printed card's traits:
+/// Ghoul Priest 01116 is Elite, Ghoul Minion 01160 is not. Hunter-ness is
+/// printed too — the Priest is a hunter, the Minion is not — and engagement is
+/// the caller's to set.
+fn ghoul(code: &str, at: LocationId) -> StagedEnemy<Printed> {
+    test_support::enemy(GHOUL).as_card(code).at(at)
 }
 
 /// `location` with a Barricade attached, played by `INV`, under instance `id`.
-fn barricaded(mut location: Location, id: CardInstanceId) -> Location {
-    location.attachments.push(CardInPlay::enter_play(
+fn barricaded(location: StagedLocation, id: CardInstanceId) -> StagedLocation {
+    location.attachments([CardInPlay::enter_play(
         CardCode::new(BARRICADE),
         id,
         Owner::Investigator(INV),
-    ));
-    location
+    )])
 }
 
-/// A location with the given id, name and connections.
-fn linked(id: LocationId, name: &str, connections: &[LocationId]) -> Location {
-    let mut loc = test_support::test_location(id.0, name);
-    loc.connections = connections.to_vec();
-    loc
+/// A location with the given id and connections.
+fn linked(id: LocationId, connections: &[LocationId]) -> StagedLocation {
+    test_support::location(id).connections(connections.to_vec())
 }
 
 /// `INV`'s turn at the Study (`A`) with Barricade in hand, having played it.
@@ -79,7 +75,7 @@ fn play_barricade() -> TestSession {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(A).hand([BARRICADE]))
-        .with_location(test_support::test_location(A.0, "Study"))
+        .with_location(test_support::location(A))
         .open_turn(INV)
         .session()
         .take(&TurnAction::PlayCard {
@@ -133,7 +129,12 @@ fn a_played_barricade_is_owned_by_its_player() {
 
 /// Linear map `a`—`b` (locations A and B), the investigator at `inv_at` and
 /// `enemy` optionally on the board, on the investigator's turn.
-fn linear_map(inv_at: LocationId, a: Location, b: Location, enemy: Option<Enemy>) -> TestSession {
+fn linear_map(
+    inv_at: LocationId,
+    a: StagedLocation,
+    b: StagedLocation,
+    enemy: Option<StagedEnemy<Printed>>,
+) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(inv_at))
@@ -148,29 +149,27 @@ fn linear_map(inv_at: LocationId, a: Location, b: Location, enemy: Option<Enemy>
 
 /// Linear map A—B with a Barricade attached at B, the investigator at `inv_at`,
 /// and `enemy` on the board, on the investigator's turn.
-fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> TestSession {
+fn map_with_barricade_at_b(inv_at: LocationId, enemy: StagedEnemy<Printed>) -> TestSession {
     linear_map(
         inv_at,
-        linked(A, "A", &[B]),
-        barricaded(linked(B, "B", &[A]), ATT_INST),
+        linked(A, &[B]),
+        barricaded(linked(B, &[A]), ATT_INST),
         Some(enemy),
     )
 }
 
-/// The hunter-movement scenario: the investigator (prey) at B, a hunter at A,
-/// driven via `EndTurn` into the Enemy phase.
-fn hunter_at_a_moving_toward_b(enemy_code: &str) -> TestSession {
-    let mut enemy = ghoul(enemy_code, A);
-    enemy.hunter = true;
-    map_with_barricade_at_b(B, enemy)
+/// The hunter-movement scenario: the investigator (prey) at B, the printed
+/// `hunter` at A, driven via `EndTurn` into the Enemy phase.
+fn hunter_at_a_moving_toward_b(hunter: StagedEnemy<Printed>) -> TestSession {
+    map_with_barricade_at_b(B, hunter)
 }
 
 #[test]
 fn non_elite_hunter_cannot_enter_the_barricaded_location() {
-    let r = hunter_at_a_moving_toward_b(GHOUL_MINION).take(&TurnAction::EndTurn);
+    let r = hunter_at_a_moving_toward_b(hunter_at(A)).take(&TurnAction::EndTurn);
     assert_phase_reached_enemy(&r);
     assert_eq!(
-        r.state().enemies[&GHOUL].current_location,
+        r.state().enemies[&RATS].current_location,
         Some(A),
         "non-Elite hunter stayed (only path is into the barricaded location)",
     );
@@ -178,7 +177,7 @@ fn non_elite_hunter_cannot_enter_the_barricaded_location() {
 
 #[test]
 fn elite_hunter_enters_the_barricaded_location() {
-    let r = hunter_at_a_moving_toward_b(GHOUL_PRIEST).take(&TurnAction::EndTurn);
+    let r = hunter_at_a_moving_toward_b(ghoul(GHOUL_PRIEST, A)).take(&TurnAction::EndTurn);
     assert_phase_reached_enemy(&r);
     assert_eq!(
         r.state().enemies[&GHOUL].current_location,
@@ -187,21 +186,17 @@ fn elite_hunter_enters_the_barricaded_location() {
     );
 }
 
-/// Linear map A—B with a Barricade attached at B, the investigator at A, and a
-/// ready enemy (code `enemy_code`, 1 damage) engaged with them at A. The move
+/// Linear map A—B with a Barricade attached at B, the investigator at A, and
+/// the ready printed enemy `enemy_code` engaged with them at A. The move
 /// A→B is the drag-along case: the engaged enemy would ride along, but B is
 /// barricaded.
 fn engaged_map_with_barricade_at_b(enemy_code: &str) -> TestSession {
     map_with_barricade_at_b(A, engaged_ghoul(enemy_code))
 }
 
-/// A ready ghoul (code `code`, 1 damage) engaged with the investigator at A.
-fn engaged_ghoul(code: &str) -> Enemy {
-    let mut enemy = ghoul(code, A);
-    enemy.engaged_with = Some(INV);
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 0;
-    enemy
+/// The ready printed enemy `code` engaged with the investigator at A.
+fn engaged_ghoul(code: &str) -> StagedEnemy<Printed> {
+    ghoul(code, A).engaged_with(INV)
 }
 
 /// Barricade 01038: "Non-[[Elite]] enemies cannot move into attached location."
@@ -256,8 +251,8 @@ fn engaged_elite_enemy_is_dragged_into_the_barricaded_location() {
 fn engaged_non_elite_enemy_follows_when_the_destination_is_unbarricaded() {
     let unbarricaded = linear_map(
         A,
-        linked(A, "A", &[B]),
-        linked(B, "B", &[A]),
+        linked(A, &[B]),
+        linked(B, &[A]),
         Some(engaged_ghoul(GHOUL_MINION)),
     );
     let r = take(unbarricaded, &MOVE_TO_B).finish();
@@ -320,10 +315,7 @@ fn barricade_discards_before_the_departure_lands() {
 /// investigator"*).
 #[test]
 fn an_engaged_enemy_still_follows_the_move_that_discards_barricade() {
-    let mut enemy = ghoul(GHOUL_MINION, A);
-    enemy.engaged_with = Some(INV);
-    enemy.attack_damage = 0;
-    enemy.attack_horror = 0;
+    let enemy = engaged_ghoul(GHOUL_MINION);
     let r = take(map_leaving_barricaded_a(Some(enemy)), &MOVE_TO_B).finish();
     assert_event_sequence!(
         r.events,
@@ -346,13 +338,10 @@ fn an_engaged_enemy_still_follows_the_move_that_discards_barricade() {
 /// this is the case that proves the discard does not disturb it.
 #[test]
 fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
-    let mut enemy = ghoul(GHOUL_MINION, A);
-    enemy.engaged_with = Some(INV);
-    enemy.attack_damage = 0;
-    enemy.attack_horror = 0;
+    let enemy = engaged_ghoul(GHOUL_MINION);
     let both_barricaded = map_leaving_barricaded_a_with(
         Some(enemy),
-        barricaded(linked(B, "B", &[A]), CardInstanceId(ATT_INST.0 + 1)),
+        barricaded(linked(B, &[A]), CardInstanceId(ATT_INST.0 + 1)),
     );
     let r = take(both_barricaded, &MOVE_TO_B).finish();
     assert_event_sequence!(
@@ -378,13 +367,16 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
 /// Linear map A—B with a Barricade attached at **A**, the investigator there,
 /// and `enemy` optionally on the board, on the investigator's turn. The move
 /// A→B is the one that fires the card's own forced self-discard.
-fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> TestSession {
-    map_leaving_barricaded_a_with(enemy, linked(B, "B", &[A]))
+fn map_leaving_barricaded_a(enemy: Option<StagedEnemy<Printed>>) -> TestSession {
+    map_leaving_barricaded_a_with(enemy, linked(B, &[A]))
 }
 
 /// [`map_leaving_barricaded_a`] with `b` as location B.
-fn map_leaving_barricaded_a_with(enemy: Option<Enemy>, b: Location) -> TestSession {
-    linear_map(A, barricaded(linked(A, "A", &[B]), ATT_INST), b, enemy)
+fn map_leaving_barricaded_a_with(
+    enemy: Option<StagedEnemy<Printed>>,
+    b: StagedLocation,
+) -> TestSession {
+    linear_map(A, barricaded(linked(A, &[B]), ATT_INST), b, enemy)
 }
 
 // ---------------------------------------------------------------------------
@@ -404,29 +396,29 @@ fn map_leaving_barricaded_a_with(enemy: Option<Enemy>, b: Location) -> TestSessi
 
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// A ready, unengaged, non-Elite hunter at `at` — the mover every scenario
-/// below shares, since it is the non-Elite case the barricade actually stops.
-fn hunter_at(at: LocationId) -> Enemy {
-    let mut enemy = ghoul(GHOUL_MINION, at);
-    enemy.hunter = true;
-    enemy
+/// A ready, unengaged, non-Elite hunter at `at`, Swarm of Rats 01159 — the
+/// mover every scenario below shares, since it is the non-Elite case the
+/// barricade actually stops.
+fn hunter_at(at: LocationId) -> StagedEnemy<Printed> {
+    test_support::enemy(RATS).as_card(SWARM_OF_RATS).at(at)
 }
 
-/// Assemble a board out of ready-made locations / seated investigators / one
-/// hunter, on the first investigator's turn, attaching a Barricade at each of
-/// `barricaded`.
+/// Assemble a board out of locations (each an id and its connections) /
+/// seated investigators / one hunter, on the first investigator's turn,
+/// attaching a Barricade at each of `barricaded`.
 fn board(
-    locations: Vec<Location>,
+    locations: &[(LocationId, &[LocationId])],
     investigators: Vec<Seat>,
-    hunter: Enemy,
+    hunter: StagedEnemy<Printed>,
     barricaded: &[LocationId],
 ) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_enemy(hunter);
     let mut next_barricade = ATT_INST.0;
-    for loc in locations {
-        if barricaded.contains(&loc.id) {
+    for &(id, connections) in locations {
+        let loc = linked(id, connections);
+        if barricaded.contains(&id) {
             builder = builder.with_location(self::barricaded(loc, CardInstanceId(next_barricade)));
             next_barricade += 1;
         } else {
@@ -488,11 +480,11 @@ fn hallway_attic_cellar() -> TestSession {
 /// [`hallway_attic_cellar`] with Barricades at `barricaded`.
 fn hallway_attic_cellar_barricading(barricaded: &[LocationId]) -> TestSession {
     board(
-        vec![
-            linked(HUB, "Hub", &[BLOCKED, MID]),
-            linked(BLOCKED, "Blocked", &[HUB]),
-            linked(MID, "Mid", &[HUB, FAR]),
-            linked(FAR, "Far", &[MID]),
+        &[
+            (HUB, &[BLOCKED, MID]),
+            (BLOCKED, &[HUB]),
+            (MID, &[HUB, FAR]),
+            (FAR, &[MID]),
         ],
         vec![seat(1).at(BLOCKED), seat(2).at(FAR)],
         hunter_at(HUB),
@@ -507,7 +499,7 @@ fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_m
     let session = end_the_investigation_phase(hallway_attic_cellar(), 2);
     let state = session.state();
     assert_eq!(
-        state.enemies[&GHOUL].current_location,
+        state.enemies[&RATS].current_location,
         Some(HUB),
         "the barricaded location is still one connection away, so its investigator is \
          nearest; the compelled step is blocked, so the hunter does not move — it \
@@ -524,7 +516,7 @@ fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_m
 fn an_unblocked_board_moves_the_hunter_toward_the_nearest_investigator() {
     let session = end_the_investigation_phase(hallway_attic_cellar_barricading(&[]), 2);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(BLOCKED),
         "with no barricade the hunter steps to the nearest investigator's location",
     );
@@ -537,10 +529,10 @@ fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
     // Hub(1) — Target(2) [investigator], and a longer detour
     // Hub — Side(3, barricaded) — Target. The block sits on that detour.
     let state = board(
-        vec![
-            linked(HUB, "Hub", &[TARGET, SIDE]),
-            linked(TARGET, "Target", &[HUB, SIDE]),
-            linked(SIDE, "Side", &[HUB, TARGET]),
+        &[
+            (HUB, &[TARGET, SIDE]),
+            (TARGET, &[HUB, SIDE]),
+            (SIDE, &[HUB, TARGET]),
         ],
         vec![seat(1).at(TARGET)],
         hunter_at(HUB),
@@ -548,7 +540,7 @@ fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(TARGET),
         "the barricade is not on the shortest path, so the hunter takes it as usual",
     );
@@ -567,12 +559,12 @@ fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
     // shortest path *through* the block, so the compelled first step is
     // Blocked; `Hunter.md` then makes that a non-move.
     let state = board(
-        vec![
-            linked(HUB, "Hub", &[BLOCKED, DETOUR_1]),
-            linked(BLOCKED, "Blocked", &[HUB, TARGET]),
-            linked(TARGET, "Target", &[BLOCKED, DETOUR_2]),
-            linked(DETOUR_1, "Detour1", &[HUB, DETOUR_2]),
-            linked(DETOUR_2, "Detour2", &[DETOUR_1, TARGET]),
+        &[
+            (HUB, &[BLOCKED, DETOUR_1]),
+            (BLOCKED, &[HUB, TARGET]),
+            (TARGET, &[BLOCKED, DETOUR_2]),
+            (DETOUR_1, &[HUB, DETOUR_2]),
+            (DETOUR_2, &[DETOUR_1, TARGET]),
         ],
         vec![seat(1).at(TARGET)],
         hunter_at(HUB),
@@ -580,7 +572,7 @@ fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(HUB),
         "the hunter does not take the longer unblocked detour",
     );
@@ -594,11 +586,11 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
     // and Hub — Open(3) — Target. Both first steps are shortest; only the
     // unblocked one survives as an offered destination.
     let state = board(
-        vec![
-            linked(HUB, "Hub", &[BLOCKED, OPEN]),
-            linked(BLOCKED, "Blocked", &[HUB, TARGET]),
-            linked(OPEN, "Open", &[HUB, TARGET]),
-            linked(TARGET, "Target", &[BLOCKED, OPEN]),
+        &[
+            (HUB, &[BLOCKED, OPEN]),
+            (BLOCKED, &[HUB, TARGET]),
+            (OPEN, &[HUB, TARGET]),
+            (TARGET, &[BLOCKED, OPEN]),
         ],
         vec![seat(1).at(TARGET)],
         hunter_at(HUB),
@@ -606,7 +598,7 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(OPEN),
         "the blocked step is dropped from the destination set, not the graph",
     );
@@ -624,8 +616,8 @@ fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(A))
         .with_seat(seat(2).at(A))
-        .with_location(barricaded(linked(A, "A", &[B]), ATT_INST))
-        .with_location(linked(B, "B", &[A]))
+        .with_location(barricaded(linked(A, &[B]), ATT_INST))
+        .with_location(linked(B, &[A]))
         .open_turn(INV2)
         .session()
         .take(&TurnAction::Move {

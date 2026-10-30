@@ -6,7 +6,7 @@ use crate::test_support::TEST_REGISTRIES;
 fn draw_board() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).deck(["_test_card_1"]))
         .open_turn(INV)
 }
@@ -15,7 +15,7 @@ fn draw_board() -> GameStateBuilder {
 fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
     let enemy_id = EnemyId(200);
     let session = move_board(seat(1).at(HERE))
-        .with_enemy_engaged(attacker(200, 1, 0), INV)
+        .with_enemy(attacker(200, 1, 0).engaged_with(INV))
         .session()
         .take(&MOVE_TO_CONNECTED);
 
@@ -59,10 +59,9 @@ fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
 #[test]
 fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
     let enemy_id = EnemyId(200);
-    let mut enemy = attacker(200, 1, 0);
-    enemy.exhausted = true;
+    let enemy = attacker(200, 1, 0).exhausted();
     let session = move_board(seat(1).at(HERE))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .session()
         .take(&MOVE_TO_CONNECTED);
 
@@ -80,7 +79,7 @@ fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
 #[test]
 fn draw_action_fires_aoo_from_ready_engaged_enemy() {
     let session = draw_board()
-        .with_enemy_engaged(attacker(200, 1, 0), INV)
+        .with_enemy(attacker(200, 1, 0).engaged_with(INV))
         .session()
         .take(&TurnAction::Draw { investigator: INV });
 
@@ -99,7 +98,7 @@ fn draw_with_lethal_aoo_suppresses_the_draw() {
     // while the AoO damage still lands. Action is still spent.
     let result = draw_board()
         // 8 == test_investigator max_health.
-        .with_enemy_engaged(attacker(200, 8, 0), INV)
+        .with_enemy(attacker(200, 8, 0).engaged_with(INV))
         .session()
         .take(&TurnAction::Draw { investigator: INV })
         .finish();
@@ -148,8 +147,7 @@ fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
     // An enemy at A, not engaged with anyone, so the move provokes no AoO,
     // keeping the focus on the unengaged enemy.
     let other_id = EnemyId(201);
-    let mut other = test_support::test_enemy(201, "Bystander");
-    other.current_location = Some(HERE);
+    let other = enemy(201).at(HERE);
     let session = move_board(seat(1).at(HERE))
         .with_enemy(other)
         .session()
@@ -173,7 +171,7 @@ fn investigate_with_ready_engaged_enemy_fires_aoo() {
     // An Investigate board with an engaged enemy at the investigator's
     // location.
     let session = take_committing_nothing(
-        investigate_board(seat(1).at(HERE), 2, 2).with_enemy_engaged(attacker(300, 0, 1), INV),
+        investigate_board(seat(1).at(HERE), 2, 2).with_enemy(attacker(300, 0, 1).engaged_with(INV)),
         &TurnAction::Investigate { investigator: INV },
     );
 
@@ -194,7 +192,8 @@ fn fight_does_not_fire_aoo_from_other_engaged_enemy() {
     // no AoO fires — neither from the target nor from the
     // bystander.
     let session = take_committing_nothing(
-        fight_evade_board(seat(1).at(HERE), ghoul()).with_enemy_engaged(attacker(202, 5, 0), INV),
+        fight_evade_board(seat(1).at(HERE), ghoul())
+            .with_enemy(attacker(202, 5, 0).engaged_with(INV)),
         &TurnAction::Fight {
             investigator: INV,
             enemy: GHOUL,
@@ -211,7 +210,8 @@ fn fight_does_not_fire_aoo_from_other_engaged_enemy() {
 #[test]
 fn evade_does_not_fire_aoo_from_other_engaged_enemy() {
     let session = take_committing_nothing(
-        fight_evade_board(seat(1).at(HERE), ghoul()).with_enemy_engaged(attacker(203, 5, 0), INV),
+        fight_evade_board(seat(1).at(HERE), ghoul())
+            .with_enemy(attacker(203, 5, 0).engaged_with(INV)),
         &TurnAction::Evade {
             investigator: INV,
             enemy: GHOUL,
@@ -246,7 +246,7 @@ fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
     let board = [(300, 1), (301, 2), (302, 4)]
         .into_iter()
         .fold(move_board(seat(1).at(HERE)), |board, (id, dmg)| {
-            board.with_enemy_engaged(attacker(id, dmg, 0), INV)
+            board.with_enemy(attacker(id, dmg, 0).engaged_with(INV))
         });
     // Move provokes the AoO; 3 engaged → order pick (no attack dealt yet).
     // Pick EnemyId(302) (dmg 4) first → resolves it, then re-prompts over the
@@ -285,7 +285,7 @@ fn aoo_from_zero_damage_zero_horror_enemy_emits_no_events() {
     // attack_horror = 0 still "attacks" but the helper's `if > 0`
     // guards must skip both event emissions.
     let session = move_board(seat(1).at(HERE))
-        .with_enemy_engaged(attacker(310, 0, 0), INV)
+        .with_enemy(attacker(310, 0, 0).engaged_with(INV))
         .session()
         .take(&MOVE_TO_CONNECTED);
     session.assert_at_turn_menu(INV);

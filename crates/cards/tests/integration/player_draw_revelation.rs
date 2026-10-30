@@ -9,7 +9,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Status};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const COVER_UP: &str = "01007";
@@ -26,7 +26,7 @@ const HERE: LocationId = LocationId(101);
 fn draw(deck_top: &str) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         // Top of deck is drawn first (draw_cards drains from the front).
         .with_seat(
             seat(1)
@@ -114,7 +114,7 @@ fn a_weakness_resolving_when_its_bearer_is_defeated_is_removed_from_the_game() {
     // Sanity 8: 7 horror already, so the deck-out horror is the eighth.
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

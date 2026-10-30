@@ -114,11 +114,8 @@ fn a_recorded_rows_delta_is_evaluated_at_read_time() {
         Lifetime::SkillTest(IN_FLIGHT),
         None,
     )]);
-    state
-        .locations
-        .insert(loc, test_support::test_location(3, "Study"));
+    state.place(location(loc).clues(2), TEST_REGISTRIES);
     state.investigators.get_mut(&id).unwrap().current_location = Some(loc);
-    state.locations.get_mut(&loc).unwrap().clues = 2;
     assert_eq!(skill(&state, id, SkillKind::Willpower), 5);
     // Same row, different board: the answer moves with it, with no
     // invalidation step in between.

@@ -9,10 +9,10 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, UseKind,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, act, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
@@ -39,7 +39,7 @@ fn study_board(investigator: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
 }
@@ -106,33 +106,15 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
 /// connected destination (Move), an engaged enemy (Fight/Evade), a co-located
 /// unengaged enemy (Engage), and an advanceable act (`AdvanceAct`).
 fn every_category_board() -> GameState {
-    let mut hall = test_support::test_location(HALL.0, "Hall");
-    hall.revealed = true;
-    let mut rat = test_support::test_enemy(8, "Rat");
-    rat.current_location = Some(HERE);
-    let mut state = study_board(me_with_rosary_and_flashlight().clues(2))
+    let hall = test_support::location(HALL);
+    let rat = test_support::enemy(8).at(HERE);
+    study_board(me_with_rosary_and_flashlight().clues(2))
+        .with_location(test_support::location(HERE).connections([HALL]))
         .with_location(hall)
-        .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), INV)
+        .with_enemy(test_support::enemy(7).engaged_with(INV))
         .with_enemy(rat)
-        .build();
-    state
-        .locations
-        .get_mut(&HERE)
-        .unwrap()
-        .connections
-        .push(HALL);
-    // The builder stages no act deck.
-    state.act_deck = vec![
-        Act {
-            code: CardCode("_act1".into()),
-            clue_threshold: 2,
-        },
-        Act {
-            code: CardCode("_act2".into()),
-            clue_threshold: 99,
-        },
-    ];
-    state
+        .with_act_deck([act("_act1", 2), act("_act2", 99)])
+        .build()
 }
 
 #[test]
@@ -192,16 +174,10 @@ const WHATS_GOING_ON: &str = "01105";
 /// reason.
 #[test]
 fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
-    let mut state = study_board(me()).build();
-    // The builder stages no act or agenda deck.
-    state.act_deck = vec![Act {
-        code: CardCode::new(TRAPPED),
-        clue_threshold: 2,
-    }];
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(WHATS_GOING_ON),
-        doom_threshold: 3,
-    }];
+    let state = study_board(me())
+        .with_act_deck([TRAPPED])
+        .with_agenda_deck([WHATS_GOING_ON])
+        .build();
 
     let menu = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
@@ -303,24 +279,19 @@ fn assert_menu_offers_every_accepted_basic_action(
 /// - 12, engaged with me with a malformed evade value (Fight only).
 fn crowded_board(investigator: Seat) -> GameState {
     let other_inv = InvestigatorId(2);
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.revealed = true;
-    let mut hall = test_support::test_location(HALL.0, "Hall");
-    hall.revealed = true;
-    let mut attic = test_support::test_location(ATTIC.0, "Attic");
-    attic.revealed = false;
-    let cellar = test_support::test_location(CELLAR.0, "Cellar");
+    let study = test_support::location(HERE).connections([HALL, ATTIC]);
+    let hall = test_support::location(HALL).connections([HERE]);
+    let attic = test_support::location(ATTIC)
+        .unrevealed()
+        .connections([HERE]);
+    let cellar = test_support::location(CELLAR);
 
-    let mut rat = test_support::test_enemy(8, "Rat");
-    rat.current_location = Some(HERE);
-    let mut wanderer = test_support::test_enemy(10, "Wanderer");
-    wanderer.current_location = Some(HALL);
-    let mut unhittable = test_support::test_enemy(11, "Unhittable");
-    unhittable.fight = -1;
-    let mut unshakeable = test_support::test_enemy(12, "Unshakeable");
-    unshakeable.evade = -1;
+    let rat = test_support::enemy(8).at(HERE);
+    let wanderer = test_support::enemy(10).at(HALL);
+    let unhittable = test_support::enemy(11).fight(-1);
+    let unshakeable = test_support::enemy(12).evade(-1);
 
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_seat(seat(2).at(HERE))
@@ -332,14 +303,11 @@ fn crowded_board(investigator: Seat) -> GameState {
         .with_enemy(rat)
         .with_enemy(wanderer)
         .open_turn(INV)
-        .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), INV)
-        .with_enemy_engaged(test_support::test_enemy(9, "Stalker"), other_inv)
-        .with_enemy_engaged(unhittable, INV)
-        .with_enemy_engaged(unshakeable, INV)
-        .build();
-    state.connect(HERE, HALL);
-    state.connect(HERE, ATTIC);
-    state
+        .with_enemy(test_support::enemy(7).engaged_with(INV))
+        .with_enemy(test_support::enemy(9).engaged_with(other_inv))
+        .with_enemy(unhittable.engaged_with(INV))
+        .with_enemy(unshakeable.engaged_with(INV))
+        .build()
 }
 
 /// Sort a list of turn actions into a stable order, for comparing sets.

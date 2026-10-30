@@ -57,17 +57,17 @@
 //! group need card shapes the corpus cannot supply; they are in
 //! `mythos_phase_probes.rs` with their probes inline.
 
-use card_dsl::card_data::{CardKind, CardType};
+use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, InputKind};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Owner, Phase,
 };
-use game_core::test_support::{SeatLookup as _, TestSession};
+use game_core::test_support::{BoardLookup as _, TestSession};
 use game_core::{assert_event, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
@@ -88,48 +88,34 @@ const ROLAND: &str = "01001";
 const INV1: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// Rise of the Ghouls' printed doom threshold, read from the corpus rather
-/// than transcribed, so a snapshot refresh cannot silently invalidate the
-/// "no agenda ever advances" premise in the module docs.
-fn agenda_doom_threshold(code: &str) -> u8 {
-    match cards::by_code(code).expect("agenda in corpus").kind {
-        CardKind::Agenda { doom_threshold } => doom_threshold,
-        ref kind => panic!("{code} is not an Agenda ({kind:?})"),
-    }
-}
-
 /// The board every test starts from: the Attic in play as the starting
-/// location, a +0 chaos bag, and a one-card agenda deck. No investigators —
-/// callers supply the roster to [`seat_and_open`](engine::seat_and_open).
-/// Returns the minted [`LocationId`] alongside, since `add_location` mints it.
+/// location, a +0 chaos bag, `encounter` as the encounter deck, and a one-card
+/// agenda deck — Rise of the Ghouls, whose printed doom threshold is read from
+/// the corpus rather than transcribed, so a snapshot refresh cannot silently
+/// invalidate the "no agenda ever advances" premise in the module docs. No
+/// investigators — callers supply the roster to
+/// [`seat_and_open`](engine::seat_and_open), whose setup shuffles the
+/// encounter deck. Returns the minted [`LocationId`] alongside, since
+/// `add_location` mints it.
 ///
 /// The Attic is built **through the engine from its own corpus metadata**
 /// (`GameState::add_location`, the same call The Gathering's `setup` makes),
-/// not hand-stamped onto a `test_location`: shroud, printed clues and victory
+/// not hand-stamped onto a stock location: shroud, printed clues and victory
 /// come off card 01113 rather than from a fixture wearing its code, which is
 /// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
 /// Attic: Take 1 horror."* is live in the registry and simply never
 /// fires — only the Move action emits `EnteredLocation`, and `seat_and_open`
 /// *places* the roster rather than moving it.
-fn board() -> (GameState, LocationId) {
+fn board(encounter: &[&str]) -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_agenda_deck([RISE_OF_THE_GHOULS])
+        .with_encounter_deck(encounter.iter().copied())
         .build();
     let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
     state.starting_location = Some(attic);
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(RISE_OF_THE_GHOULS),
-        doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
-    }];
     (state, attic)
-}
-
-/// Seed the encounter deck in draw order (top of deck = index 0), replacing
-/// whatever is there. Where the order matters, call this *after*
-/// `seat_and_open` — its setup shuffles the deck.
-fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
-    state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
 }
 
 /// Seat `roster` on `state` through `seat_and_open`, and keep every opening
@@ -181,8 +167,7 @@ fn setup_two_investigators_at_mythos_draw(state: GameState) -> TestSession {
 
 #[test]
 fn mythos_phase_resolves_single_treachery() {
-    let (mut base, _) = board();
-    with_encounter_deck(&mut base, &[ANCIENT_EVILS]);
+    let (base, _) = board(&[ANCIENT_EVILS]);
 
     let drawing = setup_at_mythos_draw(base);
     drawing.assert_at_encounter_draw();
@@ -250,8 +235,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
     // seat_and_open (called inside setup_at_mythos_draw) places the investigator
     // at starting_location = the Attic, which is where Flesh-Eater spawns, so
     // the spawned enemy engages them.
-    let (mut base, attic) = board();
-    with_encounter_deck(&mut base, &[FLESH_EATER]);
+    let (base, attic) = board(&[FLESH_EATER]);
 
     let drawing = setup_at_mythos_draw(base);
     assert_eq!(drawing.state().phase, Phase::Mythos);
@@ -295,11 +279,13 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // advances the cursor to inv2 and stays in Mythos.
     // Both investigators are seated at the Attic (starting_location) by
     // seat_and_open; no pre-seating needed.
-    let drawing = setup_two_investigators_at_mythos_draw(board().0)
+    let drawing = setup_two_investigators_at_mythos_draw(board(&[]).0)
         // Seed the controlled draw order *after* seat_and_open's shuffle:
         // inv1 draws the enemy; inv2 draws a plain treachery afterward. The
         // draw prompt does not depend on the deck, so it stands.
-        .edit_state(|state| with_encounter_deck(state, &[FLESH_EATER, ANCIENT_EVILS]));
+        .edit_state(|state| {
+            state.encounter_deck = [FLESH_EATER, ANCIENT_EVILS].map(CardCode::new).into();
+        });
     assert_eq!(drawing.state().phase, Phase::Mythos);
     assert_eq!(drawing.state().current_encounter_drawer(), Some(INV1));
 
@@ -359,8 +345,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
 #[test]
 fn mythos_phase_multi_investigator_player_order() {
     // Two treacheries — one per investigator.
-    let (mut base, _) = board();
-    with_encounter_deck(&mut base, &[ANCIENT_EVILS, ANCIENT_EVILS]);
+    let (base, _) = board(&[ANCIENT_EVILS, ANCIENT_EVILS]);
 
     let drawing = setup_two_investigators_at_mythos_draw(base);
 
@@ -393,8 +378,7 @@ fn mythos_phase_multi_investigator_player_order() {
 
 #[test]
 fn mythos_phase_full_round_chain() {
-    let (mut base, _) = board();
-    with_encounter_deck(&mut base, &[ANCIENT_EVILS]);
+    let (base, _) = board(&[ANCIENT_EVILS]);
 
     let drawing = setup_at_mythos_draw(base);
     // Confirm the round bumped on Mythos entry.
@@ -420,7 +404,7 @@ fn mythos_phase_full_round_chain() {
 #[test]
 fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
     // Deck and discard both empty from `board()`; nothing seeds either.
-    let drawing = setup_at_mythos_draw(board().0);
+    let drawing = setup_at_mythos_draw(board(&[]).0);
     assert_eq!(drawing.state().phase, Phase::Mythos);
     assert_eq!(drawing.state().current_encounter_drawer(), Some(INV1));
 
@@ -468,7 +452,7 @@ fn at_mythos_draw_with_beat_cop_in_play() -> TestSession {
     // already gave the seated investigator card instance 0, and a second card
     // sharing that id resolves to the investigator instead — the ability
     // lookup then finds no printed index 1 and the window silently auto-skips.
-    setup_at_mythos_draw(board().0).edit_state(|state| {
+    setup_at_mythos_draw(board(&[FLESH_EATER]).0).edit_state(|state| {
         let instance = state.card_instance_ids.mint();
         state
             .investigators
@@ -480,7 +464,6 @@ fn at_mythos_draw_with_beat_cop_in_play() -> TestSession {
                 instance,
                 Owner::Investigator(INV1),
             ));
-        with_encounter_deck(state, &[FLESH_EATER]);
     })
 }
 

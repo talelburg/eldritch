@@ -6,6 +6,7 @@
 //! against the real registry. The scenario's end-to-end defeat-to-ending path
 //! is `scenarios/tests/integration/the_gathering_resolutions.rs`.
 
+use card_dsl::card_data::SkillKind;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -13,8 +14,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId,
+    ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 
@@ -23,37 +23,34 @@ const HERE: LocationId = LocationId(10);
 const FOE: EnemyId = EnemyId(1);
 
 /// `investigator`'s open turn at the Study, under Act 3 (01110), with
-/// `board` adding what the test needs.
+/// `board` adding what the test needs — or replacing the act deck.
 fn act3_state(
     investigator: Seat,
     board: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
 ) -> GameState {
-    let mut state = board(
+    // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
+    board(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(test_support::location(HERE))
             .with_seat(investigator)
-            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+            .with_act_deck(["01110"]),
     )
     .open_turn(INV)
-    .build();
-    // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
-    state.act_deck = vec![Act {
-        code: CardCode("01110".into()),
-        clue_threshold: 0,
-    }];
-    state
+    .build()
 }
 
-/// Defeat an enemy printed as `code`, for real: it is engaged at the Study
-/// one damage from defeat, and a Fight (combat 3 vs fight 2, a `0` token,
-/// committing nothing) deals that damage.
-fn defeat(code: &str) -> TestSession {
-    let mut enemy = test_support::test_enemy(FOE.0, "Foe");
-    enemy.code = CardCode(code.into());
-    enemy.max_health = 1;
+/// Defeat the printed enemy `code`, for real: it is engaged at the Study
+/// with `damage` on it, one short of its printed health, and a Fight (combat
+/// 4 against a printed fight of at most 4, a `0` token, committing nothing)
+/// deals the last one.
+fn defeat(code: &str, damage: u8) -> TestSession {
+    let enemy = test_support::enemy(FOE).as_card(code).damage(damage);
     let session = TestSession::new(
-        act3_state(seat(1).at(HERE), |b| b.with_enemy_engaged(enemy, INV)),
+        act3_state(seat(1).at(HERE).skill(SkillKind::Combat, 4), |b| {
+            b.with_enemy(enemy.engaged_with(INV))
+        }),
         TEST_REGISTRIES,
     )
     .take(&TurnAction::Fight {
@@ -71,7 +68,8 @@ fn defeat(code: &str) -> TestSession {
 /// Defeat the Ghoul Priest, 01110's objective; the session rests on the
 /// prompt its reverse suspends on.
 fn defeat_the_ghoul_priest() -> TestSession {
-    defeat("01116") // the Ghoul Priest
+    // The Ghoul Priest: fight 4, 5 health per investigator.
+    defeat("01116", 4)
 }
 
 /// Regression for #775: the printed reverse offers both resolution points,
@@ -123,7 +121,8 @@ fn each_printed_bullet_reaches_its_own_resolution() {
 #[test]
 fn defeating_other_enemy_does_not_advance_act_3() {
     // Some other enemy, not the Ghoul Priest.
-    let session = defeat("01103");
+    // The Stubborn Detective: fight 3, health 2.
+    let session = defeat("01103", 1);
     session.assert_at_turn_menu(INV);
     assert!(
         session.state().ending.is_none(),
@@ -165,11 +164,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
 #[test]
 fn advance_act_rejected_for_round_end_advance_act() {
     // 9 clues: plenty — reject must be the objective, not affordability.
-    let mut state = act3_state(seat(1).at(HERE).clues(9), |b| b);
-    state.act_deck = vec![Act {
-        code: CardCode("01109".into()),
-        clue_threshold: 3,
-    }];
+    let state = act3_state(seat(1).at(HERE).clues(9), |b| b.with_act_deck(["01109"]));
 
     // The menu does not offer it; submitted off the menu, the handler itself
     // must reject it.

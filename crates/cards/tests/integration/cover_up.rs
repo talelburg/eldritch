@@ -10,10 +10,12 @@ use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, MythosPhaseFrame, MythosResume, Phase,
+    ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, clues, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, act, clues, seat, BoardLookup as _, Seat, StagedAct, TestSession,
+};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const COVER_UP: &str = "01007";
@@ -48,19 +50,18 @@ fn cover_up_clues(state: &GameState) -> u8 {
 #[test]
 fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, Cover Up.
-    let mut state = GameStateBuilder::new()
+    let drawing = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
-        .build();
-    state.encounter_deck.push_back(CardCode::new(COVER_UP));
-    let drawing = TestSession::new(state, TEST_REGISTRIES);
+        .with_encounter_deck([COVER_UP])
+        .session();
     drawing.assert_at_encounter_draw();
 
     // Drawing the card reveals it: it resolves without a prompt of its own, and
@@ -90,8 +91,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
 /// `investigator`'s open turn at the Study holding `location_clues`. +0 chaos
 /// token so the Intellect-3-vs-shroud-2 Investigate always succeeds.
 fn investigate_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = location_clues;
+    let location = test_support::location(HERE).clues(location_clues);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
@@ -275,34 +275,28 @@ fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
 
 // ---- Forced: game-end mental trauma if clues remain -------------------
 
-/// Stage the act deck as one terminal act, so `AdvanceAct` latches a Won
-/// resolution. The builder stages no act deck, so it is set on the built state.
-fn with_terminal_act(mut state: GameState) -> GameState {
-    state.act_deck = vec![Act {
-        // Terminal because it is the only act; its reverse reaches R1, which is
-        // what ends the scenario and opens the GameEnd point under test.
-        code: test_support::terminal_code(1),
-        clue_threshold: 1,
-    }];
-    state
+/// The act deck as one terminal act, so `AdvanceAct` latches a Won
+/// resolution. Terminal because it is the only act; its reverse reaches R1,
+/// which is what ends the scenario and opens the `GameEnd` point under test.
+fn terminal_act() -> [StagedAct; 1] {
+    [act(test_support::terminal_code(1), 1)]
 }
 
 /// Terminal-act state whose `AdvanceAct` latches a Won resolution, with a
 /// Cover Up holding `cover_up_clues` in the threat area.
 fn resolving_state(cover_up_clues: u8) -> GameState {
-    with_terminal_act(
-        GameStateBuilder::new()
-            .with_registries(TEST_REGISTRIES)
-            // 1 clue meets the act's clue threshold.
-            .with_seat(
-                seat(1)
-                    .clues(1)
-                    .threat_area([(COVER_UP, clues(cover_up_clues))]),
-            )
-            .open_turn(INV)
-            .with_scenario_id(ScenarioId::new("unknown"))
-            .build(),
-    )
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        // 1 clue meets the act's clue threshold.
+        .with_seat(
+            seat(1)
+                .clues(1)
+                .threat_area([(COVER_UP, clues(cover_up_clues))]),
+        )
+        .open_turn(INV)
+        .with_scenario_id(ScenarioId::new("unknown"))
+        .with_act_deck(terminal_act())
+        .build()
 }
 
 /// `state` with the server-default interactive acknowledge on.
@@ -442,7 +436,7 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
 fn two_simultaneous_game_end_forceds_both_resolve() {
     const INV2: InvestigatorId = InvestigatorId(2);
 
-    let state = with_terminal_act(interactive(
+    let state = interactive(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             // 1 clue meets the act's clue threshold.
@@ -451,8 +445,9 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
             .with_seating([INV, INV2])
             .open_turn(INV)
             .with_scenario_id(ScenarioId::new("unknown"))
+            .with_act_deck(terminal_act())
             .build(),
-    ));
+    );
 
     let session = advance_terminal_act_interactively(state);
 
@@ -502,8 +497,7 @@ const OTHER: InvestigatorId = InvestigatorId(2);
 /// Roland (`INV`) holds Cover Up with 3 clues in his threat area; `OTHER`, seated
 /// as `other`, shares his 2-clue location and has the open turn.
 fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 2;
+    let location = test_support::location(HERE).clues(2);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(holding_cover_up(3))
@@ -553,18 +547,17 @@ fn a_colocated_investigator_discards_from_rolands_cover_up() {
 /// who has the card in his/her threat area"*.
 #[test]
 fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
-    let state = with_terminal_act(
-        GameStateBuilder::new()
-            .with_registries(TEST_REGISTRIES)
-            .with_seat(holding_cover_up(2))
-            // 1 clue meets the act's clue threshold.
-            .with_seat(seat(2).at(HERE).clues(1))
-            .with_location(test_support::test_location(HERE.0, "Study"))
-            .with_seating([INV, OTHER])
-            .open_turn(OTHER)
-            .with_scenario_id(ScenarioId::new("unknown"))
-            .build(),
-    );
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(holding_cover_up(2))
+        // 1 clue meets the act's clue threshold.
+        .with_seat(seat(2).at(HERE).clues(1))
+        .with_location(test_support::location(HERE))
+        .with_seating([INV, OTHER])
+        .open_turn(OTHER)
+        .with_scenario_id(ScenarioId::new("unknown"))
+        .with_act_deck(terminal_act())
+        .build();
 
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
         investigator: OTHER,
@@ -600,12 +593,11 @@ fn traumas(session: &TestSession) -> Vec<(InvestigatorId, TraumaKind)> {
 /// (`glossary/You_Your.md`).
 #[test]
 fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() {
-    let state = with_terminal_act(
-        // 1 clue meets the act's clue threshold.
-        colocated_investigate_board(seat(2).clues(1))
-            .with_scenario_id(ScenarioId::new("unknown"))
-            .build(),
-    );
+    // 1 clue meets the act's clue threshold.
+    let state = colocated_investigate_board(seat(2).clues(1))
+        .with_scenario_id(ScenarioId::new("unknown"))
+        .with_act_deck(terminal_act())
+        .build();
 
     let session = colocated_investigate_and_play_cover_up(state);
     assert_eq!(

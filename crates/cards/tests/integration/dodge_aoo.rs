@@ -30,12 +30,13 @@
 //! horror to it." The trigger is 'when an enemy attack deals damage' with
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
-use game_core::state::{CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
@@ -63,23 +64,11 @@ fn dodge_in_hand(investigator: InvestigatorId) -> OptionTarget {
     }
 }
 
-/// A ready enemy dealing 2 damage / 0 horror, with `max_health`. Engage it
-/// with `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
-    e.attack_damage = 2;
-    e.attack_horror = 0;
-    e.max_health = max_health;
-    e
-}
-
 /// `investigator`'s turn at the Study, which connects to the Hallway, engaged
 /// by a ready attacker with `attacker_health`.
 fn move_board(investigator: Seat, attacker_health: u8) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![HALLWAY];
-    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-    hallway.connections = vec![HERE];
+    let study = test_support::location(HERE).connections(vec![HALLWAY]);
+    let hallway = test_support::location(HALLWAY).connections(vec![HERE]);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -87,7 +76,11 @@ fn move_board(investigator: Seat, attacker_health: u8) -> TestSession {
         .with_location(hallway)
         .with_seat(investigator.at(HERE))
         .open_turn(INV)
-        .with_enemy_engaged(ready_attacker(attacker_health), INV)
+        .with_enemy(
+            attacker(ATTACKER, 2, 0)
+                .health(attacker_health)
+                .engaged_with(INV),
+        )
         .session()
 }
 

@@ -24,13 +24,14 @@
 //! **Working a Hunch (01037):** "Fast. Play only during your turn. … discover 1
 //! clue …" A fast event → `AoO`-exempt.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
-use game_core::state::{CardCode, Enemy, GameStateBuilder, InvestigatorId, LocationId, Status};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, StagedEnemy, TestSession};
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -50,33 +51,21 @@ const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     source: PlaySource::Hand(0),
 };
 
-/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
-/// with `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
-    e.attack_damage = damage;
-    e.attack_horror = 0;
-    e.max_health = max_health;
-    e
-}
-
 /// Investigator 1 at the Study holding `card`, with 3 actions.
 fn holding(card: &str) -> Seat {
     seat(1).at(HERE).hand([card]).actions(3)
 }
 
 /// `investigator`'s turn at the Study (with `clues` clues), engaged by
-/// `attacker` if one is given.
-fn board(investigator: Seat, clues: u8, attacker: Option<Enemy>) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = clues;
+/// `attacker` if one is given — placed at the investigator's location.
+fn board(investigator: Seat, clues: u8, attacker: Option<StagedEnemy>) -> TestSession {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(location)
+        .with_location(location(HERE).clues(clues))
         .with_seat(investigator)
         .open_turn(INV);
     match attacker {
-        Some(enemy) => builder.with_enemy_engaged(enemy, INV),
+        Some(enemy) => builder.with_enemy(enemy.engaged_with(INV)),
         None => builder,
     }
     .session()
@@ -109,7 +98,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
             .hand([EMERGENCY_CACHE])
             .in_play([GUARD_DOG]),
         0,
-        Some(ready_attacker(7, 2, 5)),
+        Some(attacker(7, 2, 0).health(5)),
     );
     let dog = session.state().card(INV, GUARD_DOG);
     let resources_before = session.state().investigators[&INV].resources;
@@ -210,7 +199,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let session = board(
         holding(WORKING_A_HUNCH).in_play([GUARD_DOG]),
         1,
-        Some(ready_attacker(7, 2, 5)),
+        Some(attacker(7, 2, 0).health(5)),
     )
     .take(&PLAY_FIRST);
 
@@ -244,9 +233,13 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
 fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     // Lethal AoO, no soaker / no Dodge → the actor is defeated before the
     // "gain 3 resources" effect can resolve.
-    let result = board(holding(EMERGENCY_CACHE), 0, Some(ready_attacker(7, 50, 5)))
-        .take(&PLAY_FIRST)
-        .finish();
+    let result = board(
+        holding(EMERGENCY_CACHE),
+        0,
+        Some(attacker(7, 50, 0).health(5)),
+    )
+    .take(&PLAY_FIRST)
+    .finish();
     let state = result.state;
 
     assert_ne!(
@@ -290,7 +283,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     let session = board(
         holding(MACHETE).in_play([GUARD_DOG]),
         0,
-        Some(ready_attacker(7, 2, 5)),
+        Some(attacker(7, 2, 0).health(5)),
     );
     let dog = session.state().card(INV, GUARD_DOG);
 
@@ -347,7 +340,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 #[test]
 fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     // Lethal AoO, no soaker / no Dodge → defeated before Machete enters play.
-    let state = board(holding(MACHETE), 0, Some(ready_attacker(7, 50, 5)))
+    let state = board(holding(MACHETE), 0, Some(attacker(7, 50, 0).health(5)))
         .take(&PLAY_FIRST)
         .finish()
         .state;

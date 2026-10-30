@@ -19,7 +19,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup, TestSession};
+use game_core::test_support::{self, seat, BoardLookup, MockRegistry, TestSession};
 
 /// Forced, after any of your tests succeeds by 2 or more: 1 horror.
 const SUCCEED_BY_TWO_OR_MORE: &str = "MOCK-MARGIN-SUCCESS-GE2";
@@ -143,7 +143,7 @@ fn horror_after_test(listener: &str, difficulty: i8) -> u8 {
     let session: TestSession = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([listener]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()
@@ -205,7 +205,7 @@ fn session_after_flip(flip: &str, spare: &str, reaction: &str, difficulty: i8) -
     let session: TestSession = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([flip, spare, reaction]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

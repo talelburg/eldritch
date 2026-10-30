@@ -37,7 +37,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Status,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -55,19 +55,16 @@ const HERE: LocationId = LocationId(1);
 /// it) at their open turn, with `deck` on the encounter deck and `discard` in
 /// the encounter discard, top first, and an auto-fail chaos bag.
 fn board(investigator: Seat, clues: u8, deck: &[&str], discard: &[&str]) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.clues = clues;
-    let mut state = GameStateBuilder::new()
+    let here = test_support::location(HERE).clues(clues);
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(here)
         .with_seat(investigator.at(HERE).hand([DRAWN_TO_THE_FLAME]))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::AutoFail]))
-        .build();
-    // The builder has no encounter-deck setter.
-    state.encounter_deck = deck.iter().map(|&c| CardCode::new(c)).collect();
-    state.encounter_discard = discard.iter().map(|&c| CardCode::new(c)).collect();
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_encounter_deck(deck.iter().copied())
+        .with_encounter_discard(discard.iter().copied())
+        .session()
 }
 
 fn play(session: TestSession) -> TestSession {

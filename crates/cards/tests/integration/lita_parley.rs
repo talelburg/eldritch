@@ -121,18 +121,15 @@ fn board(token: ChaosToken) -> GameStateBuilder {
 /// [`board`] with the investigator seated as `investigator` and Lita as
 /// `lita`.
 fn board_with(investigator: Seat, lita: CardInPlay, token: ChaosToken) -> GameStateBuilder {
-    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
-    parlor.code = CardCode::new(PARLOR);
-    parlor.revealed = true;
-    parlor.cards_at_location.push(lita);
-    let mut hallway = test_support::test_location(HALLWAY_ID.0, "Hallway");
-    hallway.code = CardCode::new("01112");
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
-        .with_location(parlor)
-        .with_location(hallway)
+        .with_location(
+            test_support::location(PARLOR_ID)
+                .as_card(PARLOR)
+                .cards_at_location([lita]),
+        )
+        .with_location(test_support::location(HALLWAY_ID).as_card("01112"))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
 }
@@ -251,10 +248,9 @@ fn a_failed_parley_leaves_her_where_she_is() {
 /// engine's to apply.
 #[test]
 fn the_parley_provokes_no_attack_of_opportunity() {
-    let mut attacker = test_support::test_enemy(100, "Ghoul");
-    attacker.attack_damage = 2;
+    let attacker = test_support::enemy(100).attack_damage(2);
 
-    let result = parley_on(board(ChaosToken::Numeric(0)).with_enemy_engaged(attacker, INV));
+    let result = parley_on(board(ChaosToken::Numeric(0)).with_enemy(attacker.engaged_with(INV)));
     assert_eq!(
         result.state().investigators[&INV].damage(),
         0,
@@ -351,20 +347,21 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
     // her. A spare deck card keeps the round's Upkeep draw off an empty deck.
     let mut lita = lita_at_the_parlor();
     lita.accumulated_damage = 1;
-    let controlled = parley_on(board_with(
-        sharp().at(PARLOR_ID).deck(["01088"]),
-        lita,
-        ChaosToken::Numeric(0),
-    ));
+    // Grasping Hands waits on top of the encounter deck for the next Mythos
+    // phase; nothing draws from it before then.
+    let controlled = parley_on(
+        board_with(
+            sharp().at(PARLOR_ID).deck(["01088"]),
+            lita,
+            ChaosToken::Numeric(0),
+        )
+        .with_encounter_deck([GRASPING_HANDS]),
+    );
     // The bag that let the Parley succeed now rigs the treachery: Agility 3
     // against Grasping Hands' printed 3, minus 2 — a failure by 2, so it
-    // deals 2 damage. The turn's board is re-settled with the new bag and
-    // Grasping Hands on top of the encounter deck.
+    // deals 2 damage. The turn's board is re-settled with the new bag.
     let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state
-        .encounter_deck
-        .push_back(CardCode::new(GRASPING_HANDS));
 
     // The turn ends and the round runs on to the next Mythos phase, whose
     // encounter draw reveals Grasping Hands.

@@ -37,7 +37,7 @@ fn move_to_unconnected_location_is_rejected() {
     // C exists but A is not connected to C.
     let c = LocationId(12);
     let state = move_board(seat(1).at(HERE))
-        .with_location(test_support::test_location(c.0, "C"))
+        .with_location(location(c))
         .build();
     // C is not connected from A → Move to C is not legal.
     assert!(!offers_move(&state, INV, c));
@@ -128,18 +128,15 @@ fn move_with_active_investigator_missing_from_map_rejects() {
 
 #[test]
 fn move_to_a_location_that_is_not_in_play_is_rejected() {
-    let mut state = move_board(seat(1).at(HERE)).build();
+    // Illegally connect the current location to a location that is not in
+    // play; the move must STILL be rejected.
+    let mut state = move_board(seat(1).at(HERE))
+        .with_location(location(HERE).connections([CONNECTED, LocationId(99)]))
+        .build();
     // A set-aside location is a bare code — it has no LocationId at all
     // until it enters play, so the destination below names nothing in
     // `state.locations`.
     state.set_aside_cards.push(CardCode("setaside".into()));
-    // Illegally connect the current location to it; the move must STILL be rejected (not in play).
-    state
-        .locations
-        .get_mut(&HERE)
-        .unwrap()
-        .connections
-        .push(LocationId(99));
     // A dangling connection is out of play → Move to it is not legal.
     assert!(
         !offers_move(&state, INV, LocationId(99)),
@@ -151,10 +148,10 @@ fn move_to_a_location_that_is_not_in_play_is_rejected() {
 fn moving_to_an_unrevealed_location_reveals_it_and_places_clues() {
     // 1 investigator; destination `CONNECTED` is in play but unrevealed with
     // a per-investigator clue value. Entering reveals it and places clues.
-    let mut destination = test_support::test_location(CONNECTED.0, "B");
-    destination.revealed = false;
-    destination.clues = 0;
-    destination.printed_clues = ClueValue::PerInvestigator(2);
+    let destination = location(CONNECTED)
+        .unrevealed()
+        .clues(0)
+        .printed_clues(ClueValue::PerInvestigator(2));
     let session = move_board(seat(1).at(HERE))
         .with_location(destination)
         .session()

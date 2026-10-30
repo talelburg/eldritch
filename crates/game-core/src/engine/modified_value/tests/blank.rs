@@ -15,13 +15,13 @@ const ID: InvestigatorId = InvestigatorId(1);
 /// Investigator 1, printing an elder sign, at [`HERE`] with `in_play`, and the
 /// blanking enemy at `blanker_at`.
 fn board(blanker_at: LocationId, in_play: &[&str]) -> GameState {
-    let mut blanker = test_support::test_enemy(50, "Blanker");
-    blanker.code = CardCode::new("blanks-investigators-here");
-    blanker.current_location = Some(blanker_at);
+    let blanker = enemy(50)
+        .code(CardCode::new("blanks-investigators-here"))
+        .at(blanker_at);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(location(HERE))
+        .with_location(location(ELSEWHERE))
         .with_seat(seat(ID.0).at(HERE).in_play(in_play.iter().copied()))
         .with_enemy(blanker)
         .build();

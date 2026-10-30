@@ -25,10 +25,10 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
     SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 
 const PICKPOCKETING: &str = "01046";
@@ -43,13 +43,6 @@ const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 const GHOUL: EnemyId = EnemyId(100);
 const RAT: EnemyId = EnemyId(101);
-
-/// An evade-2 enemy coded `id`.
-fn enemy(id: EnemyId) -> Enemy {
-    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
-    enemy.evade = 2;
-    enemy
-}
 
 /// Investigator `id` at `HERE` with Pickpocketing in play, agility and
 /// willpower 4, 3 actions, 5 resources and a two-card deck to draw from.
@@ -69,13 +62,13 @@ fn rogue(id: u32) -> Seat {
 fn board(seats: Vec<Seat>, engaged: &[EnemyId], token: ChaosToken) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_chaos_bag(ChaosBag::new([token]));
     for seat in seats {
         builder = builder.with_seat(seat);
     }
     for &id in engaged {
-        builder = builder.with_enemy_engaged(enemy(id), INV);
+        builder = builder.with_enemy(enemy(id).evade(2).engaged_with(INV));
     }
     TestSession::new(builder.open_turn(INV).build(), TEST_REGISTRIES)
 }

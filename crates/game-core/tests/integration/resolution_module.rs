@@ -12,8 +12,8 @@ use game_core::event::Event;
 use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
-use game_core::state::{Act, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, seat, TestSession, TEST_REGISTRY};
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, act, seat, TestSession, TEST_REGISTRY};
 use game_core::{assert_event, assert_no_event};
 
 /// The scenario id the stamp module answers to.
@@ -67,18 +67,13 @@ fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// enough to advance it. A single `AdvanceAct` flips it, and its reverse
 /// latches `Resolution(1)`.
 fn terminal_act_state(clues: u8) -> GameState {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(REGISTRIES)
         .with_seat(seat(1).clues(clues))
         .open_turn(INV)
         .with_scenario_id(ScenarioId::new(STAMP))
-        .build();
-    // No builder setter for the act deck.
-    state.act_deck = vec![Act {
-        code: test_support::terminal_code(1),
-        clue_threshold: 1,
-    }];
-    state
+        .with_act_deck([act(test_support::terminal_code(1), 1)])
+        .build()
 }
 
 /// The stamp scenario after `INV` advances its terminal act.

@@ -326,6 +326,45 @@ pub struct Act {
     pub clue_threshold: u8,
 }
 
+impl Agenda {
+    /// The agenda `metadata` prints, with its printed doom threshold. `None`
+    /// when `metadata` is not an agenda card.
+    ///
+    /// The one place an agenda's threshold is read from its card: a
+    /// scenario's `setup()` builds its agenda deck with it, and so does the
+    /// test-only `with_agenda_deck`.
+    #[must_use]
+    pub fn from_metadata(metadata: &CardMetadata) -> Option<Self> {
+        let CardKind::Agenda { doom_threshold } = metadata.kind else {
+            return None;
+        };
+        Some(Self {
+            code: CardCode::new(metadata.code.clone()),
+            doom_threshold,
+        })
+    }
+}
+
+impl Act {
+    /// The act `metadata` prints, with its printed clue threshold. An act
+    /// that advances on an objective rather than a clue spend prints none,
+    /// which reads as 0. `None` when `metadata` is not an act card.
+    ///
+    /// The one place an act's threshold is read from its card: a scenario's
+    /// `setup()` builds its act deck with it, and so does the test-only
+    /// `with_act_deck`.
+    #[must_use]
+    pub fn from_metadata(metadata: &CardMetadata) -> Option<Self> {
+        let CardKind::Act { clue_threshold, .. } = metadata.kind else {
+            return None;
+        };
+        Some(Self {
+            code: CardCode::new(metadata.code.clone()),
+            clue_threshold: clue_threshold.unwrap_or(0),
+        })
+    }
+}
+
 /// One active lasting effect that is not a modifier: what it does, and when
 /// it stops. Held in [`GameState::lasting_effects`].
 ///
@@ -924,42 +963,22 @@ impl GameState {
         self.windows().next_back()
     }
 
-    /// Build a [`Location`] from its card `metadata`, minting a fresh id.
-    /// Panics if `metadata` is not a `Location` card (a build-time
-    /// invariant — scenarios hand their own location cards).
-    fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
-        let (shroud, printed_clues) = match &metadata.kind {
-            CardKind::Location {
-                shroud,
-                printed_clues,
-                ..
-            } => (*shroud, *printed_clues),
-            other => panic!(
-                "add_location: card {} is not a Location ({other:?})",
-                metadata.code
-            ),
-        };
-        let id = self.location_ids.mint();
-        Location {
-            id,
-            code: CardCode::new(metadata.code.clone()),
-            name: metadata.name.clone(),
-            shroud,
-            clues: 0,
-            revealed: false,
-            printed_clues,
-            connections: Vec::new(),
-            attachments: Vec::new(),
-            cards_at_location: Vec::new(),
-        }
-    }
-
     /// Add a location **into play** from its card metadata, returning the
     /// minted [`LocationId`]. The id is deterministic (construction order),
     /// so scenarios never hand-pick id literals.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `metadata` is not a `Location` card (a build-time invariant
+    /// — scenarios hand their own location cards).
     pub fn add_location(&mut self, metadata: &CardMetadata) -> LocationId {
-        let loc = self.location_from_metadata(metadata);
-        let id = loc.id;
+        let id = self.location_ids.mint();
+        let loc = Location::from_metadata(id, metadata).unwrap_or_else(|| {
+            panic!(
+                "add_location: card {} is not a Location ({:?})",
+                metadata.code, metadata.kind
+            )
+        });
         self.locations.insert(id, loc);
         id
     }

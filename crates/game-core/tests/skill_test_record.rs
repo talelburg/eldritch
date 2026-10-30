@@ -26,7 +26,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, RevealedToken,
     SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 
 const SCENARIO: &str = "skill-test-record-mock";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -88,8 +88,6 @@ fn registries() -> Registries {
 /// instance of each code in `in_play`, drawing only `token`, on their open
 /// turn, with the post-ST.6 acknowledge on so the test pauses there.
 fn board(token: ChaosToken, in_play: &[&str]) -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Here");
-    here.clues = 2;
     let mut state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(
@@ -98,7 +96,7 @@ fn board(token: ChaosToken, in_play: &[&str]) -> GameState {
                 .at(HERE)
                 .in_play(in_play.iter().copied()),
         )
-        .with_location(here)
+        .with_location(test_support::location(HERE).clues(2))
         .with_chaos_bag(ChaosBag::new([token]))
         .with_scenario_id(ScenarioId::new(SCENARIO))
         .open_turn(INV)

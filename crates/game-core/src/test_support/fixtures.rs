@@ -1,21 +1,20 @@
-//! Stock fixture constructors for tests.
+//! Stock fixture constructors behind the stagers, and sample prompts.
 //!
-//! Tests constantly need a "reasonable" investigator or location to
-//! place into a state. These helpers produce one with default-y values;
-//! callers tweak fields after construction when something specific is
-//! needed.
+//! A test stages its board with [`seat`](super::seat), [`enemy`](super::enemy)
+//! and [`location`](super::location); the stock values they start from live
+//! here. A printed code reaches a fixture only through `as_card` (ADR 0016).
+//! The stock enemy and location are crate-private, so the stagers are the door.
 //!
 //! # `#[non_exhaustive]` interaction
 //!
-//! [`Investigator`] and [`Location`] are `#[non_exhaustive]`, so
-//! downstream test crates cannot construct them via struct literal —
-//! they MUST go through these fixtures. That's deliberate (it forces
-//! a single source of test defaults) but it also means **adding a
-//! field to those structs requires updating these fixtures in the
-//! same PR**, otherwise the new field defaults to whatever
-//! `test_investigator` / `test_location` set, which may not match the
-//! field's intent. Reviewers: flag a missing fixture update when a
-//! field addition lands.
+//! [`Investigator`], [`Enemy`] and [`Location`] are `#[non_exhaustive]`, so
+//! downstream test crates cannot construct them via struct literal — they MUST
+//! go through the stagers. That's deliberate (it forces a single source of
+//! test defaults) but it also means **adding a field to those structs requires
+//! updating these fixtures in the same PR**, otherwise the new field defaults
+//! to whatever `test_investigator` / `test_enemy` / `test_location` set, which
+//! may not match the field's intent. Reviewers: flag a missing fixture update
+//! when a field addition lands.
 
 use std::collections::BTreeSet;
 
@@ -77,6 +76,28 @@ pub fn test_investigator(id: u32) -> Investigator {
     }
 }
 
+/// Metadata for a synthetic card `code` named `name`, of `kind`: no traits, no
+/// text, no back, not a weakness.
+///
+/// For an integration binary that registers its own synthetic cards on a
+/// [`MockRegistry`](crate::test_support::MockRegistry). It builds metadata,
+/// not a probe card: the abilities a probe exists for stay in the test file
+/// that reads them.
+#[must_use]
+pub fn test_card_metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
+    CardMetadata {
+        code: code.to_owned(),
+        name: name.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_mock".to_owned(),
+        weakness: None,
+        kind,
+    }
+}
+
 /// Metadata for a stock investigator card printed as `code`: 3 in every
 /// skill, 8 health, 8 sanity, Neutral, no traits, named after its code.
 ///
@@ -85,16 +106,10 @@ pub fn test_investigator(id: u32) -> Investigator {
 /// one ability shape on otherwise identical printed stats.
 #[must_use]
 pub fn test_investigator_card(code: &str) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: code.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: None,
-        kind: CardKind::Investigator {
+    test_card_metadata(
+        code,
+        code,
+        CardKind::Investigator {
             class: Class::Neutral,
             skills: Skills {
                 willpower: 3,
@@ -105,19 +120,17 @@ pub fn test_investigator_card(code: &str) -> CardMetadata {
             health: 8,
             sanity: 8,
         },
-    }
+    )
 }
 
-/// A stock location with reasonable defaults.
+/// The stock location [`location`](super::location) starts from.
 ///
-/// - Shroud 2, 0 clues, revealed.
-/// - No connections (caller adds them).
-/// - `code` defaults to `CardCode("_test_loc_{id}")` — underscore-
-///   prefixed so it can't collide with real `ArkhamDB` codes. Callers
-///   that care about the code (encounter-spawn tests, etc.) should
-///   mutate it directly after construction.
+/// - Shroud 2, a printed clue value of 0, 0 clues, revealed.
+/// - No connections, nothing attached and no cards at it.
+/// - `code` is `CardCode("_test_loc_{id}")` — underscore-prefixed so it
+///   can't collide with real `ArkhamDB` codes.
 #[must_use]
-pub fn test_location(id: u32, name: impl Into<String>) -> Location {
+pub(crate) fn test_location(id: u32, name: impl Into<String>) -> Location {
     Location {
         id: LocationId(id),
         code: CardCode(format!("_test_loc_{id}")),
@@ -132,28 +145,25 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
     }
 }
 
-/// A stock enemy with reasonable defaults.
+/// The stock enemy [`enemy`](super::enemy) starts from.
 ///
 /// - Fight 2, Evade 2, max-health 2, no damage.
 /// - Attack pattern: 1 damage / 0 horror.
 /// - Not spawned (`current_location: None`), ready, unengaged.
 /// - A synthetic code (`_test_enemy_{id}`) with no printed card behind it, so
-///   it has no traits. A test whose rules depend on a trait sets
-///   [`code`](Enemy::code) to a real card's.
+///   it has no traits.
 /// - Owned by the **encounter deck** ([`Owner::EncounterDeck`]) — the owner of
 ///   an enemy drawn from the encounter deck, which is where every enemy but a
-///   weakness comes from. A test about a weakness enemy sets
-///   [`owner`](Enemy::owner) to its bearer.
+///   weakness comes from.
 ///
-/// Mutate fields directly after construction to customize. It is built by
-/// `Enemy::from_metadata`, the constructor a spawn uses, so a field added
-/// there reaches this fixture too.
+/// It is built by `Enemy::from_metadata`, the constructor a spawn uses, so a
+/// field added there reaches this fixture too.
 ///
 /// # Panics
 ///
 /// Never: the metadata it builds is an enemy card's.
 #[must_use]
-pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
+pub(crate) fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
     let code = format!("_test_enemy_{id}");
     let metadata = CardMetadata {
         code: code.clone(),

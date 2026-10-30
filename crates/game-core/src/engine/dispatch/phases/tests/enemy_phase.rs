@@ -1,8 +1,8 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::{EngineOutcome, OptionTarget};
-use crate::state::{Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
-use crate::test_support::{self, Seat, TEST_REGISTRIES};
+use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
+use crate::test_support::{self, enemy, location, Seat, StagedEnemy, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -11,35 +11,28 @@ const HERE: LocationId = LocationId(10);
 /// Investigator 1's open turn at [`HERE`], engaged by `attackers`. Taking
 /// `EndTurn` ends the Investigation phase, so the Enemy phase's attack step
 /// (3.3) runs against them.
-fn attacked_on_end_turn(investigator: Seat, attackers: Vec<Enemy>) -> GameStateBuilder {
+fn attacked_on_end_turn(investigator: Seat, attackers: Vec<StagedEnemy>) -> GameStateBuilder {
     attackers.into_iter().fold(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE))
             // A filler deck so Upkeep 4.4's draw doesn't deal deck-out horror.
             .with_seat(investigator.at(HERE).deck(["filler0"]))
             .open_turn(INV),
-        |builder, enemy| builder.with_enemy_engaged(enemy, INV),
+        |builder, enemy| builder.with_enemy(enemy.engaged_with(INV)),
     )
 }
 
 /// A ready enemy dealing `damage` damage and no horror.
-fn attacker(id: u32, name: &str, damage: u8) -> Enemy {
-    let mut enemy = test_support::test_enemy(id, name);
-    enemy.attack_damage = damage;
-    enemy.attack_horror = 0;
-    enemy
+fn attacker(id: u32, name: &str, damage: u8) -> StagedEnemy {
+    enemy(id).name(name).attack_damage(damage)
 }
 
 #[test]
 fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
-    let mut loc_a = test_support::test_location(1, "A");
-    let mut loc_b = test_support::test_location(2, "B");
-    loc_a.connections = vec![LocationId(2)];
-    loc_b.connections = vec![LocationId(1)];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(LocationId(1));
+    let loc_a = location(1).connections(vec![LocationId(2)]);
+    let loc_b = location(2).connections(vec![LocationId(1)]);
+    let hunter = enemy(1).hunter().at(LocationId(1));
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -64,17 +57,11 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
 }
 #[test]
 fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
-    let mut loc_a = test_support::test_location(1, "A");
-    let mut loc_b = test_support::test_location(2, "B");
-    let mut loc_c = test_support::test_location(3, "C");
-    let mut loc_d = test_support::test_location(4, "D");
-    loc_a.connections = vec![LocationId(2), LocationId(3)];
-    loc_b.connections = vec![LocationId(1), LocationId(4)];
-    loc_c.connections = vec![LocationId(1), LocationId(4)];
-    loc_d.connections = vec![LocationId(2), LocationId(3)];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(LocationId(1));
+    let loc_a = location(1).connections(vec![LocationId(2), LocationId(3)]);
+    let loc_b = location(2).connections(vec![LocationId(1), LocationId(4)]);
+    let loc_c = location(3).connections(vec![LocationId(1), LocationId(4)]);
+    let loc_d = location(4).connections(vec![LocationId(2), LocationId(3)]);
+    let hunter = enemy(1).hunter().at(LocationId(1));
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -136,8 +123,7 @@ fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
 #[test]
 fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
     // Engaged but exhausted — must NOT attack.
-    let mut e1 = attacker(1, "Exhausted Engaged", 5);
-    e1.exhausted = true;
+    let e1 = attacker(1, "Exhausted Engaged", 5).exhausted();
 
     // Ready but unengaged (and off the board) — must NOT attack.
     let e2 = attacker(2, "Ready Unengaged", 5);
@@ -335,12 +321,8 @@ fn enemy_phase_with_two_investigators_iterates_in_player_order() {
     // DamagePlacedOnInvestigator per investigator (id1 before id2).
     let id1 = InvestigatorId(1);
     let id2 = InvestigatorId(2);
-    let mut e1 = test_support::test_enemy(1, "Enemy 1");
-    e1.engaged_with = Some(id1);
-    e1.attack_damage = 1;
-    let mut e2 = test_support::test_enemy(2, "Enemy 2");
-    e2.engaged_with = Some(id2);
-    e2.attack_damage = 1;
+    let e1 = enemy(1).engaged_with(id1).attack_damage(1);
+    let e2 = enemy(2).engaged_with(id2).attack_damage(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -377,15 +359,9 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
     let id1 = InvestigatorId(1);
     let id2 = InvestigatorId(2);
     let id3 = InvestigatorId(3);
-    let mut e1 = test_support::test_enemy(1, "Enemy 1");
-    e1.engaged_with = Some(id1);
-    e1.attack_damage = 1;
-    let mut e2 = test_support::test_enemy(2, "Enemy 2");
-    e2.engaged_with = Some(id2);
-    e2.attack_damage = 1;
-    let mut e3 = test_support::test_enemy(3, "Enemy 3");
-    e3.engaged_with = Some(id3);
-    e3.attack_damage = 1;
+    let e1 = enemy(1).engaged_with(id1).attack_damage(1);
+    let e2 = enemy(2).engaged_with(id2).attack_damage(1);
+    let e3 = enemy(3).engaged_with(id3).attack_damage(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -452,9 +428,7 @@ fn enemy_phase_attack_lands_in_full_cascade() {
     // cascade; attack lands inside the BeforeInvestigatorAttacked continuation.
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 1;
+    let enemy = enemy(1).engaged_with(inv_id).attack_damage(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -545,9 +519,7 @@ fn enemy_phase_resumes_via_skip_input() {
     // resume mechanism this test exercises.
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
-    let mut enemy = test_support::test_enemy(1, "Test Enemy");
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 1;
+    let enemy = enemy(1).engaged_with(inv_id).attack_damage(1);
     // active_investigator defaults to None. The EnemyPhase anchor
     // sits beneath the synthetic BeforeInvestigatorAttacked window staged
     // above it; the window's close routes to anchor_on_child_pop.

@@ -330,13 +330,12 @@ fn non_resolve_input_action_while_mulligan_pending_is_rejected() {
     // the engine refuses Move/Investigate/etc. until every investigator
     // has submitted their mulligan choice. Without an InvestigatorTurn
     // frame, no open-turn actions are legal.
-    let mut here = test_support::test_location(HERE.0, "A");
-    here.connections = vec![CONNECTED];
+    let here = location(HERE).connections(vec![CONNECTED]);
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(here)
-        .with_location(test_support::test_location(CONNECTED.0, "B"))
+        .with_location(location(CONNECTED))
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_seating([INV])

@@ -8,11 +8,14 @@ use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
-    let mut state = GameStateBuilder::new().build();
-    state.rng = RngState::new(42);
-    state.encounter_deck.push_back(CardCode("a".into()));
-    state.encounter_deck.push_back(CardCode("b".into()));
-    state.encounter_deck.push_back(CardCode("c".into()));
+    let mut state = GameStateBuilder::new()
+        .with_rng(RngState::new(42))
+        .with_encounter_deck([
+            CardCode("a".into()),
+            CardCode("b".into()),
+            CardCode("c".into()),
+        ])
+        .build();
 
     let mut events = Vec::new();
     shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
@@ -34,10 +37,9 @@ fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
 #[test]
 fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
     for n in 0..=1 {
-        let mut state = GameStateBuilder::new().build();
-        for i in 0..n {
-            state.encounter_deck.push_back(CardCode(format!("c{i}")));
-        }
+        let mut state = GameStateBuilder::new()
+            .with_encounter_deck((0..n).map(|i| CardCode(format!("c{i}"))))
+            .build();
         let mut events = Vec::new();
         shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
         assert!(events.is_empty(), "expected no event for n={n} deck");
@@ -46,11 +48,10 @@ fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
 
 #[test]
 fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
-    let mut state = GameStateBuilder::new().build();
-    state.rng = RngState::new(7);
-    for i in 0..5 {
-        state.encounter_discard.push(CardCode(format!("d{i}")));
-    }
+    let mut state = GameStateBuilder::new()
+        .with_rng(RngState::new(7))
+        .with_encounter_discard((0..5).map(|i| CardCode(format!("d{i}"))))
+        .build();
 
     let mut events = Vec::new();
     reshuffle_encounter_discard(&mut Cx::for_test(&mut state, &mut events));
@@ -68,8 +69,9 @@ fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
 
 #[test]
 fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
-    let mut state = GameStateBuilder::new().build();
-    state.encounter_discard.push(CardCode("solo".into()));
+    let mut state = GameStateBuilder::new()
+        .with_encounter_discard([CardCode("solo".into())])
+        .build();
 
     let mut events = Vec::new();
     reshuffle_encounter_discard(&mut Cx::for_test(&mut state, &mut events));
@@ -81,10 +83,13 @@ fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
 
 #[test]
 fn draw_encounter_top_drains_deck_then_returns_none() {
-    let mut state = GameStateBuilder::new().build();
-    state.encounter_deck.push_back(CardCode("a".into()));
-    state.encounter_deck.push_back(CardCode("b".into()));
-    state.encounter_deck.push_back(CardCode("c".into()));
+    let mut state = GameStateBuilder::new()
+        .with_encounter_deck([
+            CardCode("a".into()),
+            CardCode("b".into()),
+            CardCode("c".into()),
+        ])
+        .build();
 
     let mut events = Vec::new();
 
@@ -112,11 +117,14 @@ fn draw_encounter_top_drains_deck_then_returns_none() {
 
 #[test]
 fn draw_encounter_top_reshuffles_discard_on_empty_deck() {
-    let mut state = GameStateBuilder::new().build();
-    state.rng = RngState::new(13);
-    state.encounter_discard.push(CardCode("x".into()));
-    state.encounter_discard.push(CardCode("y".into()));
-    state.encounter_discard.push(CardCode("z".into()));
+    let mut state = GameStateBuilder::new()
+        .with_rng(RngState::new(13))
+        .with_encounter_discard([
+            CardCode("x".into()),
+            CardCode("y".into()),
+            CardCode("z".into()),
+        ])
+        .build();
 
     let mut events = Vec::new();
     let drawn = draw_encounter_top(&mut Cx::for_test(&mut state, &mut events));
@@ -156,11 +164,10 @@ fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
 
 #[test]
 fn engine_record_encounter_deck_shuffled_drives_shuffle() {
-    let mut state = GameStateBuilder::new().build();
-    state.rng = RngState::new(99);
-    for i in 0..4 {
-        state.encounter_deck.push_back(CardCode(format!("c{i}")));
-    }
+    let state = GameStateBuilder::new()
+        .with_rng(RngState::new(99))
+        .with_encounter_deck((0..4).map(|i| CardCode(format!("c{i}"))))
+        .build();
     let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
 
     let result = engine::apply(
@@ -188,11 +195,10 @@ fn engine_record_encounter_deck_shuffled_drives_shuffle() {
 #[test]
 fn encounter_deck_shuffle_is_deterministic_from_seed() {
     fn shuffle_with_seed(seed: u64) -> Vec<CardCode> {
-        let mut state = GameStateBuilder::new().build();
-        state.rng = RngState::new(seed);
-        for i in 0..10 {
-            state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
-        }
+        let mut state = GameStateBuilder::new()
+            .with_rng(RngState::new(seed))
+            .with_encounter_deck((0..10).map(|i| CardCode(format!("c{i:02}"))))
+            .build();
         let mut events = Vec::new();
         shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
         state.encounter_deck.iter().cloned().collect()

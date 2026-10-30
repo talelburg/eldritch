@@ -6,9 +6,9 @@ const ENGAGED: EnemyId = EnemyId(200);
 
 /// `mover`'s Move board with `enemy` engaged with them at the origin, taking
 /// the Move: the session rests where play goes after it.
-fn move_engaged_with(mover: Seat, enemy: Enemy) -> TestSession {
+fn move_engaged_with(mover: Seat, enemy: StagedEnemy) -> TestSession {
     move_board(mover)
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .session()
         .take(&MOVE_TO_CONNECTED)
 }
@@ -58,7 +58,7 @@ fn aoo_lethal_horror_defeats_investigator_during_investigate_and_cancels_test() 
     // horror. Investigator has 1 sanity remaining (accumulated_horror=7;
     // max_sanity() = 8 from TEST_INV), so 1 horror drives them insane.
     let result = investigate_board(seat(1).at(HERE).harm(0, 7), 2, 2)
-        .with_enemy_engaged(attacker(400, 0, 1), INV)
+        .with_enemy(attacker(400, 0, 1).engaged_with(INV))
         .session()
         .take(&TurnAction::Investigate { investigator: INV })
         .finish();
@@ -106,8 +106,8 @@ fn defeated_investigator_does_not_take_further_damage() {
     // at the loop top early-breaks before the second attacks (no re-prompt).
     // max_health()=8 from TEST_INV; 7 + 5 = 12 >= 8 = defeated.
     let r2 = move_board(seat(1).at(HERE).harm(7, 0))
-        .with_enemy_engaged(attacker(ENGAGED.0, 5, 0), INV)
-        .with_enemy_engaged(attacker(201, 5, 0), INV)
+        .with_enemy(attacker(ENGAGED.0, 5, 0).engaged_with(INV))
+        .with_enemy(attacker(201, 5, 0).engaged_with(INV))
         .session()
         .take(&MOVE_TO_CONNECTED)
         .pick(OptionTarget::Enemy(ENGAGED))
@@ -237,7 +237,7 @@ fn all_investigators_eliminated_fires_only_when_last_active_falls() {
         .with_seat(seat(2))
         .with_chaos_bag(bag_only_zero())
         .with_seating([INV, inv2])
-        .with_enemy_engaged(attacker(500, 1, 0), INV)
+        .with_enemy(attacker(500, 1, 0).engaged_with(INV))
         .session();
 
     // inv1 moves → AoO defeats them. inv2 is still Active, and play goes on
@@ -263,7 +263,7 @@ fn with_inv_defeated(board: GameStateBuilder) -> GameState {
 #[test]
 fn defeated_investigator_cannot_move() {
     let state = with_inv_defeated(
-        move_board(seat(1).at(HERE)).with_enemy_engaged(attacker(ENGAGED.0, 1, 0), INV),
+        move_board(seat(1).at(HERE)).with_enemy(attacker(ENGAGED.0, 1, 0).engaged_with(INV)),
     );
     // Defeated status → Move is not legal.
     assert!(!legal_actions(&state, &TEST_REGISTRY)

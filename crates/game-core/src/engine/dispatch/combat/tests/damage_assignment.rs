@@ -1,6 +1,5 @@
 use super::*;
-use crate::test_support::SeatLookup as _;
-use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{BoardLookup as _, TEST_REGISTRIES};
 
 #[test]
 fn place_assignment_accumulates_on_asset_and_investigator() {

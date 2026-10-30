@@ -6,7 +6,7 @@
 
 use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, seat, SeatLookup as _};
+use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;

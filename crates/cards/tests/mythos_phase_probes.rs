@@ -38,8 +38,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::Registries;
-use game_core::engine::{self, PromptNature};
+use game_core::engine::{self, PromptNature, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -115,8 +114,7 @@ fn choice_revelation() -> Vec<Ability> {
 /// to [`seat_and_open`](engine::seat_and_open). No act or agenda deck: nothing
 /// here discovers a clue or places doom.
 fn board() -> GameState {
-    let mut location = test_support::test_location(HERE.0, "Probe Location");
-    location.code = CardCode::new(PROBE_LOCATION);
+    let location = test_support::location(HERE).code(PROBE_LOCATION);
 
     let mut state = GameStateBuilder::new()
         .with_registries(registries())

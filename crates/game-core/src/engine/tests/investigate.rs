@@ -133,8 +133,9 @@ fn investigate_on_an_unrevealed_location_is_rejected() {
     // An unrevealed location is not yet investigatable (Rules Reference
     // p.14). In practice unreachable (entering reveals), but the gate
     // makes the rule explicit.
-    let mut state = investigate_board(seat(1).at(HERE), 2, 2).build();
-    state.locations.get_mut(&HERE).unwrap().revealed = false;
+    let state = investigate_board(seat(1).at(HERE), 2, 2)
+        .with_location(location(HERE).clues(2).shroud(2).unrevealed())
+        .build();
     // Unrevealed location → Investigate is not legal.
     assert!(
         !offers_investigate(&state, INV),

@@ -15,7 +15,9 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, seat, uses, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, seat, uses, BoardLookup as _, MockRegistry, Seat, TestSession,
+};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -190,13 +192,10 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
 }
 
 fn board_with_cop(enemy_at_loc: bool) -> GameState {
-    let mut builder = board(seat(1).at(HERE).in_play([COP]))
-        .with_location(test_support::test_location(HERE.0, "A"));
+    let mut builder =
+        board(seat(1).at(HERE).in_play([COP])).with_location(test_support::location(HERE));
     if enemy_at_loc {
-        let mut e = test_support::test_enemy(GHOUL.0, "Ghoul");
-        e.max_health = 3;
-        e.current_location = Some(HERE);
-        builder = builder.with_enemy(e);
+        builder = builder.with_enemy(test_support::enemy(GHOUL).health(3).at(HERE));
     }
     builder.build()
 }

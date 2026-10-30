@@ -23,16 +23,16 @@
 //! enemy has as much or more damage on it as it has health, that enemy is
 //! defeated and placed on the encounter discard pile (or on its owner's discard
 //! pile if it is a weakness)."* Printed health 3, fight 2.
-use card_dsl::card_data::CardKind;
+
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy,
-    EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy, EnemyId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 
 const ACOLYTE: &str = "01102";
 const MACHETE: &str = "01020";
@@ -72,7 +72,7 @@ fn drawn_by_the_draw_action_it_spawns_engaged_with_its_bearer() {
     let bearer = InvestigatorId(1);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).actions(3).deck([ACOLYTE, FILLER]))
         .open_turn(bearer)
         .session();
@@ -98,21 +98,15 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
     // The bearer draws it, then ends their turn engaged with it: that runs
     // into the Enemy phase, where the Acolyte attacks. Filler cards so Upkeep
     // 4.4's draw does not deal empty-deck horror.
-    let mut state = GameStateBuilder::new()
+    let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).deck([ACOLYTE, FILLER, FILLER]))
         .open_turn(bearer)
-        .build();
-    // The builder stages no agenda.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
+        .with_agenda_deck(["01105"])
+        .session();
 
-    let session = draw_the_acolyte(TestSession::new(state, TEST_REGISTRIES), bearer)
-        .take(&TurnAction::EndTurn);
+    let session = draw_the_acolyte(session, bearer).take(&TurnAction::EndTurn);
 
     // 2, not 1: the `EndTurn` cascade runs on through Upkeep into the next
     // round's Mythos, whose step 1.2 places a doom of its own before parking on
@@ -146,15 +140,10 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
     let bearer = InvestigatorId(1);
     let fighter = InvestigatorId(2);
 
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![THERE];
-    let mut hallway = test_support::test_location(THERE.0, "Hallway");
-    hallway.connections = vec![HERE];
-
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(study)
-        .with_location(hallway)
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -239,15 +228,10 @@ fn readied_beside_only_the_other_investigator_it_engages_no_one() {
     let bearer = InvestigatorId(1);
     let other = InvestigatorId(2);
 
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![THERE];
-    let mut hallway = test_support::test_location(THERE.0, "Hallway");
-    hallway.connections = vec![HERE];
-
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(study)
-        .with_location(hallway)
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -307,39 +291,26 @@ fn readied_beside_only_the_other_investigator_it_engages_no_one() {
 /// It stands at the Study with the other investigator, its bearer at
 /// the Hallway next door: the other investigator does not hold it in place, and
 /// it moves to its bearer and engages them. The Acolyte is placed on the board
-/// as a draw mints it, with its keywords and prey read from the corpus.
+/// as a draw mints it: the printed card, owned by its bearer.
 #[test]
 fn in_the_enemy_phase_it_hunts_its_bearer_past_the_investigator_beside_it() {
     let bearer = InvestigatorId(1);
     let other = InvestigatorId(2);
     let acolyte = EnemyId(50);
 
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![THERE];
-    let mut hallway = test_support::test_location(THERE.0, "Hallway");
-    hallway.connections = vec![HERE];
-
-    let CardKind::Enemy { hunter, prey, .. } = cards::by_code(ACOLYTE)
-        .expect("the Acolyte in the corpus")
-        .kind
-    else {
-        panic!("01102 is an enemy")
-    };
-    let mut enemy = test_support::test_enemy(acolyte.0, "Silver Twilight Acolyte");
-    enemy.code = CardCode::new(ACOLYTE);
-    enemy.hunter = hunter;
-    enemy.prey = prey;
-    enemy.owner = Owner::Investigator(bearer);
-    enemy.current_location = Some(HERE);
-
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(study)
-        .with_location(hallway)
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE]))
         .with_seat(seat(1).at(THERE).deck([FILLER, FILLER]))
         .with_seat(seat(2).at(HERE).deck([FILLER, FILLER]))
         .with_seating([bearer, other])
-        .with_enemy(enemy)
+        .with_enemy(
+            enemy(acolyte)
+                .as_card(ACOLYTE)
+                .owner(Owner::Investigator(bearer))
+                .at(HERE),
+        )
         .open_turn(other)
         .session()
         .take(&TurnAction::EndTurn);

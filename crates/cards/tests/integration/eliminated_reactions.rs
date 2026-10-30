@@ -13,10 +13,8 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, TimingEvent};
-use game_core::state::{
-    Act, CardCode, EnemyId, GameStateBuilder, InvestigatorId, Location, LocationId, Status,
-};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Status};
+use game_core::test_support::{location, seat, TestSession};
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -31,8 +29,7 @@ const HALLWAY: LocationId = LocationId(2);
 /// a defeated Roland cannot take the action that defeats one, and the control
 /// must reach the window the same way for only his status to separate the two.
 fn roland_defeats_an_enemy(status: Status) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = 1;
+    let study = location(HERE).clues(1);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card("01001").at(HERE).status(status))
@@ -79,28 +76,16 @@ fn an_eliminated_investigator_is_offered_no_reaction() {
 /// eliminated. 01109: *"Objective - When the round ends, investigators in the
 /// hallway may, as a group, spend the requisite number of clues to advance."*
 fn barrier_table_with_seat_1_eliminated() -> TestSession {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).status(Status::Defeated))
         // A spare deck card so Upkeep step 4.4's draw has something to take.
         .with_seat(seat(2).at(HALLWAY).clues(3).deck(["01088"]))
-        .with_location(Location::new(
-            HALLWAY,
-            CardCode::new("01112"),
-            "Hallway",
-            1,
-            0,
-        ))
+        .with_location(location(HALLWAY).as_card("01112"))
         .with_seating([SEAT_1, SEAT_2])
         .open_turn(SEAT_2)
-        .build();
-    // The builder stages no act deck.
-    state.act_deck = vec![Act {
-        code: CardCode::new("01109"),
-        clue_threshold: 3,
-    }];
-    state.act_index = 0;
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_act_deck(["01109"])
+        .session()
 }
 
 #[test]

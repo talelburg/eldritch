@@ -21,9 +21,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, TestSession};
 
 use crate::common::with_attic;
 
@@ -42,28 +42,19 @@ const STAY_ENGAGED: usize = 1;
 const MOVE: usize = 0;
 const STAY: usize = 1;
 
-/// An evade-2 enemy.
-fn enemy(id: EnemyId) -> Enemy {
-    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
-    enemy.evade = 2;
-    enemy
-}
-
 /// Investigator 1 at the Study with Survival Instinct in hand, stock agility 3,
 /// at their open turn. The Study connects to each of `connections`; each of
-/// `engaged` is engaged with them; the bag holds only `token`.
+/// `engaged` (evade 2) is engaged with them; the bag holds only `token`.
 fn board(connections: &[LocationId], engaged: &[EnemyId], token: ChaosToken) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = connections.to_vec();
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(study)
-        .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
-        .with_location(test_support::test_location(CELLAR.0, "Cellar"))
+        .with_location(location(HERE).connections(connections.iter().copied()))
+        .with_location(location(HALLWAY))
+        .with_location(location(CELLAR))
         .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
         .with_chaos_bag(ChaosBag::new([token]));
     for &id in engaged {
-        builder = builder.with_enemy_engaged(enemy(id), INV);
+        builder = builder.with_enemy(enemy(id).evade(2).engaged_with(INV));
     }
     builder.open_turn(INV).session()
 }
@@ -79,7 +70,8 @@ fn evade_committing(session: TestSession) -> TestSession {
         .commit(&[SURVIVAL_INSTINCT])
 }
 
-fn location(session: &TestSession) -> Option<LocationId> {
+/// Where investigator 1 stands.
+fn standing_at(session: &TestSession) -> Option<LocationId> {
     session.state().investigators[&INV].current_location
 }
 
@@ -107,7 +99,7 @@ fn disengaging_and_moving_leaves_the_other_enemy_behind() {
     let session = session.pick_nth(MOVE);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HALLWAY));
+    assert_eq!(standing_at(&session), Some(HALLWAY));
     assert_eq!(
         engaged_with(&session, RAT),
         None,
@@ -128,7 +120,7 @@ fn disengaging_without_moving_lets_the_other_enemy_engage_again() {
         .pick_nth(STAY);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HERE));
+    assert_eq!(standing_at(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
     assert_eq!(
         engaged_with(&session, GHOUL),
@@ -146,7 +138,7 @@ fn moving_without_disengaging_brings_the_engaged_enemy_along() {
         .pick_nth(MOVE);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HALLWAY));
+    assert_eq!(standing_at(&session), Some(HALLWAY));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
     assert_eq!(
         session.state().enemies[&RAT].current_location,
@@ -161,7 +153,7 @@ fn declining_both_changes_nothing_but_the_evasion() {
         .pick_nth(STAY);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HERE));
+    assert_eq!(standing_at(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
 }
 
@@ -175,7 +167,7 @@ fn with_no_other_enemy_only_the_move_is_offered() {
     let session = session.pick_nth(MOVE);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HALLWAY));
+    assert_eq!(standing_at(&session), Some(HALLWAY));
 }
 
 /// With two connecting locations, the move asks which.
@@ -189,7 +181,7 @@ fn the_move_goes_to_a_chosen_connecting_location() {
     let session = session.pick(OptionTarget::Location(CELLAR));
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(CELLAR));
+    assert_eq!(standing_at(&session), Some(CELLAR));
 }
 
 /// With no connecting location and no other enemy, the card has nothing to
@@ -199,7 +191,7 @@ fn with_nowhere_to_go_and_no_other_enemy_nothing_is_asked() {
     let session = evade_committing(board(&[], &[GHOUL], ChaosToken::Numeric(0)));
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HERE));
+    assert_eq!(standing_at(&session), Some(HERE));
 }
 
 /// A failed evasion leaves the card inert: 3 + 1 - 3 = 1 against evade 2.
@@ -208,7 +200,7 @@ fn a_failed_evasion_is_inert() {
     let session = evade_committing(board(&[HALLWAY], &[GHOUL, RAT], ChaosToken::Numeric(-3)));
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HERE));
+    assert_eq!(standing_at(&session), Some(HERE));
     assert_eq!(engaged_with(&session, GHOUL), Some(INV));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
 }
@@ -221,7 +213,7 @@ fn a_successful_test_other_than_an_evasion_is_inert() {
         .commit(&[SURVIVAL_INSTINCT]);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(HERE));
+    assert_eq!(standing_at(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
 }
 
@@ -235,13 +227,13 @@ fn a_successful_test_other_than_an_evasion_is_inert() {
 fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
         .with_seat(seat(2).at(HERE))
         .with_seating([INV, INV2])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_enemy_engaged(enemy(GHOUL), INV)
-        .with_enemy_engaged(enemy(RAT), INV)
+        .with_enemy(enemy(GHOUL).evade(2).engaged_with(INV))
+        .with_enemy(enemy(RAT).evade(2).engaged_with(INV))
         .open_turn(INV)
         .session();
     let (session, attic) = with_attic(session, &[HERE]);
@@ -249,7 +241,7 @@ fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
     let session = evade_committing(session).pick_nth(DISENGAGE).pick_nth(MOVE);
 
     session.assert_at_turn_menu(INV);
-    assert_eq!(location(&session), Some(attic));
+    assert_eq!(standing_at(&session), Some(attic));
     assert_eq!(engaged_with(&session, RAT), Some(INV2));
     assert_eq!(session.state().investigators[&INV].horror(), 1);
     assert_event_sequence!(

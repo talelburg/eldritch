@@ -13,7 +13,7 @@ use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
-use game_core::test_support::{seat, SeatLookup as _, TestSession};
+use game_core::test_support::{seat, BoardLookup as _, TestSession};
 
 const RABBITS_FOOT: &str = "01075";
 /// The card on top of the deck, for the draw to find.

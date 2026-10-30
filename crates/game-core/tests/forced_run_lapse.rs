@@ -21,7 +21,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// `Forced - At the end of the round: Discover 2 clues at your location.`
 /// Empties [`LOCATION`], which holds [`LOCATION_CLUES`].
@@ -73,11 +73,9 @@ fn registries() -> Registries {
 /// threat area, at the end of round 1: settling runs the Upkeep phase end
 /// into the round-end coordinator, which offers the lead the forced run.
 fn round_ends_holding(codes: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(LOCATION.0, "Mock location");
-    location.clues = LOCATION_CLUES;
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(location)
+        .with_location(test_support::location(LOCATION).clues(LOCATION_CLUES))
         .with_seat(seat(1).at(LOCATION).threat_area(codes.iter().copied()))
         .with_seating([INV])
         .with_round(1)

@@ -27,7 +27,6 @@
 //! defeat an enemy: Discover 1 clue at your location. (Limit once per round.)
 //! / \[`elder_sign`\] effect: +1 for each clue on your location."*
 
-use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{self, Ability, GrantTarget, InvestigatorTarget, SkillTestKind};
 use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
@@ -38,10 +37,11 @@ use game_core::engine::{
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{enemy, location, seat, Printed, Seat, StagedEnemy, TestSession};
+
 use game_core::{assert_event, assert_no_event};
 
 const STUBBORN_DETECTIVE: &str = "01103";
@@ -88,48 +88,27 @@ const REGISTRIES: Registries = Registries {
     scenarios: &ScenarioRegistry::EMPTY,
 };
 
-/// Stubborn Detective at `at`, owned by `bearer`, with its printed keywords
-/// and prey read from the corpus (the fixture's fight and evade stand in for
-/// his printed 3 and 2; no test here turns on them). Exhausted, so nothing engages him by
-/// accident; his constant reads where he is, not whether he is ready.
-fn the_detective(at: LocationId, bearer: InvestigatorId) -> Enemy {
-    let meta = cards::by_code(STUBBORN_DETECTIVE).expect("Stubborn Detective in the corpus");
-    let CardKind::Enemy { hunter, prey, .. } = meta.kind else {
-        panic!("01103 is an enemy")
-    };
-    let mut enemy = test_support::test_enemy(DETECTIVE.0, "Stubborn Detective");
-    enemy.code = CardCode::new(STUBBORN_DETECTIVE);
-    enemy.hunter = hunter;
-    enemy.prey = prey;
-    enemy.owner = Owner::Investigator(bearer);
-    enemy.current_location = Some(at);
-    enemy.exhausted = true;
-    enemy
+/// The printed Stubborn Detective at `at`, owned by `bearer`, ready. A test
+/// that only needs his constant stages him exhausted, so nothing engages him
+/// by accident: the constant reads where he is, not whether he is ready.
+fn the_detective(at: LocationId, bearer: InvestigatorId) -> StagedEnemy<Printed> {
+    enemy(DETECTIVE)
+        .as_card(STUBBORN_DETECTIVE)
+        .owner(Owner::Investigator(bearer))
+        .at(at)
 }
 
 /// A 1-health enemy Roland's Fight defeats on a `0` token.
-fn a_ghoul() -> Enemy {
-    let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
-    ghoul.fight = 1;
-    ghoul.max_health = 1;
-    ghoul
-}
-
-/// A location named `name` at `id` with `clues` on it, connected to
-/// `connections`.
-fn location(id: LocationId, name: &str, clues: u8, connections: &[LocationId]) -> Location {
-    let mut location = test_support::test_location(id.0, name);
-    location.clues = clues;
-    location.connections = connections.to_vec();
-    location
+fn a_ghoul() -> StagedEnemy {
+    enemy(GHOUL).fight(1).health(1)
 }
 
 /// HERE and THERE, connected, two clues on each; a chaos bag of `token`.
 fn two_rooms(token: ChaosToken) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(location(HERE, "Study", 2, &[THERE]))
-        .with_location(location(THERE, "Hallway", 2, &[HERE]))
+        .with_location(location(HERE).clues(2).connections([THERE]))
+        .with_location(location(THERE).clues(2).connections([HERE]))
         .with_chaos_bag(ChaosBag::new([token]))
 }
 
@@ -137,8 +116,8 @@ fn two_rooms(token: ChaosToken) -> GameStateBuilder {
 fn roland_engaged_with_a_ghoul(detective_at: LocationId) -> GameState {
     two_rooms(ChaosToken::Numeric(0))
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(a_ghoul(), INV)
-        .with_enemy(the_detective(detective_at, INV))
+        .with_enemy(a_ghoul().engaged_with(INV))
+        .with_enemy(the_detective(detective_at, INV).exhausted())
         .open_turn(INV)
         .build()
 }
@@ -215,7 +194,7 @@ fn rolands_elder_sign_contributes_nothing_with_the_detective_at_his_location() {
     let session = elder_sign_test(
         two_rooms(ChaosToken::ElderSign)
             .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-            .with_enemy(the_detective(HERE, INV))
+            .with_enemy(the_detective(HERE, INV).exhausted())
             .open_turn(INV)
             .session(),
     );
@@ -227,13 +206,12 @@ fn rolands_elder_sign_contributes_nothing_with_the_detective_at_his_location() {
 }
 
 /// Roland at HERE with the Detective, and `there_enemy` waiting at THERE.
-fn roland_beside_the_detective(token: ChaosToken, there_enemy: Option<Enemy>) -> TestSession {
+fn roland_beside_the_detective(token: ChaosToken, there_enemy: Option<StagedEnemy>) -> TestSession {
     let mut builder = two_rooms(token)
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy(the_detective(HERE, INV));
-    if let Some(mut enemy) = there_enemy {
-        enemy.current_location = Some(THERE);
-        builder = builder.with_enemy(enemy);
+        .with_enemy(the_detective(HERE, INV).exhausted());
+    if let Some(enemy) = there_enemy {
+        builder = builder.with_enemy(enemy.at(THERE));
     }
     builder.open_turn(INV).session()
 }
@@ -290,8 +268,8 @@ fn a_second_investigator_at_his_location_is_blanked_too() {
         .with_seat(seat(INV.0).at(THERE).deck([FILLER]))
         .with_seat(seat(OTHER.0).as_card(ROLAND).at(HERE))
         .with_seating([INV, OTHER])
-        .with_enemy_engaged(a_ghoul(), OTHER)
-        .with_enemy(the_detective(HERE, INV))
+        .with_enemy(a_ghoul().engaged_with(OTHER))
+        .with_enemy(the_detective(HERE, INV).exhausted())
         .open_turn(OTHER)
         .build();
 
@@ -310,13 +288,11 @@ fn a_second_investigator_at_his_location_is_blanked_too() {
 /// still on the menu and still resolves.
 #[test]
 fn a_granted_ability_on_a_blanked_investigator_still_works() {
-    let mut here = location(HERE, "Granting Study", 0, &[THERE]);
-    here.code = CardCode::new(GRANTS_ROLAND);
     let session = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(here)
+        .with_location(location(HERE).code(GRANTS_ROLAND).connections([THERE]))
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy(the_detective(HERE, INV))
+        .with_enemy(the_detective(HERE, INV).exhausted())
         .open_turn(INV)
         .session();
     let activation = TurnAction::ActivateAbility {
@@ -377,12 +353,9 @@ fn skills_health_sanity_and_traits_read_unchanged_while_blanked() {
 /// defeat.
 #[test]
 fn rolands_reaction_is_offered_after_he_defeats_the_detective() {
-    let mut detective = the_detective(HERE, INV);
-    detective.exhausted = false;
-    detective.damage = 1;
     let state = two_rooms(ChaosToken::Numeric(0))
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(detective, INV)
+        .with_enemy(the_detective(HERE, INV).damage(1).engaged_with(INV))
         .open_turn(INV)
         .build();
 
@@ -410,7 +383,7 @@ fn rolands_reaction_is_offered_after_he_defeats_the_detective() {
 fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
     let session = GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(INV.0).at(HERE).deck([STUBBORN_DETECTIVE, FILLER]))
         .open_turn(INV)
         .session()
@@ -432,18 +405,16 @@ fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
 /// The line `HERE - THERE - C - D`, the Detective ready at THERE beside the
 /// other investigator, his bearer two steps away at D.
 fn hunting(bearer: Seat, other: Seat) -> TestSession {
-    let mut detective = the_detective(THERE, INV);
-    detective.exhausted = false;
     GameStateBuilder::new()
         .with_registries(REGISTRIES)
-        .with_location(location(HERE, "A", 0, &[THERE]))
-        .with_location(location(THERE, "B", 0, &[HERE, C]))
-        .with_location(location(C, "C", 0, &[THERE, D]))
-        .with_location(location(D, "D", 0, &[C]))
+        .with_location(location(HERE).connections([THERE]))
+        .with_location(location(THERE).connections([HERE, C]))
+        .with_location(location(C).connections([THERE, D]))
+        .with_location(location(D).connections([C]))
         .with_seat(bearer.at(D).deck([FILLER, FILLER]))
         .with_seat(other.at(THERE).deck([FILLER, FILLER]))
         .with_seating([INV, OTHER])
-        .with_enemy(detective)
+        .with_enemy(the_detective(THERE, INV))
         .open_turn(OTHER)
         .session()
 }

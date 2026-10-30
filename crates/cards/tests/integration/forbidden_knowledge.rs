@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, UseKind, Zone,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const FORBIDDEN_KNOWLEDGE: &str = "01058";
@@ -37,7 +37,7 @@ const HERE: LocationId = LocationId(10);
 fn board(seat: Seat) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat.at(HERE).actions(3).resources(0))
         .open_turn(INV)
         .session()
@@ -155,13 +155,12 @@ fn moving_the_last_secret_discards_it() {
 /// secret moves, since the cost is paid before the effect.
 #[test]
 fn its_cost_horror_on_agnes_offers_her_reaction() {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.max_health = 3;
+    let enemy = test_support::enemy(ENEMY).health(3);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(holding(4).as_card(AGNES).at(HERE).actions(3).resources(0))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .open_turn(INV)
         .session();
     let session = use_it(session);
