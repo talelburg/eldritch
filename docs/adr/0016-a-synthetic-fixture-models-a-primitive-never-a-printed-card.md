@@ -76,7 +76,7 @@ that catch real engine bugs.
 in `game_core::test_support` — `seat`, `enemy`, `location` — are not a shortcut
 around real cards. `Investigator`, `Enemy` and `Location` are `#[non_exhaustive]`,
 so downstream test crates cannot construct them via struct literal and must go
-through the stagers (`fixtures.rs:8-18` said so of the fixtures they replaced).
+through the stagers (the `#[non_exhaustive]` section of `test_support/fixtures.rs`).
 Hundreds of call sites across `game-core`, `cards`, `scenarios` and `web` depend
 on that, and the layering is why: `game-core` cannot reach `cards` by crate
 direction, so there is no real-card alternative at the kernel. These build
