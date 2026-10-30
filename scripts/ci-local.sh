@@ -10,9 +10,9 @@
 # LTO at one codegen unit). CI runs it in parallel with everything else in ~2
 # minutes; run here, it adds its full cost to a sequential plan and rarely fails
 # in a way the diff didn't predict. Push to the draft PR to run it; `--all` runs
-# it here. `wasm-test` runs locally like any other job: since web's tests became
-# one integration-test binary (#1249) it is one wasm-bindgen run and one
-# headless-Firefox session, ~15-35s here (#1245).
+# it here. `wasm-test` runs locally like any other job: web's tests are one
+# integration-test binary, so it is one wasm-bindgen run and one
+# headless-Firefox session, ~15-35s here.
 #
 # The script builds into its own target directory (target/ci-local). Its
 # RUSTFLAGS differ from the dev loop's (`cargo test`, `trunk serve`), and cargo
@@ -210,7 +210,8 @@ else
 
   # web + protocol are what the wasm bundle is built from directly; the engine
   # crates are upstream of web, so they can break it just as well (a prompt's
-  # shape changing what the board renders, say). The reason only says which.
+  # shape changing what the board renders, say). Either way all three are
+  # selected; only the plan's reason text differs.
   wasm_why=""
   if diff_touches '^crates/(web|protocol)/'; then
     wasm_why="crates/web or crates/protocol changed"
