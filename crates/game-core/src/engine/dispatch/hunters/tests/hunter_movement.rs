@@ -203,7 +203,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
 // "only," that enemy only moves towards and engages that investigator (as if
 // it were the only investigator in play), and ignores all other investigators
 // while moving and engaging."* That a non-bearer beside it does not pin it is
-// driven through `apply` by `crates/cards/tests/silver_twilight_acolyte.rs`.
+// driven through `apply` by `crates/cards/tests/integration/silver_twilight_acolyte.rs`.
 
 /// A line `A - B - C - D`.
 fn line() -> [Location; 4] {

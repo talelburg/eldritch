@@ -9,7 +9,7 @@
 //! >    remove those weaknesses from the game.
 //!
 //! The corpus consumer (Cover Up 01007) is covered end-to-end in
-//! `crates/cards/tests/elimination_teardown.rs`. What *cannot* be covered there
+//! `crates/cards/tests/integration/elimination_teardown.rs`. What *cannot* be covered there
 //! is the negative half of the scoping: no in-scope non-weakness card carries a
 //! `GameEnd` forced ability, so proving the weakness filter does real work needs
 //! a synthetic card that is identical to the weakness in every respect except

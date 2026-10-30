@@ -62,7 +62,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
-/// [`cards::TEST_REGISTRY`] with this binary's probe composed in.
+/// [`cards::TEST_REGISTRY`] with this file's probe composed in.
 const CARDS: CardRegistry = CardRegistry {
     abilities_for,
     ..TEST_REGISTRY

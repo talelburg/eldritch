@@ -23,7 +23,7 @@
 //! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`. The **enemy
 //! defeat** — act 01110's `at` objective against Roland Banks 01001's
 //! *"\[reaction\] After you defeat an enemy: Discover 1 clue at your
-//! location."* — in `scenarios/tests/the_gathering_resolutions.rs`, which
+//! location."* — in `scenarios/tests/integration/the_gathering_resolutions.rs`, which
 //! defeats the real Ghoul Priest and asserts Roland's window never opens,
 //! per 01110's ruling that the objective fires *"before any "After you defeat
 //! an enemy" reactions can be used."* None of those must move.
@@ -139,7 +139,7 @@ fn gains(events: &[Event]) -> Vec<u8> {
 /// The ST.7 application — *"Apply skill test results"* — comes later still,
 /// on the `SkillTest` frame's resume, and a bare plain test has none of it, so
 /// the `when`-before-ST.7 claim is pinned where it is observable: Lita Chantler
-/// 01117's `crates/cards/tests/lita_chantler.rs`, where the `when` cell raises
+/// 01117's `crates/cards/tests/integration/lita_chantler.rs`, where the `when` cell raises
 /// an attack's damage before ST.7 deals it.
 fn resolved_before_first_gain(events: &[Event]) -> bool {
     let position = |pred: fn(&Event) -> bool| events.iter().position(pred);

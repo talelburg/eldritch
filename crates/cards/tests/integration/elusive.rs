@@ -16,8 +16,6 @@
 //! > - You must move when you play Elusive, as it is not a 'may' effect, unless
 //! >   there is no legal place to move to or a rule effect forbids movement.
 
-mod common;
-
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;

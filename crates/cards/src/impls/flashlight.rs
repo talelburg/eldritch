@@ -20,7 +20,7 @@
 //! (`glossary/Attack_of_Opportunity.md` names only **fight**, **evade**,
 //! **parley** and **resign**), so activating this `[action]` while engaged with
 //! a ready enemy provokes one — again exactly as the basic action does
-//! (`crates/cards/tests/activate_ability_aoo.rs`).
+//! (`crates/cards/tests/integration/activate_ability_aoo.rs`).
 //!
 //! The `Uses (3 supplies)` pool is corpus metadata (`CardKind::Asset.uses`,
 //! pipeline-parsed with `discard_when_empty: false` — Flashlight's printed

@@ -39,7 +39,7 @@
 //! **The non-weakness filler is not a card.** Every deck below needs some
 //! number of opaque tokens for the weakness to be drawn *among*; the draw and
 //! discard paths never look them up, so nothing about them has to be real. They
-//! are `_ohw_*`-prefixed codes, per-binary and underscore-led, which no
+//! are `_ohw_*`-prefixed codes, per-file and underscore-led, which no
 //! `ArkhamDB` code can collide with. The predecessor of this file padded its
 //! decks with `01001`–`01004` — four real investigator cards sitting in a zone
 //! none of them can legally occupy, and the purest instance of the impersonation
@@ -62,7 +62,7 @@ const STUDY: &str = "01111";
 
 /// The opaque non-weakness filler. Not a card, and self-evidently so: the
 /// underscore prefix cannot collide with an `ArkhamDB` code, and `ohw` scopes it
-/// to this binary. `n` is 1-based.
+/// to this file. `n` is 1-based.
 fn filler(n: u8) -> CardCode {
     CardCode::new(format!("_ohw_filler_{n}"))
 }

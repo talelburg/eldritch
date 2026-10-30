@@ -22,7 +22,7 @@ encounter-deck content) reads:
 The real impl opens with `revelation(put_into_threat_area_with_clues(CODE, 3))`
 (`cover_up.rs:71`). The synthetic has no `Trigger::Revelation` at all. That gap was
 found, and documented rather than closed, by a later test author
-(`crates/cards/tests/upkeep_draw_revelation.rs:14-17`):
+(`crates/cards/tests/integration/upkeep_draw_revelation.rs:14-17`):
 
 > Uses the real `cards::REGISTRY` because the synthetic Cover Up fixture has no
 > `Trigger::Revelation` (it would push nothing and never trip the bug); only the
@@ -195,7 +195,7 @@ exercise scenario data*, not *is it a full walk*; a full-walk rule would evict
 **A test with no card dependency lives in `crates/game-core/tests/`.** The upkeep,
 hand-size, resolution and hunter-movement tests need a scenario module, not a card,
 and build that shell locally. A scenario test that duplicated a corpus test is
-deleted rather than kept: `crates/cards/tests/cover_up.rs` tests the real 01007,
+deleted rather than kept: `crates/cards/tests/integration/cover_up.rs` tests the real 01007,
 `issue_476_fast_window.rs` covers the Fast window with Magnifying Glass 01030, and
 `the_gathering_resolutions.rs` covers the full walks, its replay-determinism walk
 included.

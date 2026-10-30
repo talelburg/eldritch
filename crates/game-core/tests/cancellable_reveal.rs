@@ -10,7 +10,7 @@
 //! chaos token, choose and discard 1 card from your hand: Cancel that chaos
 //! token and return it to the bag. Reveal a new chaos token. (Limit once per
 //! test/ability.)"*, `data/arkhamdb-snapshot/pack/core/core.json`), tested
-//! against the real registry in `crates/cards/tests/wendy_adams.rs`. Her
+//! against the real registry in `crates/cards/tests/integration/wendy_adams.rs`. Her
 //! ruling is what the split builds
 //! by construction (<https://arkhamdb.com/card/01005>): *"treat it as if
 //! you've never revealed that token, for purposes of effects that trigger if a

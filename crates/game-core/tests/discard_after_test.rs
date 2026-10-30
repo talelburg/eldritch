@@ -4,7 +4,7 @@
 //! Baseball Bat 01074 is the corpus consumer (*"If a \[skull\] or \[auto_fail\]
 //! symbol is revealed during this attack, discard Baseball Bat after the
 //! attack resolves."*, `data/arkhamdb-snapshot/pack/core/core.json`), tested
-//! against the real registry in `crates/cards/tests/baseball_bat.rs`. This
+//! against the real registry in `crates/cards/tests/integration/baseball_bat.rs`. This
 //! binary pins the two teardowns that honour the mark: the ST.8 one, and the
 //! abandonment of a test whose target left play, which no Core card
 //! reaches between the ST.3 mark and ST.6 — so the abandoning native here

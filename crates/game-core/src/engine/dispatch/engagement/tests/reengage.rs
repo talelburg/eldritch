@@ -134,7 +134,7 @@ fn reengage_at_location_enemy_without_location_is_noop() {
 /// *"that enemy only moves towards and engages that investigator (as if it were
 /// the only investigator in play), and ignores all other investigators while
 /// moving and engaging."* That it engages no one beside only non-bearers is
-/// driven through `apply` by `crates/cards/tests/silver_twilight_acolyte.rs`.
+/// driven through `apply` by `crates/cards/tests/integration/silver_twilight_acolyte.rs`.
 #[test]
 fn reengage_at_location_bearer_only_picks_the_bearer_over_the_lead() {
     let loc = LocationId(1);

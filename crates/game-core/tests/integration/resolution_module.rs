@@ -2,7 +2,7 @@
 //! reverse latches a resolution.
 //!
 //! These tests need a scenario module that stamps the state when its hook
-//! runs, so this binary names its own registries: the test card registry
+//! runs, so this file names its own registries: the test card registry
 //! beside that module (prior art: `tests/scenario_resolution.rs`).
 
 use game_core::action::{Action, InputResponse, PlayerAction};

@@ -7,7 +7,7 @@
 //! with other `tests/*.rs` files. Mirrors `on_skill_test_resolution.rs`.
 //!
 //! Roland Banks 01001 is a corpus `Trigger::OnEvent` consumer; that card's
-//! end-to-end test lives in `crates/cards/tests/roland_banks.rs`. This file
+//! end-to-end test lives in `crates/cards/tests/integration/roland_banks.rs`. This file
 //! keeps mock cards to exercise edge cases (multi-controller defeats, two
 //! abilities on one card, `by_controller: false`) without depending on a
 //! printed card.

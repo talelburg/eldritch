@@ -4,7 +4,7 @@
 //! The Necronomicon 01009 is the corpus consumer (*"Treat each \[elder_sign\]
 //! you reveal on a chaos token as a \[auto_fail\]."*,
 //! `data/arkhamdb-snapshot/pack/core/core.json`), tested against the real
-//! registry in `crates/cards/tests/the_necronomicon.rs`. This binary pins the
+//! registry in `crates/cards/tests/integration/the_necronomicon.rs`. This binary pins the
 //! primitive with two other pairs, so the substitution is not the one pair
 //! hard-wired: a `[skull]` counted as the `[elder_sign]` (the counted symbol
 //! picks the chaos symbol effect at ST.4 and again at ST.7), and a `[cultist]`

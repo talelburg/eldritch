@@ -1,7 +1,7 @@
 //! Regression for #764: a defeated active investigator's turn ends (RR Appendix
 //! II 2.2.1 → 2.2.2).
 //!
-//! These cover the arming; `crates/cards/tests/elimination_ends_turn.rs` drives
+//! These cover the arming; `crates/cards/tests/integration/elimination_ends_turn.rs` drives
 //! the rotation the flag triggers through the real `apply` loop.
 
 use super::*;
@@ -121,7 +121,7 @@ fn resigning_during_your_own_turn_ends_it_too() {
     //
     // `resign_investigator` is the producer, reached from
     // the Parlor 01115's **Resign** designator. The whole trail through a real
-    // activation is `crates/cards/tests/resign.rs`; this pins the turn-end
+    // activation is `crates/cards/tests/integration/resign.rs`; this pins the turn-end
     // half at the unit seam.
     let resigner = InvestigatorId(1);
     let mut state = two_investigator_open_turn(resigner);

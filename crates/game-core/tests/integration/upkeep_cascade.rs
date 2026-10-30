@@ -18,7 +18,7 @@ use game_core::state::{
 };
 use game_core::test_support::{self, TestSession, TEST_INV, TEST_REGISTRIES};
 
-/// Per-binary code prefix. None of these codes is looked up — the deck, the
+/// Per-file code prefix. None of these codes is looked up — the deck, the
 /// hand and the readied asset are opaque tokens to every step the cascade runs —
 /// so they are deliberately not ArkhamDB-shaped (ADR 0016).
 const PREFIX: &str = "_uc_";

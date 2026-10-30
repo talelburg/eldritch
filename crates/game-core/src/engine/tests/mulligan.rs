@@ -216,7 +216,7 @@ fn mulligan_replays_from_the_action_log_bit_for_bit() {
     // log from a fresh copy of the same initial state must reproduce the
     // post-mulligan state exactly — including the RNG cursor, so every
     // subsequent draw agrees too. Same shape as the real-Gathering replay
-    // check in `crates/scenarios/tests/the_gathering_resolutions.rs`: the
+    // check in `crates/scenarios/tests/integration/the_gathering_resolutions.rs`: the
     // caller holds the log and replays it against a fresh initial state.
     // The subject is the logged wire action, so the log is replayed raw.
     let make_initial = || mulligan_board().build();

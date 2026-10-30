@@ -5,7 +5,7 @@
 //! The corpus carrier is Wendy's Amulet 01014, *"**Forced** - After you play an
 //! event or discard an event from play: Place it on the bottom of your deck
 //! instead of in your discard pile."*, covered end to end in
-//! `crates/cards/tests/wendys_amulet.rs`. No event Wendy can legally take stays
+//! `crates/cards/tests/integration/wendys_amulet.rs`. No event Wendy can legally take stays
 //! in play, so a synthetic in-play event and a synthetic carrier model the
 //! primitive (ADR 0016). Its own test binary: the mock registry is built once
 //! per process.

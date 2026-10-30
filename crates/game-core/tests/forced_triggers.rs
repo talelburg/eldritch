@@ -851,7 +851,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
 /// resolves"* — and the departure's impact is `InvestigatorMoved`. Barricade
 /// 01038's *"Forced - When an investigator leaves attached location: Discard
 /// Barricade."* is the real card this shape stands in for; its own end-to-end
-/// coverage is `cards/tests/barricade.rs`.
+/// coverage is `cards/tests/integration/barricade.rs`.
 #[test]
 fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     // The destination has its own on-enter forced (1 horror) and a ready enemy,

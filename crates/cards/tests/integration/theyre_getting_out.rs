@@ -12,7 +12,7 @@
 //! one doom short of the threshold, and the next Mythos phase's doom advances
 //! the agenda, firing the `AgendaAdvanced` timing point its reverse hangs on.
 //! The scenario's own act and agenda progression is
-//! `scenarios/tests/the_gathering_resolutions.rs`'s job; this is the seam that
+//! `scenarios/tests/integration/the_gathering_resolutions.rs`'s job; this is the seam that
 //! carries the *multi-investigator* claims the solo end-to-end cannot: the fan-out
 //! order, and the investigator it must leave alone.
 

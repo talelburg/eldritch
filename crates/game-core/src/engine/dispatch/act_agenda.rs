@@ -644,7 +644,7 @@ mod advance_act_tests {
     }
 
     // The round-end-only rejection is tested in
-    // `crates/cards/tests/act_advancement.rs`: `act_advances_at_round_end`
+    // `crates/cards/tests/integration/act_advancement.rs`: `act_advances_at_round_end`
     // reads act 01109's `When`-RoundEnded reaction from the registry, and the
     // real act is corpus content a game-core unit test can't reach.
 
