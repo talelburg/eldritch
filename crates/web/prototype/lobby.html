@@ -179,7 +179,7 @@ function preset(n) {
     base.lead = 'roland';
   }
   if (n === 1) { base.members = ['you', 'sam']; base.picks = [{ inv: 'daisy', owner: 'sam', weak: 'fixed' }]; base.view = 'home'; base.open = null; base.cDrop = true; }
-  if (n === 2) { base.picks = []; base.members = ['you']; base.justJoined = true; }
+  if (n === 2) { base.picks = []; base.members = ['you', 'sam']; base.justJoined = true; }
   if (n === 4) {
     base.picks = [{ inv: 'roland', owner: 'you', weak: 'fixed' }, { inv: 'daisy', owner: 'sam', weak: 'fixed' },
                   { inv: 'agnes', owner: 'you', weak: 'fixed' }];
@@ -298,9 +298,8 @@ function startBlock() {
   return `<span class="muted">Waiting for Tal to start. You'll move to the board when they do.</span>`;
 }
 function joinBanner() {
-  return `<div class="frozen">You opened Tal's invite to <b>The Gathering</b>.
-    <button class="primary" onclick="A.join()">Join the lobby</button>
-    <span class="muted">or just look, as a viewer, without picking</span></div>`;
+  return `<div class="frozen">You opened Tal's invite, so you're a member of this game now.
+    Add an investigator, or just watch as a viewer.</div>`;
 }
 function otherGamePage(g) {
   let body;
@@ -359,7 +358,7 @@ function renderA() {
           : (S.lead === p.inv ? '<span class="lead">★ lead</span>' : '')}</label>
         <span>${isCreator() ? `<button onclick="A.move('${p.inv}',-1)">↑</button><button onclick="A.move('${p.inv}',1)">↓</button>` : ''}</span>
       </div>`).join('')}
-      ${S.justJoined && as === 'sam' ? '' : `<div class="a-add">Add an investigator:
+      ${false ? '' : `<div class="a-add">Add an investigator:
         <select id="a-pick">${POOL.map(i => { const o = ownerOf(i), stale = as === 'sam' && S.stale === i;
           return `<option value="${i}" ${o && !stale ? 'disabled' : ''}>${name(i)}${o && !stale ? ` (${o === as ? 'yours' : ACC[o] + "'s"})` : ''}</option>`; }).join('')}</select>
         <button onclick="A.add(document.getElementById('a-pick').value)" ${free.length && S.picks.length < 4 ? '' : 'disabled'}>Add</button>
@@ -392,9 +391,9 @@ function renderB() {
     const vis = S.picks.filter(p => !(as === 'sam' && p.inv === S.stale));
     const sel = vis.find(p => p.inv === S.bTab) || (!S.adding && (vis.find(mine) || vis[0]));
     const adding = S.adding || !sel;
-    const canAdd = S.picks.length < 4 && !(S.justJoined && as === 'sam');
+    const canAdd = S.picks.length < 4 && !(false);
     const panel = adding
-      ? (S.justJoined && as === 'sam' ? '<div class="muted">Join to add an investigator.</div>' :
+      ? (false ? '<div class="muted">Join to add an investigator.</div>' :
         `<div class="muted small" style="margin-bottom:0.4rem">Choose an investigator. It comes with its default deck.</div><div class="portraits">${POOL.map(i => {
           const o = ownerOf(i), stale = as === 'sam' && S.stale === i, taken = o && !stale;
           return `<div class="portrait ${taken ? 'taken' : ''}" ${taken ? '' : `onclick="A.add('${i}')"`}><div class="nm">${name(i)}</div>${INV[i].cls}<br>
@@ -433,13 +432,13 @@ function renderC() {
   if (S.view === 'other') return top + `<div class="c-wrap">${otherGamePage(OTHER_GAMES.find(g => g.id === S.open))}</div>`;
   if (S.view === 'board') return top + boardStub();
   const vis = S.picks.filter(p => !(as === 'sam' && p.inv === S.stale));
-  const watching = S.justJoined && as === 'sam';
+  const watching = false, banner = S.justJoined && as === 'sam';
   return top + `<div class="c-wrap">
     <div style="display:flex;gap:1rem;align-items:center"><h2 style="margin:0">The Gathering</h2><span class="pill lobby">Lobby</span>
       <div class="c-members">${S.members.map(m => `<span class="c-member">${ACC[m]}${m === CREATOR ? ' ✎' : ''}</span>`).join('')}</div>
       <div class="linkbox" style="margin-left:auto"><code>${LINK}</code><button onclick="A.copy()">Copy invite</button></div>
       ${rareMenu('c-lobby', gameMenuItems(lobbyGame()))}</div>
-    ${watching ? joinBanner() : ''}
+    ${banner ? joinBanner() : ''}
     <div class="c-pool">${POOL.map(i => {
       const p = vis.find(x => x.inv === i), m = p && mine(p);
       return `<div class="c-inv ${p ? (m ? 'mine' : 'theirs') : ''}"><div class="nm">${name(i)}</div><div class="muted">${INV[i].cls}</div><div class="grow"></div>
@@ -459,7 +458,7 @@ function renderC() {
 // ---------- render ----------
 const NOTES = {
   1: 'Sam is on a new machine with no link. Where does Sam land, and how does Sam find the lobby? The list also shows the other three states: in progress (one needs Sam), finished, and kept as unresumable.',
-  2: 'Sam has just opened the invite link. Join, then add Daisy. Switch "as" to Tal to watch Sam appear.',
+  2: 'Sam has just opened the invite link, which made Sam a member. Add Daisy. Switch "as" to Tal to watch Sam appear.',
   3: 'Tal, as creator: reorder the seating, move ★ lead, change a weakness. Switch to Sam to see what is disabled for a member.',
   4: 'Sam\'s screen still shows Agnes as free. Click to take her: the server refuses because Tal got there first.',
   5: 'Press Start as Tal, then switch to Sam: both are on the board, the roster is frozen, and reassigning is under ⋯.',
