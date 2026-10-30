@@ -33,8 +33,6 @@ use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 const PARLOR: LocationId = LocationId(5);
 const LITA: CardInstanceId = CardInstanceId(60);
 const FOG: CardInstanceId = CardInstanceId(61);

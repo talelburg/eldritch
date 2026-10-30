@@ -24,8 +24,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// A `Confirm` prompt anchored to the encounter deck — the Mythos draw.
 fn encounter_draw_prompt() -> EngineOutcome {
     let mut outcome =

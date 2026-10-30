@@ -7,8 +7,8 @@
 # failures that are *predictable from the diff*.
 #
 # Two jobs are CI-only by default: `wasm-build` (`trunk build --release`, thin
-# LTO at one codegen unit) and `wasm-test` (a headless-Firefox session per test
-# file). CI runs them in parallel with everything else in ~3 minutes; run here,
+# LTO at one codegen unit) and `wasm-test` (one wasm-bindgen run and one
+# headless-Firefox session, for web's single integration-test binary). CI runs them in parallel with everything else in ~3 minutes; run here,
 # they add their full cost to a sequential plan and rarely fail in a way the
 # diff didn't predict. Push to the draft PR to run them; `--all` runs them here.
 #

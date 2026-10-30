@@ -19,8 +19,6 @@ use web::store::{ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
 use web_sys::HtmlElement;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Mount `VersionMismatchView` into a container of its own, and return that
 /// container alongside the store. The DOM accumulates across tests in one
 /// browser session, so a document-wide query would see the *other* test's

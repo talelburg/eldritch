@@ -22,8 +22,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// Inner HTML of the last mounted `.card` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
 fn last_card_html() -> String {
@@ -92,7 +90,7 @@ async fn guardian_card_carries_class_modifier() {
 /// showing the raw code, rather than as nothing.
 ///
 /// The class is asserted, not just the code, because it is the contract
-/// `crates/web/tests/board.rs` reads: that binary asserts `card--unknown` never
+/// `crates/web/tests/integration/board.rs` reads: that file asserts `card--unknown` never
 /// appears, which is only a real guard if the fallback is the sole producer of
 /// it. `entity_names.rs` holds the complementary property — that a code
 /// which *does* resolve never leaks to the player.

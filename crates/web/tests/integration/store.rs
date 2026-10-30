@@ -7,18 +7,27 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
 use game_core::test_support;
-use leptos::prelude::{RwSignal, Update};
+use leptos::prelude::{ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::registry::provide_cards;
 use web::store::{self, ClientState};
+use web_sys::Element;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
-fn body_html() -> String {
-    prelude::document().body().expect("body").inner_html()
+/// The HTML of the last `.store-root` container mounted: this test's own, not
+/// the whole body, which the browser tests share and nothing unmounts.
+fn root_html() -> String {
+    let roots = prelude::document()
+        .query_selector_all(".store-root")
+        .expect("query");
+    roots
+        .item(roots.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("a .store-root")
+        .inner_html()
 }
 
 #[wasm_bindgen_test]
@@ -32,13 +41,13 @@ async fn hello_renders_state_present() {
     mount::mount_to_body(move || {
         provide_cards(&test_support::TEST_REGISTRY);
         prelude::provide_context(store);
-        leptos::view! { <BoardView/> }
+        leptos::view! { <div class="store-root"><BoardView/></div> }
     });
 
     assert!(
-        body_html().contains("&lt;no game&gt;"),
+        root_html().contains("&lt;no game&gt;"),
         "before: {}",
-        body_html()
+        root_html()
     );
 
     let game = GameStateBuilder::new()
@@ -62,8 +71,8 @@ async fn hello_renders_state_present() {
     // `phase_bar` was retired (phase/round moved to the turn tracker); assert the
     // game now renders its board — the investigators-panel heading.
     assert!(
-        body_html().contains("Investigators"),
+        root_html().contains("Investigators"),
         "after: {}",
-        body_html()
+        root_html()
     );
 }

@@ -25,8 +25,6 @@ use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, PointerEvent, PointerEventInit};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 fn base_game() -> GameState {
     GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
@@ -278,10 +276,12 @@ async fn the_backdrop_does_not_dismiss_it() {
     // clicking it leaves the modal exactly where it was.
     let (store, mut rx) = mount_modal();
     resolve_a_test(store, acknowledge_pause()).await;
-    document()
+    // The last scrim is this test's: earlier tests' modals stay in the page.
+    let scrims = document()
         .query_selector_all(".str-backdrop")
-        .expect("query")
-        .item(0)
+        .expect("query");
+    scrims
+        .item(scrims.length() - 1)
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a scrim renders behind the modal")
         .click();

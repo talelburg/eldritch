@@ -14,8 +14,6 @@ use web::event_log::EventLogView;
 use web::store::{ClientState, LogBatch};
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 #[wasm_bindgen_test]
 async fn renders_batches_with_headers_and_event_debug() {
     let store = RwSignal::new(ClientState::default());

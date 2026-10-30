@@ -18,8 +18,6 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 fn last_card() -> Element {
     let cards = document()
         .query_selector_all(".card")

@@ -15,8 +15,6 @@ use web::board::BoardView;
 use web::registry::provide_cards;
 use web::store::{self, ClientState};
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 #[wasm_bindgen_test]
 async fn board_renders_card_and_location_names() {
     let inv_id = InvestigatorId(1);
@@ -48,9 +46,13 @@ async fn board_renders_card_and_location_names() {
     });
     task::tick().await;
 
-    let text = prelude::document()
-        .query_selector(".board")
-        .expect("query")
+    // The last `.board` is this test's: the browser tests share one page and
+    // nothing unmounts, so the first match could be another test's board.
+    let boards = prelude::document()
+        .query_selector_all(".board")
+        .expect("query");
+    let text = boards
+        .item(boards.length() - 1)
         .expect(".board present")
         .text_content()
         .unwrap_or_default();

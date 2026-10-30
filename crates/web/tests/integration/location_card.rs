@@ -14,8 +14,6 @@ use web::map;
 use web::registry::provide_cards;
 use web_sys::Element;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 /// `textContent` of the last-mounted map node whose `data-loc` equals `name`.
 fn node_text(name: &str) -> String {
     let maps = document().query_selector_all(".map").expect("query ok");

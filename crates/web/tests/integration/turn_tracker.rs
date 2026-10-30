@@ -13,8 +13,6 @@ use web::store::{self, ClientState};
 use web::turn_tracker::TurnTrackerView;
 use web_sys::Element;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))

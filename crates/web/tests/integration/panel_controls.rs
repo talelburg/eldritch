@@ -7,7 +7,7 @@
 //!
 //! `AnchoredControl` is mounted directly rather than through `BoardView` so these
 //! stay off the card registry; the whole-panel wiring is covered by
-//! `tests/board_surfaces.rs`.
+//! `tests/integration/board_surfaces.rs`.
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
@@ -25,8 +25,6 @@ use web::interaction::PendingOptions;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
-
-wasm_bindgen_test_configure!(run_in_browser);
 
 const INV: InvestigatorId = InvestigatorId(1);
 
