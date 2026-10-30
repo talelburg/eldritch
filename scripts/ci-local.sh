@@ -6,12 +6,13 @@
 # is the source of truth. This script's job is narrower: catch, fast, the
 # failures that are *predictable from the diff*.
 #
-# Two jobs are CI-only by default: `wasm-build` (`trunk build --release`, thin
-# LTO at one codegen unit) and `wasm-test` (one wasm-bindgen run and one
-# headless-Firefox session, for web's single integration-test binary). CI runs
-# them in parallel with everything else in ~3 minutes; run here, they add their
-# full cost to a sequential plan and rarely fail in a way the diff didn't
-# predict. Push to the draft PR to run them; `--all` runs them here.
+# One job is CI-only by default: `wasm-build` (`trunk build --release`, thin
+# LTO at one codegen unit). CI runs it in parallel with everything else in ~2
+# minutes; run here, it adds its full cost to a sequential plan and rarely fails
+# in a way the diff didn't predict. Push to the draft PR to run it; `--all` runs
+# it here. `wasm-test` runs locally like any other job: since web's tests became
+# one integration-test binary (#1249) it is one wasm-bindgen run and one
+# headless-Firefox session, ~15-35s here (#1245).
 #
 # The script builds into its own target directory (target/ci-local). Its
 # RUSTFLAGS differ from the dev loop's (`cargo test`, `trunk serve`), and cargo
@@ -23,11 +24,13 @@
 # caveats, reported at the end of a run rather than left implicit:
 #
 #   * `trunk` and `wasm-pack` are pinned in CI (trunk@0.21.14, wasm-pack@0.15.0)
-#     but taken from $PATH here, so under --all a local pass is only as good
-#     as your installed versions.
+#     but taken from $PATH here, so a local `wasm-test` pass (and, under
+#     --all, a `wasm-build` pass) is only as good as your installed versions.
 #   * A job that cannot run the way CI runs it is marked degraded: a missing
-#     `trunk` drops `wasm-build` to a debug cargo build, and a geckodriver that
-#     fails to start leaves `wasm-test`'s tests compiled but not run.
+#     `trunk` drops `wasm-build` to a debug cargo build, a missing `wasm-pack`
+#     or `firefox` skips `wasm-test` without running anything, and a
+#     geckodriver that fails to start leaves `wasm-test`'s tests compiled but
+#     not run.
 #   * `classify` is not a CI job. It is a subset of `test`, offered on its own
 #     for snapshot-only changes where the rest of `test` cannot be affected.
 #
@@ -41,9 +44,10 @@
 #
 # so a `game-core` change can redden a wasm job even though it touched no file
 # under `crates/web/`. Gating the wasm jobs on "did the diff touch crates/web?"
-# would skip them on exactly the changes most likely to break them. The mapping
-# still selects all three; the CI-only two are then set aside for CI rather than
-# run, and the plan names them so the skip is visible.
+# would skip them on exactly the changes most likely to break them. So an
+# engine diff selects `wasm-test` and `wasm-clippy`, and a `web` or `protocol`
+# diff selects all three; `wasm-build` is then set aside for CI rather than run,
+# and the plan names it so the skip is visible.
 #
 # Scoping is at job granularity only. Narrowing `cargo test --all` to
 # `-p <crate>` is deliberately not done: a `game-core` change breaking `cards`'
@@ -98,8 +102,8 @@ export CARGO_TARGET_DIR="$ROOT/target/ci-local"
 # (and CI_ONLY_JOBS, if it should not run by default).
 ALL_JOBS=(fmt clippy test doc wasm-build wasm-test wasm-clippy)
 
-# Run only under --all; otherwise left to CI (see the header).
-CI_ONLY_JOBS=(wasm-build wasm-test)
+# Run only under --all or --only; otherwise left to CI (see the header).
+CI_ONLY_JOBS=(wasm-build)
 
 BASE=""
 LIST_ONLY=0
@@ -210,9 +214,12 @@ else
     select_job wasm-test   "crates/web or crates/protocol changed"
     select_job wasm-clippy "crates/web or crates/protocol changed"
   elif diff_touches '^crates/(game-core|cards|card-dsl)/'; then
-    # Upstream of web, so a wasm build can still break — but the cheap job is
-    # also the discerning one: wasm-clippy is the only job that compiles the
-    # #[cfg(target_arch = "wasm32")] code the host `clippy` job never sees.
+    # Upstream of web, so a wasm build can still break — but the cheap jobs are
+    # also the discerning ones: wasm-clippy is the only job that compiles the
+    # #[cfg(target_arch = "wasm32")] code the host `clippy` job never sees, and
+    # wasm-test catches an engine change (a prompt's shape, say) that breaks
+    # what the board renders.
+    select_job wasm-test   "engine crates changed (upstream of web)"
     select_job wasm-clippy "engine crates changed (upstream of web)"
   fi
 
@@ -265,6 +272,18 @@ run_job() {
     classify)    cargo test -p card-data-pipeline classify ;;
     wasm-clippy) cargo clippy -p web --all-targets --target wasm32-unknown-unknown --all-features -- -D warnings ;;
     wasm-test)
+      # A machine without the browser toolchain cannot run the tests at all.
+      # That says nothing about the code either, so it is recorded as degraded,
+      # like wasm-build without trunk, and never reported as a clean pass.
+      local tool missing=""
+      for tool in wasm-pack firefox; do
+        command -v "$tool" >/dev/null || missing+="${missing:+, }$tool"
+      done
+      if [ -n "$missing" ]; then
+        echo "!! $missing not installed — the browser tests were not run." >&2
+        DEGRADED+=("wasm-test ($missing not installed: tests not run)")
+        return 0
+      fi
       # The snap geckodriver can fail to start ("driver failed to bind port
       # during startup"). wasm-pack has compiled every test by then, so that
       # says nothing about the code: it is recorded as degraded, compiled but

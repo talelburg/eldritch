@@ -4,7 +4,7 @@
 
 ## The PR
 
-The integration branch is the PR's branch. Open it as `CLAUDE.md` step 1 says: an empty `<scope>: start #NN` commit, a push, then `gh pr create --draft`, with a `Closes #NN` line for the spec and for every ticket. That replaces upstream's "open the draft after the first merge". Every push to the integration branch then runs the full CI on the draft, which is how the CI-only wasm jobs get covered during the run.
+The integration branch is the PR's branch. Open it as `CLAUDE.md` step 1 says: an empty `<scope>: start #NN` commit, a push, then `gh pr create --draft`, with a `Closes #NN` line for the spec and for every ticket. That replaces upstream's "open the draft after the first merge". Every push to the integration branch then runs the full CI on the draft, which is how the CI-only `wasm-build` job gets covered during the run.
 
 ## Explore first, then put every open question to the user in one batch
 
