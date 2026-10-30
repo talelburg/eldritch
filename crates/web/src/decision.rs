@@ -237,15 +237,15 @@ pub fn DecisionView() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
-    use cards::REGISTRY;
+    use cards::{REGISTRY, TEST_REGISTRIES};
     use game_core::engine::{InputRequest, OptionId};
     use game_core::event::Event;
     use game_core::state::{
-        Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
-        CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
-        Owner as CardOwner, TokenResolution, UseKind,
+        AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode, CardInPlay, CardInstanceId,
+        ChaosToken, Continuation, GameStateBuilder, InvestigatorId, Owner as CardOwner,
+        TokenResolution, UseKind,
     };
-    use game_core::test_support;
+    use game_core::test_support::{self, location};
 
     use super::*;
     use crate::skill_test_result;
@@ -345,17 +345,18 @@ mod tests {
     fn a_decision_names_a_card_at_a_location_or_attached_to_one() {
         let lita = CardInstanceId(60);
         let fog = CardInstanceId(61);
-        let mut parlor = test_support::test_location(5, "Parlor");
-        parlor.cards_at_location.push(CardInPlay::enter_play(
-            CardCode::new("01117"),
-            lita,
-            CardOwner::Scenario,
-        ));
-        parlor.attachments.push(CardInPlay::enter_play(
-            CardCode::new("01168"),
-            fog,
-            CardOwner::EncounterDeck,
-        ));
+        let parlor = location(5)
+            .name("Parlor")
+            .cards_at_location([CardInPlay::enter_play(
+                CardCode::new("01117"),
+                lita,
+                CardOwner::Scenario,
+            )])
+            .attachments([CardInPlay::enter_play(
+                CardCode::new("01168"),
+                fog,
+                CardOwner::EncounterDeck,
+            )]);
         let game = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .with_location(parlor)
@@ -381,13 +382,10 @@ mod tests {
     #[test]
     fn an_advancing_agenda_is_named_by_its_reverse() {
         let mut game = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
+            .with_agenda_deck([AGENDA_1])
             .build();
-        game.agenda_deck = vec![Agenda {
-            code: CardCode::new(AGENDA_1),
-            doom_threshold: 3,
-        }];
-        game.agenda_index = 0;
         game.continuations = test_support::from_frames_unchecked([advancing(
             AdvanceDeck::Agenda,
             CardCode::new(AGENDA_1),
@@ -491,13 +489,10 @@ mod tests {
     #[test]
     fn an_advancing_act_is_named_and_quoted_by_its_reverse() {
         let mut game = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
+            .with_act_deck([ACT_3])
             .build();
-        game.act_deck = vec![Act {
-            code: CardCode::new(ACT_3),
-            clue_threshold: 2,
-        }];
-        game.act_index = 0;
         game.continuations = test_support::from_frames_unchecked([advancing(
             AdvanceDeck::Act,
             CardCode::new(ACT_3),
@@ -530,14 +525,11 @@ mod tests {
     /// reaching for the reverse.
     #[test]
     fn an_act_anchor_resolves_to_the_current_act() {
-        let mut game = GameStateBuilder::new()
+        let game = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
+            .with_act_deck([ACT_3])
             .build();
-        game.act_deck = vec![Act {
-            code: CardCode::new("01110"),
-            clue_threshold: 2,
-        }];
-        game.act_index = 0;
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())

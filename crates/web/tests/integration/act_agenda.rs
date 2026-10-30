@@ -7,8 +7,8 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
-    Act, AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode,
-    Continuation, GameStateBuilder,
+    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode, Continuation,
+    GameState, GameStateBuilder,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -36,18 +36,9 @@ fn section_text() -> String {
 
 #[wasm_bindgen_test]
 async fn act_and_agenda_render_name_text_and_thresholds() {
-    // Act 01109 "The Barrier" (Objective text); Agenda 01107 "They're Getting
-    // Out!" (Forced text).
-    let mut state = GameStateBuilder::new().build();
-    state.act_deck = vec![Act {
-        code: CardCode::new("01109"),
-        clue_threshold: 2,
-    }];
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01107"),
-        doom_threshold: 3,
-    }];
-    state.agenda_doom = 1;
+    // Act 01109 "The Barrier" (Objective text, 3 clues); Agenda 01107
+    // "They're Getting Out!" (Forced text, doom 10).
+    let state = barrier_and_getting_out();
 
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
@@ -58,7 +49,7 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     let text = section_text();
     assert!(text.contains("The Barrier"), "act name missing: {text}");
     assert!(
-        text.contains("clues to advance: 2"),
+        text.contains("clues to advance: 3"),
         "act threshold missing: {text}"
     );
     assert!(
@@ -69,7 +60,17 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
         text.contains("They're Getting Out!"),
         "agenda name missing: {text}"
     );
-    assert!(text.contains("doom 1/3"), "agenda doom missing: {text}");
+    assert!(text.contains("doom 1/10"), "agenda doom missing: {text}");
+}
+
+/// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda.
+fn barrier_and_getting_out() -> GameState {
+    GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_act_deck(["01109"])
+        .with_agenda_deck(["01107"])
+        .with_agenda_doom(1)
+        .build()
 }
 
 /// The last-mounted `.card--act` — `mount_to_body` accumulates DOM across tests in
@@ -85,16 +86,7 @@ fn act_card() -> Element {
 /// Mount `act_agenda_view` (act 01109) with a store carrying `outcome`, a derived
 /// `PendingOptions`, an `OutboundTx`, and a capturing channel.
 async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    let mut state = GameStateBuilder::new().build();
-    state.act_deck = vec![Act {
-        code: CardCode::new("01109"),
-        clue_threshold: 2,
-    }];
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01107"),
-        doom_threshold: 3,
-    }];
-    state.agenda_doom = 1;
+    let state = barrier_and_getting_out();
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
@@ -216,23 +208,12 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
 /// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
 /// `step`. Pushes an `AdvanceReverse` frame as the engine would.
 async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
-    let mut state = GameStateBuilder::new().build();
-    match deck {
-        AdvanceDeck::Agenda => {
-            state.agenda_deck = vec![Agenda {
-                code: CardCode::new(code),
-                doom_threshold: 3,
-            }];
-            state.agenda_index = 0;
-        }
-        AdvanceDeck::Act => {
-            state.act_deck = vec![Act {
-                code: CardCode::new(code),
-                clue_threshold: 2,
-            }];
-            state.act_index = 0;
-        }
+    let builder = GameStateBuilder::new().with_registries(cards::TEST_REGISTRIES);
+    let mut state = match deck {
+        AdvanceDeck::Agenda => builder.with_agenda_deck([code]),
+        AdvanceDeck::Act => builder.with_act_deck([code]),
     }
+    .build();
     state.continuations =
         test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
             Continuation::AdvanceReverse(AdvanceReverseFrame {

@@ -116,19 +116,20 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use game_core::test_support;
+    use game_core::test_support::{enemy, TEST_REGISTRIES};
 
     use super::*;
 
     #[test]
     fn stat_chips_in_order() {
-        let mut e = test_support::test_enemy(1, "Ghoul");
-        e.fight = 3;
-        e.evade = 2;
-        e.max_health = 3;
-        e.damage = 1;
-        e.attack_damage = 2;
-        e.attack_horror = 1;
+        let e = enemy(1)
+            .fight(3)
+            .evade(2)
+            .health(3)
+            .damage(1)
+            .attack_damage(2)
+            .attack_horror(1)
+            .mint(TEST_REGISTRIES, 1);
         assert_eq!(
             enemy_stat_chips(&e),
             vec![
@@ -142,10 +143,11 @@ mod tests {
 
     #[test]
     fn keyword_chips_only_when_present() {
-        let mut e = test_support::test_enemy(1, "Ghoul Priest");
-        e.hunter = true;
-        e.retaliate = true;
-        e.victory = Some(2);
+        let e = enemy(1)
+            .hunter()
+            .retaliate()
+            .victory(2)
+            .mint(TEST_REGISTRIES, 1);
         assert_eq!(
             enemy_keyword_chips(&e),
             vec![
@@ -158,7 +160,7 @@ mod tests {
 
     #[test]
     fn keyword_chips_empty_for_plain_enemy() {
-        let e = test_support::test_enemy(2, "Swarm of Rats");
+        let e = enemy(2).mint(TEST_REGISTRIES, 1);
         assert!(enemy_keyword_chips(&e).is_empty());
     }
 }
