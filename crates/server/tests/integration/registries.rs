@@ -1,21 +1,12 @@
 //! The production server runs on the real `scenarios` + `cards` registries.
 //!
 //! `POST /games` for The Gathering succeeds and real card codes
-//! resolve. This binary hands the server the *production* pairing,
-//! `server::REGISTRIES`, where the other test binaries pass the mock pairing
+//! resolve. This module hands the server the *production* pairing,
+//! `server::REGISTRIES`, where the other test modules pass the mock pairing
 //! from `common`. It also creates a game from every roster the picker can send:
 //! each default deck, with its fixed weakness and with a random one.
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "every test binary takes the same attribute, so a binary that comes to use every \
-              helper doesn't fail an `expect(dead_code)`"
-)]
-#[allow(
-    dead_code,
-    reason = "each test binary uses only some of the shared helpers"
-)]
-mod common;
+use crate::common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

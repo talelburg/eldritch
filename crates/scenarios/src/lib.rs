@@ -18,7 +18,7 @@
 //! scenario a player is meant to be able to start ([ADR 0016]). A test that
 //! needs a scenario module builds its own shell locally, as
 //! `crates/game-core/tests/scenario_resolution.rs` and
-//! `crates/server/tests/common/mod.rs` do.
+//! `crates/server/tests/integration/common/mod.rs` do.
 //!
 //! [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
 

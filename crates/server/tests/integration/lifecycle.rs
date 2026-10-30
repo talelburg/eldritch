@@ -2,16 +2,7 @@
 //! the created game is persisted and loadable (proving the lazy-rehydrate
 //! path a later WS connect relies on).
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "every test binary takes the same attribute, so a binary that comes to use every \
-              helper doesn't fail an `expect(dead_code)`"
-)]
-#[allow(
-    dead_code,
-    reason = "each test binary uses only some of the shared helpers"
-)]
-mod common;
+use crate::common;
 
 use axum::body;
 use axum::body::Body;

@@ -97,7 +97,7 @@ already working; this ADR names it rather than inventing it.
 `layout: &[]`, and the local scenario registry — is identical across every reader,
 so where several tests in one crate need it, it is shared *there*, in that crate's
 own `tests/common/`. The `setup()` *state* is local, composed per test with
-`GameStateBuilder`. `crates/server/tests/common/mod.rs` demonstrates this: a
+`GameStateBuilder`. `crates/server/tests/integration/common/mod.rs` demonstrates this: a
 ten-line mock scenario, with a comment naming exactly where the shared
 fixture's shape was wrong for it — *"`seat_and_open` seats the investigators at creation,
 so neither the pre-seeded investigator nor the seating is injected here."*
@@ -113,7 +113,7 @@ built for looked at the fixture, wanted a different shape, and wrote its own.
 The feature existed because cargo compiles integration-test binaries without
 `cfg(test)` on their own crate, so a `#[cfg(any(test, feature = "test_fixtures"))]`
 gate is inactive there. Every reader instead builds the `ScenarioModule` shell it
-needs locally — the pattern `crates/server/tests/common/mod.rs` already uses — which
+needs locally — the pattern `crates/server/tests/integration/common/mod.rs` already uses — which
 is the more honest thing for them to do: they test the engine's resolution hook,
 not the crate's routing table. **The fixture is deleted, and the feature with it.**
 

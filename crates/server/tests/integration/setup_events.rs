@@ -8,16 +8,7 @@
 //! in-memory created session is not held), so the events must survive the
 //! round-trip through the persisted column — not just live in memory.
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "every test binary takes the same attribute, so a binary that comes to use every \
-              helper doesn't fail an `expect(dead_code)`"
-)]
-#[allow(
-    dead_code,
-    reason = "each test binary uses only some of the shared helpers"
-)]
-mod common;
+use crate::common;
 
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;

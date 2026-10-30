@@ -2,16 +2,7 @@
 //! `Applied` to every connection, rejected submits return `Rejected`
 //! to the sender only.
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "every test binary takes the same attribute, so a binary that comes to use every \
-              helper doesn't fail an `expect(dead_code)`"
-)]
-#[allow(
-    dead_code,
-    reason = "each test binary uses only some of the shared helpers"
-)]
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

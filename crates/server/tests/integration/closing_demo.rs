@@ -10,16 +10,7 @@
 //! 3. restarting the server (fresh in-memory rooms, same database) and
 //!    reconnecting reproduces the exact state via action-log replay.
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "every test binary takes the same attribute, so a binary that comes to use every \
-              helper doesn't fail an `expect(dead_code)`"
-)]
-#[allow(
-    dead_code,
-    reason = "each test binary uses only some of the shared helpers"
-)]
-mod common;
+use crate::common;
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
