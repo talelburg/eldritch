@@ -22,8 +22,8 @@ use protocol::GameId;
 use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
-use crate::store::{self, GameRow};
 use crate::id;
+use crate::store::{self, GameRow};
 
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
 /// whenever either changes; a game stored under any other version is
@@ -68,7 +68,9 @@ pub enum SessionError {
 #[non_exhaustive]
 pub enum UnresumableReason {
     /// The game was stored in a format version this build doesn't load.
-    #[error("stored in format version {found}, and this build loads only version {FORMAT_VERSION}")]
+    #[error(
+        "stored in format version {found}, and this build loads only version {FORMAT_VERSION}"
+    )]
     Version {
         /// The version the game was stored in.
         found: i64,
@@ -253,8 +255,14 @@ impl GameSession {
 
         if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
             let action_json = serde_json::to_string(&logged)?;
-            store::insert_action(&self.db, &self.game_id, self.seq, &action_json, unix_millis())
-                .await?;
+            store::insert_action(
+                &self.db,
+                &self.game_id,
+                self.seq,
+                &action_json,
+                unix_millis(),
+            )
+            .await?;
             self.seq += 1;
             self.state = result.state;
             self.outcome = result.outcome.clone();

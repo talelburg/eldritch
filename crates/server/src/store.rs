@@ -76,9 +76,9 @@ pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Optio
         "SELECT format_version, scenario_id, roster, lead, rng_seed, interactive_acknowledge, \
          setup_fingerprint FROM games WHERE game_id = ?",
     )
-        .bind(game_id.as_str())
-        .fetch_optional(db)
-        .await?;
+    .bind(game_id.as_str())
+    .fetch_optional(db)
+    .await?;
     Ok(row.map(
         |(
             format_version,

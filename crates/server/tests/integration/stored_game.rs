@@ -51,10 +51,7 @@ async fn no_stored_column_holds_serialized_engine_state() {
         ("games", "SELECT * FROM games"),
         ("actions", "SELECT * FROM actions"),
     ] {
-        let rows = sqlx::query(select)
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let rows = sqlx::query(select).fetch_all(&pool).await.unwrap();
         assert!(!rows.is_empty(), "`{table}` holds the game");
         for row in rows {
             for column in 0..row.len() {

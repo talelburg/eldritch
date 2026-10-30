@@ -94,7 +94,13 @@ impl SetupFingerprint {
                 })
                 .collect(),
             encounter_deck: codes(&state.encounter_deck),
-            chaos_bag: state.chaos_bag.tokens.iter().map(token_name).collect(),
+            chaos_bag: state
+                .chaos_bag
+                .tokens
+                .iter()
+                .copied()
+                .map(token_name)
+                .collect(),
         }
     }
 
@@ -149,7 +155,7 @@ fn codes<'a>(cards: impl IntoIterator<Item = &'a CardCode>) -> Vec<String> {
 /// A chaos token's name in the fingerprint: a numeric token as its signed
 /// modifier (`"0"`, `"-2"`, `"+1"`), any other token by its variant name
 /// (`"Skull"`, `"AutoFail"`).
-fn token_name(token: &ChaosToken) -> String {
+fn token_name(token: ChaosToken) -> String {
     match token {
         ChaosToken::Numeric(0) => "0".to_owned(),
         ChaosToken::Numeric(n) => format!("{n:+}"),
