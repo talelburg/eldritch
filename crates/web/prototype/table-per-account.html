@@ -8,7 +8,7 @@
   three-investigator Gathering (?s=1..5). Stub data only; buttons submit nothing.
 
   Cast (per "Players, groups and sessions", #1214):
-    You  — holds Roland Banks (lead) and Agnes Baker
+    Tal (you) — holds Roland Banks (lead) and Agnes Baker
     Sam  — holds Daisy Walker
     Alex — a member holding no investigator: a viewer
   Seating: Roland, Daisy, Agnes.
@@ -83,6 +83,55 @@
   .bubble:after { content: ""; position: absolute; left: 1.2rem; bottom: -0.6rem; border: 0.5rem solid transparent; border-top-color: inherit; border-bottom: 0; }
   .center { text-align: center; border: 1px solid #ddd; border-radius: 50px; padding: 0.4rem; background: #fcfcf6; }
   .fan .card.back { margin-left: -1.2rem; } .fan .card.back:first-child { margin-left: 0.15rem; }
+  /* variant D: one screen. header / map + band / dock, no page scroll */
+  body.d { padding-bottom: 0; overflow: hidden; }
+  body.d .switcher { bottom: auto; top: 0.4rem; }
+  body.d .notes { top: 3rem; right: 3.6rem; }
+  .d-screen { height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+  .d-screen header.app { margin: 2.9rem 1rem 0.2rem; }
+  .d-mid { display: grid; grid-template-columns: 1fr 3rem; min-height: 0; position: relative; }
+  .d-board { overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; min-height: 0; }
+  .actagenda { display: flex; gap: 0.5rem; font-size: 0.78rem; }
+  .actagenda span { border: 1px solid #999; border-radius: 4px; padding: 0.15rem 0.5rem; background: #fff; }
+  .smap { position: relative; }
+  .smap svg { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .smap line { stroke: #999; stroke-width: 2; }
+  .snode { position: absolute; display: flex; gap: 0.3rem; font-size: 0.75rem; }
+  .snode .lc { width: 130px; min-height: 60px; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.25rem; }
+  .snode.unrev .lc { background: #ececec; color: #888; border-style: dashed; }
+  .snode .shroud { display: inline-block; background: #557; color: #fff; border-radius: 0.5rem; padding: 0 0.3rem; margin-right: 0.2rem; }
+  .snode .rail { display: flex; flex-direction: column; gap: 0.1rem; }
+  .snode .tok { font-size: 0.72rem; padding: 0 0.3rem; border-radius: 0.5rem; background: #dde6ff; cursor: pointer; }
+  .snode .tok.mine { background: #cfeccf; } .snode .tok.focus { outline: 2px solid #333; }
+  /* the phase band */
+  .band { border-left: 1px solid #ddd; background: #fafafa; font-size: 0.68rem; text-align: center; overflow: auto; position: relative; }
+  .band .ph { font-weight: bold; color: #444; margin-top: 0.35rem; border-top: 1px solid #ddd; padding-top: 0.15rem; }
+  .band .st { position: relative; padding: 0.08rem 0; color: #777; cursor: default; }
+  .band .st.win { color: #bbb; }
+  .band .st.now { background: #f2d264; color: #000; font-weight: bold; border-radius: 3px; }
+  .band .ph.now { color: #000; background: #fff4d0; }
+  .tip { position: fixed; background: #222; color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; z-index: 20; }
+  .popout { position: absolute; right: 3rem; top: 0; width: 22rem; max-height: 100%; overflow: auto; background: #fff; border: 1px solid #aaa; box-shadow: -3px 3px 12px #0003; font-size: 0.8rem; padding: 0.4rem 0.6rem; z-index: 5; }
+  .popout .ph { font-weight: bold; margin-top: 0.3rem; } .popout .now { background: #f2d264; font-weight: bold; }
+  .popout .win { color: #999; font-style: italic; }
+  /* the dock */
+  .dock { border-top: 2px solid #888; background: #fdfdfd; }
+  .table-strip { padding: 0.3rem 0.8rem; font-size: 0.85rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #ddd; }
+  .table-strip.mine { background: #f1fbf1; border-left: 4px solid #2a6; }
+  .table-strip.waiting { background: #f3f3f3; color: #555; border-left: 4px solid #aaa; }
+  .dtabs { display: flex; gap: 0.25rem; padding: 0.3rem 0.6rem 0; }
+  .dtab { border: 1px solid #aaa; border-bottom: none; border-radius: 6px 6px 0 0; padding: 0.25rem 0.7rem; background: #e8e8e8; cursor: pointer; position: relative; font-size: 0.85rem; }
+  .dtab.on { background: #fff; font-weight: bold; box-shadow: 0 2px 0 #fff; }
+  .dtab.colour-mine { background: #dff3df; } .dtab.colour-mine.on { background: #fff; border-color: #5a5; border-width: 2px; }
+  .dtab .acct { font-weight: normal; font-size: 0.72rem; color: #666; margin-left: 0.3rem; }
+  .dtab .dot { position: absolute; top: -0.45rem; right: -0.3rem; background: #2a6; color: #fff; border-radius: 0.6rem; font-size: 0.62rem; padding: 0 0.3rem; }
+  .dtab .turn { color: #b8860b; }
+  .dpanel { background: #fff; border-top: 1px solid #aaa; padding: 0.4rem 0.8rem; display: flex; gap: 1rem; align-items: flex-start; max-height: 34vh; overflow: auto; }
+  .dpanel > div { min-width: 0; } .dpanel .handcol { flex: 1; }
+  .dpanel .pstrip { flex-basis: 100%; }
+  .dpanel-wrap { display: flex; flex-direction: column; }
+  .pstrip { padding: 0.3rem 0.8rem; font-size: 0.85rem; background: #f1fbf1; border-left: 4px solid #2a6; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .pstrip.waiting { background: #f3f3f3; border-left-color: #aaa; color: #555; }
   /* switcher + notes */
   .switcher { position: fixed; bottom: 0.6rem; left: 50%; transform: translateX(-50%); background: #111; color: #fff; border-radius: 2rem; padding: 0.35rem 0.9rem; display: flex; gap: 0.7rem; align-items: center; box-shadow: 0 3px 12px #0006; font-size: 0.85rem; z-index: 10; white-space: nowrap; }
   .switcher button { background: #333; color: #fff; border: 1px solid #555; border-radius: 1rem; padding: 0.1rem 0.6rem; }
@@ -100,7 +149,7 @@
 <script>
 // ---------- cast ----------
 const ACCOUNTS = {
-  you:  { name: 'You',  holds: ['roland', 'agnes'] },
+  you:  { name: 'Tal',  holds: ['roland', 'agnes'] },
   sam:  { name: 'Sam',  holds: ['daisy'] },
   alex: { name: 'Alex', holds: [] },
 };
@@ -179,13 +228,16 @@ const STEPS = {
 
 // ---------- url state ----------
 const params = new URLSearchParams(location.search);
-const VARIANTS = [['A', 'Stacked panels'], ['B', 'My board + table rail'], ['C', 'Around the table']];
+const VARIANTS = [['A', 'Stacked panels'], ['B', 'My board + table rail'], ['C', 'Around the table'], ['D', 'Docked panel + tabs (round 2)']];
+// D's open question: are the tabs for investigators I control marked, and how?
+const MARKS = [['badge', 'tabs name the account'], ['colour', 'my tabs tinted'], ['none', 'no marking']];
 let st = {
-  variant: params.get('variant') || 'A', as: params.get('as') || 'you', s: +(params.get('s') || 1),
-  expanded: {}, focus: null, selected: new Set(), notesMin: false,
+  variant: params.get('variant') || 'D', as: params.get('as') || 'you', s: +(params.get('s') || 1),
+  mark: params.get('mark') || 'badge', popout: false,
+  expanded: {}, focus: null, selected: new Set(), notesMin: (params.get('variant') || 'D') === 'D',
 };
 function push() {
-  const p = new URLSearchParams({ variant: st.variant, as: st.as, s: st.s });
+  const p = new URLSearchParams({ variant: st.variant, as: st.as, s: st.s, mark: st.mark });
   history.replaceState(null, '', '?' + p);
   render();
 }
@@ -389,14 +441,121 @@ function variantC() {
     </div>`;
 }
 
+// ---------- Variant D: map on top, phase band at the side, the investigator docked below ----------
+// Round 2, from the user's notes on B: every investigator is a tab (mine and
+// others'), the panel is docked to the bottom and the tabs switch it, the map is
+// today's spatial one with its connections, a narrow numbered phase band, and the
+// whole table fits one screen.
+//
+// Act 2 of The Gathering: the Study has left play, so map.rs's authored cells
+// collapse to Attic (0,0), Hallway (0,1), Cellar (1,1), Parlor (0,2). Cells are
+// shrunk from map.rs's 400x250 so the table fits one screen.
+const D_POS = { Attic: [0, 0], Hallway: [0, 1], Cellar: [1, 1], Parlor: [0, 2] };
+const D_EDGES = [['Hallway', 'Attic'], ['Hallway', 'Cellar'], ['Hallway', 'Parlor']];
+const D_SHROUD = { Hallway: 1, Attic: 1, Cellar: 4, Parlor: 2 };
+const CW = 270, CH = 100, LW = 130, LH = 60;
+const ROUND = [
+  ['Mythos', ['1.1 Round begins. Mythos phase begins.', '1.2 Place 1 doom on the current agenda.', '1.3 Check doom threshold.', '1.4 Each investigator draws 1 encounter card.', 'W', '1.5 Mythos phase ends.']],
+  ['Investigation', ['2.1 Investigation phase begins.', 'W', "2.2 Next investigator's turn begins.", 'W', '2.2.1 Active investigator may take an action, if able.', "2.2.2 Investigator's turn ends.", '2.3 Investigation phase ends.']],
+  ['Enemy', ['3.1 Enemy phase begins.', '3.2 Hunter enemies move.', 'W', '3.3 Next investigator resolves engaged enemy attacks.', 'W', '3.4 Enemy phase ends.']],
+  ['Upkeep', ['4.1 Upkeep phase begins.', 'W', '4.2 Reset actions.', '4.3 Ready each exhausted card.', '4.4 Each investigator draws 1 card and gains 1 resource.', '4.5 Each investigator checks hand size.', '4.6 Upkeep phase ends. Round ends.']],
+];
+const WIN_TEXT = 'Player window: fast cards and actions may be played.';
+const isNow = (ph, text) => ph === scn().phase && text.startsWith(scn().step + ' ');
+function dMap() {
+  const w = 2 * CW - (CW - LW - 110), h = 3 * CH;
+  const c = l => [D_POS[l][0] * CW + LW / 2, D_POS[l][1] * CH + LH / 2];
+  const lines = D_EDGES.map(([a, b]) => `<line x1="${c(a)[0]}" y1="${c(a)[1]}" x2="${c(b)[0]}" y2="${c(b)[1]}"/>`).join('');
+  const nodes = Object.keys(D_POS).map(l => {
+    const toks = SEATING.filter(i => scn().at[i] === l)
+      .map(i => `<span class="tok ${mine(i) ? 'mine' : ''} ${i === dFocus() ? 'focus' : ''}" onclick="setFocus('${i}')">${INV[i].short}</span>`).join('');
+    const ens = scn().enemies.filter(e => e.at === l).map(e => `<span class="card enemy">${e.name}</span>`).join('');
+    const un = UNREVEALED.includes(l);
+    return `<div class="snode ${un ? 'unrev' : ''}" style="left:${D_POS[l][0] * CW}px;top:${D_POS[l][1] * CH}px">
+      <div class="lc">${un ? '' : `<span class="shroud" title="shroud">${D_SHROUD[l]}</span>`}<b>${l}</b>${un ? '<br><span class="muted">unrevealed</span>' : ''}</div>
+      <div class="rail">${toks}${ens}</div></div>`;
+  }).join('');
+  return `<div class="smap" style="width:${w}px;height:${h}px"><svg width="${w}" height="${h}">${lines}</svg>${nodes}</div>`;
+}
+function dBand() {
+  const steps = ROUND.map(([ph, list]) => `<div class="ph ${ph === scn().phase ? 'now' : ''}" data-tip="${ph} phase">${ph[0]}</div>` +
+    list.map(t => t === 'W'
+      ? `<div class="st win" data-tip="${WIN_TEXT}">◇</div>`
+      : `<div class="st ${isNow(ph, t) ? 'now' : ''}" data-tip="${esc(t)}">${t.split(' ')[0]}</div>`).join('')).join('');
+  return `<aside class="band"><button class="link" title="Pop the round out" onclick="st.popout=!st.popout;render()">${st.popout ? '⇥' : '⇤'}</button>${steps}</aside>`;
+}
+function dPopout() {
+  if (!st.popout) return '';
+  return `<div class="popout"><b>Round 3</b> <button class="link" style="float:right" onclick="st.popout=false;render()">pop back ⇥</button>
+    ${ROUND.map(([ph, list]) => `<div class="ph">${ph}</div>` + list.map(t => t === 'W'
+      ? `<div class="win">${WIN_TEXT}</div>`
+      : `<div class="${isNow(ph, t) ? 'now' : ''}">${esc(t)}${isNow(ph, t) && scn().active ? ` (${INV[scn().active].short})` : ''}</div>`).join('')).join('')}</div>`;
+}
+function dFocus() {
+  return st.focus || focusDefault();
+}
+// A table-level prompt (the lead's decision) is about no one investigator's
+// board, so it sits above the tabs, whichever tab is open.
+const tableLevel = () => !!scn().prompt.responder.lead;
+function variantD() {
+  const focus = dFocus(), p = scn().prompt, ans = answerers();
+  const tabs = SEATING.map(id => {
+    const m = mine(id);
+    const needs = !tableLevel() && !p.turnMenu && ans.includes(id) && m && id !== focus;
+    const busy = !tableLevel() && ans.includes(id) && !m;
+    const acctLbl = st.mark === 'badge' ? `<span class="acct">${m ? 'you' : acct(id)}</span>` : '';
+    return `<span class="dtab ${id === focus ? 'on' : ''} ${st.mark === 'colour' && m ? 'colour-mine' : ''}" onclick="setFocus('${id}')">
+      ${scn().active === id ? '<span class="turn" title="their turn">▶</span> ' : ''}${INV[id].short}${id === LEAD ? ' <span title="lead investigator">★</span>' : ''}${acctLbl}
+      ${busy ? ' <span class="spinner" title="deciding"></span>' : ''}${needs ? '<span class="dot">needs you</span>' : ''}</span>`;
+  }).join('');
+  // Above the tabs: the lead's prompt, or a wait you can't see on the open tab.
+  let strip = '';
+  if (tableLevel()) {
+    strip = canAnswer()
+      ? `<div class="table-strip mine"><b>★ As lead investigator:</b> ${esc(p.text)} ${promptControls()}</div>`
+      : `<div class="table-strip waiting"><span class="spinner"></span> ${waitingLine()}: <i>${esc(p.text)}</i></div>`;
+  } else if (!canAnswer() && !ans.includes(focus)) {
+    strip = `<div class="table-strip waiting"><span class="spinner"></span> ${waitingLine()}${p.turnMenu ? '' : `: <i>${esc(p.text)}</i>`}</div>`;
+  }
+  // On the open tab: that investigator's own prompt, or the wait on it.
+  let pstrip = '';
+  if (!tableLevel() && ans.includes(focus) && !p.turnMenu) {
+    pstrip = mine(focus)
+      ? `<div class="pstrip"><b>${INV[focus].name}:</b> ${esc(p.text)} ${promptControls()}</div>`
+      : `<div class="pstrip waiting"><span class="spinner"></span> ${waitingLine()}: <i>${esc(p.text)}</i></div>`;
+  } else if (p.turnMenu && ans.includes(focus) && !mine(focus)) {
+    pstrip = `<div class="pstrip waiting"><span class="spinner"></span> ${waitingLine()}</div>`;
+  }
+  const s = invState(focus), d = INV[focus], active = scn().active === focus;
+  const turnBtns = mine(focus) && active
+    ? '<div style="margin-top:.3rem"><button>Investigate</button> <button>Move</button> <button>Draw</button> <button>Resource</button> <button>End turn</button></div>' : '';
+  const panel = `<div class="dpanel-wrap">${pstrip}<div class="dpanel">
+      <div><b style="font-size:1.05rem">${d.name}</b> ${st.mark === 'none' ? '' : badges(focus)}<br>
+        <span class="muted">at ${scn().at[focus]}</span><br>
+        <span class="vitals">${d.skills}<br>hp ${s.dmg}/${d.hp} · san ${s.hor}/${d.san}<br>res ${s.res} · clues ${s.clues}${active ? `<br>actions ${'●'.repeat(s.actions)}` : ''}</span>${turnBtns}</div>
+      <div><h4>In play</h4>${cardsHtml(s.inPlay)}<h4>Threat area</h4>${engagedHtml(focus) || '<span class="muted">—</span>'}</div>
+      <div><h4>Discard</h4>${discardHtml(focus, { full: false })}<h4>Deck</h4>${deckHtml(focus)}</div>
+      <div class="handcol"><h4>Hand</h4>${handHtml(focus, { expandable: true })}</div>
+    </div></div>`;
+  return `<div class="d-screen">
+    <header class="app"><h1>Eldritch</h1><span class="muted">signed in as ${ACCOUNTS[st.as].name}${ACCOUNTS[st.as].holds.length ? '' : ' (viewer)'}</span></header>
+    <div class="d-mid"><div class="d-board">
+        <div class="actagenda"><span>Agenda 1a · What's Going On?! · doom 2/3</span><span>Act 2a · The Barrier</span></div>
+        ${dMap()}</div>${dBand()}${dPopout()}</div>
+    <section class="dock">${strip}<div class="dtabs">${tabs}</div>${panel}</section>
+  </div>`;
+}
+
 // ---------- shell ----------
 function render() {
   if (!SCN[st.s]) st.s = 1;
-  const v = { A: variantA, B: variantB, C: variantC }[st.variant] || variantA;
+  const v = { A: variantA, B: variantB, C: variantC, D: variantD }[st.variant] || variantD;
+  document.body.className = st.variant === 'D' ? 'd' : '';
   document.getElementById('root').innerHTML = v();
   const vi = VARIANTS.findIndex(x => x[0] === st.variant);
   document.getElementById('switcher').innerHTML = `
     <button onclick="cycle(-1)">◀</button><b>${VARIANTS[vi][0]} (${VARIANTS[vi][1]})</b><button onclick="cycle(1)">▶</button>
+    ${st.variant === 'D' ? `<span>tabs <select onchange="st.mark=this.value;push()">${MARKS.map(([k, l]) => `<option value="${k}" ${k === st.mark ? 'selected' : ''}>${l}</option>`).join('')}</select></span>` : ''}
     <span>as <select onchange="st.as=this.value;st.focus=null;st.selected.clear();push()">${Object.entries(ACCOUNTS).map(([k, a]) => `<option value="${k}" ${k === st.as ? 'selected' : ''}>${a.name}${a.holds.length ? ' (' + a.holds.map(i => INV[i].short).join(', ') + ')' : ' (viewer)'}</option>`).join('')}</select></span>
     <span>moment <select onchange="st.s=+this.value;st.focus=null;st.selected.clear();push()">${Object.entries(SCN).map(([k, x]) => `<option value="${k}" ${+k === st.s ? 'selected' : ''}>${k}. ${x.title}</option>`).join('')}</select></span>`;
   const r = scn().prompt.responder;
@@ -426,6 +585,17 @@ document.addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, select, [contenteditable]')) return;
   if (e.key === 'ArrowLeft') cycle(-1);
   if (e.key === 'ArrowRight') cycle(1);
+});
+// The phase band's hover text: instant, unlike a native `title`.
+let tipEl = null;
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest && e.target.closest('[data-tip]');
+  if (tipEl) { tipEl.remove(); tipEl = null; }
+  if (!t) return;
+  const r = t.getBoundingClientRect();
+  tipEl = document.createElement('div'); tipEl.className = 'tip'; tipEl.textContent = t.dataset.tip;
+  document.body.appendChild(tipEl);
+  tipEl.style.top = r.top + 'px'; tipEl.style.left = (r.left - tipEl.offsetWidth - 6) + 'px';
 });
 render();
 </script>
