@@ -26,7 +26,7 @@
 //! today the reshuffle finds an empty discard and the dig an empty deck —
 //! the reverse is a faithful no-op (RR: "discard … until a `Ghoul` …";
 //! a deck with no Ghoul yields none). The algorithm is exercised against a
-//! seeded deck in `cards/tests/agenda_reverses.rs`.
+//! seeded deck in `cards/tests/integration/agenda_reverses.rs`.
 //!
 //! The native never suspends: `resolve_encounter_card` pushes the card's
 //! Revelation and disposal frames and returns `Done`, and the drawn Ghoul

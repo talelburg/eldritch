@@ -4,7 +4,7 @@
 //!
 //! Here an enemy printed as the Ghoul Priest is defeated by a real Fight
 //! against the real registry. The scenario's end-to-end defeat-to-ending path
-//! is `scenarios/tests/the_gathering_resolutions.rs`.
+//! is `scenarios/tests/integration/the_gathering_resolutions.rs`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

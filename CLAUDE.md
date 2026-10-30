@@ -61,7 +61,7 @@ RUSTDOCFLAGS="-D warnings"  cargo doc --workspace --no-deps --all-features
 
 # Single test (binary name from `cargo test` output)
 cargo test -p game-core <test_fn_name>
-cargo test -p cards --test play_card <test_fn_name>     # integration tests in crates/cards/tests/
+cargo test -p cards --test integration play_card::<test_fn_name>     # one module of crates/cards/tests/integration/
 
 cargo run -p card-data-pipeline    # regenerate the corpus (only after bumping data/arkhamdb-snapshot)
 

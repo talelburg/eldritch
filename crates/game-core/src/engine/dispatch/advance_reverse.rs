@@ -323,7 +323,7 @@ mod tests {
     /// reverse that ends their game before the result panel replaces the board.
     /// Answering it fires that reverse, and the reverse is what latches (ADR
     /// 0013). The agenda-deck mirror is proven end-to-end in
-    /// `scenarios/tests/the_gathering_resolutions.rs`.
+    /// `scenarios/tests/integration/the_gathering_resolutions.rs`.
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
         let mut state = GameStateBuilder::new()
@@ -366,7 +366,7 @@ mod tests {
 
         // Answering the flip fires the reverse. Its own forced
         // acknowledge (asserted end-to-end in
-        // `scenarios/tests/the_gathering_resolutions.rs`) is the next prompt;
+        // `scenarios/tests/integration/the_gathering_resolutions.rs`) is the next prompt;
         // what is under test here is that the ending lands *after* the flip.
         let session = session.pick(OptionTarget::Act);
         assert!(

@@ -15,8 +15,6 @@
 //! `pick_nth`: the disengage choice first (0 = disengage, 1 = don't), then the
 //! move choice (0 = move, 1 = don't).
 
-mod common;
-
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;

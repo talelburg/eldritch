@@ -121,7 +121,7 @@ fn the_act_three_predicate_reads_the_zero_based_cursor() {
 /// ability, announcing 1 physical trauma, and nobody else touched. The walk
 /// over the table — player order, the resigned seat skipped, and the
 /// no-resolution ending — is pinned end to end in
-/// `tests/theyre_getting_out.rs`.
+/// `tests/integration/theyre_getting_out.rs`.
 #[test]
 fn the_act_three_body_defeats_its_investigator_with_one_physical_trauma() {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));

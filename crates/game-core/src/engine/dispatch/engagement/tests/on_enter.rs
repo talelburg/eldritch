@@ -5,7 +5,7 @@
 //! investigator (as if it were the only investigator in play), and ignores all
 //! other investigators while moving and engaging."* That a non-bearer walking
 //! in is not engaged is driven through `apply` by
-//! `crates/cards/tests/mob_enforcer.rs`.
+//! `crates/cards/tests/integration/mob_enforcer.rs`.
 
 use super::*;
 use crate::assert_event;

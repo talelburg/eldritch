@@ -70,7 +70,7 @@ fn end_turn_outside_investigation_phase_is_rejected() {
 // which game-core unit tests cannot reach by crate direction. The full
 // round-cycle coverage — including DrawEncounterCard completing the
 // phase and transitioning to Investigation — lives in the T14
-// integration tests at crates/cards/tests/mythos_phase.rs.
+// integration tests at crates/cards/tests/integration/mythos_phase.rs.
 //
 // These two tests verify the pause-at-Mythos shape: the last EndTurn
 // in a round must land in Mythos with mythos_draw_pending populated,
@@ -195,7 +195,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
     // bump the round, prompt the encounter draw for id, and then
     // PAUSE. It does NOT complete the full cycle — that requires the
     // subsequent encounter draw (needs registry, covered by
-    // crates/cards/tests/mythos_phase.rs).
+    // crates/cards/tests/integration/mythos_phase.rs).
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],

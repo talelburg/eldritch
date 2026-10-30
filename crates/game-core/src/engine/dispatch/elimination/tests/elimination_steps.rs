@@ -295,7 +295,7 @@ fn elimination_discards_an_encounter_owned_threat_card_at_step_four() {
     // The threat area splits by owner: a card the encounter deck owns is not
     // the eliminated investigator's, so step 1 leaves it and step 4 discards it
     // to its owner's pile. No metadata is read. The owner-removed half is
-    // covered by `crates/cards/tests/elimination_teardown.rs`.
+    // covered by `crates/cards/tests/integration/elimination_teardown.rs`.
     let id = InvestigatorId(1);
     // A code the game-core registry does not know: the seat gives it to the
     // encounter deck.

@@ -20,7 +20,7 @@ use game_core::state::{
 };
 use game_core::test_support::{self, TestSession, TEST_INV, TEST_REGISTRIES};
 
-/// Per-binary code prefix. Nothing here is looked up in the registry — the
+/// Per-file code prefix. Nothing here is looked up in the registry — the
 /// hand-size discard path only moves cards between hand and discard — so the
 /// codes are deliberately not ArkhamDB-shaped (ADR 0016). This replaces the
 /// former `01999` filler, a five-digit code that looked like a real one and is

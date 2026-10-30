@@ -1,6 +1,6 @@
 //! [`scenarios::TEST_REGISTRIES`]: the registries a scenario test names — the
 //! real corpus with the synthetic test cards, and this crate's scenario
-//! modules. This binary installs nothing.
+//! modules. This file installs nothing.
 
 use game_core::scenario::ScenarioId;
 use game_core::state::{GameStateBuilder, InvestigatorId};

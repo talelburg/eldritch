@@ -182,7 +182,7 @@ fn act_progression_and_ghoul_priest_defeat_reaches_r1() {
 /// path, because the act's reverse offers the choice rather than latching R1.
 ///
 /// The banner the player ends on is a pure function of this `ResolutionId`
-/// (`crates/web/tests/board.rs::resolution_banner_names_the_resolution_point`),
+/// (`crates/web/tests/integration/board.rs::resolution_banner_names_the_resolution_point`),
 /// so pinning the id here is what pins the two endings apart on screen.
 #[test]
 fn picking_the_second_bullet_reaches_r2_down_the_same_path() {

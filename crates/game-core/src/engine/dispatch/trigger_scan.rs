@@ -161,7 +161,7 @@ pub(super) fn board_walk<'a>(
     }
     // The event's code fills an advancing slot even when the deck's cursor
     // names no card there, as on a board that fires an advance without loading
-    // the deck (`cards/tests/agenda_reverses.rs`): the reverse is still scanned.
+    // the deck (`cards/tests/integration/agenda_reverses.rs`): the reverse is still scanned.
     let act = match event {
         TimingEvent::ActAdvanced { code } => Some(code),
         _ => state.act_deck.get(state.act_index).map(|act| &act.code),

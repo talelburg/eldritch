@@ -96,7 +96,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // Enough clues to clear act 1 (threshold 2, AdvanceAct) and then act 2
     // (threshold 3) via its round-end objective; a small deck so the upkeep
     // draw doesn't deck out. Act 3 (01110) advances on Ghoul-Priest-defeat —
-    // covered by cards/tests/act_advancement.rs — so this test stops at
+    // covered by cards/tests/integration/act_advancement.rs — so this test stops at
     // reaching act 3 through the real deck.
     {
         let i = state.investigators.get_mut(&inv).unwrap();
