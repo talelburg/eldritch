@@ -7,18 +7,15 @@ const HERE: LocationId = LocationId(10);
 const ELSEWHERE: LocationId = LocationId(11);
 
 /// An enemy engaged with investigator 1 at `loc`, ready.
-fn engaged_enemy(id: u32, loc: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id, "Ghoul");
-    e.engaged_with = Some(InvestigatorId(1));
-    e.current_location = Some(loc);
-    e
+fn engaged_enemy(id: u32, loc: LocationId) -> StagedEnemy {
+    enemy(id).engaged_with(InvestigatorId(1)).at(loc)
 }
 
 /// Investigator 1's open turn at [`HERE`], the Study.
 fn open_turn_here() -> GameStateBuilder {
     GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE))
         .open_turn(InvestigatorId(1))
 }
@@ -44,8 +41,8 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
     // Fight targets any co-located enemy (RR p.12); Evade is
     // engagement-only (RR p.11). An unengaged enemy at the investigator's
     // location is a Fight target but not an Evade target.
-    let mut e = test_support::test_enemy(7, "Ghoul");
-    e.current_location = Some(HERE); // co-located, but engaged with nobody
+    // co-located, but engaged with nobody
+    let e = enemy(7).at(HERE);
     let state = open_turn_here().with_enemy(e).build();
 
     let actions = legal_actions(&state, &TEST_REGISTRY);
@@ -63,10 +60,9 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
 fn no_combat_for_an_enemy_at_a_different_location() {
     // An enemy elsewhere (and unengaged) is neither a Fight nor an Evade
     // target (Fight needs co-location).
-    let mut e = test_support::test_enemy(7, "Ghoul");
-    e.current_location = Some(ELSEWHERE);
+    let e = enemy(7).at(ELSEWHERE);
     let state = open_turn_here()
-        .with_location(test_support::test_location(ELSEWHERE.0, "Attic"))
+        .with_location(location(ELSEWHERE))
         .with_enemy(e)
         .build();
     assert!(!legal_actions(&state, &TEST_REGISTRY)
@@ -76,8 +72,8 @@ fn no_combat_for_an_enemy_at_a_different_location() {
 
 #[test]
 fn negative_fight_value_offers_evade_only() {
-    let mut e = engaged_enemy(7, HERE);
-    e.fight = -1; // malformed-but-handled: handler rejects Fight, allows Evade
+    // Malformed-but-handled: the handler rejects Fight, allows Evade.
+    let e = engaged_enemy(7, HERE).fight(-1);
     let state = open_turn_here().with_enemy(e).build();
 
     let actions = legal_actions(&state, &TEST_REGISTRY);
@@ -94,12 +90,12 @@ fn negative_fight_value_offers_evade_only() {
 #[test]
 fn engage_offered_for_co_located_enemy_engaged_with_another() {
     // Enemy at my location, engaged with investigator 2 → I may engage it.
-    let mut e = test_support::test_enemy(7, "Ghoul");
-    e.current_location = Some(HERE);
-    e.engaged_with = Some(InvestigatorId(2));
+    let e = enemy(7).engaged_with(InvestigatorId(2));
     let state = open_turn_here()
-        // Two investigators so an enemy can be engaged with the *other* one.
-        .with_seat(seat(2))
+        // Two investigators so an enemy can be engaged with the *other* one,
+        // who stands here too: an engaged enemy is at its investigator's
+        // location.
+        .with_seat(seat(2).at(HERE))
         .with_enemy(e)
         .build();
 
@@ -116,10 +112,9 @@ fn no_engage_for_an_enemy_already_engaged_with_me_or_elsewhere() {
     // Already engaged with me → not engageable.
     let mine = engaged_enemy(7, HERE);
     // At a different location → not engageable.
-    let mut away = test_support::test_enemy(8, "Rat");
-    away.current_location = Some(ELSEWHERE);
+    let away = enemy(8).at(ELSEWHERE);
     let state = open_turn_here()
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hall"))
+        .with_location(location(ELSEWHERE))
         .with_enemy(mine)
         .with_enemy(away)
         .build();

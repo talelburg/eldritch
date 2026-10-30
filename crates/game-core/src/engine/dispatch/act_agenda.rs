@@ -391,17 +391,15 @@ mod doom_agenda_tests {
     use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Agenda, CardCode, GameStateBuilder};
-    use crate::test_support::TEST_REGISTRIES;
+    use crate::state::GameStateBuilder;
+    use crate::test_support::{agenda, TEST_REGISTRIES};
     use crate::{assert_event, test_support};
 
     #[test]
     fn place_doom_increments_agenda_doom() {
-        let mut state = GameStateBuilder::new().build();
-        state.agenda_deck = vec![Agenda {
-            code: CardCode("_test_agenda".into()),
-            doom_threshold: 2,
-        }];
+        let mut state = GameStateBuilder::new()
+            .with_agenda_deck([agenda("_test_agenda", 2)])
+            .build();
         let mut events = Vec::new();
         place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
         assert_eq!(state.agenda_doom, 1);
@@ -411,17 +409,9 @@ mod doom_agenda_tests {
 
     #[test]
     fn placing_doom_then_checking_the_threshold_advances_the_agenda() {
-        let mut state = GameStateBuilder::new().build();
-        state.agenda_deck = vec![
-            Agenda {
-                code: CardCode("_agenda_1".into()),
-                doom_threshold: 1,
-            },
-            Agenda {
-                code: CardCode("_agenda_2".into()),
-                doom_threshold: 3,
-            },
-        ];
+        let mut state = GameStateBuilder::new()
+            .with_agenda_deck([agenda("_agenda_1", 1), agenda("_agenda_2", 3)])
+            .build();
         let mut events = Vec::new();
         place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
@@ -438,18 +428,10 @@ mod doom_agenda_tests {
 
     #[test]
     fn doom_threshold_advances_non_terminal_agenda() {
-        let mut state = GameStateBuilder::new().build();
-        state.agenda_deck = vec![
-            Agenda {
-                code: CardCode("_test_agenda_1".into()),
-                doom_threshold: 2,
-            },
-            Agenda {
-                code: CardCode("_test_agenda_2".into()),
-                doom_threshold: 2,
-            },
-        ];
-        state.agenda_doom = 2;
+        let mut state = GameStateBuilder::new()
+            .with_agenda_deck([agenda("_test_agenda_1", 2), agenda("_test_agenda_2", 2)])
+            .with_agenda_doom(2)
+            .build();
         let mut events = Vec::new();
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         // The advance is deferred to an AdvanceReverse frame; drive it.
@@ -479,12 +461,9 @@ mod doom_agenda_tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seating([inv])
+            .with_agenda_deck([agenda(test_support::terminal_code(3), 2)])
+            .with_agenda_doom(2)
             .build();
-        state.agenda_deck = vec![Agenda {
-            code: test_support::terminal_code(3),
-            doom_threshold: 2,
-        }];
-        state.agenda_doom = 2;
         let mut events = Vec::new();
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         dispatch::drive(
@@ -507,12 +486,10 @@ mod doom_agenda_tests {
 
     #[test]
     fn doom_threshold_not_met_does_nothing() {
-        let mut state = GameStateBuilder::new().build();
-        state.agenda_deck = vec![Agenda {
-            code: CardCode("_test_agenda".into()),
-            doom_threshold: 3,
-        }];
-        state.agenda_doom = 2;
+        let mut state = GameStateBuilder::new()
+            .with_agenda_deck([agenda("_test_agenda", 3)])
+            .with_agenda_doom(2)
+            .build();
         let mut events = Vec::new();
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         assert_eq!(state.agenda_index, 0);
@@ -538,26 +515,22 @@ mod advance_act_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support::location;
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, TestSession, TEST_REGISTRIES};
+    use crate::test_support::{self, act, TestSession, TEST_REGISTRIES};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
         // A location coded "HALL"; the investigator stands on it.
-        let mut hall = test_support::test_location(1, "Hallway");
-        hall.code = CardCode("HALL".into());
+        let hall = location(1).code(CardCode("HALL".into()));
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_location(hall)
             .with_seat(test_support::seat(1).at(LocationId(1)))
             .with_seating([InvestigatorId(1)])
+            .with_act_deck([act("_act", 3)])
             .build();
-        state.act_deck = vec![Act {
-            code: CardCode("_act".into()),
-            clue_threshold: 3,
-        }];
-        state.act_index = 0;
 
         state
             .investigators
@@ -582,15 +555,12 @@ mod advance_act_tests {
     #[test]
     fn advance_act_rejects_when_clues_insufficient() {
         let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(1))
             .open_turn(inv)
+            .with_act_deck([act("_test_act", 2)])
             .build();
-        state.act_deck = vec![Act {
-            code: CardCode("_test_act".into()),
-            clue_threshold: 2,
-        }];
 
         // Insufficient clues (1 < 2): AdvanceAct is not legal.
         assert!(
@@ -608,18 +578,15 @@ mod advance_act_tests {
         // deliberate clue-spend AdvanceAct action is nonsensical here ("spend 0
         // clues to advance" / "spend 0 clues to instantly win"), so it must be
         // neither offered nor accepted — even with no forced ability served for
-        // it (the game-core test registry knows nothing of 01110).
+        // it (the game-core test registry knows nothing of the objective act).
         let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             // Plenty of clues — the reject must be the objective, not affordability.
             .with_seat(test_support::seat(1).clues(5))
             .open_turn(inv)
+            .with_act_deck([act("_objective_act", 0)])
             .build();
-        state.act_deck = vec![Act {
-            code: CardCode("01110".into()),
-            clue_threshold: 0,
-        }];
 
         assert!(
             !enumerate::legal_actions(&state, &TEST_REGISTRY)
@@ -651,21 +618,12 @@ mod advance_act_tests {
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
         let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(3))
             .open_turn(inv)
+            .with_act_deck([act("_test_act_1", 2), act("_test_act_2", 2)])
             .build();
-        state.act_deck = vec![
-            Act {
-                code: CardCode("_test_act_1".into()),
-                clue_threshold: 2,
-            },
-            Act {
-                code: CardCode("_test_act_2".into()),
-                clue_threshold: 2,
-            },
-        ];
 
         let session = TestSession::new(state, TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
@@ -688,15 +646,12 @@ mod advance_act_tests {
     #[test]
     fn terminal_act_advances_and_its_reverse_latches_the_ending() {
         let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
+            .with_act_deck([act(test_support::terminal_code(1), 2)])
             .build();
-        state.act_deck = vec![Act {
-            code: test_support::terminal_code(1),
-            clue_threshold: 2,
-        }];
 
         // The ending is latched, so the game is over: `Done`.
         let result = TestSession::new(state, TEST_REGISTRIES)
@@ -718,21 +673,12 @@ mod advance_act_tests {
     #[test]
     fn advance_act_with_no_forced_ability_still_advances() {
         let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
+            .with_act_deck([act("_act_1", 2), act("_act_2", 3)])
             .build();
-        state.act_deck = vec![
-            Act {
-                code: CardCode("01108".into()),
-                clue_threshold: 2,
-            },
-            Act {
-                code: CardCode("01109".into()),
-                clue_threshold: 3,
-            },
-        ];
         let session = TestSession::new(state, TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
         session.assert_at_turn_menu(inv);
@@ -747,27 +693,18 @@ mod advance_act_tests {
     fn advance_act_spends_acting_investigator_first_then_seating() {
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
-        let mut state = GameStateBuilder::new()
+        let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(1))
             .with_seat(test_support::seat(2).clues(2))
             .with_seating([acting, other])
             .open_turn(acting)
+            // Two acts so the first is non-terminal and its advance bumps the
+            // cursor to 1 (a lone act would be terminal, and would need a
+            // reverse that reaches an ending). The successor's contents are
+            // irrelevant to this spend-order test.
+            .with_act_deck([act("_test_act_1", 2), act("_test_act_2", 2)])
             .build();
-        // Two acts so the first is non-terminal and its advance bumps the cursor
-        // to 1 (a lone act would be terminal, and would need a reverse that
-        // reaches an ending). The successor's contents are irrelevant to this
-        // spend-order test.
-        state.act_deck = vec![
-            Act {
-                code: CardCode("_test_act_1".into()),
-                clue_threshold: 2,
-            },
-            Act {
-                code: CardCode("_test_act_2".into()),
-                clue_threshold: 2,
-            },
-        ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
         let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {

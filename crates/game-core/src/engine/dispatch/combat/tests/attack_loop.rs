@@ -3,6 +3,7 @@ use crate::action::{Action, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::OptionTarget;
 use crate::state::{EnemyPhaseFrame, LocationId};
+use crate::test_support::{enemy, location};
 use crate::test_support::{TestSession, TEST_REGISTRIES};
 
 /// The parked loop's re-exposure: the head attacker's sequence has
@@ -16,8 +17,7 @@ use crate::test_support::{TestSession, TEST_REGISTRIES};
 fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
-    let mut enemy = test_support::test_enemy(2, "Attacker");
-    enemy.engaged_with = Some(inv_id);
+    let enemy = enemy(2).engaged_with(inv_id);
 
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -78,8 +78,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
 fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
-    let mut enemy = test_support::test_enemy(2, "Attacker");
-    enemy.engaged_with = Some(inv_id);
+    let enemy = enemy(2).engaged_with(inv_id);
 
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -119,8 +118,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
 fn an_attack_of_opportunity_attacker_never_exhausts() {
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
-    let mut enemy = test_support::test_enemy(2, "Attacker");
-    enemy.engaged_with = Some(inv_id);
+    let enemy = enemy(2).engaged_with(inv_id);
 
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -150,10 +148,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
 fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     // RR p.18: a retaliate attack does not exhaust the attacker.
     let inv_id = InvestigatorId(1);
-    let mut enemy = test_support::test_enemy(100, "Retaliator");
-    enemy.retaliate = true;
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 0;
+    let enemy = enemy(100).retaliate().attack_damage(1).attack_horror(0);
     // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -186,10 +181,10 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
 fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     // RR p.7: an enemy does not exhaust while making an attack of opportunity.
     let inv_id = InvestigatorId(1);
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 0;
+    let enemy = enemy(100)
+        .engaged_with(inv_id)
+        .attack_damage(1)
+        .attack_horror(0);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -222,13 +217,11 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
 /// action provokes both attacks of opportunity.
 fn engaged_by_two() -> TestSession {
     let here = LocationId(10);
-    let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
-    e_a.attack_damage = 1;
-    let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
-    e_b.attack_damage = 2;
+    let e_a = enemy(5).attack_damage(1);
+    let e_b = enemy(6).attack_damage(2);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(here.0, "Study"))
+        .with_location(location(here))
         .with_seat(test_support::seat(1).at(here))
         .with_enemy_engaged(e_a, InvestigatorId(1))
         .with_enemy_engaged(e_b, InvestigatorId(1))

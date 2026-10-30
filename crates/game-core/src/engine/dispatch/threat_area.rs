@@ -200,13 +200,12 @@ pub(super) fn put_into_play_at_location(
 mod tests {
     use super::*;
     use crate::state::GameStateBuilder;
-    use crate::test_support;
+
+    use crate::test_support::location;
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {
-        let mut state = GameStateBuilder::new()
-            .with_location(test_support::test_location(7, "Study"))
-            .build();
+        let mut state = GameStateBuilder::new().with_location(location(7)).build();
         let mut events = Vec::new();
         let id = {
             let mut cx = Cx::for_test(&mut state, &mut events);

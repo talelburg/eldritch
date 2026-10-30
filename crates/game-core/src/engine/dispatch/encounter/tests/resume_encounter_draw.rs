@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::outcome::InputKind;
 use crate::state::{
-    CardCode, GameState, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
+    GameState, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
 };
 use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
@@ -14,6 +14,11 @@ use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
 /// Investigator 1's Mythos step-1.4 encounter draw, the moment it is asked.
 fn drawing() -> GameState {
+    drawing_board().build()
+}
+
+/// [`drawing`], before it is built.
+fn drawing_board() -> GameStateBuilder {
     GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -23,7 +28,6 @@ fn drawing() -> GameState {
         })
         .with_seating([InvestigatorId(1)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
-        .build()
 }
 
 #[test]
@@ -76,13 +80,12 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
 /// `encounter_card_revealed_tests` pattern.
 #[test]
 fn rejects_an_unknown_encounter_code() {
-    let mut state = drawing();
     // Seed the encounter deck with an unknown code so we prove the
     // reject fires at the unknown-code check, not at the
     // empty-deck check.
-    state
-        .encounter_deck
-        .push_back(CardCode("__no_such_card".into()));
+    let state = drawing_board()
+        .with_encounter_deck(["__no_such_card"])
+        .build();
     let pre_deck_len = state.encounter_deck.len();
     // `resume_encounter_draw` only pushes the per-drawer `PlayerDraw` chain
     // frame; the actual draw (and its unknown-code reject) happens in the

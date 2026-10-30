@@ -2,20 +2,14 @@ use super::*;
 
 /// A two-agenda fixture with the given doom threshold on the current one.
 fn state_with_agenda(threshold: u8) -> GameState {
-    let mut state = GameStateBuilder::new()
+    agenda_board(threshold).build()
+}
+
+/// [`state_with_agenda`], before it is built.
+fn agenda_board(threshold: u8) -> GameStateBuilder {
+    GameStateBuilder::new()
         .with_seating([InvestigatorId(1)])
-        .build();
-    state.agenda_deck = vec![
-        Agenda {
-            code: CardCode("ag1".into()),
-            doom_threshold: threshold,
-        },
-        Agenda {
-            code: CardCode("ag2".into()),
-            doom_threshold: 9,
-        },
-    ];
-    state
+        .with_agenda_deck([agenda("ag1", threshold), agenda("ag2", 9)])
 }
 
 #[test]
@@ -203,8 +197,7 @@ fn place_doom_nests_in_choose_one_and_if() {
 /// doom it never placed.
 #[test]
 fn place_doom_of_zero_does_not_run_the_threshold_check() {
-    let mut state = state_with_agenda(1);
-    state.agenda_doom = 1;
+    let mut state = agenda_board(1).with_agenda_doom(1).build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(

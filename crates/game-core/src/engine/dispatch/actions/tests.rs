@@ -4,7 +4,7 @@ use crate::event::Event;
 use crate::state::{
     ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use crate::test_support::{self, TestSession, TEST_REGISTRIES};
+use crate::test_support::{self, enemy, location, StagedEnemy, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Build a Move scenario: investigator at L1, L1 connected to L2,
@@ -26,16 +26,14 @@ fn move_scenario_with_enemy(
         .at(l1)
         .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let mut loc1 = test_support::test_location(l1.0, "L1");
-    loc1.connections = vec![l2];
-    let loc2 = test_support::test_location(l2.0, "L2");
+    let loc1 = location(l1).connections(vec![l2]);
+    let loc2 = location(l2);
 
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.current_location = Some(l1);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = attack_damage;
-    enemy.attack_horror = 0;
-    enemy.exhausted = false;
+    let enemy = enemy(100)
+        .at(l1)
+        .engaged_with(inv_id)
+        .attack_damage(attack_damage)
+        .attack_horror(0);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -147,6 +145,13 @@ fn move_with_nonlethal_aoo_relocates_after_the_attack() {
 /// to spend and full health, mid-Investigation. The L2 enemy isn't engaged
 /// with the mover, so the move opens no attack of opportunity.
 fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState) {
+    move_into_enemy_scenario_with(|ready| ready)
+}
+
+/// [`move_into_enemy_scenario`], with `edit` finishing the enemy.
+fn move_into_enemy_scenario_with(
+    edit: impl FnOnce(StagedEnemy) -> StagedEnemy,
+) -> (InvestigatorId, LocationId, EnemyId, GameState) {
     let inv_id = InvestigatorId(1);
     let l1 = LocationId(10);
     let l2 = LocationId(11);
@@ -154,15 +159,10 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
 
     let inv = test_support::seat(1).at(l1);
 
-    let mut loc1 = test_support::test_location(l1.0, "L1");
-    loc1.connections = vec![l2];
-    let mut loc2 = test_support::test_location(l2.0, "L2");
-    loc2.connections = vec![l1];
+    let loc1 = location(l1).connections(vec![l2]);
+    let loc2 = location(l2).connections(vec![l1]);
 
-    let mut enemy = test_support::test_enemy(100, "Icy Ghoul");
-    enemy.current_location = Some(l2);
-    enemy.engaged_with = None;
-    enemy.exhausted = false;
+    let enemy = edit(enemy(100).at(l2));
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -213,8 +213,7 @@ fn entering_a_location_engages_a_ready_enemy_there() {
 fn entering_a_location_does_not_engage_an_exhausted_enemy() {
     // Only *ready* enemies engage on entry (RR). An exhausted enemy stays
     // unengaged.
-    let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
-    state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
+    let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario_with(StagedEnemy::exhausted);
 
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {
         investigator: inv_id,
@@ -243,17 +242,16 @@ fn entering_engages_all_ready_enemies_and_leaves_already_engaged_alone() {
     let enemy_c = EnemyId(102);
 
     // A second ready, unengaged enemy at the destination.
-    let mut b = test_support::test_enemy(101, "Ghoul B");
-    b.current_location = Some(l2);
-    b.engaged_with = None;
-    b.exhausted = false;
-    // A third enemy at the destination already engaged with someone else.
-    let mut c = test_support::test_enemy(102, "Ghoul C");
-    c.current_location = Some(l2);
-    c.engaged_with = Some(other);
-    c.exhausted = false;
-    state.enemies.insert(enemy_b, b);
-    state.enemies.insert(enemy_c, c);
+    let b = enemy(101).at(l2);
+    // A third enemy at the destination already engaged with someone else,
+    // who is not on this board: minted, so its engagement is left as set
+    // rather than moving it to that investigator.
+    let c = enemy(102)
+        .at(l2)
+        .engaged_with(other)
+        .mint(TEST_REGISTRIES, 1);
+    state.place(b, TEST_REGISTRIES);
+    state.place(StagedEnemy::from(c), TEST_REGISTRIES);
 
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {
         investigator: inv_id,
@@ -292,16 +290,13 @@ fn investigate_scenario_with_enemy(
         .at(loc_id)
         .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let mut loc = test_support::test_location(loc_id.0, "Study");
-    loc.clues = 2;
-    loc.shroud = 2;
+    let loc = location(loc_id).clues(2).shroud(2);
 
-    let mut enemy = test_support::test_enemy(200, "Ghoul");
-    enemy.current_location = Some(loc_id);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = attack_damage;
-    enemy.attack_horror = 0;
-    enemy.exhausted = false;
+    let enemy = enemy(200)
+        .at(loc_id)
+        .engaged_with(inv_id)
+        .attack_damage(attack_damage)
+        .attack_horror(0);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -403,14 +398,13 @@ fn resource_scenario_with_enemy(
         .harm(8_u8.saturating_sub(inv_health), 0)
         .resources(0);
 
-    let loc = test_support::test_location(loc_id.0, "Study");
+    let loc = location(loc_id);
 
-    let mut enemy = test_support::test_enemy(300, "Ghoul");
-    enemy.current_location = Some(loc_id);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = attack_damage;
-    enemy.attack_horror = 0;
-    enemy.exhausted = false;
+    let enemy = enemy(300)
+        .at(loc_id)
+        .engaged_with(inv_id)
+        .attack_damage(attack_damage)
+        .attack_horror(0);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -509,7 +503,7 @@ fn resource_with_no_engaged_enemy_gains_normally() {
 
     let inv = test_support::seat(1).at(loc_id).resources(2);
 
-    let loc = test_support::test_location(loc_id.0, "Study");
+    let loc = location(loc_id);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -561,23 +555,17 @@ fn engage_scenario_with_aoo_enemy(
         .at(loc_id)
         .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let loc = test_support::test_location(loc_id.0, "Study");
+    let loc = location(loc_id);
 
     // The target: co-located, not yet engaged — cannot AoO.
-    let mut target = test_support::test_enemy(400, "Cultist");
-    target.current_location = Some(loc_id);
-    target.engaged_with = None;
-    target.attack_damage = 0;
-    target.attack_horror = 0;
-    target.exhausted = false;
+    let target = enemy(400).at(loc_id).attack_damage(0).attack_horror(0);
 
     // The AoO attacker: already engaged, ready — it WILL AoO.
-    let mut aoo_enemy = test_support::test_enemy(401, "Ghoul");
-    aoo_enemy.current_location = Some(loc_id);
-    aoo_enemy.engaged_with = Some(inv_id);
-    aoo_enemy.attack_damage = aoo_damage;
-    aoo_enemy.attack_horror = 0;
-    aoo_enemy.exhausted = false;
+    let aoo_enemy = enemy(401)
+        .at(loc_id)
+        .engaged_with(inv_id)
+        .attack_damage(aoo_damage)
+        .attack_horror(0);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

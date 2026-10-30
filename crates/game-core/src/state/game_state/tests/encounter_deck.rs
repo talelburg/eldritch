@@ -3,10 +3,10 @@ use crate::state::GameStateBuilder;
 
 #[test]
 fn encounter_deck_and_discard_serde_roundtrip() {
-    let mut state = GameStateBuilder::new().build();
-    state.encounter_deck.push_back(CardCode("filler1".into()));
-    state.encounter_deck.push_back(CardCode("filler2".into()));
-    state.encounter_discard.push(CardCode("filler99".into()));
+    let state = GameStateBuilder::new()
+        .with_encounter_deck([CardCode("filler1".into()), CardCode("filler2".into())])
+        .with_encounter_discard([CardCode("filler99".into())])
+        .build();
 
     let json = serde_json::to_string(&state).expect("serialize");
     let back: GameState = serde_json::from_str(&json).expect("deserialize");

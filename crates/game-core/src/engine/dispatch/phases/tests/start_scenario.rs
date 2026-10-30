@@ -78,9 +78,8 @@ fn seat_and_open_rejects_an_empty_roster() {
 /// and `EncounterDeckShuffled` fires.
 #[test]
 fn start_scenario_shuffles_the_encounter_deck() {
-    let mut state = GameStateBuilder::new().build();
     let codes = ["e1", "e2", "e3", "e4", "e5"];
-    state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
+    let state = GameStateBuilder::new().with_encounter_deck(codes).build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: vec![],

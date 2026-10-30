@@ -17,12 +17,8 @@ fn weak_in(skill: SkillKind) -> Seat {
 }
 
 /// The ghoul, retaliating for 1 damage and 1 horror.
-fn retaliating_ghoul() -> Enemy {
-    let mut enemy = ghoul();
-    enemy.retaliate = true;
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 1;
-    enemy
+fn retaliating_ghoul() -> StagedEnemy {
+    ghoul().retaliate().attack_damage(1).attack_horror(1)
 }
 
 /// Whether `state`'s menu offers a Fight by `investigator` against `enemy`.
@@ -126,8 +122,7 @@ fn successful_fight_against_retaliate_enemy_does_not_trigger_attack() {
 #[test]
 fn failed_fight_against_exhausted_retaliate_enemy_does_not_trigger_attack() {
     // Retaliate requires a READY enemy (RR p.18). Exhausted → no attack.
-    let mut enemy = retaliating_ghoul();
-    enemy.exhausted = true;
+    let enemy = retaliating_ghoul().exhausted();
     let session =
         take_committing_nothing(fight_evade_board(weak_in(SkillKind::Combat), enemy), &FIGHT);
 
@@ -140,9 +135,7 @@ fn failed_fight_against_exhausted_retaliate_enemy_does_not_trigger_attack() {
 #[test]
 fn failed_fight_against_non_retaliate_enemy_does_not_trigger_attack() {
     // No retaliate flag → no attack on failure.
-    let mut enemy = ghoul();
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 1;
+    let enemy = ghoul().attack_damage(1).attack_horror(1);
     let session =
         take_committing_nothing(fight_evade_board(weak_in(SkillKind::Combat), enemy), &FIGHT);
 
@@ -172,8 +165,7 @@ fn retaliate_via_loop_does_not_exhaust_the_enemy() {
     // Retaliate runs through drive_attack_loop: a failed Fight against a ready
     // retaliate enemy deals the retaliate damage AND leaves the enemy ready
     // (RR p.18) — the loop path must not exhaust it.
-    let mut enemy = retaliating_ghoul();
-    enemy.attack_horror = 0;
+    let enemy = retaliating_ghoul().attack_horror(0);
     // Combat 1 vs fight 3 → fail.
     let session =
         take_committing_nothing(fight_evade_board(weak_in(SkillKind::Combat), enemy), &FIGHT);
@@ -193,8 +185,7 @@ fn retaliate_via_loop_does_not_exhaust_the_enemy() {
 fn fight_defeats_enemy_when_damage_reaches_max_health() {
     // Enemy at 1/2 already; Fight success → damage 2, defeated,
     // removed from state, engagement cleared.
-    let mut enemy = ghoul();
-    enemy.damage = 1;
+    let enemy = ghoul().damage(1);
     let session = take_committing_nothing(fight_evade_board(seat(1).at(HERE), enemy), &FIGHT);
 
     session.assert_at_turn_menu(INV);
@@ -262,12 +253,11 @@ fn evade_failure_leaves_engagement_intact() {
 fn fight_against_co_located_unengaged_enemy_is_accepted() {
     // Rules Reference p.12: "To fight an enemy at his or her location…" —
     // Fight targets any enemy at the investigator's location, engaged or not.
-    let mut enemy = ghoul();
-    enemy.current_location = Some(HERE);
+    let enemy = ghoul().at(HERE);
     let board = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Hall"))
+        .with_location(location(HERE))
         .with_enemy(enemy)
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV);
@@ -284,13 +274,12 @@ fn fight_against_enemy_at_a_different_location_is_rejected() {
     // not a Fight target, even though enemies engaged with the investigator
     // are (they share the location). Here the enemy is unengaged and elsewhere.
     let attic = LocationId(51);
-    let mut enemy = ghoul();
-    enemy.current_location = Some(attic);
+    let enemy = ghoul().at(attic);
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Hall"))
-        .with_location(test_support::test_location(attic.0, "Attic"))
+        .with_location(location(HERE))
+        .with_location(location(attic))
         .with_enemy(enemy)
         .open_turn(INV)
         .build();
@@ -301,12 +290,11 @@ fn fight_against_enemy_at_a_different_location_is_rejected() {
 
 #[test]
 fn evade_when_not_engaged_with_target_is_rejected() {
-    let mut enemy = ghoul();
-    enemy.current_location = Some(HERE);
+    let enemy = ghoul().at(HERE);
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Test Hall"))
+        .with_location(location(HERE))
         .with_enemy(enemy)
         .open_turn(INV)
         .build();
@@ -352,8 +340,7 @@ fn fight_with_negative_fight_value_is_rejected_without_mutating_state() {
     // Malformed scenario data: fight = -1. validate-first must
     // reject BEFORE the action is paid for, otherwise the action
     // is silently lost without a rejection event.
-    let mut enemy = ghoul();
-    enemy.fight = -1;
+    let enemy = ghoul().fight(-1);
     let state = fight_evade_board(seat(1).at(HERE), enemy).build();
     let actions_before = state.investigators[&INV].actions_remaining;
     // Negative fight value → Fight is not legal (enumerate skips malformed enemies).
@@ -364,8 +351,7 @@ fn fight_with_negative_fight_value_is_rejected_without_mutating_state() {
 
 #[test]
 fn evade_with_negative_evade_value_is_rejected_without_mutating_state() {
-    let mut enemy = ghoul();
-    enemy.evade = -1;
+    let enemy = ghoul().evade(-1);
     let state = fight_evade_board(seat(1).at(HERE), enemy).build();
     let actions_before = state.investigators[&INV].actions_remaining;
     // Negative evade value → Evade is not legal (enumerate skips malformed enemies).
@@ -380,8 +366,7 @@ fn evade_on_already_exhausted_enemy_is_idempotent_on_exhaust() {
     // attacked the investigator earlier this round, now the
     // investigator Evades). Success disengages and leaves
     // `exhausted = true`.
-    let mut enemy = ghoul();
-    enemy.exhausted = true;
+    let enemy = ghoul().exhausted();
     let session = take_committing_nothing(fight_evade_board(seat(1).at(HERE), enemy), &EVADE);
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::SkillTestSucceeded { .. });
@@ -397,10 +382,8 @@ fn fight_engaged_with_two_enemies_only_touches_the_target() {
     let other_id = EnemyId(101);
     // Make sure the Fight defeats the target so we observe the
     // full attribution + removal path while the other is untouched.
-    let mut target = ghoul();
-    target.damage = 1;
-    let board = fight_evade_board(seat(1).at(HERE), target)
-        .with_enemy_engaged(test_support::test_enemy(101, "Bystander Ghoul"), INV);
+    let target = ghoul().damage(1);
+    let board = fight_evade_board(seat(1).at(HERE), target).with_enemy_engaged(enemy(101), INV);
 
     let session = take_committing_nothing(board, &FIGHT);
 

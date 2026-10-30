@@ -15,7 +15,7 @@ const HALL: LocationId = LocationId(11);
 fn three_at_here(order: [u32; 3]) -> GameState {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
         .with_seat(seat(3).at(HERE))
@@ -89,9 +89,7 @@ fn for_each_leaves_out_an_investigator_who_has_resigned() {
 #[test]
 fn for_each_at_controller_location_walks_only_the_co_located() {
     let mut state = three_at_here([1, 2, 3]);
-    state
-        .locations
-        .insert(HALL, test_support::test_location(HALL.0, "Hall"));
+    state.place(location(HALL), TEST_REGISTRIES);
     state
         .investigators
         .get_mut(&InvestigatorId(3))

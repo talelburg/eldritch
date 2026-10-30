@@ -161,29 +161,23 @@ impl Location {
 mod location_code_tests {
     use super::*;
     use crate::state::{CardInstanceId, Owner};
+    use crate::test_support::{location, TEST_REGISTRIES};
 
     #[test]
     fn location_carries_code_field() {
-        let loc = Location {
-            id: LocationId(1),
-            code: CardCode("01112".into()),
-            name: "Hallway".into(),
-            shroud: 2,
-            clues: 0,
-            printed_clues: ClueValue::Fixed(0),
-            revealed: true,
-            connections: Vec::new(),
-            attachments: Vec::new(),
-            cards_at_location: Vec::new(),
-        };
-        assert_eq!(loc.code, CardCode("01112".into()));
+        let loc = location(1).code("_hallway").mint(TEST_REGISTRIES);
+        assert_eq!(loc.code, CardCode("_hallway".into()));
     }
 
     #[test]
-    fn location_new_builds_revealed_unconnected_location() {
-        let loc = Location::new(LocationId(3), CardCode("01111".into()), "Study", 2, 2);
+    fn a_staged_location_is_revealed_and_unconnected() {
+        let loc = location(3)
+            .code("_study")
+            .name("Study")
+            .clues(2)
+            .mint(TEST_REGISTRIES);
         assert_eq!(loc.id, LocationId(3));
-        assert_eq!(loc.code, CardCode("01111".into()));
+        assert_eq!(loc.code, CardCode("_study".into()));
         assert_eq!(loc.name, "Study");
         assert_eq!(loc.shroud, 2);
         assert_eq!(loc.clues, 2);
@@ -201,12 +195,14 @@ mod location_code_tests {
         // has to survive the wire — and, like `attachments`, it carries no
         // `#[serde(default)]`, so a payload that omits it fails loudly
         // rather than silently emptying the Parlor.
-        let mut original = Location::new(LocationId(4), CardCode("01115".into()), "Parlor", 2, 0);
-        original.cards_at_location.push(CardInPlay::enter_play(
-            CardCode::new("01117"),
-            CardInstanceId(7),
-            Owner::Scenario,
-        ));
+        let original = location(4)
+            .code("_parlor")
+            .cards_at_location([CardInPlay::enter_play(
+                CardCode::new("01117"),
+                CardInstanceId(7),
+                Owner::Scenario,
+            )])
+            .mint(TEST_REGISTRIES);
         let json = serde_json::to_value(&original).expect("serialize");
         let back: Location = serde_json::from_value(json.clone()).expect("deserialize");
         assert_eq!(back.cards_at_location, original.cards_at_location);
@@ -225,18 +221,15 @@ mod location_code_tests {
 
     #[test]
     fn location_serde_roundtrip_preserves_code() {
-        let original = Location {
-            id: LocationId(2),
-            code: CardCode("_synth_loc".into()),
-            name: "Demo Location".into(),
-            shroud: 1,
-            clues: 3,
-            printed_clues: ClueValue::Fixed(3),
-            revealed: false,
-            connections: vec![LocationId(1)],
-            attachments: Vec::new(),
-            cards_at_location: Vec::new(),
-        };
+        let original = location(2)
+            .code("_synth_loc")
+            .name("Demo Location")
+            .shroud(1)
+            .printed_clues(ClueValue::Fixed(3))
+            .clues(3)
+            .unrevealed()
+            .connections([LocationId(1)])
+            .mint(TEST_REGISTRIES);
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Location = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.id, original.id);

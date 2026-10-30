@@ -8,7 +8,7 @@ fn target_maps_each_variant() {
     let loc_id = LocationId(10);
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(loc_id.0, "Study"))
+        .with_location(location(loc_id))
         .with_seat(seat(1).at(loc_id))
         .open_turn(InvestigatorId(1))
         .build();

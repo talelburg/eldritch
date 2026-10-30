@@ -8,7 +8,7 @@ fn draw_board(drawer: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(drawer.at(HERE))
-        .with_location(test_support::test_location(HERE.0, "A"))
+        .with_location(location(HERE))
         .with_rng_seed(13)
         .open_turn(INV)
 }

@@ -80,7 +80,7 @@ fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
         .fold(
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
-                .with_location(test_support::test_location(HERE.0, "Study")),
+                .with_location(location(HERE)),
             GameStateBuilder::with_seat,
         )
         .build()
@@ -170,11 +170,10 @@ fn search_deck_is_inert_only_against_an_empty_deck() {
 
 /// Investigator 1 on [`HERE`] with an enemy there, engaged with them or not.
 fn state_with_enemy(engaged: bool) -> GameState {
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.current_location = Some(HERE);
+    let enemy = enemy(100).at(HERE);
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE));
     if engaged {
         builder.with_enemy_engaged(enemy, InvestigatorId(1))

@@ -5,10 +5,10 @@ use super::*;
 use crate::action::InputResponse;
 use crate::engine::dispatch::coordinator;
 use crate::state::{
-    Act, Agenda, CardInPlay, DifficultyBasis, GameStateBuilder, InFlightSkillTest,
-    RecordedModifierKind, SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep, Status,
+    CardInPlay, DifficultyBasis, GameStateBuilder, InFlightSkillTest, RecordedModifierKind,
+    SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep, Status,
 };
-use crate::test_support::{seat, SeatLookup as _, TEST_REGISTRIES};
+use crate::test_support::{act, agenda, enemy, location, seat, SeatLookup as _, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod act_progress;
@@ -39,8 +39,7 @@ const HERE: LocationId = LocationId(10);
 
 /// A state with investigator 1 standing on [`HERE`], which holds `clues`.
 fn state_with_clues_at_location(clues: u8) -> GameState {
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = clues;
+    let loc = location(HERE).clues(clues);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc)

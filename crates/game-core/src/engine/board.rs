@@ -545,7 +545,9 @@ fn instance_zone_mut(state: &mut GameState, placement: Placement) -> Option<&mut
 mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Owner};
-    use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
+    use crate::test_support::{
+        self, act, agenda, enemy, location, seat, SeatLookup as _, TEST_REGISTRIES,
+    };
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
@@ -578,25 +580,19 @@ mod tests {
 
     /// The builder behind [`board`], for a test that seats more on it.
     fn board_builder() -> GameStateBuilder {
-        let mut study = test_support::test_location(STUDY.0, "Study");
-        study
-            .attachments
-            .push(card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck));
-        study
-            .cards_at_location
-            .push(card("01117", AT_STUDY, Owner::Scenario));
-
-        let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
-        ghoul.current_location = Some(HALLWAY);
-        ghoul
-            .attachments
-            .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
-
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(study)
-            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
-            .with_enemy(ghoul)
+            .with_location(
+                location(STUDY)
+                    .attachments([card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck)])
+                    .cards_at_location([card("01117", AT_STUDY, Owner::Scenario)]),
+            )
+            .with_location(location(HALLWAY))
+            .with_enemy(enemy(GHOUL).at(HALLWAY).attachments([card(
+                "02256",
+                GHOUL_ATTACHMENT,
+                Owner::EncounterDeck,
+            )]))
             .with_seat(
                 seat(ROLAND.0)
                     .at(STUDY)
@@ -676,20 +672,13 @@ mod tests {
     #[test]
     fn the_walk_visits_every_card_in_adr_0018_order() {
         const SECOND: InvestigatorId = InvestigatorId(2);
-        let mut state = board_builder()
+        let state = board_builder()
             .with_seat(seat(SECOND.0))
             .with_seating([ROLAND, SECOND])
             .with_active_investigator(SECOND)
+            .with_act_deck([act("_act", 2)])
+            .with_agenda_deck([agenda("_agenda", 3)])
             .build();
-        // No builder setter loads the act or agenda deck.
-        state.act_deck = vec![Act {
-            code: CardCode::new("01108"),
-            clue_threshold: 2,
-        }];
-        state.agenda_deck = vec![Agenda {
-            code: CardCode::new("01105"),
-            doom_threshold: 3,
-        }];
 
         let walked: Vec<_> = walk(&state)
             .iter()

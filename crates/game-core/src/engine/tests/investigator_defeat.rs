@@ -6,7 +6,7 @@ const ENGAGED: EnemyId = EnemyId(200);
 
 /// `mover`'s Move board with `enemy` engaged with them at the origin, taking
 /// the Move: the session rests where play goes after it.
-fn move_engaged_with(mover: Seat, enemy: Enemy) -> TestSession {
+fn move_engaged_with(mover: Seat, enemy: StagedEnemy) -> TestSession {
     move_board(mover)
         .with_enemy_engaged(enemy, INV)
         .session()

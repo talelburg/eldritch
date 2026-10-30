@@ -6,7 +6,7 @@ use crate::test_support::TEST_REGISTRIES;
 fn draw_board() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).deck(["_test_card_1"]))
         .open_turn(INV)
 }
@@ -59,8 +59,7 @@ fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
 #[test]
 fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
     let enemy_id = EnemyId(200);
-    let mut enemy = attacker(200, 1, 0);
-    enemy.exhausted = true;
+    let enemy = attacker(200, 1, 0).exhausted();
     let session = move_board(seat(1).at(HERE))
         .with_enemy_engaged(enemy, INV)
         .session()
@@ -148,8 +147,7 @@ fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
     // An enemy at A, not engaged with anyone, so the move provokes no AoO,
     // keeping the focus on the unengaged enemy.
     let other_id = EnemyId(201);
-    let mut other = test_support::test_enemy(201, "Bystander");
-    other.current_location = Some(HERE);
+    let other = enemy(201).at(HERE);
     let session = move_board(seat(1).at(HERE))
         .with_enemy(other)
         .session()

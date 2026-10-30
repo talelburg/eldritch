@@ -45,14 +45,14 @@ fn an_enemys_fight_and_evade_are_the_difficulties_of_attacking_and_evading_it() 
 /// once, at the end: 1 + 2 − 2 = 1, not (1 − 2 → 0) + 2 = 2.
 #[test]
 fn a_recorded_row_on_a_location_composes_with_its_attachments() {
-    let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
-    let loc = state.locations.get_mut(&LocationId(3)).unwrap();
-    loc.shroud = 1;
-    loc.attachments.push(CardInPlay::enter_play(
-        CardCode::new("shroud-plus-2"),
-        CardInstanceId(0),
-        Owner::EncounterDeck,
-    ));
+    let mut state = state_with_test_at(
+        DifficultyBasis::Shroud(LocationId(3)),
+        location(3).shroud(1).attachments([CardInPlay::enter_play(
+            CardCode::new("shroud-plus-2"),
+            CardInstanceId(0),
+            Owner::EncounterDeck,
+        )]),
+    );
     state.recorded_modifiers.push(RecordedModifier::targeting(
         ModifierTarget::Location(LocationId(3)),
         InvestigatorId(1),
@@ -70,8 +70,10 @@ fn a_recorded_row_on_a_location_composes_with_its_attachments() {
 /// -8 token"* (<https://arkhamdb.com/card/01087>).
 #[test]
 fn a_difficulty_reduced_below_zero_clamps_at_zero() {
-    let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
-    state.locations.get_mut(&LocationId(3)).unwrap().shroud = 1;
+    let mut state = state_with_test_at(
+        DifficultyBasis::Shroud(LocationId(3)),
+        location(3).shroud(1),
+    );
     state.recorded_modifiers.push(RecordedModifier::targeting(
         ModifierTarget::Location(LocationId(3)),
         InvestigatorId(1),

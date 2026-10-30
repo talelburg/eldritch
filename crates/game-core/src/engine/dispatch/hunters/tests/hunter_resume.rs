@@ -2,6 +2,7 @@ use super::*;
 use crate::action::{Action, PlayerAction};
 use crate::engine::{enumerate::TurnAction, outcome::OptionTarget};
 use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+use crate::test_support::{enemy, location};
 use crate::{assert_event, test_support};
 
 use card_dsl::card_data::SkillKind;
@@ -22,17 +23,11 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
     // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
     // default prey. Ending the turn runs the Enemy phase, where two equal
     // first-steps (B, C) suspend for a pick between them.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    let mut loc_c = test_support::test_location(C.0, "C");
-    let mut loc_d = test_support::test_location(D.0, "D");
-    loc_a.connections = vec![B, C];
-    loc_b.connections = vec![A, D];
-    loc_c.connections = vec![A, D];
-    loc_d.connections = vec![B, C];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(A);
+    let loc_a = location(A).connections(vec![B, C]);
+    let loc_b = location(B).connections(vec![A, D]);
+    let loc_c = location(C).connections(vec![A, D]);
+    let loc_d = location(D).connections(vec![B, C]);
+    let hunter = enemy(1).hunter().at(A);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -61,17 +56,11 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
 #[test]
 fn hunter_move_tie_rejects_invalid_pick() {
     // Same diamond setup; resume with a location not in candidates.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    let mut loc_c = test_support::test_location(C.0, "C");
-    let mut loc_d = test_support::test_location(D.0, "D");
-    loc_a.connections = vec![B, C];
-    loc_b.connections = vec![A, D];
-    loc_c.connections = vec![A, D];
-    loc_d.connections = vec![B, C];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(A);
+    let loc_a = location(A).connections(vec![B, C]);
+    let loc_b = location(B).connections(vec![A, D]);
+    let loc_c = location(C).connections(vec![A, D]);
+    let loc_d = location(D).connections(vec![B, C]);
+    let hunter = enemy(1).hunter().at(A);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -97,13 +86,9 @@ fn hunter_move_tie_rejects_invalid_pick() {
 fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
     // Two investigators at B; ending both turns runs the Enemy phase, where
     // the hunter moves A->B and default prey ties -> PickSingle.
-    let mut a = test_support::test_location(A.0, "A");
-    let mut b = test_support::test_location(B.0, "B");
-    a.connections = vec![B];
-    b.connections = vec![A];
-    let mut h = test_support::test_enemy(1, "Hunter");
-    h.hunter = true;
-    h.current_location = Some(A);
+    let a = location(A).connections(vec![B]);
+    let b = location(B).connections(vec![A]);
+    let h = enemy(1).hunter().at(A);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(a)
@@ -139,19 +124,16 @@ fn highest_combat_prey_breaks_move_tie_without_prompt() {
     // Fan A(1)-{B(2),C(3)}. inv1 at B combat 5; inv2 at C combat 2.
     // hunter at A with Ranked Highest-combat prey. resolve_prey picks
     // inv1 unambiguously -> moves A->B, engages, no prompt.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    let mut loc_c = test_support::test_location(C.0, "C");
-    loc_a.connections = vec![B, C];
-    loc_b.connections = vec![A];
-    loc_c.connections = vec![A];
-    let mut hunter = test_support::test_enemy(1, "Ghoul Priest");
-    hunter.hunter = true;
-    hunter.prey = Prey::Ranked {
-        direction: PreyDirection::Highest,
-        measure: PreyMeasure::Skill(SkillKind::Combat),
-    };
-    hunter.current_location = Some(A);
+    let loc_a = location(A).connections(vec![B, C]);
+    let loc_b = location(B).connections(vec![A]);
+    let loc_c = location(C).connections(vec![A]);
+    let hunter = enemy(1)
+        .hunter()
+        .prey(Prey::Ranked {
+            direction: PreyDirection::Highest,
+            measure: PreyMeasure::Skill(SkillKind::Combat),
+        })
+        .at(A);
     // Ending both turns runs the Enemy phase's hunter step.
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -184,20 +166,14 @@ fn multi_hunter_one_suspends_then_next_processed_on_resume() {
     // Hunter1 at A(1) ties B/C; hunter2 at B(2) has clean B->D step.
     // The Enemy phase suspends on hunter1; the pick takes B; then hunter2
     // processes automatically: moves B->D and engages.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    let mut loc_c = test_support::test_location(C.0, "C");
-    let mut loc_d = test_support::test_location(D.0, "D");
-    loc_a.connections = vec![B, C];
-    loc_b.connections = vec![A, D];
-    loc_c.connections = vec![A, D];
-    loc_d.connections = vec![B, C];
-    let mut tie_hunter = test_support::test_enemy(1, "Tie Hunter");
-    tie_hunter.hunter = true;
-    tie_hunter.current_location = Some(A); // ties B/C toward D
-    let mut clean_hunter = test_support::test_enemy(2, "Clean Hunter");
-    clean_hunter.hunter = true;
-    clean_hunter.current_location = Some(B); // single step B->D
+    let loc_a = location(A).connections(vec![B, C]);
+    let loc_b = location(B).connections(vec![A, D]);
+    let loc_c = location(C).connections(vec![A, D]);
+    let loc_d = location(D).connections(vec![B, C]);
+    // ties B/C toward D
+    let tie_hunter = enemy(1).hunter().at(A);
+    // single step B->D
+    let clean_hunter = enemy(2).hunter().at(B);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -230,17 +206,11 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
     // default prey. Two equal first-steps (B, C) -> a pick on the move.
     // Client submits a non-PickSingle response (Skip) -> Rejected,
     // pending preserved for retry.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    let mut loc_c = test_support::test_location(C.0, "C");
-    let mut loc_d = test_support::test_location(D.0, "D");
-    loc_a.connections = vec![B, C];
-    loc_b.connections = vec![A, D];
-    loc_c.connections = vec![A, D];
-    loc_d.connections = vec![B, C];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(A);
+    let loc_a = location(A).connections(vec![B, C]);
+    let loc_b = location(B).connections(vec![A, D]);
+    let loc_c = location(C).connections(vec![A, D]);
+    let loc_d = location(D).connections(vec![B, C]);
+    let hunter = enemy(1).hunter().at(A);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
@@ -267,13 +237,9 @@ fn hunter_engage_tie_rejects_wrong_response_kind() {
     // pick on the engagement.
     // Client submits a non-PickSingle response (Skip) -> Rejected,
     // pending preserved for retry.
-    let mut loc_a = test_support::test_location(A.0, "A");
-    let mut loc_b = test_support::test_location(B.0, "B");
-    loc_a.connections = vec![B];
-    loc_b.connections = vec![A];
-    let mut hunter = test_support::test_enemy(1, "Hunter");
-    hunter.hunter = true;
-    hunter.current_location = Some(A);
+    let loc_a = location(A).connections(vec![B]);
+    let loc_b = location(B).connections(vec![A]);
+    let hunter = enemy(1).hunter().at(A);
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)

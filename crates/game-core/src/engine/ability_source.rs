@@ -334,11 +334,11 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 mod tests {
     use super::*;
     use crate::engine::enumerate::{self, TurnAction};
-    use crate::state::{
-        AbilityAddress, Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner,
-    };
+    use crate::state::{AbilityAddress, CardInstanceId, EnemyId, GameStateBuilder, Owner};
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
+    use crate::test_support::{
+        self, act, agenda, enemy, location, seat, SeatLookup as _, TEST_REGISTRIES,
+    };
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
@@ -380,38 +380,32 @@ mod tests {
     ///
     /// Investigator 1 is the one doing the reaching.
     fn board() -> GameState {
-        let mut study = test_support::test_location(STUDY.0, "Study");
-        study
-            .attachments
-            .push(card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck));
-        study
-            .cards_at_location
-            .push(card("01117", AT_STUDY, Owner::Scenario));
-        let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-        hallway
-            .attachments
-            .push(card("01168", HALLWAY_ATTACHMENT, Owner::EncounterDeck));
-        hallway
-            .cards_at_location
-            .push(card("01117", AT_HALLWAY, Owner::Scenario));
+        board_builder().build()
+    }
 
-        let mut here = test_support::test_enemy(1, "Ghoul");
-        here.current_location = Some(STUDY);
-        here.attachments
-            .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
-        let mut there = test_support::test_enemy(2, "Acolyte");
-        there.current_location = Some(HALLWAY);
-
+    /// [`board`], before it is built.
+    fn board_builder() -> GameStateBuilder {
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(study)
-            .with_location(hallway)
-            .with_enemy(here)
-            .with_enemy(there)
+            .with_location(
+                location(STUDY)
+                    .attachments([card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck)])
+                    .cards_at_location([card("01117", AT_STUDY, Owner::Scenario)]),
+            )
+            .with_location(
+                location(HALLWAY)
+                    .attachments([card("01168", HALLWAY_ATTACHMENT, Owner::EncounterDeck)])
+                    .cards_at_location([card("01117", AT_HALLWAY, Owner::Scenario)]),
+            )
+            .with_enemy(enemy(1).at(STUDY).attachments([card(
+                "02256",
+                GHOUL_ATTACHMENT,
+                Owner::EncounterDeck,
+            )]))
+            .with_enemy(enemy(2).at(HALLWAY))
             .with_seat(seat(1).at(STUDY).in_play([ASSET]).threat_area([MY_THREAT]))
             .with_seat(seat(2).at(STUDY).threat_area([NEIGHBOUR_THREAT]))
             .with_seat(seat(3).at(HALLWAY).threat_area([ELSEWHERE_THREAT]))
-            .build()
     }
 
     fn sources_for(state: &GameState, investigator: InvestigatorId) -> Vec<AbilitySource> {
@@ -480,7 +474,7 @@ mod tests {
     fn an_unknown_colocated_threat_area_card_panics_in_debug() {
         let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(STUDY.0, "Study"))
+            .with_location(location(STUDY))
             .with_seat(seat(1).at(STUDY))
             .with_seat(seat(2).at(STUDY).threat_area(["NOT_A_CARD"]))
             .build();
@@ -574,7 +568,7 @@ mod tests {
     fn threat_area_with_a_player_card_and_a_treachery(turn: InvestigatorId) -> GameState {
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(STUDY.0, "Study"))
+            .with_location(location(STUDY))
             .with_seat(
                 seat(1)
                     .at(STUDY)
@@ -815,37 +809,23 @@ mod tests {
     // *"The current act or current agenda card."* — the one bullet gated on
     // nothing at all.
 
-    /// The Gathering's act 1, Trapped.
-    const ACT_ONE: &str = "01108";
-    /// Its act 2, The Barrier — the act that supersedes [`ACT_ONE`].
-    const ACT_TWO: &str = "01109";
-    /// The Gathering's agenda 1, What's Going On?!
-    const AGENDA: &str = "01105";
-
-    fn act(code: &str, clue_threshold: u8) -> Act {
-        Act {
-            code: CardCode::new(code),
-            clue_threshold,
-        }
-    }
-
-    fn agenda(code: &str) -> Agenda {
-        Agenda {
-            code: CardCode::new(code),
-            doom_threshold: 3,
-        }
-    }
+    /// Act 1 of the staged deck.
+    const ACT_ONE: &str = "_act_one";
+    /// Act 2 — the act that supersedes [`ACT_ONE`].
+    const ACT_TWO: &str = "_act_two";
+    /// The one agenda.
+    const AGENDA: &str = "_agenda";
 
     /// [`board`] with a two-act deck and a one-agenda deck loaded, cursors at
     /// the front.
     fn board_with_scenario_decks() -> GameState {
-        let mut state = board();
-        // Printed clue thresholds, from the snapshot: Trapped 2, The Barrier 3.
-        state.act_deck = vec![act(ACT_ONE, 2), act(ACT_TWO, 3)];
-        state.act_index = 0;
-        state.agenda_deck = vec![agenda(AGENDA)];
-        state.agenda_index = 0;
-        state
+        scenario_decks(board_builder()).build()
+    }
+
+    fn scenario_decks(board: GameStateBuilder) -> GameStateBuilder {
+        board
+            .with_act_deck([act(ACT_ONE, 2), act(ACT_TWO, 3)])
+            .with_agenda_deck([agenda(AGENDA, 3)])
     }
 
     /// Not location-gated: the investigator in the Study and the one in the
@@ -926,12 +906,10 @@ mod tests {
         for (state, why) in [
             (board(), "no act or agenda deck is loaded"),
             (
-                {
-                    let mut state = board_with_scenario_decks();
-                    state.act_index = 2;
-                    state.agenda_index = 1;
-                    state
-                },
+                scenario_decks(board_builder())
+                    .with_current_act(2)
+                    .with_current_agenda(1)
+                    .build(),
                 "both cursors have run off the end of their decks",
             ),
         ] {

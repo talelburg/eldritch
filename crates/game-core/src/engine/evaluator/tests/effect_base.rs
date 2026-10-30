@@ -13,7 +13,7 @@ use card_dsl::dsl::{EventPattern, EventTiming};
 
 use super::*;
 use crate::assert_event_sequence;
-use crate::state::Enemy;
+use crate::test_support::StagedEnemy;
 
 /// `[reaction]` after its controller defeats an enemy: gain 1 resource.
 const AFTER_DEFEAT_REACTION: &str = "_eb_after_defeat_reaction";
@@ -98,18 +98,14 @@ fn defeat_the_enemy_here() -> Effect {
 }
 
 /// A 1-health enemy standing at [`HERE`].
-fn frail_enemy(id: EnemyId) -> Enemy {
-    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
-    enemy.max_health = 1;
-    enemy.current_location = Some(HERE);
-    enemy
+fn frail_enemy(id: EnemyId) -> StagedEnemy {
+    enemy(id).health(1).at(HERE)
 }
 
 /// Investigator 1 at [`HERE`], which holds 2 clues, with `in_play` in play and
 /// `deck` as their deck, beside one frail enemy.
 fn board(in_play: &[&str], deck: &[&str]) -> GameState {
-    let mut here = test_support::test_location(HERE.0, "Study");
-    here.clues = 2;
+    let here = location(HERE).clues(2);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(here)
