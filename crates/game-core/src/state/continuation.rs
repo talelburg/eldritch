@@ -2626,11 +2626,9 @@ pub struct EmitEventFrame {
     pub event: TimingEvent,
     /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
     ///
-    /// Never persisted: a coordinator frame exists only in memory,
-    /// mid-sequence, between two `apply` calls, and the server persists a
-    /// seed state plus a `ResolveInput`-only action log
-    /// (`crates/server/src/session.rs`), so no persisted artifact can carry
-    /// this field.
+    /// Never persisted: the server stores no game state, only a game's
+    /// creation inputs plus its action log (`crates/server/src/session.rs`),
+    /// so no persisted artifact can carry this field.
     pub step: EmitStep,
     /// Whether a `when`-cell ability has **prevented** this condition — set by
     /// [`Effect::Cancel`] on the topmost frame still at [`EmitStep::When`]

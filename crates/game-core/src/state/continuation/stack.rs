@@ -44,7 +44,7 @@ use crate::state::continuation::{
 /// ```
 ///
 /// Serialises transparently, as the plain array of externally tagged frames it
-/// replaced, so the wire format and persisted seed states are unchanged.
+/// replaced, so the wire format is unchanged.
 /// Deserialising runs no checks: a serialised stack was produced by the
 /// engine.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

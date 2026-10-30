@@ -30,7 +30,7 @@ The engine looks the scenario module up once per apply and carries both on `Cx`;
 
 ## Event-sourced state — Action → apply → ApplyResult
 
-`apply(state: GameState, action: Action, registries: Registries) -> ApplyResult { state, events, outcome }` (`crates/game-core/src/engine/mod.rs`) is the **only** entry point that mutates state. The action log is a flat `Vec<Action>`; replaying it over the same seed state reproduces state bit-for-bit. Replay is deterministic because every random draw (chaos tokens, deck shuffles) comes from the seeded `RngState` carried in `GameState` (`crates/game-core/src/rng.rs`), not because draws are logged: production code never constructs an `Action::Engine` record, and only tests issue one.
+`apply(state: GameState, action: Action, registries: Registries) -> ApplyResult { state, events, outcome }` (`crates/game-core/src/engine/mod.rs`) is the **only** entry point that mutates state. The action log is a flat `Vec<Action>`; replaying it over the same seed state reproduces state bit-for-bit. The server stores no state: a stored game is its creation inputs plus that log, and a load re-runs setup before replaying ([ADR 0022](../adr/0022-a-stored-game-is-its-inputs-and-a-checked-log.md)). Replay is deterministic because every random draw (chaos tokens, deck shuffles) comes from the seeded `RngState` carried in `GameState` (`crates/game-core/src/rng.rs`), not because draws are logged: production code never constructs an `Action::Engine` record, and only tests issue one.
 
 **Handler contract — validate-first / mutate-second.** Every dispatch handler in the `crates/game-core/src/engine/dispatch/` module tree:
 
