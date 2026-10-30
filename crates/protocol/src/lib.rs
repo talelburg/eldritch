@@ -11,6 +11,17 @@ use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use serde::{Deserialize, Serialize};
 
+/// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
+/// environment variable at compile time, or `"dev"` when it was unset.
+///
+/// The release job stamps it with the commit sha. `server` and `web` both
+/// read it from here, so one definition stamps both sides, and a cached
+/// client bundle keeps the id it was compiled with.
+#[must_use]
+pub fn build_id() -> &'static str {
+    option_env!("ELDRITCH_BUILD").unwrap_or("dev")
+}
+
 /// A message sent from a client to the server.
 ///
 /// Externally tagged (`{"submit": {...}}`) rather than internally
@@ -254,5 +265,19 @@ mod tests {
             serde_json::from_str::<CreateGameRequest>(json).is_err(),
             "the lead is required on the wire, with no default"
         );
+    }
+}
+
+#[cfg(test)]
+mod build_id_tests {
+    use super::*;
+
+    #[test]
+    fn an_unstamped_build_reports_dev() {
+        // A stamped build (`ELDRITCH_BUILD` set at compile time) carries the
+        // sha instead, which #1226's release artifact checks.
+        if option_env!("ELDRITCH_BUILD").is_none() {
+            assert_eq!(build_id(), "dev");
+        }
     }
 }

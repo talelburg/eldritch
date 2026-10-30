@@ -5,6 +5,7 @@
 //! logic in a library target lets integration tests in `tests/` drive
 //! it directly.
 
+pub mod config;
 pub mod db;
 mod id;
 pub mod lifecycle;
@@ -63,8 +64,8 @@ impl AppState {
 ///
 /// They are the real `scenarios::REGISTRY` (which includes The Gathering) and
 /// the real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
-/// hands them to [`AppState::new`]. Tests pass their own pairing instead and
-/// build any mock scenario module locally
+/// hands them to [`AppState::new_with_dist`]. Tests pass their own pairing
+/// instead and build any mock scenario module locally
 /// (`crates/server/tests/integration/common/mod.rs`); there is no shared fixture
 /// crate-side (ADR 0016).
 pub const REGISTRIES: Registries = Registries {
