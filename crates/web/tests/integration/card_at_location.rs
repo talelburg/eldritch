@@ -22,16 +22,12 @@ use game_core::state::{
     Owner as CardOwner,
 };
 use game_core::test_support::{self, location};
-use leptos::prelude::*;
 use leptos::task;
-use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::interaction::PendingOptions;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
+
+use crate::common;
 
 const PARLOR: LocationId = LocationId(5);
 const LITA: CardInstanceId = CardInstanceId(60);
@@ -68,30 +64,9 @@ fn option_anchored_to(instance: CardInstanceId) -> EngineOutcome {
 }
 
 async fn mount(state: GameState, outcome: EngineOutcome) -> Element {
-    let store = RwSignal::new(ClientState::default());
-    mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        provide_context(store);
-        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(PendingOptions(pending));
-        view! { <div class="cal-root"><BoardView/></div> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
-    let roots = document().query_selector_all(".cal-root").expect("query");
-    roots
-        .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .cal-root")
+    common::mount_board(common::hello(state, outcome), &cards::TEST_REGISTRY)
+        .await
+        .root
 }
 
 fn query(root: &Element, selector: &str) -> Option<Element> {

@@ -4,68 +4,48 @@
 //! DOM. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, enemy, location};
-use leptos::prelude::{document, provide_context, RwSignal, Signal, Update, With};
-use leptos::{mount, task};
-use protocol::{ClientMessage, ServerMessage};
+use leptos::task;
+use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::interaction::PendingOptions;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
-use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
-/// Mount `BoardView`, feed one `Hello` carrying `state`, tick, return nothing —
-/// assertions query the live DOM via `document()`.
-async fn mount_state(state: GameState) {
-    let store = RwSignal::new(ClientState::default());
-    mount::mount_to_body(move || {
-        provide_cards(&test_support::TEST_REGISTRY);
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
+use crate::common::{self, BoardHandle};
+
+/// Mount the board on a `Hello` carrying `state`, and return its root.
+async fn mount_state(state: GameState) -> Element {
+    common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &test_support::TEST_REGISTRY,
+    )
+    .await
+    .root
 }
 
-/// The LAST mounted `<section class="map">`. Every mount in the shared page appends
-/// to the same document body, so an earlier test's nodes would otherwise shadow
-/// the one under assertion.
-fn last_map() -> Element {
-    let maps = document().query_selector_all(".map").expect("query ok");
-    maps.item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
+/// The `<section class="map">` under `root`.
+fn map_in(root: &Element) -> Element {
+    root.query_selector(".map")
+        .expect("query ok")
         .expect("a .map section")
 }
 
 /// `textContent` of the map node whose `data-loc` equals `loc_name`, in the
-/// last-mounted map.
-fn node_text(loc_name: &str) -> String {
-    last_map()
+/// map under `root`.
+fn node_text(root: &Element, loc_name: &str) -> String {
+    map_in(root)
         .query_selector(&format!(".map-location[data-loc=\"{loc_name}\"]"))
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default()
 }
 
-/// Count of `<line class="map-line">` elements in the last-mounted map.
-fn line_count() -> u32 {
-    last_map()
+/// Count of `<line class="map-line">` elements in the map under `root`.
+fn line_count(root: &Element) -> u32 {
+    map_in(root)
         .query_selector_all("line.map-line")
         .expect("query ok")
         .length()
@@ -78,9 +58,9 @@ async fn connected_locations_draw_a_line() {
         .with_location(location(11).name("Attic").connections([LocationId(10)]))
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert_eq!(
-        line_count(),
+        line_count(&root),
         1,
         "a connected pair must draw exactly one line"
     );
@@ -92,8 +72,8 @@ async fn isolated_location_draws_no_line() {
         .with_location(location(10).name("Study")) // no connections
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
-    assert_eq!(line_count(), 0, "an isolated location draws no lines");
+    let root = mount_state(state).await;
+    assert_eq!(line_count(&root), 0, "an isolated location draws no lines");
 }
 
 #[wasm_bindgen_test]
@@ -104,11 +84,11 @@ async fn investigator_renders_inside_its_location_node() {
         .with_location(location(10).name("Study"))
         .with_investigator(inv)
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert!(
-        node_text("Study").contains("Test Investigator 1"),
+        node_text(&root, "Study").contains("Test Investigator 1"),
         "investigator token must render inside its location node; Study node = {:?}",
-        node_text("Study"),
+        node_text(&root, "Study"),
     );
 }
 
@@ -125,22 +105,18 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
                 .engaged_with(InvestigatorId(1)),
         )
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
 
     // Not in the location node (engaged enemies leave the location box)…
     assert!(
-        !node_text("Study").contains("Mock Ghoul"),
+        !node_text(&root, "Study").contains("Mock Ghoul"),
         "engaged enemy must NOT render in the location node; node = {:?}",
-        node_text("Study"),
+        node_text(&root, "Study"),
     );
-    // …but present in the investigator detail panel (query last to avoid DOM accumulation).
-    let investigators = document()
-        .query_selector_all(".investigators")
-        .expect("query_selector_all ok");
-    let len = investigators.length();
-    let panel = investigators
-        .item(len.saturating_sub(1))
-        .and_then(|n| n.dyn_into::<Element>().ok())
+    // …but present in the investigator detail panel.
+    let panel = root
+        .query_selector(".investigators")
+        .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default();
     assert!(
@@ -149,12 +125,12 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
     );
 }
 
-/// The `class` attribute of the shroud / clue badge in the last-mounted node
+/// The `class` attribute of the shroud / clue badge in the node
 /// named `loc_name`. The header prints numerals only, so what a badge
 /// *is* lives in its class, not in its text.
-fn badge_class(loc_name: &str, which: &str) -> String {
+fn badge_class(root: &Element, loc_name: &str, which: &str) -> String {
     let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge:{which}-child");
-    last_map()
+    map_in(root)
         .query_selector(&sel)
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
@@ -162,9 +138,9 @@ fn badge_class(loc_name: &str, which: &str) -> String {
 }
 
 /// Text of the shroud badge (first header column) and the clue badge (last).
-fn header_badges(loc_name: &str) -> (String, String) {
+fn header_badges(root: &Element, loc_name: &str) -> (String, String) {
     let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge");
-    let badges = last_map().query_selector_all(&sel).expect("query");
+    let badges = map_in(root).query_selector_all(&sel).expect("query");
     assert_eq!(badges.length(), 2, "a header carries exactly two badges");
     let text = |i| {
         badges
@@ -181,22 +157,22 @@ async fn revealed_location_shows_shroud_and_clues_as_badges() {
         .with_location(location(31).name("Attic Revealed").shroud(2).clues(5))
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert_eq!(
-        header_badges("Attic Revealed"),
+        header_badges(&root, "Attic Revealed"),
         ("2".to_string(), "5".to_string()),
         "shroud is the left badge and clues the right",
     );
     assert!(
-        badge_class("Attic Revealed", "first").contains("badge--shroud"),
+        badge_class(&root, "Attic Revealed", "first").contains("badge--shroud"),
         "the left badge is the shroud badge",
     );
     assert!(
-        badge_class("Attic Revealed", "last").contains("badge--clues"),
+        badge_class(&root, "Attic Revealed", "last").contains("badge--clues"),
         "the right badge is the clue badge",
     );
     // The words are gone from the card's face — the badges carry them as titles.
-    let text = node_text("Attic Revealed");
+    let text = node_text(&root, "Attic Revealed");
     assert!(
         !text.contains("shroud"),
         "shroud label not deleted: {text:?}"
@@ -212,9 +188,9 @@ async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
         .with_location(location(32).name("Empty Hallway").clues(0))
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
-    assert_eq!(header_badges("Empty Hallway").1, "0");
-    let class = badge_class("Empty Hallway", "last");
+    let root = mount_state(state).await;
+    assert_eq!(header_badges(&root, "Empty Hallway").1, "0");
+    let class = badge_class(&root, "Empty Hallway", "last");
     assert!(
         class.contains("badge--clues") && class.contains("is-zero"),
         "a zero clue count keeps a faded clue badge; class = {class:?}",
@@ -237,20 +213,20 @@ async fn unrevealed_location_shows_placeholders_not_its_values() {
         )
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert_eq!(
-        header_badges("Cellar Unrevealed"),
+        header_badges(&root, "Cellar Unrevealed"),
         ("?".to_string(), "?".to_string()),
         "an unrevealed location shows placeholders in both slots",
     );
     for which in ["first", "last"] {
-        let class = badge_class("Cellar Unrevealed", which);
+        let class = badge_class(&root, "Cellar Unrevealed", which);
         assert!(
             class.contains("badge--unknown"),
             "the {which} badge is an unknown placeholder; class = {class:?}",
         );
     }
-    let text = node_text("Cellar Unrevealed");
+    let text = node_text(&root, "Cellar Unrevealed");
     assert!(!text.contains('4'), "shroud value leaked: {text:?}");
     assert!(!text.contains('3'), "clue value leaked: {text:?}");
 }
@@ -262,16 +238,16 @@ async fn unrevealed_location_is_marked_by_class() {
         .with_location(location(21).name("Parlor Unrevealed").unrevealed())
         .with_investigator(test_support::test_investigator(1))
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert!(
-        node_class("Parlor Unrevealed").contains("unrevealed"),
+        node_class(&root, "Parlor Unrevealed").contains("unrevealed"),
         "unrevealed node must carry the class; class = {:?}",
-        node_class("Parlor Unrevealed"),
+        node_class(&root, "Parlor Unrevealed"),
     );
     assert!(
-        !node_text("Parlor Unrevealed").contains("unrevealed"),
+        !node_text(&root, "Parlor Unrevealed").contains("unrevealed"),
         "the 'unrevealed' text label is gone; text = {:?}",
-        node_text("Parlor Unrevealed"),
+        node_text(&root, "Parlor Unrevealed"),
     );
 }
 
@@ -282,44 +258,18 @@ async fn unengaged_enemy_renders_inside_its_location_node() {
         .with_investigator(test_support::test_investigator(1))
         .with_enemy(enemy(100).name("Mock Ghoul").at(LocationId(10)))
         .build();
-    mount_state(state).await;
+    let root = mount_state(state).await;
     assert!(
-        node_text("Study").contains("Mock Ghoul"),
+        node_text(&root, "Study").contains("Mock Ghoul"),
         "unengaged enemy must render inside its location node; Study node = {:?}",
-        node_text("Study"),
+        node_text(&root, "Study"),
     );
 }
 
-/// Mount `BoardView` with a store, an outbound channel, and a `PendingOptions`
-/// signal derived from the store (as `app.rs` does), then feed one `Hello`
-/// carrying `state` + `outcome`. Returns the submitted-frame receiver.
-async fn mount_interactive(
-    state: GameState,
-    outcome: EngineOutcome,
-) -> UnboundedReceiver<ClientMessage> {
-    let store = RwSignal::new(ClientState::default());
-    let (tx, rx) = mpsc::unbounded::<ClientMessage>();
-    let tx_for_mount: OutboundTx = tx;
-    mount::mount_to_body(move || {
-        provide_cards(&test_support::TEST_REGISTRY);
-        provide_context(store);
-        provide_context::<OutboundTx>(tx_for_mount.clone());
-        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(PendingOptions(pending));
-        leptos::view! { <BoardView/> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
-    rx
+/// Mount the board on a `Hello` carrying `state` + `outcome`, with the
+/// submitted-frame receiver on the handle.
+async fn mount_interactive(state: GameState, outcome: EngineOutcome) -> BoardHandle {
+    common::mount_board(common::hello(state, outcome), &test_support::TEST_REGISTRY).await
 }
 
 /// A one-location game — the Study 01111, id 10 — with investigator 1
@@ -335,10 +285,10 @@ fn study_game() -> GameState {
         .build()
 }
 
-/// The `class` attribute of the last-mounted map node named `loc_name`.
-fn node_class(loc_name: &str) -> String {
+/// The `class` attribute of the map node under `root` named `loc_name`.
+fn node_class(root: &Element, loc_name: &str) -> String {
     let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
-    last_map()
+    map_in(root)
         .query_selector(&sel)
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
@@ -352,16 +302,17 @@ async fn actionable_location_glows_opens_menu_and_submits() {
         vec![ChoiceOption::new(OptionId(0), "Investigate")
             .at(OptionTarget::Location(LocationId(10)))],
     );
-    let mut rx = mount_interactive(study_game(), outcome).await;
+    let mut board = mount_interactive(study_game(), outcome).await;
+    let root = board.root.clone();
 
     assert!(
-        node_class("Study").contains("actionable"),
+        node_class(&root, "Study").contains("actionable"),
         "node has the actionable class"
     );
 
     // Clicking the node's hit-layer opens its menu (events bubble up, so the
     // hit-layer — not the node — carries the open handler).
-    let last = last_map();
+    let last = map_in(&root);
     last.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
@@ -379,7 +330,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
     // Clicking the item submits the anchored option.
     item.click();
     task::tick().await;
-    let msg = rx.try_recv().expect("a frame was sent after tick");
+    let msg = board.rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -396,8 +347,8 @@ async fn location_without_a_matching_option_is_not_actionable() {
         vec![ChoiceOption::new(OptionId(0), "Investigate")
             .at(OptionTarget::Location(LocationId(11)))],
     );
-    let _ = mount_interactive(study_game(), outcome).await;
-    assert!(!node_class("Study").contains("actionable"));
+    let root = mount_interactive(study_game(), outcome).await.root;
+    assert!(!node_class(&root, "Study").contains("actionable"));
 }
 
 #[wasm_bindgen_test]
@@ -417,13 +368,10 @@ async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
         "You may trigger",
         vec![ChoiceOption::new(OptionId(0), "Trigger").at(OptionTarget::CardInstance(iid))],
     );
-    let _ = mount_interactive(game, outcome).await;
-    let slots = document()
-        .query_selector_all(".investigator-card .card-slot")
-        .expect("query");
-    let last = slots
-        .item(slots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
+    let root = mount_interactive(game, outcome).await.root;
+    let last = root
+        .query_selector(".investigator-card .card-slot")
+        .expect("query")
         .expect("an investigator-card .card-slot");
     assert!(
         last.class_name().contains("actionable"),

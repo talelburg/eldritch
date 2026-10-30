@@ -17,16 +17,12 @@ use game_core::state::{
     Owner as CardOwner,
 };
 use game_core::test_support::{self, location, seat};
-use leptos::prelude::*;
-use leptos::task;
-use protocol::ServerMessage;
+use leptos::prelude::{document, window};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::interaction::PendingOptions;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
+
+use crate::common;
 
 const PARLOR: LocationId = LocationId(5);
 const HALLWAY: LocationId = LocationId(6);
@@ -83,8 +79,8 @@ fn parlor_board(
     builder
 }
 
-/// Mount `BoardView` with `state`, tick, and return the wrapper this mount put
-/// the board in (each test mounts into the same document body).
+/// Mount the board with `state`, and return the root this mount put it in
+/// (each test mounts into the same document body).
 async fn mount(state: GameState) -> Element {
     mount_with(state, EngineOutcome::Done).await
 }
@@ -92,32 +88,9 @@ async fn mount(state: GameState) -> Element {
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
 async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
     inject_style();
-    let store = RwSignal::new(ClientState::default());
-    mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        provide_context(store);
-        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(PendingOptions(pending));
-        view! { <div class="layout-probe"><BoardView/></div> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
-    let roots = document()
-        .query_selector_all(".layout-probe")
-        .expect("query");
-    roots
-        .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .layout-probe root")
+    common::mount_board(common::hello(state, outcome), &cards::TEST_REGISTRY)
+        .await
+        .root
 }
 
 /// Assert every occupancy token in the Parlor node is inside the node's client

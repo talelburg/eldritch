@@ -7,34 +7,23 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
 use game_core::test_support;
-use leptos::prelude::{ClassAttribute, ElementChild, RwSignal, Update};
-use leptos::{mount, prelude, task};
+use leptos::prelude::Update;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::registry::provide_cards;
 use web::store::{self, ClientState};
 
 use crate::common;
-
-/// The HTML of the `.store-root` container this test mounted.
-fn root_html() -> String {
-    common::last_mounted(".store-root").inner_html()
-}
 
 #[wasm_bindgen_test]
 async fn hello_renders_state_present() {
     // Rendering the investigator panel reads `max_health()`/`max_sanity()`,
     // which resolve the investigator card's capacity from the registry.
     // The fixture investigator uses the synthetic `TEST_INV` code (8/8).
-    let store = RwSignal::new(ClientState::default());
-    // Provide the same signal the component reads, then mount the board;
-    // it stays mounted (attached to the DOM) for the assertions.
-    mount::mount_to_body(move || {
-        provide_cards(&test_support::TEST_REGISTRY);
-        prelude::provide_context(store);
-        leptos::view! { <div class="store-root"><BoardView/></div> }
-    });
+    // Mount on an empty store, then feed it a `Hello`; the board stays mounted
+    // (attached to the DOM) for the assertions.
+    let board = common::mount_board(ClientState::default(), &test_support::TEST_REGISTRY).await;
+    let root_html = || board.root.inner_html();
 
     assert!(
         root_html().contains("&lt;no game&gt;"),
@@ -45,7 +34,7 @@ async fn hello_renders_state_present() {
     let game = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .build();
-    store.update(|s| {
+    board.store.update(|s| {
         store::reduce(
             s,
             ServerMessage::Hello {

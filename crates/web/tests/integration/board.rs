@@ -25,13 +25,8 @@ use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{clues, enemy, location, seat, Printed, Seat};
-use leptos::prelude::{provide_context, ClassAttribute, ElementChild, RwSignal, Update};
-use leptos::{mount, task};
-use protocol::ServerMessage;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
+use web::store::ClientState;
 use web_sys::Element;
 
 use crate::common;
@@ -88,30 +83,18 @@ fn count_in(el: &Element, sel: &str) -> u32 {
     el.query_selector_all(sel).expect("query").length()
 }
 
-/// Mount `BoardView` against a fresh store and feed it one `Hello`
-/// carrying `state`. Ticks once so CSR effects flush, then returns the HTML
-/// of the `.board-root` container it mounted.
-async fn render_state(state: GameState) -> String {
+/// Mount the board on a `Hello` carrying `state` and return the root it
+/// mounted.
+async fn render_state(state: GameState) -> Element {
     // The real corpus registry: the code→name/kind source, and the source of
     // the investigator capacity the panel reads.
-    let store = RwSignal::new(ClientState::default());
-    mount::mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        provide_context(store);
-        leptos::view! { <div class="board-root"><BoardView/></div> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
-    let html = common::last_mounted(".board-root").inner_html();
+    let root = common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &cards::TEST_REGISTRY,
+    )
+    .await
+    .root;
+    let html = root.inner_html();
     // The guard that keeps this file honest. `Card` renders
     // `card--unknown` for a code the registry cannot resolve
     // (`crates/web/src/card.rs:324-331`), and that element still matches
@@ -122,7 +105,14 @@ async fn render_state(state: GameState) -> String {
         !html.contains("card--unknown"),
         "a seeded code failed to resolve against TEST_REGISTRY: {html}"
     );
-    html
+    root
+}
+
+/// The element matching `sel` under `root`.
+fn find(root: &Element, sel: &str) -> Element {
+    root.query_selector(sel)
+        .expect("query")
+        .unwrap_or_else(|| panic!("no {sel} under the root"))
 }
 
 #[wasm_bindgen_test]
@@ -135,13 +125,14 @@ async fn act_agenda_cards_render_name_and_thresholds() {
         .with_agenda_doom(1)
         .build();
 
-    let html = render_state(state).await;
+    let root = render_state(state).await;
+    let html = root.inner_html();
 
     // Names come from the corpus via `act_agenda::name_and_text_src`, which
     // `crates/web/tests/integration/act_agenda.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
     // earns its own name, rather than asserting only thresholds.
-    let board = common::last_mounted(".board");
+    let board = find(&root, ".board");
     let text = board.text_content().unwrap_or_default();
     assert!(text.contains("Trapped"), "act name missing: {text}");
     assert!(
@@ -164,7 +155,8 @@ async fn map_renders_location_name_shroud_clues() {
         .with_location(location(7).name("Rivertown").shroud(3).clues(2))
         .build();
 
-    let html = render_state(state).await;
+    let root = render_state(state).await;
+    let html = root.inner_html();
 
     assert!(html.contains("Rivertown"), "location name missing: {html}");
     // The header prints numerals in fixed, colour-coded slots rather than
@@ -194,13 +186,14 @@ async fn investigators_panel_renders_stats_and_hand() {
         )
         .build();
 
-    let html = render_state(state).await;
+    let root = render_state(state).await;
+    let html = root.inner_html();
 
     // Every assertion is scoped to this test's own panel. Real card *text*
     // renders too, so a bare `html.contains(..)` shares the board with the
     // printed text of four cards — a false pass from a collision is the same failure mode as
     // an assertion riding the unresolved-code fallback.
-    let inv_el = common::last_mounted(".investigator");
+    let inv_el = find(&root, ".investigator");
 
     // Identity + folded vitals (skills + hp/san) live in the investigator block.
     assert_eq!(text_of(&inv_el, ".inv-name"), "Roland Banks");
@@ -272,17 +265,11 @@ async fn investigators_panel_renders_stats_and_hand() {
 
 #[wasm_bindgen_test]
 async fn empty_board_renders_placeholder_without_panels() {
-    let store = RwSignal::new(ClientState::default());
-    mount::mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    task::tick().await;
+    let root = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY)
+        .await
+        .root;
 
-    // Scope to only the last mounted <section class="board"> so that
-    // accumulated DOM from earlier tests does not pollute this assertion.
-    let html = common::last_mounted(".board").inner_html();
+    let html = find(&root, ".board").inner_html();
 
     assert!(
         html.contains("&lt;no game&gt;"),
@@ -306,12 +293,12 @@ async fn resolution_banner_names_the_resolution_point() {
         .build();
     state.ending = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
 
-    let _ = render_state(state).await;
+    let root = render_state(state).await;
 
     // The banner names the ending the player takes to the campaign guide, not
     // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
     // that "lost" is a standalone-mode projection this client does not make.
-    let html = common::last_mounted(".resolution").inner_html();
+    let html = find(&root, ".resolution").inner_html();
     assert!(
         html.contains("Resolution 3"),
         "banner must name the resolution point: {html}"
@@ -330,12 +317,12 @@ async fn resolution_banner_renders_no_resolution_reached() {
         .build();
     state.ending = Some(ScenarioEnding::NoResolution);
 
-    let _ = render_state(state).await;
+    let root = render_state(state).await;
 
     // RR Elimination step 6's ending has its own campaign-guide entry ("If no
     // resolution was reached"), and an investigator who got here by resigning
     // is "not considered to have been defeated".
-    let html = common::last_mounted(".resolution").inner_html();
+    let html = find(&root, ".resolution").inner_html();
     assert!(
         html.contains("no resolution reached"),
         "no-resolution banner text missing: {html}"
@@ -353,22 +340,18 @@ async fn map_and_investigators_are_inside_board_main() {
         .with_seat(roland(1))
         .with_location(location(1))
         .build();
-    let _ = render_state(state).await;
+    let root = render_state(state).await;
 
-    // Scope to the last mounted .game so DOM accumulation from earlier tests
-    // does not pollute this assertion.
-    let last_game = common::last_mounted(".game");
+    let game = find(&root, ".game");
 
     assert!(
-        last_game
-            .query_selector(".board-main .map")
+        game.query_selector(".board-main .map")
             .expect("query ok")
             .is_some(),
         ".map must be a descendant of .board-main"
     );
     assert!(
-        last_game
-            .query_selector(".board-main .investigators")
+        game.query_selector(".board-main .investigators")
             .expect("query ok")
             .is_some(),
         ".investigators must be a descendant of .board-main"
@@ -387,10 +370,11 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
         .with_enemy(enemy(1).name("Test Brute").engaged_with(InvestigatorId(1)))
         .build();
 
-    let html = render_state(state).await;
+    let root = render_state(state).await;
+    let html = root.inner_html();
 
-    let last_game = common::last_mounted(".game");
-    let card = last_game
+    let game = find(&root, ".game");
+    let card = game
         .query_selector(".threat .card-row .card")
         .expect("query_selector");
     assert!(
@@ -409,22 +393,23 @@ async fn threat_area_treachery_renders_as_card() {
         .with_seat(roland(1).threat_area([(COVER_UP, clues(3))]))
         .build();
 
-    let html = render_state(state).await;
+    let root = render_state(state).await;
+    let html = root.inner_html();
 
-    let last_game = common::last_mounted(".game");
+    let game = find(&root, ".game");
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
     // it renders the generic rectangle (`crates/web/src/card.rs:416-433`).
     // Asserting `card--generic` rather than the bare `.card` is what
     // distinguishes it from `card--unknown`, which also matches `.card` and
     // would let it pass silently.
-    let card = last_game
+    let card = game
         .query_selector(".threat .card-row .card--generic")
         .expect("query_selector");
     assert!(
         card.is_some(),
         "threat-area treachery should render as a card: {html}"
     );
-    let treachery = text_of(&last_game, ".threat .card-row .card--generic");
+    let treachery = text_of(&game, ".threat .card-row .card--generic");
     assert!(
         treachery.contains("Cover Up"),
         "treachery name missing: {html}"
