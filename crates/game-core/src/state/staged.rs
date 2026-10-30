@@ -46,6 +46,10 @@ pub(crate) trait Reprint: Sized {
     /// The card type `metadata` must print, for the panic naming a mismatch.
     const KIND: &'static str;
 
+    /// The call that named the printed card, which a resolve panic names:
+    /// `as_card` on a board stager, the deck setter for a deck card.
+    const STAGER: &'static str;
+
     /// `self` with the printed fields `metadata` prints, scaled to
     /// `investigator_count` where the card prints a per-investigator value,
     /// and its board state unchanged. `None` when `metadata` is not a
@@ -66,36 +70,38 @@ impl<T: Reprint> Staged<T> {
         let Some(code) = self.printed else {
             return self.piece;
         };
-        let metadata = printed_metadata(cards, &code);
+        let metadata = printed_metadata(cards, &code, T::STAGER);
         self.piece
             .reprint(metadata, investigator_count)
-            .unwrap_or_else(|| panic!("as_card({code}): {code} is not {} card", T::KIND))
+            .unwrap_or_else(|| panic!("{}({code}): {code} is not {} card", T::STAGER, T::KIND))
     }
 }
 
-/// The metadata `cards` prints for `code`, the card a stager's `as_card`
-/// named.
+/// The metadata `cards` prints for `code`, the card `stager` (the call that
+/// named it, as in [`Reprint::STAGER`]) named.
 ///
 /// # Panics
 ///
-/// Naming `code`, if `cards` is `None` (the test named no registries) or the
-/// registry does not know `code`.
+/// Naming `stager` and `code`, if `cards` is `None` (the test named no
+/// registries) or the registry does not know `code`.
 pub(crate) fn printed_metadata(
     cards: Option<&CardRegistry>,
     code: &CardCode,
+    stager: &str,
 ) -> &'static CardMetadata {
     let cards = cards.unwrap_or_else(|| {
         panic!(
-            "as_card({code}): name the registries to read {code} from, with \
+            "{stager}({code}): name the registries to read {code} from, with \
              `.with_registries(..)` on the builder"
         )
     });
     (cards.metadata_for)(code)
-        .unwrap_or_else(|| panic!("as_card({code}): the registry has no card {code}"))
+        .unwrap_or_else(|| panic!("{stager}({code}): the registry has no card {code}"))
 }
 
 impl Reprint for Enemy {
     const KIND: &'static str = "an enemy";
+    const STAGER: &'static str = "as_card";
 
     /// The printed enemy, through [`Enemy::from_metadata`] — the constructor a
     /// spawn uses — keeping the staged id, location, owner, damage,
@@ -118,6 +124,7 @@ impl Reprint for Enemy {
 
 impl Reprint for Location {
     const KIND: &'static str = "a location";
+    const STAGER: &'static str = "as_card";
 
     /// The printed location, through [`Location::from_metadata`] — the
     /// constructor `add_location` uses — keeping the staged id, clues,
@@ -138,6 +145,7 @@ impl Reprint for Location {
 
 impl Reprint for Act {
     const KIND: &'static str = "an act";
+    const STAGER: &'static str = "with_act_deck";
 
     /// The printed act, through [`Act::from_metadata`] — the constructor a
     /// scenario's `setup()` uses. An act in a deck carries no board state.
@@ -148,6 +156,7 @@ impl Reprint for Act {
 
 impl Reprint for Agenda {
     const KIND: &'static str = "an agenda";
+    const STAGER: &'static str = "with_agenda_deck";
 
     /// The printed agenda, through [`Agenda::from_metadata`] — the
     /// constructor a scenario's `setup()` uses. An agenda in a deck carries

@@ -492,7 +492,7 @@ fn a_stock_agenda_rejects_a_printed_code() {
 }
 
 #[test]
-#[should_panic(expected = "as_card(_stage_agenda): _stage_agenda is not an act card")]
+#[should_panic(expected = "with_act_deck(_stage_agenda): _stage_agenda is not an act card")]
 fn build_names_a_deck_card_of_the_wrong_type() {
     let _ = GameStateBuilder::new()
         .with_registries(registries())
@@ -501,7 +501,7 @@ fn build_names_a_deck_card_of_the_wrong_type() {
 }
 
 #[test]
-#[should_panic(expected = "as_card(_stage_act): name the registries")]
+#[should_panic(expected = "with_act_deck(_stage_act): name the registries")]
 fn build_names_a_printed_deck_card_when_no_registries_were_named() {
     let _ = GameStateBuilder::new().with_act_deck([PROBE_ACT]).build();
 }
