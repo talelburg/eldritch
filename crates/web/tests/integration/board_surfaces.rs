@@ -10,45 +10,22 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameState, GameStateBuilder};
 use game_core::test_support;
-use leptos::prelude::*;
-use leptos::task;
-use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::interaction::PendingOptions;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
 use web_sys::{Element, HtmlButtonElement};
 
-/// Mount `BoardView` against a fresh store carrying `state`, and return the
-/// last-mounted wrapper so absence assertions are scoped to this test.
+use crate::common;
+
+/// Mount the board on a `Hello` carrying `state`, and return its root so
+/// absence assertions are scoped to this test.
 async fn mount(state: GameState) -> Element {
     // Panels read investigator-card capacity from the registry.
-    let store = RwSignal::new(ClientState::default());
-    mount_to_body(move || {
-        provide_cards(&test_support::TEST_REGISTRY);
-        provide_context(store);
-        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(PendingOptions(pending));
-        view! { <div class="bs-root"><BoardView/></div> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
-    let roots = document().query_selector_all(".bs-root").expect("query");
-    roots
-        .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .bs-root")
+    common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &test_support::TEST_REGISTRY,
+    )
+    .await
+    .root
 }
 
 /// The `.deck-count` text of each `.player-deck`, in panel order.

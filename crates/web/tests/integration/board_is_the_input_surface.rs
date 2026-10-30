@@ -13,9 +13,6 @@
 //! real corpus, `cards::TEST_REGISTRY`.
 #![cfg(target_arch = "wasm32")]
 
-use std::collections::BTreeSet;
-
-use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::Action;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
@@ -29,14 +26,10 @@ use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::app::Overlays;
-use web::board::BoardView;
-use web::decision::DecisionLive;
-use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
-use web::transport::OutboundTx;
+use web::store;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
+
+use crate::common::{self, BoardHandle};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const ROLAND: &str = "01001";
@@ -45,8 +38,7 @@ const ROTTING_REMAINS: &str = "01163";
 /// The in-process server: holds the authoritative `GameState`, applies whatever
 /// the UI submits, and folds the result back into the store.
 struct Harness {
-    store: RwSignal<ClientState>,
-    rx: UnboundedReceiver<ClientMessage>,
+    board: BoardHandle,
     state: Option<GameState>,
 }
 
@@ -56,39 +48,10 @@ impl Harness {
     async fn mount(state: GameState, outcome: EngineOutcome) -> Self {
         // The real corpus, not the synthetic registry: this flow draws a real
         // encounter card and renders a real investigator card.
-        let store = RwSignal::new(ClientState::default());
-        let (tx, rx) = mpsc::unbounded::<ClientMessage>();
-        let tx_for_mount: OutboundTx = tx;
-        let seed = state.clone();
-        mount_to_body(move || {
-            provide_cards(&cards::TEST_REGISTRY);
-            provide_context(store);
-            provide_context::<OutboundTx>(tx_for_mount.clone());
-            let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-            provide_context(PendingOptions(pending));
-            let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
-            provide_context(ConfirmAnchor(anchor));
-            let selected = RwSignal::new(BTreeSet::<u32>::new());
-            let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
-            provide_context(MultiSelect { active, selected });
-            let decision = Signal::derive(move || store.with(web::decision::modal_is_live));
-            provide_context(DecisionLive(decision));
-            view! { <div class="e2e-root"><BoardView/><Overlays/></div> }
-        });
-        store.update(|s| {
-            store::reduce(
-                s,
-                ServerMessage::Hello {
-                    state: Box::new(seed),
-                    outcome,
-                    events: Vec::new(),
-                },
-            );
-        });
-        task::tick().await;
+        let board =
+            common::mount_board(common::hello(state.clone(), outcome), &cards::TEST_REGISTRY).await;
         Self {
-            store,
-            rx,
+            board,
             state: Some(state),
         }
     }
@@ -97,6 +60,7 @@ impl Harness {
     /// the `Applied` back in — the transport's round trip, in-process.
     async fn pump(&mut self) {
         let ClientMessage::Submit { action } = self
+            .board
             .rx
             .try_recv()
             .expect("the click submitted a frame")
@@ -111,7 +75,7 @@ impl Harness {
             "the board offered something the engine rejected: {:?}",
             result.outcome
         );
-        let store = self.store;
+        let store = self.board.store;
         self.state = Some(result.state.clone());
         store.update(|s| {
             store::reduce(
@@ -129,34 +93,48 @@ impl Harness {
     fn state(&self) -> &GameState {
         self.state.as_ref().expect("a state")
     }
-}
 
-fn root() -> Element {
-    let roots = document().query_selector_all(".e2e-root").expect("query");
-    roots
-        .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("an .e2e-root")
-}
+    fn find(&self, sel: &str) -> HtmlElement {
+        self.board
+            .root
+            .query_selector(sel)
+            .expect("query")
+            .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+            .unwrap_or_else(|| panic!("no `{sel}` on the board"))
+    }
 
-fn find(sel: &str) -> HtmlElement {
-    root()
-        .query_selector(sel)
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .unwrap_or_else(|| panic!("no `{sel}` on the board"))
-}
+    /// True iff nothing under the mounted root matches `sel`.
+    fn absent(&self, sel: &str) -> bool {
+        self.board
+            .root
+            .query_selector(sel)
+            .expect("query")
+            .is_none()
+    }
 
-/// True iff nothing under the mounted root matches `sel`.
-fn absent(sel: &str) -> bool {
-    root().query_selector(sel).expect("query").is_none()
-}
+    fn is_disabled(&self, sel: &str) -> bool {
+        self.find(sel)
+            .dyn_ref::<HtmlButtonElement>()
+            .expect("a button")
+            .disabled()
+    }
 
-fn is_disabled(sel: &str) -> bool {
-    find(sel)
-        .dyn_ref::<HtmlButtonElement>()
-        .expect("a button")
-        .disabled()
+    /// The hand slots on the `n`th investigator panel, in seat order.
+    fn hand_slots(&self, n: u32, sel: &str) -> Vec<HtmlElement> {
+        let panel = self
+            .board
+            .root
+            .query_selector_all(".investigator")
+            .expect("query")
+            .item(n)
+            .and_then(|node| node.dyn_into::<Element>().ok())
+            .expect("an investigator panel");
+        let slots = panel.query_selector_all(sel).expect("query");
+        (0..slots.length())
+            .filter_map(|i| slots.item(i))
+            .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+            .collect()
+    }
 }
 
 #[wasm_bindgen_test]
@@ -203,20 +181,17 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     //    turn control, so its "Choose an action" text is suppressed structurally
     //    (ADR 0011) rather than by matching the string.
     assert!(
-        root()
-            .query_selector(".prompt-banner")
-            .expect("query")
-            .is_none(),
+        h.absent(".prompt-banner"),
         "the open-turn menu must not put 'Choose an action' in the banner"
     );
     assert!(
-        !is_disabled(".turn-control"),
+        !h.is_disabled(".turn-control"),
         "End turn is live on the panel"
     );
 
     // 2. End turn, clicked on the investigator's own panel. The round-ending turn
     //    cascades through Upkeep into Mythos and parks at the step-1.4 draw.
-    find(".turn-control").click();
+    h.find(".turn-control").click();
     h.pump().await;
     assert_eq!(h.state().phase, Phase::Mythos);
 
@@ -224,22 +199,22 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     //    context-free "Confirm". End turn is still present, greyed out — the
     //    panel's shape does not change between phases.
     assert!(
-        is_disabled(".turn-control"),
+        h.is_disabled(".turn-control"),
         "off-turn, End turn is visible but dead rather than gone"
     );
-    assert!(!is_disabled(".encounter-draw"), "the Mythos draw is live");
-    find(".encounter-draw").click();
+    assert!(!h.is_disabled(".encounter-draw"), "the Mythos draw is live");
+    h.find(".encounter-draw").click();
     h.pump().await;
 
     // 4. Rotting Remains' revelation opens a Willpower test. Its commit prompt has
     //    no board home, so the banner — the floor — carries it. Commit nothing.
-    find(".prompt-banner .confirm").click();
+    h.find(".prompt-banner .confirm").click();
     h.pump().await;
 
     // 5. The result lands in a modal carrying the acknowledge pause's only
     //    Confirm. This is the prompt the flat bar rendered identically to the
     //    encounter draw, which is why the collision went unnoticed until now.
-    find(".skill-test-result .str-confirm").click();
+    h.find(".skill-test-result .str-confirm").click();
     h.pump().await;
 
     // 6. Nothing was ever stranded, and no flat bar existed to catch it if it had
@@ -300,24 +275,26 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
 
     // 1. First Aid glows on the board and opens its Activate menu — a selection,
     //    unchanged: the click is doing real work, naming which card.
-    find(".card-slot.actionable .menu-hit").click();
+    h.find(".card-slot.actionable .menu-hit").click();
     task::tick().await;
-    find(".context-menu .menu-item").click();
+    h.find(".context-menu .menu-item").click();
     h.pump().await;
 
     // 2. The choice is *there*. No second click on the asset, and both printed
     //    modes are offered under their authored labels.
-    let branches = root()
+    let branches = h
+        .board
+        .root
         .query_selector_all(".decision-modal .decision-branch")
         .expect("query");
     assert_eq!(branches.length(), 2, "both heal modes are offered at once");
     assert_eq!(
-        find(".decision-modal .decision-source").text_content(),
+        h.find(".decision-modal .decision-source").text_content(),
         Some("First Aid".to_string()),
         "the modal names the card the choice came from",
     );
     assert!(
-        find(".decision-modal .decision-printed")
+        h.find(".decision-modal .decision-printed")
             .text_content()
             .is_some_and(|t| t.contains("Heal 1 damage or horror")),
         "and carries that card's printed text",
@@ -327,22 +304,22 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     //    provenance signal — but it opens no menu, and the banner renders
     //    neither the prompt nor the branches, so nothing is offered twice.
     assert!(
-        !absent(".card-slot.actionable"),
+        !h.absent(".card-slot.actionable"),
         "the card the choice is printed on keeps its glow while the decision is live",
     );
     assert!(
-        absent(".card-slot .menu-hit"),
+        h.absent(".card-slot .menu-hit"),
         "but opens no context menu: the modal is the sole surface",
     );
     assert!(
-        absent(".prompt-banner .banner-option") && absent(".prompt-banner .prompt"),
+        h.absent(".prompt-banner .banner-option") && h.absent(".prompt-banner .prompt"),
         "the banner renders neither the branches nor the prompt text",
     );
 
     // 4. The branch is real engine input, and it resolves.
-    find(".decision-modal .decision-branch").click();
+    h.find(".decision-modal .decision-branch").click();
     h.pump().await;
-    assert!(absent(".decision-modal"), "answering closes the modal");
+    assert!(h.absent(".decision-modal"), "answering closes the modal");
     assert_eq!(
         h.state().investigators[&INV].damage(),
         1,
@@ -360,21 +337,6 @@ fn seated(id: u32, card: &str, hand: &[&str]) -> Seat<Printed> {
         .as_card(card)
         .hand(hand.iter().copied())
         .deck(["01024", "01025", "01026", "01027"])
-}
-
-/// The hand slots on the `n`th investigator panel, in seat order.
-fn hand_slots(n: u32, sel: &str) -> Vec<HtmlElement> {
-    let panel = root()
-        .query_selector_all(".investigator")
-        .expect("query")
-        .item(n)
-        .and_then(|node| node.dyn_into::<Element>().ok())
-        .expect("an investigator panel");
-    let slots = panel.query_selector_all(sel).expect("query");
-    (0..slots.length())
-        .filter_map(|i| slots.item(i))
-        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
-        .collect()
 }
 
 /// **A subset pick selects from its responder's hand alone.**
@@ -397,24 +359,24 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
     let mut h = Harness::mount(seeded.state().clone(), outcome).await;
 
     assert!(
-        hand_slots(0, ".hand-slot.selectable").is_empty(),
+        h.hand_slots(0, ".hand-slot.selectable").is_empty(),
         "seat 1's hand is not in selection mode"
     );
     assert_eq!(
-        hand_slots(1, ".hand-slot.selectable").len(),
+        h.hand_slots(1, ".hand-slot.selectable").len(),
         2,
         "seat 2's whole hand is"
     );
 
     // A click on seat 1's card selects nothing; seat 2 picks their second card.
-    hand_slots(0, ".hand-slot")[0].click();
+    h.hand_slots(0, ".hand-slot")[0].click();
     task::tick().await;
-    hand_slots(1, ".hand-slot")[1].click();
+    h.hand_slots(1, ".hand-slot")[1].click();
     task::tick().await;
-    assert!(hand_slots(0, ".hand-slot.selected").is_empty());
-    assert_eq!(hand_slots(1, ".hand-slot.selected").len(), 1);
+    assert!(h.hand_slots(0, ".hand-slot.selected").is_empty());
+    assert_eq!(h.hand_slots(1, ".hand-slot.selected").len(), 1);
 
-    find(".prompt-banner .confirm").click();
+    h.find(".prompt-banner .confirm").click();
     h.pump().await;
 
     let seat2 = &h.state().investigators[&INV2].hand;

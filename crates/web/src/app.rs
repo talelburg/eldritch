@@ -17,7 +17,7 @@ use crate::prompt_banner::PromptBanner;
 #[cfg(target_arch = "wasm32")]
 use crate::skill_test_result::SkillTestResultView;
 use crate::status_bar::StatusBarView;
-use crate::store;
+use crate::store::{self, StoreSignal};
 #[cfg(target_arch = "wasm32")]
 use crate::transport;
 use crate::turn_tracker::TurnTrackerView;
@@ -28,6 +28,42 @@ use crate::version_mismatch::VersionMismatchView;
 pub fn App() -> impl IntoView {
     let store = store::provide_store();
 
+    provide_board_contexts(store);
+
+    // Spawn the browser transport only on wasm; native/headless-reducer
+    // builds render from a signal that tests drive directly.
+    #[cfg(target_arch = "wasm32")]
+    {
+        transport::start(store);
+    }
+
+    view! {
+        <main>
+            <header class="app-header">
+                <h1>"Eldritch"</h1>
+                <StatusBarView/>
+            </header>
+            <div class="layout">
+                <EventLogView/>
+                <div class="main-column">
+                    <BoardView/>
+                    <Overlays/>
+                </div>
+                <TurnTrackerView/>
+            </div>
+        </main>
+    }
+}
+
+/// Provide the board's derived contexts from `store`.
+///
+/// They are the live prompt's options, the confirm anchor, whether a decision
+/// modal is up, and the multi-select state with the effect that clears it. The
+/// store, the card registry and the outbound channel are the caller's.
+///
+/// `App` calls it, and so does the web tests' `mount_board`, so a context the
+/// app adds here reaches every board test without a test being edited.
+pub fn provide_board_contexts(store: StoreSignal) {
     // Derive the live prompt's options and expose them so board entities can
     // route each option to itself and open a context menu.
     let pending = Signal::derive(move || store.with(interaction::pending_options));
@@ -58,30 +94,6 @@ pub fn App() -> impl IntoView {
         active: multi_active,
         selected,
     });
-
-    // Spawn the browser transport only on wasm; native/headless-reducer
-    // builds render from a signal that tests drive directly.
-    #[cfg(target_arch = "wasm32")]
-    {
-        transport::start(store);
-    }
-
-    view! {
-        <main>
-            <header class="app-header">
-                <h1>"Eldritch"</h1>
-                <StatusBarView/>
-            </header>
-            <div class="layout">
-                <EventLogView/>
-                <div class="main-column">
-                    <BoardView/>
-                    <Overlays/>
-                </div>
-                <TurnTrackerView/>
-            </div>
-        </main>
-    }
 }
 
 /// Everything the app layers over the board: the pre-game picker, the skill-test

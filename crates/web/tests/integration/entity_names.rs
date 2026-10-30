@@ -7,13 +7,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location};
-use leptos::prelude::{provide_context, RwSignal, Update};
-use leptos::{mount, task};
-use protocol::ServerMessage;
 use wasm_bindgen_test::*;
-use web::board::BoardView;
-use web::registry::provide_cards;
-use web::store::{self, ClientState};
 
 use crate::common;
 
@@ -30,25 +24,17 @@ async fn board_renders_card_and_location_names() {
         .with_location(location(10).name("Study"))
         .build();
 
-    let store = RwSignal::new(ClientState::default());
-    mount::mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    store.update(|s| {
-        store::reduce(
-            s,
-            ServerMessage::Hello {
-                state: Box::new(state),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
-    });
-    task::tick().await;
+    let root = common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &cards::TEST_REGISTRY,
+    )
+    .await
+    .root;
 
-    let text = common::last_mounted(".board")
+    let text = root
+        .query_selector(".board")
+        .expect("query")
+        .expect("a .board")
         .text_content()
         .unwrap_or_default();
     assert!(
