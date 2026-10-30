@@ -23,10 +23,11 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, Location, LocationId, Phase, SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{enemy, location, seat, Printed, Seat, StagedEnemy, TestSession};
+
 use game_core::{assert_event, assert_no_event};
 
 /// On the Lam (01010).
@@ -50,15 +51,6 @@ const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
 const SECOND_ATTACKER: EnemyId = EnemyId(8);
 
-/// A ready enemy printed as `code`, dealing 1 damage.
-fn enemy(id: EnemyId, code: &str) -> Enemy {
-    let mut e = test_support::test_enemy(id.0, code);
-    e.code = CardCode::new(code);
-    e.attack_damage = 1;
-    e.attack_horror = 0;
-    e
-}
-
 /// Investigator 1 at the Study with On the Lam in hand and the resource to
 /// play it.
 fn skids() -> Seat {
@@ -71,16 +63,12 @@ fn skids() -> Seat {
 
 /// The Study (connected to the Hallway) and the Hallway, investigator 1 at the
 /// Study engaged by each of `enemies`.
-fn study_board(seat_one: Seat, enemies: Vec<Enemy>) -> GameStateBuilder {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![HALLWAY];
-    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-    hallway.connections = vec![HERE];
+fn study_board(seat_one: Seat, enemies: Vec<StagedEnemy<Printed>>) -> GameStateBuilder {
     enemies.into_iter().fold(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(study)
-            .with_location(hallway)
+            .with_location(location(HERE).connections([HALLWAY]))
+            .with_location(location(HALLWAY).connections([HERE]))
             .with_seat(seat_one),
         |b, e| b.with_enemy_engaged(e, INV),
     )
@@ -88,7 +76,7 @@ fn study_board(seat_one: Seat, enemies: Vec<Enemy>) -> GameStateBuilder {
 
 /// Investigator 1's turn at the Study, engaged by each of `enemies`, with On
 /// the Lam unplayed.
-fn board(enemies: Vec<Enemy>) -> TestSession {
+fn board(enemies: Vec<StagedEnemy<Printed>>) -> TestSession {
     study_board(skids(), enemies).open_turn(INV).session()
 }
 
@@ -96,27 +84,17 @@ fn board(enemies: Vec<Enemy>) -> TestSession {
 /// it begins investigator 1's turn, whose `TurnBegan` `after` cell is where On
 /// the Lam is played.
 fn turn_began(builder: GameStateBuilder, other: Seat) -> TestSession {
-    turn_began_with(builder, other, |_| {})
-}
-
-/// [`turn_began`] on a board `edit` finishes, for what the builder cannot set.
-fn turn_began_with(
-    builder: GameStateBuilder,
-    other: Seat,
-    edit: impl FnOnce(&mut GameState),
-) -> TestSession {
-    let mut state = builder
+    builder
         .with_seat(other.deck([FILLER]))
         .with_seating([OTHER, INV])
         .open_turn(OTHER)
-        .build();
-    edit(&mut state);
-    TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn)
+        .session()
+        .take(&TurnAction::EndTurn)
 }
 
 /// [`board`], reached at the start of investigator 1's turn and with On the
 /// Lam played there.
-fn on_the_lam_played(enemies: Vec<Enemy>) -> TestSession {
+fn on_the_lam_played(enemies: Vec<StagedEnemy<Printed>>) -> TestSession {
     play_on_the_lam(turn_began(
         study_board(skids(), enemies),
         seat(2).at(HALLWAY),
@@ -242,9 +220,9 @@ fn not_playable_in_the_enemy_phase() {
     // Beat Cop's `[fast]` ability pauses the Enemy phase's step-3.3 window.
     let paused = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(skids().in_play([BEAT_COP]))
-        .with_enemy_engaged(enemy(ATTACKER, GHOUL_MINION), INV)
+        .with_enemy_engaged(enemy(ATTACKER).as_card(GHOUL_MINION), INV)
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);
@@ -266,7 +244,9 @@ fn not_playable_in_the_enemy_phase() {
 
 #[test]
 fn a_non_elite_enemy_makes_no_attack_of_opportunity() {
-    let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_MINION)]));
+    let session = move_to_hallway(on_the_lam_played(vec![
+        enemy(ATTACKER).as_card(GHOUL_MINION)
+    ]));
     assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(
         session.state().investigators[&INV].current_location,
@@ -278,19 +258,22 @@ fn a_non_elite_enemy_makes_no_attack_of_opportunity() {
 
 #[test]
 fn an_elite_enemy_still_makes_an_attack_of_opportunity() {
-    let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_PRIEST)]));
+    let session = move_to_hallway(on_the_lam_played(vec![
+        enemy(ATTACKER).as_card(GHOUL_PRIEST)
+    ]));
+    // The Ghoul Priest's printed attack deals 2 damage.
     assert_event!(
         session.events(),
         Event::DamagePlacedOnInvestigator {
             investigator: INV,
-            amount: 1
+            amount: 2
         }
     );
 }
 
 #[test]
 fn without_on_the_lam_a_non_elite_enemy_attacks_of_opportunity() {
-    let session = move_to_hallway(board(vec![enemy(ATTACKER, GHOUL_MINION)]));
+    let session = move_to_hallway(board(vec![enemy(ATTACKER).as_card(GHOUL_MINION)]));
     assert_event!(
         session.events(),
         Event::DamagePlacedOnInvestigator {
@@ -304,7 +287,8 @@ fn without_on_the_lam_a_non_elite_enemy_attacks_of_opportunity() {
 
 #[test]
 fn a_non_elite_enemy_makes_no_enemy_phase_attack_and_stays_ready() {
-    let session = on_the_lam_played(vec![enemy(ATTACKER, GHOUL_MINION)]).take(&TurnAction::EndTurn);
+    let session =
+        on_the_lam_played(vec![enemy(ATTACKER).as_card(GHOUL_MINION)]).take(&TurnAction::EndTurn);
     let events = enemy_phase_events(&session);
     assert_event!(
         events,
@@ -320,8 +304,8 @@ fn a_non_elite_enemy_makes_no_enemy_phase_attack_and_stays_ready() {
 fn an_elite_enemy_still_attacks_in_the_enemy_phase() {
     // Engaged with both: the Elite attacks, the non-Elite does not.
     let session = on_the_lam_played(vec![
-        enemy(ATTACKER, GHOUL_PRIEST),
-        enemy(SECOND_ATTACKER, GHOUL_MINION),
+        enemy(ATTACKER).as_card(GHOUL_PRIEST),
+        enemy(SECOND_ATTACKER).as_card(GHOUL_MINION),
     ])
     .take(&TurnAction::EndTurn);
     let events = enemy_phase_events(&session);
@@ -341,20 +325,19 @@ fn an_elite_enemy_still_attacks_in_the_enemy_phase() {
 
 // ---- retaliate -----------------------------------------------------------
 
-/// A failed Fight against `code`, a Retaliate enemy: combat 1 + `Numeric(0)`
-/// against fight 5.
+/// A failed Fight against `code`, a printed Retaliate enemy: combat 1 +
+/// `Numeric(0)` against its printed fight 4.
 fn failed_fight_against(code: &str, on_the_lam: bool) -> TestSession {
-    let mut e = enemy(ATTACKER, code);
-    e.fight = 5;
-    e.max_health = 3;
-    e.retaliate = true;
     let fighter = if on_the_lam {
         skids()
     } else {
         seat(1).at(HERE)
     };
-    let builder = study_board(fighter.skill(SkillKind::Combat, 1), vec![e])
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
+    let builder = study_board(
+        fighter.skill(SkillKind::Combat, 1),
+        vec![enemy(ATTACKER).as_card(code)],
+    )
+    .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
     let session = if on_the_lam {
         play_on_the_lam(turn_began(builder, seat(2).at(HALLWAY)))
     } else {
@@ -390,11 +373,12 @@ fn without_on_the_lam_a_non_elite_enemy_retaliates() {
 #[test]
 fn an_elite_enemy_still_retaliates() {
     let session = failed_fight_against(GHOUL_PRIEST, true);
+    // The Ghoul Priest's printed attack deals 2 damage.
     assert_event!(
         session.events(),
         Event::DamagePlacedOnInvestigator {
             investigator: INV,
-            amount: 1
+            amount: 2
         }
     );
 }
@@ -411,20 +395,10 @@ fn the_protection_is_gone_before_any_round_end_ability() {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids().at(HALLWAY).clues(3))
-        .with_location(Location::new(
-            HALLWAY,
-            CardCode::new("01112"),
-            "Hallway",
-            1,
-            0,
-        ));
-    let played = play_on_the_lam(turn_began_with(builder, seat(2).at(HALLWAY), |state| {
-        state.act_deck = vec![Act {
-            code: CardCode::new("01109"),
-            clue_threshold: 3,
-        }];
-        state.act_index = 0;
-    }));
+        .with_location(location(HALLWAY).as_card("01112"))
+        // The Barrier's printed threshold is 3 clues.
+        .with_act_deck(["01109"]);
+    let played = play_on_the_lam(turn_began(builder, seat(2).at(HALLWAY)));
     assert!(
         !played.state().lasting_effects.is_empty(),
         "On the Lam's protection lasts through the round",

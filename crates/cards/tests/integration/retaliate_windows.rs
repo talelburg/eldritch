@@ -39,10 +39,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
+    CardCode, ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
@@ -55,37 +55,32 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const RETALIATOR: EnemyId = EnemyId(7);
 
-/// Build a ready retaliate enemy, to be engaged with the investigator.
-/// `fight` is set high enough that the investigator (combat 1) will fail
-/// the test with a `Numeric(0)` token (1 + 0 = 1 < fight).
-/// `attack_damage` is the retaliate attack's damage payload;
-/// `max_health` ensures the enemy can survive Guard Dog's 1-point retaliation.
-fn retaliate_enemy(fight: i8, attack_damage: u8, max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(RETALIATOR.0, format!("Retaliate Enemy {}", RETALIATOR.0));
-    e.fight = fight;
-    e.max_health = max_health;
-    e.attack_damage = attack_damage;
-    e.attack_horror = 0;
-    e.retaliate = true;
-    e
-}
-
 /// Investigator 1 at the Study with combat 1, so the Fight always fails:
 /// 1 + Numeric(0) = 1 < 5 (enemy fight).
 fn fighter() -> Seat {
     seat(1).at(HERE).skill(SkillKind::Combat, 1)
 }
 
-/// An Investigation-phase turn with `investigator` at the Study, `enemy`
-/// engaged, and a deterministically-failing chaos bag (`Numeric(0)`;
-/// investigator combat = 1; enemy fight = 5 → 1 < 5 → fail).
-fn fight_board(investigator: Seat, enemy: Enemy) -> TestSession {
+/// An Investigation-phase turn with `investigator` at the Study, engaged with
+/// a ready Retaliate enemy, and a deterministically-failing chaos bag
+/// (`Numeric(0)`; investigator combat = 1; enemy fight = 5 → 1 < 5 → fail).
+/// `attack_damage` is the retaliate attack's damage payload; health 5 lets
+/// the enemy survive Guard Dog's 1-point retaliation.
+fn fight_board(investigator: Seat, attack_damage: u8) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy_engaged(
+            enemy(RETALIATOR)
+                .retaliate()
+                .fight(5)
+                .health(5)
+                .attack_damage(attack_damage)
+                .attack_horror(0),
+            INV,
+        )
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()
@@ -138,7 +133,7 @@ fn assert_nothing_stranded(state: &GameState) {
 fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // Enemy fight 5, damage 1 (soaks onto Guard Dog health 3), max_health 5
     // (survives Guard Dog's 1-point retaliation after absorbing 0 prior damage).
-    let session = fight_board(fighter().in_play([GUARD_DOG]), retaliate_enemy(5, 1, 5));
+    let session = fight_board(fighter().in_play([GUARD_DOG]), 1);
     let dog_id = session.state().in_play(INV, GUARD_DOG);
     let dog = OptionTarget::CardInstance(dog_id);
 
@@ -235,7 +230,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
 fn dodge_cancels_retaliate_and_skill_test_ends() {
     // Enemy fight 5, damage 2, max_health 5.  No Guard Dog — Dodge is the
     // only reaction card.
-    let session = fight_board(fighter().hand([DODGE]), retaliate_enemy(5, 2, 5));
+    let session = fight_board(fighter().hand([DODGE]), 2);
 
     // Initiate Fight → empty commit → fails → fire_retaliate_if_any → drive_retaliate
     // → BeforeEnemyAttack window opens (Dodge in hand) → suspend.

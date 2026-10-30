@@ -22,7 +22,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
 
 const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,7 +35,7 @@ const HERE: LocationId = LocationId(10);
 fn board(intellect: i8, damage: u8) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

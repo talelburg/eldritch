@@ -5,36 +5,26 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
-use game_core::state::{
-    CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId, LocationId,
-};
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::state::{CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 
-/// One ready enemy dealing `damage` / 0 horror. `attack_state` engages it.
-fn ready_attacker(id: u32, damage: u8) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
-    e.max_health = 5;
-    e.attack_damage = damage;
-    e.attack_horror = 0;
-    e
-}
-
 /// Investigation-phase state: `INV`'s open turn controlling a Guard Dog, with
-/// `enemy` engaged. `EndTurn` advances into the Enemy phase and runs the attack.
-fn attack_state(enemy: Enemy) -> GameState {
+/// one ready enemy engaged, dealing 2 damage and 0 horror. `EndTurn` advances
+/// into the Enemy phase and runs the attack.
+fn attack_state() -> GameState {
     // Non-empty deck so the post-attack Upkeep draw doesn't trigger the
     // draw-from-empty horror penalty (which soaks onto a sanity asset
     // and would muddy these damage-only tests).
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).in_play([GUARD_DOG]).deck([GUARD_DOG; 5]))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy_engaged(enemy(7).health(5).attack_damage(2).attack_horror(0), INV)
         .open_turn(INV)
         .build()
 }
@@ -61,7 +51,7 @@ fn guard_dog_damage(state: &GameState, inst: CardInstanceId) -> Option<u8> {
 
 #[test]
 fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
-    let state = attack_state(ready_attacker(7, 2));
+    let state = attack_state();
     let dog = dog(&state);
     let me = state.investigators[&INV].card_anchor();
 
@@ -108,7 +98,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 
 #[test]
 fn player_may_decline_to_soak_taking_all_damage() {
-    let state = attack_state(ready_attacker(7, 2));
+    let state = attack_state();
     let dog = dog(&state);
     let me = state.investigators[&INV].card_anchor();
 
@@ -132,7 +122,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
 
 #[test]
 fn a_full_soaker_drops_out_of_the_next_prompt() {
-    let mut state = attack_state(ready_attacker(7, 2));
+    let mut state = attack_state();
     let dog = dog(&state);
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
     state.investigators.get_mut(&INV).unwrap().cards_in_play[0].accumulated_damage = 2;

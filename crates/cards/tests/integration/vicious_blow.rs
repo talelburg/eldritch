@@ -12,7 +12,7 @@ use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, TestSession};
 
 const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -24,16 +24,12 @@ const HERE: LocationId = LocationId(10);
 /// `Numeric(0)` chaos bag for a deterministic success, fighting it and
 /// committing `commit`.
 fn fight_committing(commit: &[&str]) -> TestSession {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
-    enemy.fight = 2;
-    enemy.max_health = 10;
-
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([VICIOUS_BLOW]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy_engaged(enemy(ENEMY).fight(2).health(10), INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

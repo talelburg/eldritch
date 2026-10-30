@@ -22,10 +22,11 @@ use game_core::engine::OptionTarget;
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, Agenda, CardCode, EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, Location, LocationId, Phase, Status,
+    EliminationCause, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    Status,
 };
-use game_core::test_support::{self, clues, seat, Either, Seat, TestSession};
+use game_core::test_support::{clues, enemy, location, seat, Either, Seat, TestSession};
+
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -36,30 +37,32 @@ const GHOUL: EnemyId = EnemyId(1);
 const SECOND_GHOUL: EnemyId = EnemyId(2);
 
 /// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
-fn ghoul(id: EnemyId, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id.0, "Ghoul");
-    e.code = CardCode::new("01160");
-    e.current_location = Some(at);
-    e
-}
+const GHOUL_MINION: &str = "01160";
 
 /// The agenda board — 01107 current, a Hallway and a Parlor, `investigator`
 /// seated alone — on top of `builder`, which names the moment.
 fn board_from(builder: GameStateBuilder, investigator: impl Into<Seat<Either>>) -> GameState {
-    let loc = |id: LocationId, code: &str, name| Location::new(id, CardCode::new(code), name, 1, 0);
-    let mut state = builder
+    board_with_hallway_to(builder, investigator, [PARLOR])
+}
+
+/// [`board_from`], the Hallway connected to `hallway_connections`, each of
+/// which `builder` stages connected back.
+fn board_with_hallway_to(
+    builder: GameStateBuilder,
+    investigator: impl Into<Seat<Either>>,
+    hallway_connections: impl IntoIterator<Item = LocationId>,
+) -> GameState {
+    builder
         .with_seat(investigator)
         .with_seating([INV])
-        .with_location(loc(HALLWAY, "01112", "Hallway"))
-        .with_location(loc(PARLOR, "01115", "Parlor"))
-        .build();
-    state.connect(HALLWAY, PARLOR);
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01107"),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-    state
+        .with_location(
+            location(HALLWAY)
+                .as_card("01112")
+                .connections(hallway_connections),
+        )
+        .with_location(location(PARLOR).as_card("01115").connections([HALLWAY]))
+        .with_agenda_deck(["01107"])
+        .build()
 }
 
 /// Regression for #569: the move fires through the *real* step-3.4 site, not
@@ -80,7 +83,7 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
                 .ending_enemy_phase()
-                .with_enemy(ghoul(GHOUL, HALLWAY)),
+                .with_enemy(enemy(GHOUL).as_card(GHOUL_MINION).at(HALLWAY)),
             seat(1).at(HALLWAY).deck(["01006"]),
         ),
         TEST_REGISTRIES,
@@ -127,26 +130,27 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
 /// would stand in the Hallway beside the investigator forever.
 #[test]
 fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
-    let mut walker = ghoul(GHOUL, ATTIC); // Attic, one step from the Hallway
-    walker.attack_damage = 1;
-    walker.attack_horror = 0;
-    assert!(!walker.hunter, "the divergence needs a non-Hunter Ghoul");
     // Step 3.4 runs once the Enemy phase's attacks are done. The Attic (01113)
     // is a third room so a Ghoul can step Attic -> Hallway on its way to the
     // Parlor.
-    let mut state = board_from(
+    let state = board_with_hallway_to(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .ending_enemy_phase()
-            .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
-            .with_enemy(walker),
+            .with_location(location(ATTIC).as_card("01113").connections([HALLWAY]))
+            // Attic, one step from the Hallway.
+            .with_enemy(enemy(GHOUL).as_card(GHOUL_MINION).at(ATTIC))
+            // The next Mythos phase draws an encounter card. Obscuring Fog
+            // 01168 — *"Revelation - Attach to your location. Limit 1 per
+            // location."* — leaves the attack this test is about alone.
+            .with_encounter_deck(["01168"]),
         seat(1).at(HALLWAY).deck(["01088"]),
+        [PARLOR, ATTIC],
     );
-    state.connect(HALLWAY, ATTIC);
-    // The next Mythos phase draws an encounter card. Obscuring Fog 01168 —
-    // *"Revelation - Attach to your location. Limit 1 per location."* — leaves
-    // the attack this test is about alone.
-    state.encounter_deck.push_back(CardCode::new("01168"));
+    assert!(
+        !state.enemies[&GHOUL].hunter,
+        "the divergence needs a non-Hunter Ghoul"
+    );
 
     let session = TestSession::new(state, TEST_REGISTRIES);
     let (state, events) = (session.state(), session.events());
@@ -205,8 +209,8 @@ fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
                 .ending_upkeep_phase()
-                .with_enemy(ghoul(GHOUL, HALLWAY))
-                .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
+                .with_enemy(enemy(GHOUL).as_card(GHOUL_MINION).at(HALLWAY))
+                .with_enemy(enemy(SECOND_GHOUL).as_card(GHOUL_MINION).at(PARLOR)),
             seat(1),
         ),
         TEST_REGISTRIES,
@@ -235,19 +239,16 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     //
     // Affordable act window: investigator in the Hallway (01112) with >= 3
     // clues. Two Ghouls in Hallway/Parlor -> agenda 01107 would place 2 doom.
-    let mut state = board_from(
+    // The Barrier's printed threshold is 3 clues.
+    let state = board_from(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .ending_upkeep_phase()
-            .with_enemy(ghoul(GHOUL, HALLWAY))
-            .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
+            .with_enemy(enemy(GHOUL).as_card(GHOUL_MINION).at(HALLWAY))
+            .with_enemy(enemy(SECOND_GHOUL).as_card(GHOUL_MINION).at(PARLOR))
+            .with_act_deck(["01109"]),
         seat(1).at(HALLWAY).clues(3),
     );
-    state.act_deck = vec![Act {
-        code: CardCode::new("01109"),
-        clue_threshold: 3,
-    }];
-    state.act_index = 0;
 
     let window = TestSession::new(state, TEST_REGISTRIES);
 
@@ -293,8 +294,8 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
 /// [`table_at_act`], seating `seats` (numbered 1 up, in that order) as given.
 fn table_of_seats_at_act(seats: Vec<impl Into<Seat<Either>>>, act_index: usize) -> GameState {
     let n = u32::try_from(seats.len()).expect("a handful of seats");
-    // A card each for Upkeep 4.4 to draw.
-    let mut state = seats
+    // A card each for Upkeep 4.4 to draw. 01107 prints a doom threshold of 10.
+    seats
         .into_iter()
         .map(|s| Into::<Seat<Either>>::into(s).deck(["01088"]))
         .fold(
@@ -303,22 +304,11 @@ fn table_of_seats_at_act(seats: Vec<impl Into<Seat<Either>>>, act_index: usize) 
         )
         .with_seating((1..=n).map(InvestigatorId))
         .open_turn(INV)
-        .build();
-    state.act_deck = ["01108", "01109", "01110"]
-        .iter()
-        .map(|code| Act {
-            code: CardCode::new(*code),
-            clue_threshold: 2,
-        })
-        .collect();
-    state.act_index = act_index;
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01107"),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
-    state.agenda_doom = 9;
-    state
+        .with_act_deck(["01108", "01109", "01110"])
+        .with_current_act(act_index)
+        .with_agenda_deck(["01107"])
+        .with_agenda_doom(9)
+        .build()
 }
 
 /// Play `state`'s round out: every investigator still in it ends their turn,

@@ -19,7 +19,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 /// Ravenous Ghoul — *"<b>Prey</b> - Lowest remaining health."*
@@ -33,9 +33,9 @@ const HERE: LocationId = LocationId(20);
 
 #[test]
 fn a_drawn_enemy_without_a_spawn_instruction_engages_its_drawer_whatever_its_prey() {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).harm(2, 0))
         .with_seat(seat(2).at(HERE))
         .with_seating([LEAD, DRAWER])
@@ -44,10 +44,8 @@ fn a_drawn_enemy_without_a_spawn_instruction_engages_its_drawer_whatever_its_pre
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([DRAWER])
+        .with_encounter_deck([RAVENOUS_GHOUL])
         .build();
-    state
-        .encounter_deck
-        .push_back(CardCode::new(RAVENOUS_GHOUL));
 
     let session = TestSession::new(state, TEST_REGISTRIES).confirm();
 

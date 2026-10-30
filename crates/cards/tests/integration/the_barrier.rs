@@ -43,10 +43,8 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget, Responder};
-use game_core::state::{
-    Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-};
-use game_core::test_support::{seat, Either, Seat, TestSession};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{location, seat, Either, Seat, TestSession};
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -75,30 +73,15 @@ fn barrier_table(
     for s in seats {
         builder = builder.with_seat(s.deck(["01088"]));
     }
-    let mut parlor = Location::new(PARLOR, CardCode::new("01115"), "Parlor", 2, 0);
-    parlor.revealed = false;
     let mut state: GameState = builder
-        .with_location(Location::new(
-            HALLWAY,
-            CardCode::new("01112"),
-            "Hallway",
-            1,
-            0,
-        ))
-        .with_location(parlor)
-        .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
+        .with_location(location(HALLWAY).as_card("01112"))
+        .with_location(location(PARLOR).as_card("01115").unrevealed())
+        .with_location(location(ATTIC).as_card("01113"))
         .with_seating(seating.iter().copied())
         .with_lead(lead)
         .open_turn(last)
+        .with_act_deck(["01109", "01110"])
         .build();
-    state.act_deck = ["01109", "01110"]
-        .into_iter()
-        .map(|code| Act {
-            code: CardCode::new(code),
-            clue_threshold: 3,
-        })
-        .collect();
-    state.act_index = 0;
     state.set_aside_cards = vec![CardCode::new(GHOUL_PRIEST), CardCode::new(LITA)];
     TestSession::new(state, TEST_REGISTRIES)
 }

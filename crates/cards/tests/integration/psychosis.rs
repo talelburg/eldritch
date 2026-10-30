@@ -20,10 +20,10 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, Owner,
+    AbilityAddress, AbilitySource, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
+    Owner,
 };
-use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
 
 const PSYCHOSIS: &str = "01099";
 const AGNES: &str = "01004";
@@ -44,7 +44,7 @@ fn bearer() -> Seat {
 fn staged(bearer: impl Into<Seat<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(bearer)
         .open_turn(INV)
 }
@@ -53,22 +53,13 @@ fn board(bearer: impl Into<Seat<Either>>) -> TestSession {
     staged(bearer).session()
 }
 
-/// A sturdy enemy whose attack deals `damage` and `horror`.
-fn enemy(damage: u8, horror: u8) -> Enemy {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Attacker");
-    enemy.max_health = 3;
-    enemy.attack_damage = damage;
-    enemy.attack_horror = horror;
-    enemy
-}
-
 /// *"**Revelation** - Add Psychosis to your threat area."* Drawn off the top
 /// of the deck with the Draw action, it lands in the drawer's threat area.
 #[test]
 fn drawn_from_the_deck_it_lands_in_the_drawers_threat_area() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -132,7 +123,10 @@ fn horror_soaked_entirely_by_an_asset_still_fires_with_no_soak_prompt() {
 #[test]
 fn a_deal_with_no_horror_does_not_fire() {
     let session = staged(bearer().deck([HOLY_ROSARY]))
-        .with_enemy_engaged(enemy(1, 0), INV)
+        .with_enemy_engaged(
+            enemy(ENEMY).health(3).attack_damage(1).attack_horror(0),
+            INV,
+        )
         .session()
         .take(&TurnAction::EndTurn);
     let inv = &session.state().investigators[&INV];
@@ -168,7 +162,7 @@ fn horror_taken_by_someone_else_does_not_fire() {
 fn a_co_located_investigator_discards_it_with_two_actions() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(bearer())
         .with_seat(seat(2).at(HERE))
         .open_turn(NEIGHBOUR)
@@ -199,7 +193,10 @@ fn a_co_located_investigator_discards_it_with_two_actions() {
 fn agnes_reaction_resolves_before_the_forced_damage() {
     let agnes = seat(1).as_card(AGNES).at(HERE).threat_area([PSYCHOSIS]);
     let session = staged(agnes)
-        .with_enemy_engaged(enemy(0, 1), INV)
+        .with_enemy_engaged(
+            enemy(ENEMY).health(3).attack_damage(0).attack_horror(1),
+            INV,
+        )
         .session()
         .take_horror(INV, 1);
     let card = session.state().investigators[&INV].card_anchor();

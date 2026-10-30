@@ -23,15 +23,14 @@
 //! *"Discarding an enemy is not the same as defeating it, so reactions to an
 //! enemy being defeated (e.g. Roland Banks, Evidence!) do not trigger."*
 
-use card_dsl::card_data::CardKind;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, Enemy, EnemyId, GameStateBuilder,
-    InvestigatorId, Location, LocationId, Owner, Zone,
+    InvestigatorId, LocationId, Owner, Zone,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const MOB_ENFORCER: &str = "01101";
@@ -66,7 +65,7 @@ fn the_enforcer(session: &TestSession) -> &Enemy {
 fn drawn_by_its_bearer(resources: u8) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(A.0, "Study"))
+        .with_location(location(A))
         .with_seat(
             seat(BEARER.0)
                 .at(A)
@@ -112,7 +111,7 @@ fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
 fn drawn_in_upkeep_it_spawns_engaged_with_its_bearer() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(A.0, "Study"))
+        .with_location(location(A))
         .with_seat(seat(OTHER.0).at(A).deck([FILLER, FILLER]))
         .with_seat(seat(BEARER.0).at(A).deck([MOB_ENFORCER, FILLER]))
         .with_seating([OTHER, BEARER])
@@ -190,31 +189,9 @@ fn the_parley_is_offered_with_4_resources() {
     assert!(enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&action));
 }
 
-/// Mob Enforcer on the board at `at`, unengaged and ready, owned by `BEARER` —
-/// what a draw mints, with its printed keywords and prey read from the corpus.
-fn on_the_board(at: LocationId) -> Enemy {
-    let meta = cards::by_code(MOB_ENFORCER).expect("Mob Enforcer in the corpus");
-    let CardKind::Enemy { hunter, prey, .. } = meta.kind else {
-        panic!("01101 is an enemy")
-    };
-    let mut enemy = test_support::test_enemy(ENFORCER.0, "Mob Enforcer");
-    enemy.code = CardCode::new(MOB_ENFORCER);
-    enemy.hunter = hunter;
-    enemy.prey = prey;
-    enemy.owner = Owner::Investigator(BEARER);
-    enemy.current_location = Some(at);
-    enemy
-}
-
-/// A location named `name` at `id`, connected to `connections`.
-fn linked(id: LocationId, name: &str, connections: &[LocationId]) -> Location {
-    let mut location = test_support::test_location(id.0, name);
-    location.connections = connections.to_vec();
-    location
-}
-
-/// The line `A - B - C - D`, Mob Enforcer at `enforcer_at`, its bearer at
-/// `bearer_at` and the other investigator at `other_at`, on `turn`'s turn.
+/// The line `A - B - C - D`, Mob Enforcer at `enforcer_at` (unengaged and
+/// ready, owned by its bearer — what a draw mints), its bearer at `bearer_at`
+/// and the other investigator at `other_at`, on `turn`'s turn.
 fn two_seats(
     enforcer_at: LocationId,
     bearer_at: LocationId,
@@ -223,14 +200,19 @@ fn two_seats(
 ) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(linked(A, "A", &[B]))
-        .with_location(linked(B, "B", &[A, C]))
-        .with_location(linked(C, "C", &[B, D]))
-        .with_location(linked(D, "D", &[C]))
+        .with_location(location(A).connections([B]))
+        .with_location(location(B).connections([A, C]))
+        .with_location(location(C).connections([B, D]))
+        .with_location(location(D).connections([C]))
         .with_seat(seat(BEARER.0).at(bearer_at).deck([FILLER, FILLER]))
         .with_seat(seat(OTHER.0).at(other_at).deck([FILLER, FILLER]))
         .with_seating([BEARER, OTHER])
-        .with_enemy(on_the_board(enforcer_at))
+        .with_enemy(
+            enemy(ENFORCER)
+                .as_card(MOB_ENFORCER)
+                .owner(Owner::Investigator(BEARER))
+                .at(enforcer_at),
+        )
         .open_turn(turn)
         .session()
 }
