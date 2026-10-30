@@ -2,56 +2,105 @@
 
 ## Status
 
-📐 Architecture only; not yet ordered. Eleven issues are milestoned here as
-**deferrals** — behaviour that is a no-op or unobservable with one investigator
-(the [milestone query](https://github.com/talelburg/eldritch/milestone/9) is
-authoritative): #65 (other-investigator commits), #146 (turn-order choice),
-#151 (lead-investigator prey tie), #153 (clue allocation on advance), #359
-(Medical Texts target ordering), #381 (reaction windows scoped to the
-controller), #409 (failed Fight redirects damage), #573
-(acts drop `clues_fixed`), #581 (no seat/identity on the wire), #662
-(barricade-stranded enemy re-engagement), #1132 (an eliminated investigator's
-weakness enemies stay in play). A twelfth is not a deferral but the design
-ticket that
-unblocks several of them — #863, solo-with-2 UX, filed when Phase 7 closed.
-**Scoping proper is now due**: Phase 7 closed 2026-09-03.
+🟡 **Planned 2026-10-30.** Every row below is a filed issue on the
+[milestone](https://github.com/talelburg/eldritch/milestone/9), and its blocking
+edges are wired on the tracker. The plan came out of the wayfinder map
+[#1210](https://github.com/talelburg/eldritch/issues/1210). Each decision lives
+in the resolution comment of the map's ticket that made it, and each slice's
+body links the ticket it came from.
 
 ## Goal
 
-Two-machine multiplayer playthrough of The Gathering.
+Friends on their own machines sign in with OAuth at a hosted URL and play The
+Gathering together, and any of them can drop and reconnect mid-game.
 
-## Decisions made
+## Scope
 
-From the 2026-05-01/02 strategy phase:
+- **Hosting is in.** The phase ends with the server reachable over the
+  internet, not only on a LAN.
+- **Any assignment of investigators to accounts, with 1–4 investigators.** The
+  solo case, one account holding two investigators, is a case of the same model.
+- **A rules deferral is in** if it is observable in a 2–4 investigator Gathering
+  played with implemented cards.
+- **A review refactor is in only when a phase-8 feature consumes it.** Review
+  items 02, 03, 04, 06, 27, 28, card 07's tie frame (#151) and card 08 (#1086)
+  pass that test. The rest stay on #1145.
+- **Hardening is in when it bites** once the server is on the internet or two
+  clients share a game. CI and dependency hygiene (#589, #590) are out.
 
-- **Multiplayer model:** synchronous-only. All players online together (same room or Discord call assumed). If someone is missing, the group can't play. Don't invest in async-specific UX (turn-deadline reminders, per-turn push notifications).
-- **The event log gives us resume + undo + debugging for free; async is just not a target use case.**
-- **Auth (v1):** invite-only via GitHub / Google OAuth + a manual email allowlist. No signup flow, password reset, email verification, or abuse handling at v1 — those are the first things to revisit if scope ever expands.
-- **Audience and posture:** hobby project for the user and a small group of friends. Not commercial, not a public service, no monetization, no SLA. Build to a "make game night work" bar.
-- **Legal posture:** repo is public under MIT; "unofficial fan tool" disclaimer in README. No re-hosted card art. The "Eldritch" name avoids the "Arkham Horror" trademark — keep it that way.
+## Issues
+
+**Open:** every issue named in the Ordering below.
+
+### Closed
+
+| Issue | Work |
+|---|---|
+| #371 | Location-attachment ownership, PR #984 |
+| #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
+| #570 | Replay integrity; not planned, superseded by #1224's label-matched replay |
+| #974 | Cover Up triggers for a co-located investigator, PR #984 |
+| #975 | Co-location reach into another investigator's threat area, PR #984 |
+| #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
+
+## Ordering
+
+Lanes run in parallel. Within a lane, an arrow is a blocking edge on the
+tracker, and the tracker's dependency view is authoritative.
+
+**1. Start now.**
+
+- **Glossary:** Account, Lobby, Creator, Member and viewer, landed with this plan.
+- **Tests:** #1233 → #1234. #1179 follows #1233. The two-investigator engine tests
+  of lane 3 copy #1234's fixtures.
+- **Hosting:** #1225 and #1224 → #1226 → #1227.
+- **Accounts:** #1236 → #1237.
+- **Engine and server:** #1229 (the session core, a refactor), #1238, #580.
+- **Liveness:** #1140.
+
+**2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.
+#458, #581, #583 and #1194 close with it. Until #1239 lands, a dev account
+holds every investigator.
+
+**→ The next architecture review** (#1145 step 5) runs once #1230 lands, before
+phase 9 is scoped.
+
+**3. Rules fixes, after #1234.**
+
+- Standalone: #573, #662, #795, #409, #1132, #1185.
+- Engagement: #151, card 07's tie frame.
+- ST.7: #1086 → #642 → #65. #359 and #1061 follow #1086 and pair on one
+  choose-and-keep primitive.
+- After the wire break: #153 (also after #573) and #146 (after #1194).
+
+**4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
+rarely used, so it comes late and stays small.
+
+**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243.**
+
+**6. Reconnect and presence.** #587 and #582, after #1230, put the full history
+in `Hello`. #1232 follows #1230, #1140 and #1241.
+
+**7. Hardening.** #584 after #1225, #585 after #1236, #586 after #583, and #588
+after #458.
+
+**8. Exit:** a two-account Gathering on the deployed host, then #1244.
 
 ## Open questions
 
-⏳ **Scoping due.** Phase 7 closed 2026-09-03, which is this section's trigger.
-The first item is already filed — **[#863](https://github.com/talelburg/eldritch/issues/863)**,
-solo-with-2 UX, which asks the *Cross-investigator UI* question below with one
-client instead of two and should be settled first. The rest still need filing:
-
-- **Session/group model.** A "group" is a stable set of players; a "session" is one scenario play. Database tables for both.
-- **Lobby UX.** How do players gather before starting a scenario? Pre-game-share-link? Group-saved-state?
-- **Sync semantics.** When inv1 takes an action, inv2's client updates by replaying the broadcast events. Order of player inputs across the websocket has to be deterministic — server is authoritative on ordering.
-- **Disconnection mid-scenario.** What if a player drops? Can the group continue, or is the scenario paused until they reconnect?
-- **WebSocket liveness (deferred from Phase 6, [#198](https://github.com/talelburg/eldritch/issues/198)).** The Phase-6 client reconnects only on an *observed* socket close. That's fine on a real host (a server death sends TCP `FIN`/`RST`), but it can't detect a **client-side silent drop** — wifi loss, laptop sleep, flaky mobile — where the connection goes dead with no close frame. Multiplayer needs this: a player whose socket silently dies should be detected (for the disconnection handling above), and each client should notice a dead server and reconnect. Scope to file: (a) an application-level heartbeat with **pong-timeout detection** (`protocol` `Ping`/`Pong` + a server echo + a client timer that closes on no-reply — browsers don't expose protocol ping/pong to JS, so it must be app-level); (b) server **graceful shutdown** on `SIGINT` (close WS frames before exit) for clean redeploys. **`leptos-use` / `leptos-ws-pro` evaluation belongs here** (this is the real "second concrete need" trigger from the Phase-6 deferral). Note from Phase-6 scoping: `leptos-use`'s `use_websocket` heartbeat is **send-only** (no pong-timeout detection) and its URL is fixed at call time — so it wouldn't supply the detection by itself; weigh that against `leptos-ws-pro` (a Leptos WS lib advertising reconnection + heartbeat) and hand-rolling.
-- **Cross-investigator UI.** Each player sees their own hand, the shared board state, and the other players' public information.
-- **OAuth flow.** GitHub + Google. Manual email allowlist gate (stored where? Config file, env var, or DB table?).
-- **Out-of-game communication.** No. Players use Discord etc. The app doesn't try to be a chat platform.
+None. #1230's spec settles one question the rules don't answer: whether a pass
+still stands after another investigator plays a Fast card.
 
 ## Dependencies
 
-- Phase 5 (server + persistence) — the websocket sync layer.
-- Phase 6 (web client v0) — the UI to host multiplayer.
-- Phase 7 (The Gathering) — a real scenario to multiplayer-test against.
+- Phase 5 (server + persistence): the WebSocket sync layer.
+- Phase 6 (web client v0): the UI that hosts multiplayer.
+- Phase 7 (The Gathering) and 7.5 (all five investigators): the scenario and
+  the roster that are played over the wire.
 
 ## What "done" looks like
 
-Two browsers on two machines, each logged in via OAuth, play through The Gathering together. The action log is consistent across both; either can disconnect and reconnect mid-game. Server gracefully handles the dropped session.
+Two accounts on two machines sign in with OAuth at the hosted URL, gather in a
+lobby, and play The Gathering through to a resolution, each seeing their own
+investigators' prompts and "waiting for…" on the other's. Either one can drop
+mid-game and reconnect to the same table, log included.

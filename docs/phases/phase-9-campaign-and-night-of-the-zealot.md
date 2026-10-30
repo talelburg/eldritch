@@ -61,7 +61,7 @@ From the 2026-05-01/02 strategy phase:
 
 - Phase 7 (The Gathering) — the first scenario.
 - The other two Night of the Zealot scenarios (The Midnight Masks, The Devourer Below) need scenario modules implementing the same patterns.
-- Phase 8 (multiplayer + auth) — campaigns are a group concept, so the auth/group model is in place.
+- Phase 8 (multiplayer + auth) — accounts, the lobby and assignment are in place. Phase 8 has no group entity, so a campaign carries its own roster from scenario to scenario (#1214).
 
 ## What "done" looks like
 
