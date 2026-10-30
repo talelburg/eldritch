@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
 ///
-/// The release job stamps it with the commit sha. `server` and `web` both
-/// read it from here, so one definition stamps both sides, and a cached
-/// client bundle keeps the id it was compiled with.
+/// `server` logs it at startup. `web` depends on `protocol` too, so a client
+/// reading it here gets the id its bundle was compiled with, from the same
+/// definition. TODO(#1226): the release build sets it to the commit sha.
 #[must_use]
 pub fn build_id() -> &'static str {
     option_env!("ELDRITCH_BUILD").unwrap_or("dev")
@@ -266,16 +266,11 @@ mod tests {
             "the lead is required on the wire, with no default"
         );
     }
-}
-
-#[cfg(test)]
-mod build_id_tests {
-    use super::*;
 
     #[test]
     fn an_unstamped_build_reports_dev() {
-        // A stamped build (`ELDRITCH_BUILD` set at compile time) carries the
-        // sha instead, which #1226's release artifact checks.
+        // A build stamped at compile time carries its own id instead, which
+        // a test can't set.
         if option_env!("ELDRITCH_BUILD").is_none() {
             assert_eq!(build_id(), "dev");
         }

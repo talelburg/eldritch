@@ -1,8 +1,7 @@
 //! The server's configuration, read from the environment in one place.
 //!
 //! With nothing set, every knob takes its dev default, so `cargo run -p
-//! server` from the workspace root behaves as it always has. The deploy sets
-//! them in the systemd unit.
+//! server` from the workspace root behaves as it always has.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -37,6 +36,10 @@ const DIST: &str = "ELDRITCH_DIST";
 /// The `SQLite` database URL.
 const DATABASE_URL: &str = "DATABASE_URL";
 
+/// Where `trunk build` writes the client bundle, relative to the workspace
+/// root: the bundle directory when `ELDRITCH_DIST` is unset.
+pub(crate) const DEV_DIST_DIR: &str = "crates/web/dist";
+
 impl Config {
     /// Read the configuration through `lookup`, which returns a variable's
     /// value, or `None` when it is unset. `main` passes the process
@@ -44,7 +47,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// A set variable whose value doesn't parse.
+    /// [`ConfigError::InvalidBind`] when `ELDRITCH_BIND` is set to anything
+    /// that doesn't parse as a socket address, the empty string included.
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
         let bind = match lookup(BIND) {
             Some(value) => value
@@ -54,7 +58,7 @@ impl Config {
         };
         Ok(Self {
             bind,
-            dist_dir: lookup(DIST).map_or_else(|| PathBuf::from("crates/web/dist"), PathBuf::from),
+            dist_dir: lookup(DIST).map_or_else(|| PathBuf::from(DEV_DIST_DIR), PathBuf::from),
             database_url: lookup(DATABASE_URL).unwrap_or_else(|| "sqlite:eldritch.db".to_string()),
         })
     }

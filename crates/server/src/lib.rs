@@ -45,7 +45,7 @@ impl AppState {
     /// location (`crates/web/dist`, relative to the workspace root).
     #[must_use]
     pub fn new(db: SqlitePool, registries: Registries) -> Self {
-        Self::new_with_dist(db, registries, PathBuf::from("crates/web/dist"))
+        Self::new_with_dist(db, registries, PathBuf::from(config::DEV_DIST_DIR))
     }
 
     /// Build application state with an explicit client-bundle directory.

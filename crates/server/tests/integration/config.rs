@@ -9,58 +9,78 @@ use std::path::PathBuf;
 use server::config::Config;
 
 /// A lookup over the given variables, standing in for the environment.
-fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+fn lookup<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
     let vars: HashMap<&str, &str> = vars.iter().copied().collect();
     move |name| vars.get(name).map(ToString::to_string)
 }
 
+/// The configuration with nothing set.
+fn defaults() -> Config {
+    Config::from_lookup(lookup(&[])).expect("defaults are valid")
+}
+
 #[test]
 fn an_empty_environment_yields_the_dev_defaults() {
-    let config = Config::from_lookup(env(&[])).expect("defaults are valid");
-
-    assert_eq!(config.bind, "127.0.0.1:8000".parse::<SocketAddr>().unwrap());
-    assert_eq!(config.dist_dir, PathBuf::from("crates/web/dist"));
-    assert_eq!(config.database_url, "sqlite:eldritch.db");
+    assert_eq!(
+        defaults(),
+        Config {
+            bind: "127.0.0.1:8000".parse::<SocketAddr>().unwrap(),
+            dist_dir: PathBuf::from("crates/web/dist"),
+            database_url: "sqlite:eldritch.db".to_string(),
+        }
+    );
 }
 
 #[test]
 fn eldritch_bind_sets_only_the_listen_address() {
-    let config = Config::from_lookup(env(&[("ELDRITCH_BIND", "0.0.0.0:9000")])).unwrap();
+    let config = Config::from_lookup(lookup(&[("ELDRITCH_BIND", "0.0.0.0:9000")])).unwrap();
 
-    assert_eq!(config.bind, "0.0.0.0:9000".parse::<SocketAddr>().unwrap());
-    assert_eq!(config.dist_dir, PathBuf::from("crates/web/dist"));
-    assert_eq!(config.database_url, "sqlite:eldritch.db");
+    assert_eq!(
+        config,
+        Config {
+            bind: "0.0.0.0:9000".parse::<SocketAddr>().unwrap(),
+            ..defaults()
+        }
+    );
 }
 
 #[test]
 fn eldritch_dist_sets_only_the_bundle_directory() {
-    let config = Config::from_lookup(env(&[(
+    let config = Config::from_lookup(lookup(&[(
         "ELDRITCH_DIST",
         "/srv/eldritch/releases/abc123/dist",
     )]))
     .unwrap();
 
-    assert_eq!(config.bind, "127.0.0.1:8000".parse::<SocketAddr>().unwrap());
     assert_eq!(
-        config.dist_dir,
-        PathBuf::from("/srv/eldritch/releases/abc123/dist")
+        config,
+        Config {
+            dist_dir: PathBuf::from("/srv/eldritch/releases/abc123/dist"),
+            ..defaults()
+        }
     );
-    assert_eq!(config.database_url, "sqlite:eldritch.db");
 }
 
 #[test]
 fn database_url_sets_only_the_database() {
-    let config =
-        Config::from_lookup(env(&[("DATABASE_URL", "sqlite:/srv/eldritch/eldritch.db")])).unwrap();
+    let config = Config::from_lookup(lookup(&[(
+        "DATABASE_URL",
+        "sqlite:/srv/eldritch/eldritch.db",
+    )]))
+    .unwrap();
 
-    assert_eq!(config.bind, "127.0.0.1:8000".parse::<SocketAddr>().unwrap());
-    assert_eq!(config.dist_dir, PathBuf::from("crates/web/dist"));
-    assert_eq!(config.database_url, "sqlite:/srv/eldritch/eldritch.db");
+    assert_eq!(
+        config,
+        Config {
+            database_url: "sqlite:/srv/eldritch/eldritch.db".to_string(),
+            ..defaults()
+        }
+    );
 }
 
 #[test]
 fn a_malformed_eldritch_bind_is_an_error_naming_it_and_its_value() {
-    let error = Config::from_lookup(env(&[("ELDRITCH_BIND", "0.0.0.0:80000")]))
+    let error = Config::from_lookup(lookup(&[("ELDRITCH_BIND", "0.0.0.0:80000")]))
         .expect_err("port 80000 is out of range")
         .to_string();
 
@@ -70,7 +90,7 @@ fn a_malformed_eldritch_bind_is_an_error_naming_it_and_its_value() {
 
 #[test]
 fn an_empty_eldritch_bind_is_an_error_not_the_default() {
-    let error = Config::from_lookup(env(&[("ELDRITCH_BIND", "")]))
+    let error = Config::from_lookup(lookup(&[("ELDRITCH_BIND", "")]))
         .expect_err("set but empty is not unset")
         .to_string();
 
