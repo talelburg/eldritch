@@ -12,7 +12,7 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::Registries;
 use crate::event::Event;
 use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
-use crate::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind};
+use crate::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner};
 use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -177,21 +177,6 @@ fn as_card_reads_the_printed_investigator_from_the_named_registries() {
     assert_eq!(investigator.name, "Named Probe");
     assert_eq!(investigator.skills, PROBE_SKILLS);
     assert_eq!(investigator.investigator_card.code.as_str(), PROBE_INV);
-}
-
-#[test]
-fn a_skill_set_after_as_card_still_wins_over_the_named_printed_one() {
-    let state = GameStateBuilder::new()
-        .with_registries(NAMED)
-        .with_seat(seat(1).as_card(PROBE_INV).skill(SkillKind::Intellect, 6))
-        .build();
-    assert_eq!(
-        state.investigators[&INV].skills,
-        Skills {
-            intellect: 6,
-            ..PROBE_SKILLS
-        },
-    );
 }
 
 #[test]

@@ -28,11 +28,13 @@ use crate::state::CardCode;
 pub mod assertions;
 mod deal;
 mod fixtures;
+mod lookup;
 mod mock_registry;
 mod native;
 mod resolver;
 mod seat;
 mod session;
+mod stage;
 #[cfg(test)]
 mod tests;
 
@@ -270,8 +272,10 @@ pub use fixtures::{
     awaiting_skippable_pick_single_with, from_frames_unchecked, test_enemy, test_investigator,
     test_investigator_card, test_location, test_skill_test,
 };
+pub use lookup::{BoardLookup, SeatLookup};
 pub use mock_registry::MockRegistry;
 pub use native::run_native;
 pub use resolver::{ChoiceResolver, ScriptedResolver};
-pub use seat::{clues, doom, horror, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
+pub use seat::{clues, doom, horror, seat, uses, CardSetup, Seat, SeatCard};
 pub use session::TestSession;
+pub use stage::{enemy, location, Either, Place, Printed, StagedEnemy, StagedLocation, Stock};

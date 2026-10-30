@@ -19,7 +19,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInstanceId, Enemy, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
 
 const LEO: &str = "01048";
 const SKIDS: &str = "01003";
@@ -47,7 +47,7 @@ fn with_leo() -> Seat {
 }
 
 /// `investigator`'s open turn at `HERE`.
-fn staged(investigator: Seat) -> GameStateBuilder {
+fn staged(investigator: impl Into<Seat<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)

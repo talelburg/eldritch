@@ -46,7 +46,7 @@ use game_core::engine::{InputKind, OptionTarget, Responder};
 use game_core::state::{
     Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
 };
-use game_core::test_support::{seat, Seat, TestSession};
+use game_core::test_support::{seat, Either, Seat, TestSession};
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -66,7 +66,7 @@ const LITA: &str = "01117";
 /// the round's last turn open, so ending it runs on to the round end, where
 /// the act's objective is offered.
 fn barrier_table(
-    seats: Vec<Seat>,
+    seats: Vec<Seat<Either>>,
     seating: &[InvestigatorId],
     lead: InvestigatorId,
     last: InvestigatorId,
@@ -135,8 +135,8 @@ fn with_the_lead_outside_the_hallway_the_hallway_investigator_is_offered_it() {
     // threshold in the Hallway. Seat 2's turn is the round's last.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01002").at(ATTIC).clues(1),
-            seat(2).as_card("01001").at(HALLWAY).clues(3),
+            seat(1).as_card("01002").at(ATTIC).clues(1).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(3).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_1,
@@ -161,9 +161,9 @@ fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first
     // seat 1 is first in seating. Seat 1's turn is the round's last.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01001").at(HALLWAY).clues(2),
-            seat(2).at(ATTIC),
-            seat(3).as_card("01002").at(HALLWAY).clues(2),
+            seat(1).as_card("01001").at(HALLWAY).clues(2).into(),
+            seat(2).at(ATTIC).into(),
+            seat(3).as_card("01002").at(HALLWAY).clues(2).into(),
         ],
         &[SEAT_1, SEAT_2, SEAT_3],
         SEAT_2,
@@ -187,8 +187,8 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
     // first in seating but second in player order.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(2),
-            seat(2).as_card("01001").at(HALLWAY).clues(2),
+            seat(1).as_card("01002").at(HALLWAY).clues(2).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(2).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_2,
@@ -206,8 +206,8 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
 fn two_tied_in_the_hallway_led_by(lead: InvestigatorId) -> TestSession {
     barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(3),
-            seat(2).as_card("01004").at(HALLWAY),
+            seat(1).as_card("01002").at(HALLWAY).clues(3).into(),
+            seat(2).as_card("01004").at(HALLWAY).into(),
         ],
         &[DAISY, AGNES],
         lead,

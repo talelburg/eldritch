@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
+use card_dsl::card_data::{CardMetadata, SkillKind};
 use card_dsl::dsl::{Determination, IntExpr, Restriction, Stat};
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,7 @@ pub struct GameState {
     ///
     /// Brought into play by card effects, via
     /// [`put_set_aside_card_into_play`], which dispatches on the card's
-    /// [`CardKind`], or its location-only sibling
+    /// [`CardKind`](card_dsl::card_data::CardKind), or its location-only sibling
     /// [`put_set_aside_location_into_play`], which returns the minted
     /// [`LocationId`]: The Gathering's Act-1 reverse puts the four house
     /// locations into play through the sibling (the `01108:board-build`
@@ -924,42 +924,22 @@ impl GameState {
         self.windows().next_back()
     }
 
-    /// Build a [`Location`] from its card `metadata`, minting a fresh id.
-    /// Panics if `metadata` is not a `Location` card (a build-time
-    /// invariant — scenarios hand their own location cards).
-    fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
-        let (shroud, printed_clues) = match &metadata.kind {
-            CardKind::Location {
-                shroud,
-                printed_clues,
-                ..
-            } => (*shroud, *printed_clues),
-            other => panic!(
-                "add_location: card {} is not a Location ({other:?})",
-                metadata.code
-            ),
-        };
-        let id = self.location_ids.mint();
-        Location {
-            id,
-            code: CardCode::new(metadata.code.clone()),
-            name: metadata.name.clone(),
-            shroud,
-            clues: 0,
-            revealed: false,
-            printed_clues,
-            connections: Vec::new(),
-            attachments: Vec::new(),
-            cards_at_location: Vec::new(),
-        }
-    }
-
     /// Add a location **into play** from its card metadata, returning the
     /// minted [`LocationId`]. The id is deterministic (construction order),
     /// so scenarios never hand-pick id literals.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `metadata` is not a `Location` card (a build-time invariant
+    /// — scenarios hand their own location cards).
     pub fn add_location(&mut self, metadata: &CardMetadata) -> LocationId {
-        let loc = self.location_from_metadata(metadata);
-        let id = loc.id;
+        let id = self.location_ids.mint();
+        let loc = Location::from_metadata(id, metadata).unwrap_or_else(|| {
+            panic!(
+                "add_location: card {} is not a Location ({:?})",
+                metadata.code, metadata.kind
+            )
+        });
         self.locations.insert(id, loc);
         id
     }

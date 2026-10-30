@@ -25,7 +25,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
     SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Printed, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const AGNES: &str = "01004";
@@ -41,7 +41,7 @@ const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
 
 /// Agnes seated from her printed card at `HERE`.
-fn agnes() -> Seat {
+fn agnes() -> Seat<Printed> {
     seat(1).as_card(AGNES).at(HERE)
 }
 
@@ -56,7 +56,7 @@ fn horror_enemy() -> Enemy {
 }
 
 /// `agnes`'s turn at `HERE`, with a second location, `THERE`, and no enemy.
-fn staged(agnes: Seat) -> GameStateBuilder {
+fn staged(agnes: impl Into<Seat<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(agnes)
@@ -67,7 +67,7 @@ fn staged(agnes: Seat) -> GameStateBuilder {
 
 /// `agnes` at her turn menu with [`horror_enemy`] engaged with her (so it is
 /// at her location).
-fn board(agnes: Seat) -> TestSession {
+fn board(agnes: impl Into<Seat<Either>>) -> TestSession {
     staged(agnes)
         .with_enemy_engaged(horror_enemy(), INV)
         .session()

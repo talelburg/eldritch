@@ -23,7 +23,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner as CardOwner, Phase, UseKind,
 };
-use game_core::test_support::{self, seat, Seat};
+use game_core::test_support::{self, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
@@ -355,7 +355,7 @@ const INV2: InvestigatorId = InvestigatorId(2);
 
 /// Seat `id` as the printed investigator `card`, holding `hand`, over a deck
 /// of real cards a mulligan can draw.
-fn seated(id: u32, card: &str, hand: &[&str]) -> Seat {
+fn seated(id: u32, card: &str, hand: &[&str]) -> Seat<Printed> {
     seat(id)
         .as_card(card)
         .hand(hand.iter().copied())

@@ -14,7 +14,7 @@ use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, clues, seat, Seat};
+use game_core::test_support::{self, clues, seat, Either, Printed, Seat};
 
 const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";
@@ -24,7 +24,7 @@ const HERE: LocationId = LocationId(10);
 /// Roland, seated from his printed card (Willpower 3) at the Study and in
 /// play only as his investigator card, so the bonus can come from nothing but
 /// the investigator-card elder-sign bridge.
-fn roland() -> Seat {
+fn roland() -> Seat<Printed> {
     seat(1).as_card(ROLAND).at(HERE)
 }
 
@@ -37,7 +37,7 @@ fn run_elder_sign_test(clues_here: u8) -> Vec<Event> {
 
 /// [`run_elder_sign_test`] with Roland seated as `roland`, for a fixture that
 /// adds to his seat.
-fn run_elder_sign_test_seated(roland: Seat, clues_here: u8) -> Vec<Event> {
+fn run_elder_sign_test_seated(roland: impl Into<Seat<Either>>, clues_here: u8) -> Vec<Event> {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.clues = clues_here;
 

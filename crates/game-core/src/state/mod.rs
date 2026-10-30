@@ -16,6 +16,7 @@ pub mod game_state;
 pub mod investigator;
 pub mod location;
 pub mod phase;
+pub(crate) mod staged;
 
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;

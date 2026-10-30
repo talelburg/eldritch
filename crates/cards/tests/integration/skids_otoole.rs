@@ -24,7 +24,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, Either, Printed, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const SKIDS: &str = "01003";
@@ -48,12 +48,12 @@ const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
 
 /// Skids seated from his printed card at `HERE`, with the stock 5 resources.
-fn skids() -> Seat {
+fn skids() -> Seat<Printed> {
     seat(1).as_card(SKIDS).at(HERE)
 }
 
 /// `skids`'s open turn at `HERE`, which connects to `THERE`.
-fn staged(skids: Seat) -> GameStateBuilder {
+fn staged(skids: impl Into<Seat<Either>>) -> GameStateBuilder {
     let mut here = test_support::test_location(HERE.0, "Here");
     here.connections = vec![THERE];
     let mut there = test_support::test_location(THERE.0, "There");

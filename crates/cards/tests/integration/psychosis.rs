@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, Owner,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
 
 const PSYCHOSIS: &str = "01099";
 const AGNES: &str = "01004";
@@ -41,7 +41,7 @@ fn bearer() -> Seat {
 }
 
 /// `bearer`'s open turn at `HERE`.
-fn staged(bearer: Seat) -> GameStateBuilder {
+fn staged(bearer: impl Into<Seat<Either>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -49,7 +49,7 @@ fn staged(bearer: Seat) -> GameStateBuilder {
         .open_turn(INV)
 }
 
-fn board(bearer: Seat) -> TestSession {
+fn board(bearer: impl Into<Seat<Either>>) -> TestSession {
     staged(bearer).session()
 }
 

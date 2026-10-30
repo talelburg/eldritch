@@ -1,6 +1,6 @@
 //! Locations: places investigators move between.
 
-use card_dsl::card_data::ClueValue;
+use card_dsl::card_data::{CardKind, CardMetadata, ClueValue};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{CardCode, CardInPlay};
@@ -96,6 +96,35 @@ pub struct Location {
 }
 
 impl Location {
+    /// The location `metadata` prints, as it enters play as `id`: unrevealed,
+    /// with no clues placed, no connections and nothing attached or at it.
+    /// `None` when `metadata` is not a location card.
+    ///
+    /// The printed clue value is kept on [`printed_clues`](Self::printed_clues)
+    /// and placed only when the location is revealed.
+    pub(crate) fn from_metadata(id: LocationId, metadata: &CardMetadata) -> Option<Self> {
+        let CardKind::Location {
+            shroud,
+            printed_clues,
+            ..
+        } = &metadata.kind
+        else {
+            return None;
+        };
+        Some(Self {
+            id,
+            code: CardCode::new(metadata.code.clone()),
+            name: metadata.name.clone(),
+            shroud: *shroud,
+            clues: 0,
+            printed_clues: *printed_clues,
+            revealed: false,
+            connections: Vec::new(),
+            attachments: Vec::new(),
+            cards_at_location: Vec::new(),
+        })
+    }
+
     /// Construct a revealed location with no connections, from its
     /// printed identity and stats (`code`, `name`, `shroud`, `clues`).
     ///

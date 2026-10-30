@@ -27,7 +27,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId,
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Printed, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const WENDY: &str = "01005";
@@ -51,13 +51,16 @@ const ENEMY: EnemyId = EnemyId(100);
 const FIRST_THEN_SECOND: u64 = 0;
 
 /// Wendy, seated from her printed card (Willpower 4, Combat 1), at `HERE`.
-fn wendy() -> Seat {
+fn wendy() -> Seat<Printed> {
     seat(1).as_card(WENDY).at(HERE)
 }
 
 /// `wendy`'s open turn at `HERE`, drawing from `bag` under
 /// [`FIRST_THEN_SECOND`].
-fn board(wendy: Seat, bag: impl IntoIterator<Item = ChaosToken>) -> GameStateBuilder {
+fn board(
+    wendy: impl Into<Seat<Either>>,
+    bag: impl IntoIterator<Item = ChaosToken>,
+) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(wendy)
@@ -69,7 +72,7 @@ fn board(wendy: Seat, bag: impl IntoIterator<Item = ChaosToken>) -> GameStateBui
 
 /// Wendy's willpower test against `difficulty`, committing `commit`.
 fn willpower_test(
-    wendy: Seat,
+    wendy: impl Into<Seat<Either>>,
     bag: impl IntoIterator<Item = ChaosToken>,
     difficulty: i8,
     commit: &[&str],

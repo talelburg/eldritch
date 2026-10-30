@@ -2,7 +2,7 @@
 //!
 //! ```
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
-//! use game_core::test_support::{seat, SeatLookup as _, TEST_ASSET, TEST_REGISTRIES};
+//! use game_core::test_support::{seat, BoardLookup as _, TEST_ASSET, TEST_REGISTRIES};
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_registries(TEST_REGISTRIES)
@@ -17,64 +17,44 @@
 //!
 //! Cards a seat puts in play or in a threat area get instance ids minted by
 //! the builder, never hand-picked, and a test finds one again by its code
-//! through [`SeatLookup::in_play`].
+//! through [`BoardLookup::in_play`](super::BoardLookup::in_play).
+//!
+//! A seat is [`Stock`] until [`as_card`](Seat::as_card) makes it
+//! [`Printed`]; only a stock seat's skills can be set:
+//!
+//! ```compile_fail,E0599
+//! use card_dsl::card_data::SkillKind;
+//! use game_core::test_support::seat;
+//! let _ = seat(1).as_card("_probe").skill(SkillKind::Combat, 5);
+//! ```
 
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
 use card_dsl::card_data::{CardKind, CardType};
 
 use crate::card_registry::CardRegistry;
-use crate::engine::{OptionTarget, Registries};
+use crate::engine::Registries;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
-    InvestigatorId, LocationId, Owner, SkillKind, Skills, Status, UseKind,
+    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Investigator, InvestigatorId,
+    LocationId, Owner, SkillKind, Skills, Status, UseKind,
 };
-use crate::test_support::test_investigator;
+use crate::test_support::{test_investigator, Either, Printed, Stock};
 
-/// A seated investigator under construction; see [`seat`].
+/// A seated investigator under construction; see [`seat`]. `K` is
+/// [`Stock`], [`Printed`] (after [`as_card`](Seat::as_card)) or [`Either`].
 #[derive(Debug, Clone)]
 #[must_use = "a Seat does nothing until it is passed to GameStateBuilder::with_seat"]
-pub struct Seat {
+pub struct Seat<K = Stock> {
     investigator: Investigator,
-    /// The printed investigator [`as_card`](Seat::as_card) named, with the
-    /// skill overrides set after it in order. Resolved by
-    /// [`with_seat`](GameStateBuilder::with_seat), the first point that
+    /// The printed investigator [`as_card`](Seat::as_card) named. Resolved
+    /// by [`with_seat`](GameStateBuilder::with_seat), the first point that
     /// knows the board's registries.
-    printed: Option<Printed>,
+    printed: Option<CardCode>,
     /// Cards for the play area and threat area, in the order the setters
     /// named them. Instance ids are minted by [`with_seat`](GameStateBuilder::with_seat).
     cards: Vec<Placed>,
-}
-
-#[derive(Debug, Clone)]
-struct Printed {
-    code: CardCode,
-    /// [`skills`](Seat::skills) / [`skill`](Seat::skill) calls made after
-    /// `as_card`, replayed over the printed skills so the later call wins.
-    overrides: Vec<SkillOverride>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SkillOverride {
-    All(Skills),
-    One(SkillKind, i8),
-}
-
-impl SkillOverride {
-    fn apply(self, skills: &mut Skills) {
-        match self {
-            Self::All(all) => *skills = all,
-            Self::One(kind, value) => {
-                let slot = match kind {
-                    SkillKind::Willpower => &mut skills.willpower,
-                    SkillKind::Intellect => &mut skills.intellect,
-                    SkillKind::Combat => &mut skills.combat,
-                    SkillKind::Agility => &mut skills.agility,
-                };
-                *slot = value;
-            }
-        }
-    }
+    kind: PhantomData<K>,
 }
 
 #[derive(Debug, Clone)]
@@ -163,19 +143,21 @@ seat_card_from!(&str, String, CardCode);
 
 /// Start a [`Seat`] for investigator `id`. With no setters it seats exactly
 /// [`test_investigator(id)`](test_investigator).
-pub fn seat(id: u32) -> Seat {
+pub fn seat(id: u32) -> Seat<Stock> {
     Seat {
         investigator: test_investigator(id),
         printed: None,
         cards: Vec::new(),
+        kind: PhantomData,
     }
 }
 
-impl Seat {
+impl Seat<Stock> {
     /// Seat the printed investigator `code`: its investigator card, and the
     /// name and skills printed on it, read from the card registry's
-    /// `metadata_for` — the source real seating reads. A later
-    /// [`skills`](Self::skills) or [`skill`](Self::skill) wins.
+    /// `metadata_for` — the source real seating reads. Skills set before this
+    /// call are replaced, and none can be set after it: a test that needs
+    /// other skills seats a probe investigator.
     ///
     /// The lookup happens in [`with_seat`](GameStateBuilder::with_seat),
     /// against the registries named by
@@ -186,34 +168,43 @@ impl Seat {
     /// `with_seat` panics if the test never named its registries, and, naming
     /// `code`, if the registry does not know `code` or `code` is not an
     /// investigator card.
-    pub fn as_card(mut self, code: impl Into<CardCode>) -> Self {
-        self.printed = Some(Printed {
-            code: code.into(),
-            overrides: Vec::new(),
-        });
-        self
+    pub fn as_card(self, code: impl Into<CardCode>) -> Seat<Printed> {
+        Seat {
+            printed: Some(code.into()),
+            ..self.kind()
+        }
     }
 
-    /// Set the investigator's skills, overriding any printed ones.
-    pub fn skills(self, skills: Skills) -> Self {
-        self.override_skills(SkillOverride::All(skills))
+    /// Set the investigator's skills.
+    pub fn skills(mut self, skills: Skills) -> Self {
+        self.investigator.skills = skills;
+        self
     }
 
     /// Set one skill to `value`, keeping the other three: `seat(1).skill(SkillKind::Combat, 5)`
-    /// is the stock 3/3/3/3 with combat 5. Like [`skills`](Self::skills), a
-    /// later call wins over [`as_card`](Self::as_card)'s printed value.
-    pub fn skill(self, kind: SkillKind, value: i8) -> Self {
-        self.override_skills(SkillOverride::One(kind, value))
-    }
-
-    /// Apply `skill` now, or — after [`as_card`](Self::as_card), whose printed
-    /// skills are not known until `with_seat` — record it to replay over them.
-    fn override_skills(mut self, skill: SkillOverride) -> Self {
-        match &mut self.printed {
-            Some(printed) => printed.overrides.push(skill),
-            None => skill.apply(&mut self.investigator.skills),
-        }
+    /// is the stock 3/3/3/3 with combat 5.
+    pub fn skill(mut self, kind: SkillKind, value: i8) -> Self {
+        let skills = &mut self.investigator.skills;
+        let slot = match kind {
+            SkillKind::Willpower => &mut skills.willpower,
+            SkillKind::Intellect => &mut skills.intellect,
+            SkillKind::Combat => &mut skills.combat,
+            SkillKind::Agility => &mut skills.agility,
+        };
+        *slot = value;
         self
+    }
+}
+
+impl<K> Seat<K> {
+    /// This seat as another kind, unchanged.
+    fn kind<L>(self) -> Seat<L> {
+        Seat {
+            investigator: self.investigator,
+            printed: self.printed,
+            cards: self.cards,
+            kind: PhantomData,
+        }
     }
 
     /// Place the investigator at `location`. The location itself is added to
@@ -243,7 +234,7 @@ impl Seat {
 
     /// Put cards into the investigator's play area, owned by the investigator,
     /// each with a freshly minted instance id. Find one again with
-    /// [`SeatLookup::in_play`].
+    /// [`BoardLookup::in_play`](super::BoardLookup::in_play).
     pub fn in_play<C: Into<SeatCard>>(mut self, cards: impl IntoIterator<Item = C>) -> Self {
         self.place(SeatZone::InPlay, cards);
         self
@@ -309,6 +300,18 @@ impl Seat {
     pub fn status(mut self, status: Status) -> Self {
         self.investigator.status = status;
         self
+    }
+}
+
+impl From<Seat<Stock>> for Seat<Either> {
+    fn from(seat: Seat<Stock>) -> Self {
+        seat.kind()
+    }
+}
+
+impl From<Seat<Printed>> for Seat<Either> {
+    fn from(seat: Seat<Printed>) -> Self {
+        seat.kind()
     }
 }
 
@@ -401,18 +404,16 @@ impl GameStateBuilder {
     /// the seat needs a lookup (a printed investigator or a threat-area card)
     /// before the test named its registries, or as [`as_card`](Seat::as_card)
     /// describes.
-    pub fn with_seat(self, seat: Seat) -> Self {
+    pub fn with_seat(self, seat: impl Into<Seat<Either>>) -> Self {
         let Seat {
             mut investigator,
             printed,
             cards,
-        } = seat;
+            ..
+        } = seat.into();
         let registry = self.registries().map(|registries| registries.cards);
-        if let Some(Printed { code, overrides }) = printed {
+        if let Some(code) = printed {
             print(named(registry), &mut investigator, code);
-            for skill in overrides {
-                skill.apply(&mut investigator.skills);
-            }
         }
         let chosen: Vec<CardInstanceId> = cards.iter().filter_map(|placed| placed.id).collect();
         let mut taken: Vec<CardInstanceId> = self.card_instance_ids_in_use().collect();
@@ -450,78 +451,16 @@ impl GameStateBuilder {
     /// Seat `first` then `second`, with `second` the lead, so player order
     /// runs `second`, `first`: the table a test needs to tell the lead from
     /// the first seat.
-    pub fn with_two_seats_led_by_the_second(self, first: Seat, second: Seat) -> Self {
+    pub fn with_two_seats_led_by_the_second(
+        self,
+        first: impl Into<Seat<Either>>,
+        second: impl Into<Seat<Either>>,
+    ) -> Self {
+        let (first, second) = (first.into(), second.into());
         let order = [first.investigator.id, second.investigator.id];
         self.with_seat(first)
             .with_seat(second)
             .with_seating(order)
             .with_lead(order[1])
-    }
-}
-
-/// Find a seated card by what it is. Import it as `SeatLookup as _`.
-pub trait SeatLookup {
-    /// The instance id of the one card with `code` in `investigator`'s play
-    /// area or threat area (the threat area is a play area too).
-    ///
-    /// # Panics
-    ///
-    /// Panics unless exactly one card matches, listing what is there. Seat two
-    /// copies with [`Seat::in_play_as`] and address them by id.
-    fn in_play(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> CardInstanceId;
-
-    /// The [`CardInstance`](OptionTarget::CardInstance) anchor of that same
-    /// card — what [`pick`](super::TestSession::pick) and
-    /// [`offered_at`](super::TestSession::offered_at) take for a reaction,
-    /// forced or zero-action ability on a seated card.
-    ///
-    /// # Panics
-    ///
-    /// As [`in_play`](Self::in_play).
-    fn card(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> OptionTarget {
-        OptionTarget::CardInstance(self.in_play(investigator, code))
-    }
-
-    /// The name `investigator` is shown by, as their investigator card prints
-    /// it.
-    ///
-    /// # Panics
-    ///
-    /// If `investigator` is not seated.
-    fn name_of(&self, investigator: InvestigatorId) -> String;
-}
-
-impl SeatLookup for GameState {
-    fn in_play(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> CardInstanceId {
-        let code = code.into();
-        let inv = self
-            .investigators
-            .get(&investigator)
-            .unwrap_or_else(|| panic!("in_play: no investigator {investigator:?}"));
-        let cards = || inv.cards_in_play.iter().chain(&inv.threat_area);
-        let matches: Vec<CardInstanceId> = cards()
-            .filter(|card| card.code == code)
-            .map(|card| card.instance_id)
-            .collect();
-        if let [id] = matches[..] {
-            return id;
-        }
-        let there: Vec<String> = cards()
-            .map(|card| format!("{} {:?}", card.code, card.instance_id))
-            .collect();
-        panic!(
-            "in_play: {investigator:?} has {} cards {code} in play or in their threat area, \
-             not exactly one; there: [{}]",
-            matches.len(),
-            there.join(", "),
-        );
-    }
-
-    fn name_of(&self, investigator: InvestigatorId) -> String {
-        self.investigators
-            .get(&investigator)
-            .unwrap_or_else(|| panic!("name_of: no investigator {investigator:?}"))
-            .name
-            .clone()
     }
 }

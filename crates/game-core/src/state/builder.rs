@@ -12,14 +12,14 @@
 //! ```
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
-//! use game_core::test_support;
+//! use game_core::test_support::{self, location};
 //! # let registries = test_support::TEST_REGISTRIES;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
 //!     .with_investigator(test_support::test_investigator(2))
 //!     .with_seating([InvestigatorId(1), InvestigatorId(2)])
-//!     .with_location(test_support::test_location(10, "Study"))
+//!     .with_location(location(10))
 //!     // Investigation phase, investigator 1 active, their turn menu up.
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
@@ -35,6 +35,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::engine::Registries;
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
+use crate::state::staged::Staged;
 use crate::state::{
     CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy,
     EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowFrame, FastWindowKind, GameState,
@@ -57,8 +58,10 @@ use crate::state::{
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
     investigators: BTreeMap<InvestigatorId, Investigator>,
-    locations: BTreeMap<LocationId, Location>,
-    enemies: BTreeMap<EnemyId, Enemy>,
+    /// Locations and enemies as staged: each resolves at [`build`](Self::build),
+    /// reading a printed card's fields once every seat is known.
+    locations: BTreeMap<LocationId, Staged<Location>>,
+    enemies: BTreeMap<EnemyId, Staged<Enemy>>,
     chaos_bag: ChaosBag,
     token_modifiers: TokenModifiers,
     phase: Phase,
@@ -130,19 +133,18 @@ impl GameStateBuilder {
     /// Some(loc); .with_investigator(inv)` shape. Replaces any existing
     /// investigator entry with the same id, like [`with_investigator`].
     /// The named location itself must still be added separately via
-    /// [`with_location`] (this helper does not insert one — most tests
-    /// already have a fixture builder for the location with its specific
-    /// shroud / connections / clues).
+    /// [`with_location`] (this helper does not insert one — a test stages
+    /// the location with its own shroud / connections / clues).
     ///
     /// # Example
     ///
     /// ```
     /// use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
-    /// use game_core::test_support;
+    /// use game_core::test_support::{self, location};
     ///
     /// let state = GameStateBuilder::new()
     ///     .with_investigator_at(test_support::test_investigator(1), LocationId(10))
-    ///     .with_location(test_support::test_location(10, "Study"))
+    ///     .with_location(location(10))
     ///     .build();
     /// assert_eq!(
     ///     state.investigators[&InvestigatorId(1)].current_location,
@@ -162,34 +164,27 @@ impl GameStateBuilder {
         self
     }
 
-    /// Add a location to the state. Replaces any existing entry with
-    /// the same id.
-    pub fn with_location(mut self, location: Location) -> Self {
-        self.locations.insert(location.id, location);
-        self
+    /// Stage `location`, replacing any staged with the same id. The test-only
+    /// [`with_location`](Self::with_location) is the caller.
+    pub(crate) fn stage_location(&mut self, location: Staged<Location>) {
+        self.locations.insert(location.piece.id, location);
     }
 
-    /// Add an enemy to the state. Replaces any existing entry with the
-    /// same id.
-    pub fn with_enemy(mut self, enemy: Enemy) -> Self {
-        self.enemies.insert(enemy.id, enemy);
-        self
+    /// Stage `enemy`, replacing any staged with the same id (and its
+    /// engagement). The test-only [`with_enemy`](Self::with_enemy) is the
+    /// caller.
+    pub(crate) fn stage_enemy(&mut self, enemy: Staged<Enemy>) {
+        let id = enemy.piece.id;
+        self.engagements.retain(|&(engaged, _)| engaged != id);
+        self.enemies.insert(id, enemy);
     }
 
-    /// Add an enemy engaged with `investigator`, placed at that investigator's
-    /// location. Replaces any existing enemy with the same id.
-    ///
-    /// The location is copied at [`build`](Self::build), so the investigator
-    /// may be added before or after this call — an engaged enemy is always at
-    /// its investigator's location, and this keeps the two from disagreeing.
-    ///
-    /// # Panics
-    ///
-    /// [`build`](Self::build) panics if `investigator` was never added.
-    pub fn with_enemy_engaged(mut self, enemy: Enemy, investigator: InvestigatorId) -> Self {
-        self.engagements.retain(|&(id, _)| id != enemy.id);
-        self.engagements.push((enemy.id, investigator));
-        self.with_enemy(enemy)
+    /// Engage the staged enemy `enemy` with `investigator` at
+    /// [`build`](Self::build), which places it at that investigator's
+    /// location — so the investigator may be added before or after.
+    pub(crate) fn stage_engagement(&mut self, enemy: EnemyId, investigator: InvestigatorId) {
+        self.engagements.retain(|&(engaged, _)| engaged != enemy);
+        self.engagements.push((enemy, investigator));
     }
 
     /// Set the chaos bag. Replaces any prior bag.
@@ -459,8 +454,12 @@ impl GameStateBuilder {
         let locations = self
             .locations
             .values()
+            .map(|loc| &loc.piece)
             .flat_map(|loc| loc.attachments.iter().chain(&loc.cards_at_location));
-        let enemies = self.enemies.values().flat_map(|enemy| &enemy.attachments);
+        let enemies = self
+            .enemies
+            .values()
+            .flat_map(|enemy| &enemy.piece.attachments);
         investigators
             .chain(locations)
             .chain(enemies)
@@ -492,16 +491,24 @@ impl GameStateBuilder {
     /// Materialize the configured [`GameState`].
     ///
     /// The card-instance counter starts one past every card-instance id
-    /// already on the board (investigator cards aside), so the first card the
-    /// engine mints never collides with one the caller placed.
+    /// already on the board (investigator cards aside), and the enemy and
+    /// location id counters one past the highest staged enemy and location,
+    /// so nothing the engine mints collides with what the caller placed.
+    ///
+    /// A staged enemy or location that names a printed card
+    /// ([`as_card`](crate::test_support::StagedEnemy::as_card)) reads it here,
+    /// from the registries named by [`with_registries`](Self::with_registries),
+    /// with a per-investigator value scaled to every investigator on the
+    /// board — whichever order they and the card were staged in.
     ///
     /// # Panics
     ///
     /// Panics if two staged cards share a card-instance id (investigator
-    /// cards aside), or if an enemy was engaged via
-    /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
-    /// that was never added.
-    pub fn build(mut self) -> GameState {
+    /// cards aside), if an enemy was engaged with an investigator that was
+    /// never added, or, naming the code, if a staged printed card can't be
+    /// read: no registries were named, the registry doesn't know it, or it is
+    /// the wrong card type.
+    pub fn build(self) -> GameState {
         let mut seen = BTreeSet::new();
         for id in self.card_instance_ids_in_use() {
             assert!(
@@ -510,6 +517,20 @@ impl GameStateBuilder {
             );
         }
         let card_instance_ids = Counter::at(self.next_card_instance_id());
+        let investigator_count = u8::try_from(self.investigators.len()).unwrap_or(u8::MAX);
+        let cards = self.registries.map(|registries| registries.cards);
+        let locations: BTreeMap<LocationId, Location> = self
+            .locations
+            .into_iter()
+            .map(|(id, staged)| (id, staged.resolve(cards, investigator_count)))
+            .collect();
+        let mut enemies: BTreeMap<EnemyId, Enemy> = self
+            .enemies
+            .into_iter()
+            .map(|(id, staged)| (id, staged.resolve(cards, investigator_count)))
+            .collect();
+        let location_ids = Counter::at(next_id(locations.keys().map(|id| id.0)));
+        let enemy_ids = Counter::at(next_id(enemies.keys().map(|id| id.0)));
         for (enemy, investigator) in self.engagements {
             let location = self
                 .investigators
@@ -518,7 +539,7 @@ impl GameStateBuilder {
                     panic!("with_enemy_engaged: {investigator:?} was never added to the builder")
                 })
                 .current_location;
-            if let Some(enemy) = self.enemies.get_mut(&enemy) {
+            if let Some(enemy) = enemies.get_mut(&enemy) {
                 enemy.engaged_with = Some(investigator);
                 enemy.current_location = location;
             }
@@ -564,10 +585,10 @@ impl GameStateBuilder {
         }
         GameState {
             investigators: self.investigators,
-            locations: self.locations,
+            locations,
             set_aside_cards: Vec::new(),
             starting_location: None,
-            enemies: self.enemies,
+            enemies,
             chaos_bag: self.chaos_bag,
             token_modifiers: self.token_modifiers,
             phase: self.phase,
@@ -577,8 +598,8 @@ impl GameStateBuilder {
             seating: self.seating,
             rng: self.rng,
             card_instance_ids,
-            enemy_ids: Counter::new(),
-            location_ids: Counter::new(),
+            enemy_ids,
+            location_ids,
             skill_test_ids: Counter::new(),
             recorded_modifiers: Vec::new(),
             continuations,
@@ -597,6 +618,12 @@ impl GameStateBuilder {
             interactive_acknowledge: false,
         }
     }
+}
+
+/// One past the highest of `ids`, or 0 for none: where a counter starts so
+/// its first mint takes none of them.
+fn next_id(ids: impl Iterator<Item = u32>) -> u32 {
+    ids.map(|id| id.saturating_add(1)).max().unwrap_or(0)
 }
 
 impl Default for GameStateBuilder {

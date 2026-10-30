@@ -35,7 +35,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Status, UsageClock,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
@@ -52,7 +52,10 @@ const HERE: LocationId = LocationId(10);
 /// and the defeat opens the after-defeat reaction window. `shape` fills in what
 /// each test varies — hand contents, wallet, whether Roland's investigator card
 /// is in play.
-fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> GameState {
+fn after_defeat_board<S: Into<Seat<Either>>>(
+    location_clues: u8,
+    shape: impl FnOnce(Seat) -> S,
+) -> GameState {
     let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;

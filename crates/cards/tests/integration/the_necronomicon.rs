@@ -49,7 +49,9 @@ use game_core::state::{
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
     TokenResolution, UseKind, Zone,
 };
-use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, horror, seat, uses, Either, Seat, SeatLookup as _, TestSession,
+};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const NECRONOMICON: &str = "01009";
@@ -66,7 +68,7 @@ const ENEMY: EnemyId = EnemyId(100);
 
 /// `investigator`'s turn, alone at `HERE`, with no enemies (so the Draw
 /// action's attacks of opportunity are empty and it resolves synchronously).
-fn board(investigator: Seat) -> TestSession {
+fn board(investigator: impl Into<Seat<Either>>) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))

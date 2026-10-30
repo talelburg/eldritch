@@ -123,21 +123,6 @@ fn as_card_seats_the_printed_investigator() {
 }
 
 #[test]
-fn skills_after_as_card_override_the_printed_ones() {
-    let stated = Skills {
-        willpower: 6,
-        intellect: 6,
-        combat: 6,
-        agility: 6,
-    };
-    let state = GameStateBuilder::new()
-        .with_registries(registries())
-        .with_seat(seat(1).as_card(SEAT_INV).skills(stated))
-        .build();
-    assert_eq!(state.investigators[&INV].skills, stated);
-}
-
-#[test]
 fn skill_sets_one_skill_and_keeps_the_rest() {
     let state = GameStateBuilder::new()
         .with_registries(registries())
@@ -150,23 +135,6 @@ fn skill_sets_one_skill_and_keeps_the_rest() {
             intellect: 3,
             combat: 5,
             agility: 3,
-        },
-    );
-}
-
-#[test]
-fn skill_after_as_card_overrides_that_printed_skill_alone() {
-    let state = GameStateBuilder::new()
-        .with_registries(registries())
-        .with_seat(seat(1).as_card(SEAT_INV).skill(SkillKind::Willpower, 6))
-        .build();
-    assert_eq!(
-        state.investigators[&INV].skills,
-        Skills {
-            willpower: 6,
-            intellect: 5,
-            combat: 1,
-            agility: 4,
         },
     );
 }

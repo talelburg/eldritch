@@ -25,7 +25,7 @@ use game_core::state::{
     Act, Agenda, CardCode, EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, Location, LocationId, Phase, Status,
 };
-use game_core::test_support::{self, clues, seat, Seat, TestSession};
+use game_core::test_support::{self, clues, seat, Either, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -45,7 +45,7 @@ fn ghoul(id: EnemyId, at: LocationId) -> Enemy {
 
 /// The agenda board — 01107 current, a Hallway and a Parlor, `investigator`
 /// seated alone — on top of `builder`, which names the moment.
-fn board_from(builder: GameStateBuilder, investigator: Seat) -> GameState {
+fn board_from(builder: GameStateBuilder, investigator: impl Into<Seat<Either>>) -> GameState {
     let loc = |id: LocationId, code: &str, name| Location::new(id, CardCode::new(code), name, 1, 0);
     let mut state = builder
         .with_seat(investigator)
@@ -291,12 +291,12 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
 }
 
 /// [`table_at_act`], seating `seats` (numbered 1 up, in that order) as given.
-fn table_of_seats_at_act(seats: Vec<Seat>, act_index: usize) -> GameState {
+fn table_of_seats_at_act(seats: Vec<impl Into<Seat<Either>>>, act_index: usize) -> GameState {
     let n = u32::try_from(seats.len()).expect("a handful of seats");
     // A card each for Upkeep 4.4 to draw.
     let mut state = seats
         .into_iter()
-        .map(|s| s.deck(["01088"]))
+        .map(|s| Into::<Seat<Either>>::into(s).deck(["01088"]))
         .fold(
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,

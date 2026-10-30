@@ -17,7 +17,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
@@ -44,7 +44,7 @@ fn holding_evidence() -> Seat {
 /// `investigator`'s open turn, engaged with a 1-HP enemy at a location with
 /// `location_clues` clues. A successful Combat test defeats the enemy and
 /// opens the after-defeat window.
-fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
+fn fight_board(investigator: impl Into<Seat<Either>>, location_clues: u8) -> GameStateBuilder {
     let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;

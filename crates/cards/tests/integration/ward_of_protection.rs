@@ -34,7 +34,7 @@ use game_core::state::{
     Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const WARD: &str = "01065";
@@ -73,7 +73,7 @@ fn warded(n: u32) -> Seat {
 /// first agenda current (Ancient Evils places its doom there). `edit` adds to
 /// the board. Rests at the first drawer's encounter-draw prompt.
 fn mythos_draw_with(
-    seats: Vec<Seat>,
+    seats: Vec<impl Into<Seat<Either>>>,
     encounter: &[&str],
     edit: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
 ) -> TestSession {
@@ -98,7 +98,7 @@ fn mythos_draw_with(
     TestSession::new(state, TEST_REGISTRIES)
 }
 
-fn mythos_draw(seats: Vec<Seat>, encounter: &[&str]) -> TestSession {
+fn mythos_draw(seats: Vec<impl Into<Seat<Either>>>, encounter: &[&str]) -> TestSession {
     mythos_draw_with(seats, encounter, |builder| builder)
 }
 
