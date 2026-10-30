@@ -6,7 +6,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support;
+use game_core::test_support::{self, location};
 use leptos::prelude::{provide_context, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
@@ -27,7 +27,7 @@ async fn board_renders_card_and_location_names() {
     let state = GameStateBuilder::new()
         .with_active_investigator(inv_id)
         .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(location(10).name("Study"))
         .build();
 
     let store = RwSignal::new(ClientState::default());

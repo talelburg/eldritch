@@ -16,7 +16,7 @@
 //! attachments. `crates/web/tests/integration/card_at_location.rs` and the unit tests in
 //! `crates/web/src/names.rs` own that one.
 //!
-//! Locations and enemies stay on `game_core::test_support`'s fixtures — per
+//! Locations and enemies are stock stagers (`location(..)`, `enemy(..)`) — per
 //! ADR 0016 those are primitive builders, not card impersonations, and both
 //! carry their name and stats in `GameState` rather than reading the registry.
 #![cfg(target_arch = "wasm32")]
@@ -24,10 +24,10 @@
 use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
+    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
     InvestigatorId, Owner as CardOwner, Skills,
 };
-use game_core::test_support;
+use game_core::test_support::{self, enemy, location};
 use leptos::prelude::{provide_context, ClassAttribute, ElementChild, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
@@ -133,16 +133,13 @@ async fn render_state(state: GameState) -> String {
 
 #[wasm_bindgen_test]
 async fn act_agenda_cards_render_name_and_thresholds() {
-    let mut state = GameStateBuilder::new().with_investigator(roland(1)).build();
-    state.act_deck = vec![Act {
-        code: CardCode::new(ACT_TRAPPED),
-        clue_threshold: 2,
-    }];
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA_WHATS_GOING_ON),
-        doom_threshold: 3,
-    }];
-    state.agenda_doom = 1;
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_investigator(roland(1))
+        .with_act_deck([ACT_TRAPPED])
+        .with_agenda_deck([AGENDA_WHATS_GOING_ON])
+        .with_agenda_doom(1)
+        .build();
 
     let html = render_state(state).await;
 
@@ -167,12 +164,9 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 
 #[wasm_bindgen_test]
 async fn map_renders_location_name_shroud_clues() {
-    let mut loc = test_support::test_location(7, "Rivertown");
-    loc.shroud = 3;
-    loc.clues = 2;
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
-        .with_location(loc)
+        .with_location(location(7).name("Rivertown").shroud(3).clues(2))
         .build();
 
     let html = render_state(state).await;
@@ -365,7 +359,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
 async fn map_and_investigators_are_inside_board_main() {
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
-        .with_location(test_support::test_location(1, "Study"))
+        .with_location(location(1))
         .build();
     let _ = render_state(state).await;
 
@@ -391,15 +385,17 @@ async fn map_and_investigators_are_inside_board_main() {
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_as_card_in_threat_area() {
-    // `test_enemy` is a primitive builder (ADR 0016): the `Enemy` struct carries
-    // its own name and stats, and `EnemyCard` reads them from state — the
-    // registry is consulted only for the printed card's optional traits and
-    // ability text, and a missing card never renders `card--unknown`.
-    let mut enemy = test_support::test_enemy(1, "Ghoul Priest");
-    enemy.engaged_with = Some(InvestigatorId(1));
+    // A stock enemy is a primitive builder (ADR 0016): the `Enemy` struct
+    // carries its own name and stats, and `EnemyCard` reads them from state —
+    // the registry is consulted only for the printed card's optional traits
+    // and ability text, and a missing card never renders `card--unknown`.
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
-        .with_enemy(enemy)
+        .with_enemy(
+            enemy(1)
+                .name("Ghoul Priest")
+                .engaged_with(InvestigatorId(1)),
+        )
         .build();
 
     let html = render_state(state).await;
