@@ -207,3 +207,19 @@ _Avoid_: Assuming a card in the snapshot has metadata at runtime. `cards::metada
 **Default deck**:
 The deck the picker seats an investigator with when the player brings none of their own: printed signatures plus a 30-card deck, legal under that investigator's deckbuilding requirements, and one basic weakness **fixed in the list** where the requirements say *"1 random basic weakness"*, as the 2016 Learn to Play's decks do. One per investigator the picker offers. Decklist import (phase 9) is what supersedes it.
 _Avoid_: "Starter deck", which names two other things. The 2016 Learn to Play's *"Investigator Starter Decks"* sidebar is what all five default decks are **inspired by**, not the concept (it gives only Roland's and Wendy's, and ours change Roland's), and **Investigator Starter Decks** are also an FFG product line (Nathaniel Cho, Harvey Walters, …; `data/official-faq/Starter_Deck_Product_Icons.md`), which decklist import will someday have to name without colliding. Also avoid "scaffold deck" for it: that was the non-legal placeholder it replaced. And avoid "seeded weakness" for the fixed one: the *random* draw is the seeded one (it reads the game's seeded RNG). Say **fixed weakness** vs **random basic weakness**; the picker offers both.
+
+**Account**:
+A person's identity on the server: an allowlist entry with a stable id, a display name the host sets, and one or more emails. Any sign-in whose provider-verified email matches the entry is that account, through GitHub or Google alike. It outlives any game. In a game, each investigator is **assigned to** exactly one account, and one account may hold several investigators: a solo game is one account holding two. Control follows the account, so every machine and tab signed in as it answers its investigators' prompts. The engine never sees an account. A prompt names an investigator (ADR 0019), and the server maps that investigator to an account.
+_Avoid_: "Player" for an account. The rules' player is the person behind one investigator (`glossary/Lead_Investigator.md` speaks of *"the remaining players"*), and an account holding two investigators is two players to the rules. Also avoid "seat": **Seating** is the clockwise order of investigators, not a slot an account claims. And avoid "user", which says nothing about the allowlist.
+
+**Lobby**:
+A game before it starts. Creating a game picks the scenario and yields a link. Each **member** adds and removes their own investigators, a pick already taken is refused (Appendix III step 1: *"Each player chooses a different investigator"*), and the **creator** orders the seating, picks the lead and presses Start. Start seats the roster and freezes it. Nobody joins as a new investigator after that, though the creator, or the account holding an investigator, can reassign it to another member mid-game.
+_Avoid_: "Table", which is the in-game board each account sees. "Session" too, which is the sign-in session and `GameSession`'s live game. A play of a scenario is a **game**. And "group": there is no persistent set of friends. Who you play with is whoever is a member of your games.
+
+**Creator**:
+The account that created a game. Only the creator orders the seating, picks the lead investigator, presses Start, removes a member from the lobby, and deletes the game. The players still choose the lead at the table (Appendix III step 3); the creator enters what they agreed.
+_Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator owns no investigator by virtue of creating.
+
+**Member**:
+An account that has opened a game's link; the link is the invitation, and the allowlist is the only gate. Membership is recorded separately from assignment, so "your games" lists every game you're a member of. A member holding no investigator is a read-only **viewer**.
+_Avoid_: Reading membership as control. A member answers prompts only for investigators assigned to them.
