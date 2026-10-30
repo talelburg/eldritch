@@ -35,10 +35,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, EliminationCause, Enemy, EnemyId, GameState,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EliminationCause, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, StagedEnemy, TestSession};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -51,12 +51,10 @@ const BULLETPROOF_VEST: &str = "01094";
 
 /// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
 /// with `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
-    e.attack_damage = damage;
-    e.attack_horror = 0;
-    e.max_health = max_health;
-    e
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> StagedEnemy {
+    test_support::enemy(id)
+        .attack_damage(damage)
+        .health(max_health)
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -68,7 +66,7 @@ const HERE: LocationId = LocationId(101);
 /// per-investigator attack loop (the `BeforeInvestigatorAttacked` player
 /// window auto-skips — Guard Dog has no zero-action ability — so the loop runs
 /// inline and suspends on the soak reaction window).
-fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
+fn soak_state(assets: &[&str], damage: u8, enemies: Vec<StagedEnemy>) -> GameState {
     let investigator = seat(1)
         .at(HERE)
         .harm(damage, 0)
@@ -83,7 +81,7 @@ fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
         .fold(
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
-                .with_location(test_support::test_location(HERE.0, "Study"))
+                .with_location(test_support::location(HERE))
                 .with_seat(investigator)
                 .open_turn(INV),
             |builder, enemy| builder.with_enemy_engaged(enemy, INV),
@@ -654,10 +652,8 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     let from = HERE;
     let dest = LocationId(102);
 
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.connections = vec![dest];
-    let mut hallway = test_support::test_location(dest.0, "Hallway");
-    hallway.connections = vec![from];
+    let study = test_support::location(HERE).connections(vec![dest]);
+    let hallway = test_support::location(dest).connections(vec![from]);
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).

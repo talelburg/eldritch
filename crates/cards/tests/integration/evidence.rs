@@ -45,13 +45,9 @@ fn holding_evidence() -> Seat {
 /// `location_clues` clues. A successful Combat test defeats the enemy and
 /// opens the after-defeat window.
 fn fight_board(investigator: impl Into<Seat<Either>>, location_clues: u8) -> GameStateBuilder {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-    enemy.damage = 0;
+    let enemy = test_support::enemy(ENEMY).fight(1).health(1).damage(0);
 
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = location_clues;
+    let loc = test_support::location(HERE).clues(location_clues);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

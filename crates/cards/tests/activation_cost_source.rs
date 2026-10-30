@@ -82,7 +82,7 @@ fn board(in_play: [SeatCard; 2]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .session()
 }

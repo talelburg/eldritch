@@ -160,7 +160,7 @@ mod tests {
                 .with_seat(test_support::seat(1))
                 .with_seat(test_support::seat(2));
             for (id, engaged_with) in engagements {
-                let enemy = test_support::test_enemy(*id, "Ghoul");
+                let enemy = test_support::enemy(*id);
                 builder = match engaged_with {
                     Some(investigator) => builder.with_enemy_engaged(enemy, *investigator),
                     None => builder.with_enemy(enemy),

@@ -28,18 +28,17 @@
 //!   the agenda never advances.
 //! - **Study 01111** — a location with no printed ability text and no rulings
 //!   (`data/arkhamdb-faq/no-rulings.txt`), so nothing on the board reacts to the
-//!   draw. Built through the engine from its own corpus metadata rather than
-//!   hand-stamped onto a `test_location`, which is the impersonation ADR 0016
-//!   forbids.
+//!   draw. Staged from its own printed card rather than hand-stamped onto a
+//!   stock location, which is the impersonation ADR 0016 forbids.
 
-use card_dsl::card_data::{CardKind, CardType};
+use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
+    CardCode, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{seat, TestSession};
+use game_core::test_support::{location, seat, TestSession};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";
@@ -50,45 +49,29 @@ const STUDY: &str = "01111";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-/// Rise of the Ghouls' printed doom threshold, read from the corpus rather than
-/// transcribed, so a snapshot refresh cannot silently invalidate the "the agenda
-/// never advances" premise above.
-fn agenda_doom_threshold(code: &str) -> u8 {
-    match cards::by_code(code).expect("agenda in corpus").kind {
-        CardKind::Agenda { doom_threshold } => doom_threshold,
-        ref kind => panic!("{code} is not an Agenda ({kind:?})"),
-    }
-}
+/// The Study's id on the board.
+const STUDY_ID: LocationId = LocationId(1);
 
 /// The board both tests start from: Mythos step 1.4 with the investigator at
-/// the Study to draw, one agenda, and `encounter_deck` as the encounter deck.
-/// The Study's id is minted by `add_location` on the built state, so the
-/// investigator is placed there afterwards.
+/// the Study to draw, one agenda — its printed doom threshold read from the
+/// corpus rather than transcribed, so a snapshot refresh cannot silently
+/// invalidate the "the agenda never advances" premise above — and
+/// `encounter_deck` as the encounter deck.
 fn drawing(encounter_deck: &[&str]) -> TestSession {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(seat(1))
+        .with_location(location(STUDY_ID).as_card(STUDY))
+        .with_seat(seat(1).at(STUDY_ID))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_agenda_deck([RISE_OF_THE_GHOULS])
+        .with_encounter_deck(encounter_deck.iter().copied())
         .build();
-    let study = state.add_location(cards::by_code(STUDY).expect("Study 01111 in corpus"));
-    state.starting_location = Some(study);
-    state
-        .investigators
-        .get_mut(&INV)
-        .expect("seated")
-        .current_location = Some(study);
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(RISE_OF_THE_GHOULS),
-        doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
-    }];
-    state
-        .encounter_deck
-        .extend(encounter_deck.iter().map(|c| CardCode::new(*c)));
+    state.starting_location = Some(STUDY_ID);
     TestSession::new(state, TEST_REGISTRIES)
 }
 

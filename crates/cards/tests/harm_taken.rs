@@ -155,7 +155,7 @@ fn registries() -> Registries {
 fn board(threat: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

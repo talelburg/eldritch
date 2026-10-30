@@ -128,7 +128,7 @@ fn board() -> GameState {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([WARD]))
         .with_seat(seat(2).at(HERE).in_play([THEIRS]))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seating([MINE, THEM])
         .open_turn(MINE)
         .build()

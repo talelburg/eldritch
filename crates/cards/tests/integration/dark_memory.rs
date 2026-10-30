@@ -22,7 +22,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget, PickCount};
 use game_core::event::Event;
-use game_core::state::{Agenda, CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
+use game_core::state::{CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
@@ -49,28 +49,19 @@ fn turn_holding(hand: &[&str]) -> TestSession {
 }
 
 /// The Gathering's agendas, What's Going On?! 01105 (threshold 3) first.
-const AGENDAS: [(&str, u8); 2] = [("01105", 3), ("01106", 7)];
+const AGENDAS: [&str; 2] = ["01105", "01106"];
 
 /// Investigator 1's open turn, solo, holding only Dark Memory with the 2
 /// resources it costs, and 01105 current with `doom` on it.
 fn turn_to_play_it(doom: u8) -> TestSession {
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([DARK_MEMORY]).resources(2))
         .with_seating([INV])
         .open_turn(INV)
-        .build();
-    // The builder stages no agenda.
-    state.agenda_deck = AGENDAS
-        .iter()
-        .map(|&(code, doom_threshold)| Agenda {
-            code: CardCode::new(code),
-            doom_threshold,
-        })
-        .collect();
-    state.agenda_index = 0;
-    state.agenda_doom = doom;
-    TestSession::new(state, TEST_REGISTRIES)
+        .with_agenda_deck(AGENDAS)
+        .with_agenda_doom(doom)
+        .session()
 }
 
 const PLAY_IT: TurnAction = TurnAction::PlayCard {

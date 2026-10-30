@@ -40,10 +40,9 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
-    InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
+use game_core::test_support::{self, act, agenda, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 use std::sync::LazyLock;
 
@@ -103,32 +102,29 @@ fn board() -> GameState {
 
 /// [`board`] with my investigator seated as `mine`.
 fn board_with(mine: Seat) -> GameState {
-    let mut state = GameStateBuilder::new()
+    board_on_act(mine, 0)
+}
+
+/// [`board_with`], with the act cursor at `act_index`.
+fn board_on_act(mine: Seat, act_index: usize) -> GameState {
+    table(mine)
+        .with_act_deck([act(ACT_ONE, 99), act(ACT_TWO, 99)])
+        .with_current_act(act_index)
+        .with_agenda_deck([agenda(AGENDA, 99)])
+        .build()
+}
+
+/// The locations and investigators of [`board_with`], with no act or agenda
+/// deck.
+fn table(mine: Seat) -> GameStateBuilder {
+    GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(mine)
         .with_seat(seat(2).at(THERE))
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(THERE.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(THERE))
         .with_seating([MINE, NEIGHBOUR])
         .open_turn(MINE)
-        .build();
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new(ACT_ONE),
-            clue_threshold: 99,
-        },
-        Act {
-            code: CardCode::new(ACT_TWO),
-            clue_threshold: 99,
-        },
-    ];
-    state.act_index = 0;
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA),
-        doom_threshold: 99,
-    }];
-    state.agenda_index = 0;
-    state
 }
 
 fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
@@ -243,8 +239,7 @@ fn the_activation_event_names_the_board_card_it_came_from() {
 /// same activation resolves against the act that is current now.
 #[test]
 fn an_act_that_is_no_longer_current_is_not_reachable() {
-    let mut state = board();
-    state.act_index = 1;
+    let state = board_on_act(seat(1).at(HERE), 1);
 
     let result = TestSession::new(state, registries())
         .take(&activation(AbilitySource::Act, LIVE))
@@ -264,9 +259,7 @@ fn an_act_that_is_no_longer_current_is_not_reachable() {
 /// rejects on reachability rather than reaching for an empty deck.
 #[test]
 fn an_absent_act_or_agenda_is_out_of_reach() {
-    let mut state = board();
-    state.act_deck.clear();
-    state.agenda_deck.clear();
+    let state = table(seat(1).at(HERE)).build();
     let menu = enumerate::legal_actions(&state, registries().cards);
 
     for source in [AbilitySource::Act, AbilitySource::Agenda] {

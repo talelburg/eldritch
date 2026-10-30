@@ -92,8 +92,7 @@ fn mythos_encounter_draw(builder: GameStateBuilder) -> GameStateBuilder {
 /// on its own, so A holds a Magnifying Glass the window offers them, which
 /// keeps it standing open.
 fn a_turn_begins_window(b: Seat) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = 1;
+    let study = test_support::location(HERE).clues(1);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(study)
@@ -231,16 +230,14 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
 /// Mythos phase — the open permissive window, or the encounter draw with none
 /// open — the condition the tests below differ on.
 fn board_with_beat_cop(moment: fn(GameStateBuilder) -> GameStateBuilder) -> GameStateBuilder {
-    let mut enemy = test_support::test_enemy(GHOUL.0, "Ghoul");
-    enemy.max_health = 3;
-    enemy.current_location = Some(HERE);
+    let enemy = test_support::enemy(GHOUL).health(3).at(HERE);
     moment(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
             .with_seating([A, B])
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(test_support::location(HERE))
             .with_enemy(enemy)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
     )
@@ -316,8 +313,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // is within the Investigaton [sic] phase." A's Magnifying Glass keeps the
     // window standing; the window does not offer the Hunch, so it goes straight
     // to the handler.
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 1;
+    let location = test_support::location(HERE).clues(1);
     let window = mythos_after_draws_window(
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)

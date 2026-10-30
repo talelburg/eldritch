@@ -14,7 +14,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
-use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, TestSession};
 
 const LEAD: InvestigatorId = InvestigatorId(1);
@@ -29,16 +29,13 @@ fn state_on_agenda_01105() -> GameState {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck(["01088"]))
         .open_turn(LEAD)
+        // The current agenda must be in the deck for the scan to reach
+        // 01105's ability at all; the candidate it mints names
+        // `AbilitySource::Agenda`, and that is what the ack anchors to. It
+        // prints a doom threshold of 3.
+        .with_agenda_deck(["01105"])
+        .with_agenda_doom(2)
         .build();
-    // The current agenda must be in the deck for the scan to reach 01105's
-    // ability at all; the candidate it mints names `AbilitySource::Agenda`, and
-    // that is what the ack anchors to.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("01105"),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
-    state.agenda_doom = 2;
     state.interactive_acknowledge = true;
     state
 }

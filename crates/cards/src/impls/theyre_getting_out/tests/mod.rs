@@ -3,9 +3,9 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EachBinding;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, Enemy, GameStateBuilder, InvestigatorId, Location, Owner,
+    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, Owner,
 };
-use game_core::test_support;
+use game_core::test_support::{self, Printed, StagedEnemy, StagedLocation};
 
 use super::*;
 use crate::REGISTRY;
@@ -14,33 +14,61 @@ mod ghoul_move;
 mod reverse;
 mod round_end_doom;
 
-/// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
-fn ghoul(id: u32, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id, "Ghoul");
-    e.code = CardCode::new("01160");
-    e.current_location = Some(at);
-    e
+/// The Hallway, the hub of the [`star_board_from`] map.
+const HALL: LocationId = LocationId(2);
+const ATTIC: LocationId = LocationId(3);
+const CELLAR: LocationId = LocationId(4);
+const PARLOR: LocationId = LocationId(5);
+/// The [`detour_board`]'s Study.
+const STUDY: LocationId = LocationId(6);
+
+/// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite, at `at`.
+fn ghoul(id: u32, at: LocationId) -> StagedEnemy<Printed> {
+    test_support::enemy(id).as_card("01160").at(at)
 }
 
-// Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
-fn star_board() -> GameState {
-    star_board_from(GameStateBuilder::new().with_registries(crate::TEST_REGISTRIES))
-}
-
-/// The [`star_board`]'s map on top of `builder`.
-fn star_board_from(builder: GameStateBuilder) -> GameState {
-    let loc =
-        |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
-    let mut state = builder
-        .with_location(loc(2, "01112", "Hallway"))
-        .with_location(loc(3, "01113", "Attic"))
-        .with_location(loc(4, "01114", "Cellar"))
-        .with_location(loc(5, "01115", "Parlor"))
-        .build();
-    for spoke in [LocationId(3), LocationId(4), LocationId(5)] {
-        state.connect(LocationId(2), spoke);
+/// The Gathering's printed location `code` as `id`, connected to
+/// `connections`, with a Barricade 01038 attached when `barricaded` — so an
+/// enemy's compelled step into it is blocked.
+fn gathering_location(
+    id: LocationId,
+    code: &str,
+    connections: &[LocationId],
+    barricaded: bool,
+) -> StagedLocation<Printed> {
+    let location = test_support::location(id)
+        .as_card(code)
+        .connections(connections.to_vec());
+    if barricaded {
+        // A seat cannot place a location attachment, so its id is named here.
+        location.attachments([CardInPlay::enter_play(
+            CardCode::new("01038"),
+            CardInstanceId(900 + id.0),
+            Owner::Investigator(InvestigatorId(1)),
+        )])
+    } else {
+        location
     }
-    state
+}
+
+/// The Gathering's star map on top of `builder`: the Hallway(2) hub
+/// connects to the Attic(3), Cellar(4) and Parlor(5). A Barricade sits at each
+/// of `barricaded`.
+fn star_board_barricading(builder: GameStateBuilder, barricaded: &[LocationId]) -> GameState {
+    let loc = |id, code, connections: &[LocationId]| {
+        gathering_location(id, code, connections, barricaded.contains(&id))
+    };
+    builder
+        .with_location(loc(HALL, "01112", &[ATTIC, CELLAR, PARLOR]))
+        .with_location(loc(ATTIC, "01113", &[HALL]))
+        .with_location(loc(CELLAR, "01114", &[HALL]))
+        .with_location(loc(PARLOR, "01115", &[HALL]))
+        .build()
+}
+
+/// The star map on top of `builder`, with no Barricade.
+fn star_board_from(builder: GameStateBuilder) -> GameState {
+    star_board_barricading(builder, &[])
 }
 
 /// Run `f` for investigator 1, assert it finished, and return its events.

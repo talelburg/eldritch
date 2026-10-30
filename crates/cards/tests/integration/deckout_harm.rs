@@ -41,7 +41,7 @@ const HERE: LocationId = LocationId(101);
 fn draw_from_empty_deck(discard: &[&'static str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -104,7 +104,7 @@ fn deck_out_horror_lands_before_the_drawn_weakness_revelation_resolves() {
 fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(seat(1).at(HERE).discard([COVER_UP]))
         .with_seat(seat(2).at(HERE).discard([COVER_UP]))
         .with_seating([INV, INV2])
@@ -158,7 +158,7 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
 fn upkeep_deck_out_soak_prompt_holds_the_next_investigators_draw() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)

@@ -46,10 +46,8 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
-};
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, seat, SeatLookup as _, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
@@ -63,11 +61,10 @@ const ATTACKER: EnemyId = EnemyId(7);
 /// A ready enemy dealing 1 damage. `max_health` is the caller's to choose: 2
 /// leaves it alive through a single point of Beat Cop damage, 1 lets the Fast
 /// play defeat it before it ever attacks.
-fn ready_attacker(max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
-    e.max_health = max_health;
-    e.attack_damage = 1;
-    e
+fn ready_attacker(max_health: u8) -> StagedEnemy {
+    test_support::enemy(ATTACKER)
+        .health(max_health)
+        .attack_damage(1)
 }
 
 /// Mid-Investigation state for one investigator engaged by one ready attacker,
@@ -81,7 +78,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> GameStateBuilder {
     let me = if beat_cop { me.in_play([BEAT_COP]) } else { me };
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(me)
         .with_enemy_engaged(ready_attacker(enemy_health), INV)
         .open_turn(INV)

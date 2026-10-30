@@ -26,9 +26,9 @@ const HERE: LocationId = LocationId(10);
 /// The investigator at `HERE` holding Deduction, `initial_clues` clues there
 /// at shroud `shroud`, on their turn against a single-`Numeric(0)` chaos bag.
 fn board_with_deduction(initial_clues: u8, shroud: u8) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.shroud = shroud;
-    location.clues = initial_clues;
+    let location = test_support::location(HERE)
+        .shroud(shroud)
+        .clues(initial_clues);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DEDUCTION]))

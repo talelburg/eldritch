@@ -235,7 +235,7 @@ mod tests {
     };
     use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
-        AbilitySource, CardCode, Continuation, EnemyId, GameState, GameStateBuilder,
+        AbilitySource, Continuation, EnemyId, GameState, GameStateBuilder,
         InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
     use game_core::test_support::{self, seat, SeatLookup as _};
@@ -350,19 +350,14 @@ mod tests {
         // nearest non-[[Monster]] — every enemy in The Gathering itself is a
         // [[Monster]], so the negative case has to come from outside it. The
         // traits are read off each code's printed card.
-        let mut ghoul = test_support::test_enemy(1, "Ghoul Minion");
-        ghoul.code = CardCode::new("01160");
-        let mut acolyte = test_support::test_enemy(2, "Silver Twilight Acolyte");
-        acolyte.code = CardCode::new("01102");
-
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(lita_controller)
             .with_seat(other)
-            .with_location(test_support::test_location(HERE.0, "Parlor"))
-            .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
-            .with_enemy(ghoul)
-            .with_enemy(acolyte)
+            .with_location(test_support::location(HERE))
+            .with_location(test_support::location(ELSEWHERE))
+            .with_enemy(test_support::enemy(1).as_card("01160"))
+            .with_enemy(test_support::enemy(2).as_card("01102"))
             .build();
 
         if with_fight {

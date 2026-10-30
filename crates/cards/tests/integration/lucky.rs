@@ -41,9 +41,7 @@ const HERE: LocationId = LocationId(10);
 /// `hand` in hand and Rabbit's Foot in play, on their turn, with a lone `token`
 /// in the bag.
 fn board(intellect: i8, hand: &[&str], token: ChaosToken) -> TestSession {
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.shroud = 4;
-    study.clues = 3;
+    let study = test_support::location(HERE).shroud(4).clues(3);
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(

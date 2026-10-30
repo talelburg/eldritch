@@ -44,7 +44,7 @@ fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(healer(supplies, damage, horror))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
 }
 
@@ -247,7 +247,7 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameStateBuilder 
         .with_registries(TEST_REGISTRIES)
         .with_seat(healer(3, healer_damage, 0))
         .with_seat(seat(2).at(HERE).harm(patient_damage, 0))
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
 }
 

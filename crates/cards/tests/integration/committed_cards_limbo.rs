@@ -40,9 +40,7 @@ const HERE: LocationId = LocationId(20);
 /// `resources` resources (Working a Hunch costs 2), and a single-`Numeric(0)`
 /// chaos bag so only the committed icons move the total.
 fn board(hand: &[&str], resources: u8) -> TestSession {
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = 3;
-    loc.shroud = 2;
+    let loc = test_support::location(HERE).clues(3).shroud(2);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

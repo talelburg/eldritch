@@ -82,28 +82,25 @@ fn hurt_with_threat(damage: u8, threat: &[(&str, u8)]) -> Seat {
 fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_seat(investigator);
     let builder = if survivor {
         builder
-            .with_location(test_support::test_location(ELSEWHERE.0, "Elsewhere"))
+            .with_location(test_support::location(ELSEWHERE))
             .with_seat(seat(2).at(ELSEWHERE).deck(["01088"]))
             .with_seating([INV, SURVIVOR])
     } else {
         builder.with_seating([INV])
     };
-    let mut state = builder
+    builder
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(-2)]))
-        .build();
-    state
-        .encounter_deck
-        .push_back(CardCode::new(GRASPING_HANDS));
-    state
+        .with_encounter_deck([GRASPING_HANDS])
+        .build()
 }
 
 /// Draw the top encounter card for investigator 1, committing `commit` at the

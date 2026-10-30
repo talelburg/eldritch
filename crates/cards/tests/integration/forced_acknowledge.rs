@@ -10,7 +10,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -22,10 +22,8 @@ const FORCED: LocationId = LocationId(1);
 /// carries a forced on-enter ability, with `interactive_acknowledge` set as
 /// given; the session takes the Move into it.
 fn enter(code: &str, interactive: bool) -> TestSession {
-    let mut here = test_support::test_location(HERE.0, "Hallway");
-    here.connections = vec![FORCED];
-    let mut forced = test_support::test_location(FORCED.0, "Forced Location");
-    forced.code = CardCode::new(code);
+    let here = test_support::location(HERE).connections(vec![FORCED]);
+    let forced = test_support::location(FORCED).as_card(code);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))

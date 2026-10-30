@@ -115,8 +115,7 @@ fn choice_revelation() -> Vec<Ability> {
 /// to [`seat_and_open`](engine::seat_and_open). No act or agenda deck: nothing
 /// here discovers a clue or places doom.
 fn board() -> GameState {
-    let mut location = test_support::test_location(HERE.0, "Probe Location");
-    location.code = CardCode::new(PROBE_LOCATION);
+    let location = test_support::location(HERE).code(PROBE_LOCATION);
 
     let mut state = GameStateBuilder::new()
         .with_registries(registries())

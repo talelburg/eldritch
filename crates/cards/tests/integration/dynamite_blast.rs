@@ -44,17 +44,17 @@ fn play(state: GameState) -> TestSession {
 /// enemy sit at `HERE`; a second investigator and a 5-health enemy sit at the
 /// connecting `HALLWAY`.
 fn board() -> GameState {
-    let mut loc_a = test_support::test_location(HERE.0, "Cellar");
-    loc_a.connections = vec![HALLWAY];
-    let mut loc_b = test_support::test_location(HALLWAY.0, "Hallway");
-    loc_b.connections = vec![HERE];
+    let loc_a = test_support::location(HERE)
+        .name("Cellar")
+        .connections(vec![HALLWAY]);
+    let loc_b = test_support::location(HALLWAY)
+        .name("Hallway")
+        .connections(vec![HERE]);
 
-    let mut enemy_a = test_support::test_enemy(ENEMY_A.0, "Ghoul A");
-    enemy_a.current_location = Some(HERE);
-    enemy_a.max_health = 3; // 3 damage defeats it
-    let mut enemy_b = test_support::test_enemy(ENEMY_B.0, "Ghoul B");
-    enemy_b.current_location = Some(HALLWAY);
-    enemy_b.max_health = 5; // survives, to assert it's untouched
+    // 3 damage defeats it
+    let enemy_a = test_support::enemy(ENEMY_A).at(HERE).health(3);
+    // survives, to assert it's untouched
+    let enemy_b = test_support::enemy(ENEMY_B).at(HALLWAY).health(5);
 
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -145,10 +145,9 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
 #[test]
 fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     // A single location with no connections → one candidate → auto, no suspend.
-    let loc_a = test_support::test_location(HERE.0, "Cellar"); // no connections
-    let mut enemy_a = test_support::test_enemy(ENEMY_A.0, "Ghoul A");
-    enemy_a.current_location = Some(HERE);
-    enemy_a.max_health = 5; // survives, to assert the 3-damage amount
+    let loc_a = test_support::location(HERE); // no connections
+                                              // survives, to assert the 3-damage amount
+    let enemy_a = test_support::enemy(ENEMY_A).at(HERE).health(5);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -183,7 +182,7 @@ fn blast_is_rejected_when_the_controller_has_no_location() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([DYNAMITE]))
-        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build();
     assert_eq!(state.investigators[&INV].current_location, None);
@@ -215,7 +214,7 @@ fn blasted_investigator_is_offered_the_soak() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]).in_play([GUARD_DOG]))
-        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build();
     let dog = state.in_play(INV, GUARD_DOG);
@@ -253,7 +252,7 @@ fn two_blasted_investigators_are_dealt_one_at_a_time_in_ascending_order() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]))
         .with_seat(seat(2).at(HERE).in_play([GUARD_DOG]))
-        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build();
     let dog = OptionTarget::CardInstance(state.in_play(INV2, GUARD_DOG));
@@ -295,14 +294,9 @@ const ROLAND: &str = "01001";
 /// is a clue on your location."*).
 #[test]
 fn both_blasted_enemies_take_their_damage_before_rolands_reaction_is_offered() {
-    let mut cellar = test_support::test_location(HERE.0, "Cellar");
-    cellar.clues = 1;
-    let mut enemy_a = test_support::test_enemy(ENEMY_A.0, "Ghoul A");
-    enemy_a.current_location = Some(HERE);
-    enemy_a.max_health = 3;
-    let mut enemy_b = test_support::test_enemy(ENEMY_B.0, "Ghoul B");
-    enemy_b.current_location = Some(HERE);
-    enemy_b.max_health = 3;
+    let cellar = test_support::location(HERE).clues(1);
+    let enemy_a = test_support::enemy(ENEMY_A).at(HERE).health(3);
+    let enemy_b = test_support::enemy(ENEMY_B).at(HERE).health(3);
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card(ROLAND).at(HERE).hand([DYNAMITE]))
@@ -341,7 +335,7 @@ fn both_deals_land_before_hypochondrias_direct_horror() {
         )
         .with_seat(seat(2).at(HERE))
         .with_seating([INV, INV2])
-        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .with_location(test_support::location(HERE))
         .open_turn(INV)
         .build();
 

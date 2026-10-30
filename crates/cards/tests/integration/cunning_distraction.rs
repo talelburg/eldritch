@@ -21,10 +21,8 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone,
-};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone};
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const CUNNING_DISTRACTION: &str = "01078";
@@ -46,12 +44,11 @@ const OTHERS: EnemyId = EnemyId(102);
 const AWAY: EnemyId = EnemyId(103);
 
 /// A ready enemy dealing 1 damage, standing at `at`.
-fn enemy(id: EnemyId, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id.0, "Ghoul");
-    e.attack_damage = 1;
-    e.attack_horror = 0;
-    e.current_location = Some(at);
-    e
+fn enemy_at(id: EnemyId, at: LocationId) -> StagedEnemy {
+    test_support::enemy(id)
+        .attack_damage(1)
+        .attack_horror(0)
+        .at(at)
 }
 
 /// Investigator `id` at `HERE` with 3 actions and 5 resources.
@@ -65,16 +62,16 @@ fn survivor(id: u32) -> Seat {
 fn board(first: Seat, include: &[EnemyId]) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::location(HERE))
+        .with_location(test_support::location(ELSEWHERE))
         .with_seat(first.hand([CUNNING_DISTRACTION]))
         .with_seat(survivor(2));
     for &id in include {
         builder = match id {
-            ENGAGED => builder.with_enemy_engaged(enemy(id, HERE), INV),
-            OTHERS => builder.with_enemy_engaged(enemy(id, HERE), INV2),
-            AWAY => builder.with_enemy(enemy(id, ELSEWHERE)),
-            _ => builder.with_enemy(enemy(id, HERE)),
+            ENGAGED => builder.with_enemy_engaged(enemy_at(id, HERE), INV),
+            OTHERS => builder.with_enemy_engaged(enemy_at(id, HERE), INV2),
+            AWAY => builder.with_enemy(enemy_at(id, ELSEWHERE)),
+            _ => builder.with_enemy(enemy_at(id, HERE)),
         };
     }
     builder.open_turn(INV).session()

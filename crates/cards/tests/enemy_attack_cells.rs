@@ -32,9 +32,11 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, Continuation, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    Continuation, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, seat, MockRegistry, SeatLookup as _, StagedEnemy, TestSession,
+};
 use std::sync::LazyLock;
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
@@ -96,12 +98,11 @@ const ATTACKER: EnemyId = EnemyId(7);
 /// The attacker: ready, dealing 1 damage **and** 1 horror, so the condition's
 /// own impact is visible on both tracks. `code` selects whether it carries a
 /// forced ability of its own.
-fn attacker(code: &str) -> Enemy {
-    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
-    e.code = CardCode::new(code);
-    e.attack_damage = 1;
-    e.attack_horror = 1;
-    e
+fn attacker(code: &str) -> StagedEnemy {
+    test_support::enemy(ATTACKER)
+        .code(code)
+        .attack_damage(1)
+        .attack_horror(1)
 }
 
 /// Investigation-phase board: the active investigator at `HERE` with `codes` in
@@ -113,7 +114,7 @@ fn attacker(code: &str) -> Enemy {
 fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::location(HERE))
         .with_seat(
             seat(1)
                 .at(HERE)
