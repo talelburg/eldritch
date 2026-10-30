@@ -1,0 +1,492 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Not part of the web crate's build, and never served.
+  Wayfinder ticket #1231, "The lobby and the 'your games' list".
+
+  Three structurally different takes (?variant=A|B|C) on one in-memory game,
+  seen from either account's browser (?as=you|sam). Both views share the state,
+  so switching "as" stands in for the other machine updating live. Five
+  presets (?s=1..5) jump to the moments in the ticket. Everything else is
+  clickable. Nothing persists, and nothing is sent anywhere.
+
+  Cast (per "Players, groups and sessions", #1214):
+    Tal (you) is the creator: orders the seating, picks the lead, presses Start.
+    Sam is a member: adds and removes only Sam's own picks.
+  Decks: phase 8 has the five default decks only, each with its fixed
+  weakness or a random basic weakness (crates/cards/src/decks.rs).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE: lobby and your games</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding-bottom: 5rem; color: #222; }
+  .muted { color: #666; font-size: 0.85rem; }
+  .small { font-size: 0.8rem; }
+  button { font: inherit; font-size: 0.85rem; cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  button.link { border: none; background: none; color: #36c; text-decoration: underline; padding: 0; }
+  button.primary { background: #2a6; color: #fff; border: 1px solid #185; border-radius: 4px; padding: 0.4rem 1.2rem; font-weight: bold; }
+  button.primary:disabled { background: #9bc9a9; border-color: #9bc9a9; }
+  button.danger { color: #b33; }
+  header.app { display: flex; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid #ddd; }
+  header.app h1 { margin: 0; font-size: 1.2rem; }
+  header.app .who { margin-left: auto; font-size: 0.85rem; }
+  .pill { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 1rem; font-size: 0.75rem; border: 1px solid #aaa; background: #eee; }
+  .pill.lobby { background: #eef; border-color: #99c; }
+  .pill.live { background: #fff4d0; border-color: #c8a020; }
+  .pill.done { background: #eee; border-color: #bbb; color: #555; }
+  .pill.broken { background: #fdeaea; border-color: #c66; color: #933; }
+  .pill.needs { background: #2a6; border-color: #185; color: #fff; font-weight: bold; }
+  .pill.mine { background: #cfeccf; border-color: #5a5; }
+  .lead { color: #b8860b; }
+  .linkbox { display: flex; gap: 0.4rem; align-items: center; font-size: 0.8rem; background: #f6f6f6; border: 1px dashed #aaa; border-radius: 4px; padding: 0.3rem 0.5rem; }
+  .linkbox code { flex: 1; }
+  .menu { position: relative; display: inline-block; }
+  .menu > button { border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 0 0.4rem; }
+  .menu .items { position: absolute; right: 0; top: 1.6rem; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px #0002; z-index: 5; min-width: 13rem; }
+  .menu .items button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.6rem; }
+  .menu .items button:hover { background: #f2f2f2; }
+  .broken-why { font-size: 0.8rem; color: #933; }
+  table.games { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  table.games td, table.games th { padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+  table.games th { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 0.03rem; }
+  h2 { font-size: 1.05rem; margin: 1rem 0 0.4rem; }
+  h3 { font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: 0.04rem; margin: 1rem 0 0.3rem; }
+
+  /* ---------- A: pages and forms ---------- */
+  .a-page { max-width: 62rem; margin: 0 auto; padding: 0 1rem; }
+  .a-lobby { display: grid; grid-template-columns: 1fr 17rem; gap: 1.5rem; }
+  .a-seat { display: grid; grid-template-columns: 1.6rem 1fr auto auto; gap: 0.5rem; align-items: center; border: 1px solid #ddd; border-radius: 4px; padding: 0.4rem 0.6rem; margin-bottom: 0.3rem; background: #fff; }
+  .a-seat.mine { background: #f1fbf1; border-color: #9c9; }
+  .a-seat .n { font-weight: bold; color: #888; text-align: center; }
+  .a-add { border: 1px dashed #aaa; border-radius: 4px; padding: 0.6rem; margin-top: 0.6rem; font-size: 0.88rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .a-members li { margin: 0.25rem 0; display: flex; gap: 0.4rem; align-items: center; }
+  .a-start { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid #ddd; display: flex; gap: 1rem; align-items: center; }
+
+  /* ---------- B: sidebar + the lobby as the board's tabs ---------- */
+  .b-shell { display: grid; grid-template-columns: 17rem 1fr; min-height: calc(100vh - 3rem); }
+  .b-side { border-right: 1px solid #ddd; background: #fafafa; padding: 0.5rem; font-size: 0.85rem; }
+  .b-side .grp { font-size: 0.7rem; text-transform: uppercase; color: #777; margin: 0.8rem 0.3rem 0.2rem; letter-spacing: 0.04rem; }
+  .b-row { padding: 0.4rem 0.5rem; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+  .b-row:hover { background: #f0f0f0; }
+  .b-row.on { background: #fff; border-color: #ccc; }
+  .b-row .l2 { font-size: 0.75rem; color: #666; }
+  .b-main { padding: 0.8rem 1.2rem; }
+  .tabs { display: flex; gap: 0.3rem; align-items: flex-end; margin-top: 0.8rem; }
+  .tab { border: 1px solid #aaa; border-bottom: none; border-radius: 6px 6px 0 0; padding: 0.35rem 0.8rem; background: #eee; cursor: pointer; font-size: 0.88rem; }
+  .tab.mine { background: #dff3df; }
+  .tab.on { font-weight: bold; box-shadow: inset 0 3px 0 #333; }
+  .tab.add { border-style: dashed; background: #fff; color: #36c; }
+  .tab .arr { font-size: 0.7rem; color: #555; padding: 0 0.15rem; }
+  .panel { border: 1px solid #aaa; border-radius: 0 6px 6px 6px; padding: 0.8rem; min-height: 11rem; background: #fff; }
+  .portraits { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .portrait { width: 8.5rem; border: 1px solid #999; border-radius: 6px; padding: 0.4rem; font-size: 0.8rem; background: #fff; cursor: pointer; }
+  .portrait:hover { box-shadow: 0 0 0 2px #2a6; }
+  .portrait.taken { background: #eee; color: #888; cursor: not-allowed; box-shadow: none; }
+  .portrait .nm { font-weight: bold; font-size: 0.85rem; }
+  .b-foot { margin-top: 0.8rem; display: flex; gap: 1rem; align-items: center; }
+
+  /* ---------- C: the pool first, games as a menu ---------- */
+  .c-games-btn { border: 1px solid #aaa; background: #fff; border-radius: 4px; padding: 0.2rem 0.6rem; position: relative; }
+  .c-games-btn .dot { position: absolute; top: -0.35rem; right: -0.35rem; background: #2a6; color: #fff; border-radius: 0.6rem; font-size: 0.65rem; padding: 0 0.3rem; }
+  .c-drop { position: absolute; top: 2.8rem; left: 1rem; width: 30rem; background: #fff; border: 1px solid #aaa; border-radius: 6px; box-shadow: 0 4px 16px #0003; z-index: 6; padding: 0.4rem; }
+  .c-drop .it { display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.6rem; padding: 0.45rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+  .c-drop .it:hover { background: #f4f4f4; }
+  .c-wrap { max-width: 70rem; margin: 0 auto; padding: 0.8rem 1rem; }
+  .c-members { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap; }
+  .c-member { border: 1px solid #ccc; border-radius: 1rem; padding: 0.15rem 0.6rem; background: #fafafa; }
+  .c-pool { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; margin-top: 0.8rem; }
+  .c-inv { border: 2px solid #ccc; border-radius: 8px; padding: 0.6rem; min-height: 10rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.82rem; background: #fff; }
+  .c-inv.mine { border-color: #5a5; background: #f1fbf1; }
+  .c-inv.theirs { background: #f3f3f3; color: #666; }
+  .c-inv .nm { font-size: 0.95rem; font-weight: bold; }
+  .c-inv .grow { flex: 1; }
+  .c-chairs { display: flex; gap: 0.6rem; margin-top: 1rem; align-items: stretch; }
+  .c-chair { flex: 1; border: 1px solid #aaa; border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.85rem; background: #fafafa; }
+  .c-chair.empty { border-style: dashed; color: #aaa; background: #fff; }
+  .c-chair.mine { background: #dff3df; }
+  .c-chair .n { font-size: 1.3rem; font-weight: bold; color: #999; }
+  .c-start { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.3rem; min-width: 12rem; }
+  .c-empty { text-align: center; margin-top: 4rem; color: #666; }
+
+  /* ---------- board stub ---------- */
+  .board { padding: 0 1rem; }
+  .board .fake { border: 1px dashed #bbb; border-radius: 6px; padding: 2.5rem; text-align: center; color: #888; margin: 0.6rem 0; }
+  .frozen { background: #fff4d0; border: 1px solid #c8a020; border-radius: 6px; padding: 0.5rem 0.8rem; margin: 0.6rem 0; font-size: 0.9rem; }
+
+  /* ---------- prototype chrome ---------- */
+  .switcher { position: fixed; bottom: 0.6rem; left: 50%; transform: translateX(-50%); background: #111; color: #fff; border-radius: 2rem; padding: 0.35rem 0.9rem; display: flex; gap: 0.7rem; align-items: center; box-shadow: 0 3px 12px #0006; font-size: 0.85rem; z-index: 10; white-space: nowrap; }
+  .switcher button { background: #333; color: #fff; border: 1px solid #555; border-radius: 1rem; padding: 0.1rem 0.6rem; }
+  .switcher select { font: inherit; background: #222; color: #fff; border: 1px solid #555; border-radius: 0.5rem; }
+  .notes { position: fixed; right: 0.5rem; bottom: 3.4rem; width: 20rem; font-size: 0.75rem; background: #fffbe6; border: 1px solid #e0c860; border-radius: 6px; padding: 0.4rem 0.6rem; z-index: 9; }
+  .notes.min p { display: none; }
+  .toast { position: fixed; top: 3.4rem; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 0.4rem 0.9rem; border-radius: 4px; font-size: 0.85rem; z-index: 11; max-width: 40rem; }
+  .toast.bad { background: #933; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="notes" class="notes"></div>
+<div class="switcher" id="switcher"></div>
+<script>
+// ---------- cast ----------
+const ACC = { you: 'Tal', sam: 'Sam', alex: 'Alex' };
+const CREATOR = 'you';
+const INV = {
+  roland: { name: 'Roland Banks', cls: 'Guardian', weak: 'Silver Twilight Acolyte' },
+  daisy:  { name: 'Daisy Walker', cls: 'Seeker',   weak: 'Paranoia' },
+  skids:  { name: '"Skids" O\'Toole', cls: 'Rogue', weak: 'Mob Enforcer' },
+  agnes:  { name: 'Agnes Baker',  cls: 'Mystic',   weak: 'Haunted' },
+  wendy:  { name: 'Wendy Adams',  cls: 'Survivor', weak: 'Amnesia' },
+};
+const POOL = ['roland', 'daisy', 'skids', 'agnes', 'wendy'];
+const LINK = 'https://eldritch.example.com/g/k3f9w2qx';
+
+// The other games in the list. The lobby game (k3f9) is built live from S.
+const OTHER_GAMES = [
+  { id: 'p2x7', state: 'live', creator: 'sam', members: ['sam', 'you', 'alex'],
+    roster: [['roland', 'you'], ['daisy', 'sam'], ['agnes', 'you']], lead: 'roland',
+    where: 'Round 3 · Investigation', waitingOn: 'daisy', ago: '12 min ago' },
+  { id: 'a8q1', state: 'done', creator: 'you', members: ['you', 'sam'],
+    roster: [['roland', 'you'], ['daisy', 'sam']], lead: 'roland',
+    where: 'Resolution 1', ago: 'Oct 24' },
+  { id: 'z0m4', state: 'broken', creator: 'sam', members: ['sam'],
+    roster: [['daisy', 'sam'], ['wendy', 'sam']], lead: 'daisy',
+    where: 'Round 5 · Investigation', ago: 'Oct 21',
+    why: 'Stopped at action 214 of 340: no option labelled "Investigate: Hallway".',
+    builds: 'started on 1e61ee4, this server runs d22758d' },
+];
+
+// ---------- state ----------
+const q = new URLSearchParams(location.search);
+const VARIANTS = { A: 'Pages and forms', B: 'Games sidebar, lobby as the tabs', C: 'Pool first, games menu' };
+const MOMENTS = {
+  1: 'Sam signs in on another machine, without the link',
+  2: 'Sam opens the link and adds Daisy',
+  3: 'Tal adds Roland and Agnes, orders the seating, picks the lead',
+  4: 'Sam clicks Agnes the moment Tal takes her',
+  5: 'Tal presses Start',
+};
+let S;
+function preset(n) {
+  const base = { view: 'lobby', members: ['you'], picks: [], lead: null, started: false,
+                 stale: null, toast: null, menu: null, open: 'k3f9', bTab: null, adding: false, cDrop: false };
+  if (n >= 2) { base.members = ['you', 'sam']; base.picks = [{ inv: 'daisy', owner: 'sam', weak: 'fixed' }]; }
+  if (n >= 3) {
+    base.picks = [{ inv: 'roland', owner: 'you', weak: 'fixed' }, { inv: 'daisy', owner: 'sam', weak: 'fixed' },
+                  { inv: 'agnes', owner: 'you', weak: 'random' }];
+    base.lead = 'roland';
+  }
+  if (n === 1) { base.members = ['you', 'sam']; base.picks = [{ inv: 'daisy', owner: 'sam', weak: 'fixed' }]; base.view = 'home'; base.open = null; base.cDrop = true; }
+  if (n === 2) { base.picks = []; base.members = ['you']; base.justJoined = true; }
+  if (n === 4) {
+    base.picks = [{ inv: 'roland', owner: 'you', weak: 'fixed' }, { inv: 'daisy', owner: 'sam', weak: 'fixed' },
+                  { inv: 'agnes', owner: 'you', weak: 'fixed' }];
+    base.lead = 'roland';
+    base.stale = 'agnes'; // Sam's screen hasn't heard that Tal just took Agnes
+  }
+  return base;
+}
+let variant = VARIANTS[q.get('variant')] ? q.get('variant') : 'A';
+let as = q.get('as') === 'sam' ? 'sam' : (q.get('as') === 'you' ? 'you' : null);
+let moment = MOMENTS[q.get('s')] ? +q.get('s') : 3;
+if (!as) as = (moment === 1 || moment === 2 || moment === 4) ? 'sam' : 'you';
+S = preset(moment);
+
+function setUrl() {
+  const p = new URLSearchParams({ variant, as, s: moment });
+  history.replaceState(null, '', '?' + p);
+}
+
+// ---------- derived ----------
+const isCreator = () => as === CREATOR;
+const ownerOf = inv => (S.picks.find(p => p.inv === inv) || {}).owner;
+const mine = p => p.owner === as;
+const name = inv => INV[inv].name;
+const deckLabel = p => p.weak === 'fixed' ? `Default deck · ${INV[p.inv].weak}` : 'Default deck · random basic weakness';
+function lobbyGame() {
+  return { id: 'k3f9', state: S.started ? 'live' : 'lobby', creator: 'you', members: S.members,
+           roster: S.picks.map(p => [p.inv, p.owner]), lead: S.lead,
+           where: S.started ? 'Round 1 · Investigation' : `${S.picks.length} of 4 picked`,
+           waitingOn: S.started ? S.picks[0] && S.picks[0].inv : null, ago: 'just now' };
+}
+function games() {
+  return [lobbyGame(), ...OTHER_GAMES].filter(g => g.members.includes(as));
+}
+function needsMe(g) { return g.state === 'live' && g.waitingOn && g.roster.some(([i, o]) => i === g.waitingOn && o === as); }
+function statusPill(g) {
+  if (needsMe(g)) return `<span class="pill needs">${name(g.waitingOn).split(' ')[0]} needs you</span>`;
+  return { lobby: '<span class="pill lobby">Lobby</span>', live: '<span class="pill live">In progress</span>',
+           done: '<span class="pill done">Finished</span>',
+           broken: '<span class="pill broken">Can\'t resume on this build</span>' }[g.state];
+}
+function rosterText(g) {
+  if (!g.roster.length) return '<span class="muted">nobody picked yet</span>';
+  return g.roster.map(([i, o]) => `${i === g.lead ? '<span class="lead">★</span>' : ''}${name(i)} <span class="muted">(${o === as ? 'you' : ACC[o]})</span>`).join(', ');
+}
+function subline(g) {
+  if (g.state === 'lobby') return isCreatorOf(g) ? 'Waiting for you to start' : `Waiting for ${ACC[g.creator]} to start`;
+  if (g.state === 'live') return needsMe(g) ? `${g.where} · your move` : `${g.where} · waiting for ${ACC[ownerOf2(g, g.waitingOn)]}`;
+  if (g.state === 'done') return `${g.where} · ${g.ago}`;
+  return g.why;
+}
+const isCreatorOf = g => g.creator === as;
+const ownerOf2 = (g, inv) => (g.roster.find(([i]) => i === inv) || [])[1];
+
+// ---------- actions ----------
+function toast(msg, bad) { S.toast = { msg, bad }; render(); setTimeout(() => { S.toast = null; render(); }, 2600); }
+function act(fn) { return (...a) => { fn(...a); render(); }; }
+const A = {
+  open: act(id => { S.menu = null; S.cDrop = false;
+    if (id === 'k3f9') { S.view = S.started ? 'board' : 'lobby'; S.open = 'k3f9'; }
+    else { S.open = id; S.view = 'other'; } }),
+  home: act(() => { S.view = 'home'; S.open = null; S.menu = null; }),
+  add(inv) {
+    if (S.stale === inv && as === 'sam') {
+      S.stale = null;
+      return toast(`Agnes Baker was just taken by Tal. Pick another investigator.`, true);
+    }
+    if (ownerOf(inv)) return toast(`${name(inv)} is already ${ACC[ownerOf(inv)]}'s.`, true);
+    if (S.picks.length >= 4) return toast('Four investigators is the most a game seats.', true);
+    if (!S.members.includes(as)) S.members.push(as);
+    S.picks.push({ inv, owner: as, weak: 'fixed' });
+    if (!S.lead) S.lead = inv;
+    S.adding = false; S.bTab = inv; render();
+  },
+  drop: act(inv => { S.picks = S.picks.filter(p => p.inv !== inv); if (S.lead === inv) S.lead = S.picks[0] ? S.picks[0].inv : null; if (S.bTab === inv) S.bTab = null; }),
+  weak: act((inv, w) => { S.picks.find(p => p.inv === inv).weak = w; }),
+  move: act((inv, d) => { const i = S.picks.findIndex(p => p.inv === inv), j = i + d;
+    if (j < 0 || j >= S.picks.length) return; [S.picks[i], S.picks[j]] = [S.picks[j], S.picks[i]]; }),
+  lead: act(inv => { S.lead = inv; }),
+  start() { S.started = true; S.view = 'board'; S.open = 'k3f9';
+    toast(as === 'you' ? 'Started. Everyone in the lobby moves to the board.' : 'Tal pressed Start.'); },
+  join: act(() => { S.justJoined = false; if (!S.members.includes(as)) S.members.push(as); }),
+  menu: act(id => { S.menu = S.menu === id ? null : id; }),
+  rare(what) { S.menu = null; toast(`${what}: in the model, rarely used, not prototyped.`); },
+  copy() { toast('Link copied.'); },
+  bTab: act(inv => { S.bTab = inv; S.adding = false; }),
+  bAdd: act(() => { S.adding = !S.adding; }),
+  cDrop: act(() => { S.cDrop = !S.cDrop; }),
+  newGame() { toast('New game: pick the scenario, get a link. Not prototyped past that.'); },
+};
+
+// ---------- shared fragments ----------
+function rareMenu(id, items) {
+  const open = S.menu === id;
+  return `<span class="menu"><button onclick="A.menu('${id}')">⋯</button>${open ? `<div class="items">${
+    items.map(t => `<button class="${/Delete|Remove/.test(t) ? 'danger' : ''}" onclick="A.rare('${t}')">${t}</button>`).join('')}</div>` : ''}</span>`;
+}
+function gameMenuItems(g) {
+  const it = [];
+  if (g.state === 'lobby') { if (isCreatorOf(g)) it.push('Remove a member', 'Delete game'); else it.push('Leave lobby'); }
+  if (g.state === 'live') { it.push('Reassign an investigator'); if (isCreatorOf(g)) it.push('Delete game'); }
+  if ((g.state === 'done' || g.state === 'broken') && isCreatorOf(g)) it.push('Delete game');
+  return it;
+}
+function weakSelect(p, disabled) {
+  return `<select ${disabled ? 'disabled' : ''} onchange="A.weak('${p.inv}', this.value)">
+    <option value="fixed" ${p.weak === 'fixed' ? 'selected' : ''}>Default deck · ${INV[p.inv].weak}</option>
+    <option value="random" ${p.weak === 'random' ? 'selected' : ''}>Default deck · random basic weakness</option></select>`;
+}
+function startBlock() {
+  if (isCreator()) {
+    const ok = S.picks.length > 0 && S.lead;
+    return `<button class="primary" ${ok ? '' : 'disabled'} onclick="A.start()">Start</button>
+      <span class="muted">${ok ? `Starts with ${S.picks.length} investigator${S.picks.length > 1 ? 's' : ''}. The roster can't change after.` : 'Add at least one investigator.'}</span>`;
+  }
+  return `<span class="muted">Waiting for Tal to start. You'll move to the board when they do.</span>`;
+}
+function joinBanner() {
+  return `<div class="frozen">You opened Tal's invite to <b>The Gathering</b>.
+    <button class="primary" onclick="A.join()">Join the lobby</button>
+    <span class="muted">or just look, as a viewer, without picking</span></div>`;
+}
+function otherGamePage(g) {
+  let body;
+  if (g.state === 'broken') body = `<div class="frozen" style="background:#fdeaea;border-color:#c66">
+      <b>This game can't be resumed on this build.</b><br>${g.why}<br>
+      <span class="muted">${g.builds}. The game is kept as it was: if the server rolls back to its build, it opens again.</span></div>`;
+  else if (g.state === 'done') body = `<div class="frozen" style="background:#f3f3f3;border-color:#bbb">Finished: ${g.where}. <button class="link">Open the final board (read-only)</button></div>`;
+  else body = `<div class="board"><div class="fake">the board of game ${g.id} (layout D, #1219)</div></div>`;
+  return `<h2>The Gathering ${statusPill(g)} ${rareMenu('g-' + g.id, gameMenuItems(g))}</h2>
+    <div class="small">${rosterText(g)}</div>${body}`;
+}
+function boardStub() {
+  // Per #1219: one tab per investigator in seating order, tinted for yours.
+  const first = (S.picks.find(mine) || S.picks[0]).inv;
+  return `<div class="board">
+    <div class="frozen">▶ <b>The Gathering has started.</b> The roster is fixed: ${S.picks.map((p, i) =>
+      `${i + 1}. ${p.inv === S.lead ? '<span class="lead">★</span>' : ''}${name(p.inv)} (${mine(p) ? 'you' : ACC[p.owner]})`).join(' · ')}.
+      <span class="muted">Handing an investigator to someone else is under ⋯.</span> ${rareMenu('board', ['Reassign an investigator'])}</div>
+    <div class="tabs">${S.picks.map(p => `<span class="tab ${mine(p) ? 'mine' : ''} ${p.inv === first ? 'on' : ''}">${p.inv === S.lead ? '★ ' : ''}${name(p.inv)}</span>`).join('')}</div>
+    <div class="panel"><div class="fake">the board (layout D from #1219), opened on ${name(first)}'s tab</div></div></div>`;
+}
+
+// ---------- variant A: pages and forms ----------
+function renderA() {
+  const top = `<header class="app"><h1>Eldritch</h1><button class="link" onclick="A.home()">Your games</button>
+    <span class="who">Signed in as ${ACC[as]} · <button class="link">Sign out</button></span></header>`;
+  if (S.view === 'home') {
+    const gs = games();
+    const groups = [['Needs you', g => needsMe(g)], ['Lobby', g => g.state === 'lobby'],
+      ['In progress', g => g.state === 'live' && !needsMe(g)], ['Finished', g => g.state === 'done'],
+      ["Can't resume on this build", g => g.state === 'broken']];
+    return top + `<div class="a-page"><h2 style="display:flex;align-items:center;gap:1rem">Your games <button class="primary" onclick="A.newGame()">New game</button></h2>
+      ${groups.map(([t, f]) => { const rows = gs.filter(f); if (!rows.length) return '';
+        return `<h3>${t}</h3><table class="games"><tr><th>Scenario</th><th>Investigators</th><th>State</th><th>Last activity</th><th></th></tr>${
+          rows.map(g => `<tr><td><button class="link" onclick="A.open('${g.id}')">The Gathering</button><div class="muted">created by ${g.creator === as ? 'you' : ACC[g.creator]}</div></td>
+            <td>${rosterText(g)}</td><td>${statusPill(g)}<div class="${g.state === 'broken' ? 'broken-why' : 'muted'}">${subline(g)}</div></td>
+            <td class="muted">${g.ago}</td><td>${rareMenu('a-' + g.id, gameMenuItems(g))}</td></tr>`).join('')}</table>`; }).join('')}</div>`;
+  }
+  if (S.view === 'other') return top + `<div class="a-page">${otherGamePage(OTHER_GAMES.find(g => g.id === S.open))}</div>`;
+  if (S.view === 'board') return top + boardStub();
+  // lobby
+  const free = POOL.filter(i => !ownerOf(i) || (as === 'sam' && S.stale === i));
+  return top + `<div class="a-page">
+    <h2>The Gathering <span class="pill lobby">Lobby</span> ${rareMenu('a-lobby', gameMenuItems(lobbyGame()))}</h2>
+    ${S.justJoined && as === 'sam' ? joinBanner() : ''}
+    <div class="a-lobby"><div>
+      <h3>Investigators, in seating order</h3>
+      ${S.picks.length ? '' : '<div class="muted">Nobody has picked yet.</div>'}
+      ${S.picks.filter(p => !(as === 'sam' && p.inv === S.stale)).map((p, i) => `<div class="a-seat ${mine(p) ? 'mine' : ''}">
+        <span class="n">${i + 1}</span>
+        <div><b>${name(p.inv)}</b> <span class="muted">${INV[p.inv].cls}</span> · ${mine(p) ? 'you' : ACC[p.owner]}<br>
+          ${mine(p) ? weakSelect(p) : `<span class="muted small">${deckLabel(p)}</span>`}
+          ${mine(p) ? ` <button class="link" onclick="A.drop('${p.inv}')">remove</button>` : ''}</div>
+        <label class="small" title="Lead investigator">${isCreator()
+          ? `<input type="radio" name="lead" ${S.lead === p.inv ? 'checked' : ''} onchange="A.lead('${p.inv}')"> ★ lead`
+          : (S.lead === p.inv ? '<span class="lead">★ lead</span>' : '')}</label>
+        <span>${isCreator() ? `<button onclick="A.move('${p.inv}',-1)">↑</button><button onclick="A.move('${p.inv}',1)">↓</button>` : ''}</span>
+      </div>`).join('')}
+      ${S.justJoined && as === 'sam' ? '' : `<div class="a-add">Add an investigator:
+        <select id="a-pick">${POOL.map(i => { const o = ownerOf(i), stale = as === 'sam' && S.stale === i;
+          return `<option value="${i}" ${o && !stale ? 'disabled' : ''}>${name(i)}${o && !stale ? ` (${o === as ? 'yours' : ACC[o] + "'s"})` : ''}</option>`; }).join('')}</select>
+        <button onclick="A.add(document.getElementById('a-pick').value)" ${free.length && S.picks.length < 4 ? '' : 'disabled'}>Add</button>
+        <span class="muted small">with its default deck. Change the weakness after adding.</span></div>`}
+      <div class="a-start">${startBlock()}</div>
+    </div><div>
+      <h3>Members</h3><ul class="a-members" style="list-style:none;padding:0;margin:0">${S.members.map(m => `<li>${ACC[m]}${m === as ? ' (you)' : ''}
+        ${m === CREATOR ? '<span class="pill">creator</span>' : ''}
+        <span class="muted small">${S.picks.filter(p => p.owner === m).length || 'no'} pick${S.picks.filter(p => p.owner === m).length === 1 ? '' : 's'}</span></li>`).join('')}</ul>
+      <h3>Invite</h3><div class="linkbox"><code>${LINK}</code><button onclick="A.copy()">Copy</button></div>
+      <div class="muted small" style="margin-top:0.3rem">Anyone on the allowlist who opens this link joins the lobby.</div>
+    </div></div></div>`;
+}
+
+// ---------- variant B: games sidebar, the lobby as the board's tabs ----------
+function renderB() {
+  const top = `<header class="app"><h1>Eldritch</h1><span class="who">Signed in as ${ACC[as]} · <button class="link">Sign out</button></span></header>`;
+  const gs = games();
+  const grp = (t, f) => { const r = gs.filter(f); return r.length ? `<div class="grp">${t}</div>` + r.map(g => `<div class="b-row ${S.open === g.id ? 'on' : ''}" onclick="A.open('${g.id}')">
+      <div>The Gathering ${statusPill(g)}</div><div class="l2">${g.roster.map(([i, o]) => `${o === as ? '<b>' : ''}${name(i).split(' ')[0].replace(/"/g, '')}${o === as ? '</b>' : ''}`).join(', ') || 'nobody yet'}</div>
+      <div class="l2 ${g.state === 'broken' ? 'broken-why' : ''}">${g.state === 'broken' ? 'stopped at action 214 · kept' : subline(g)}</div></div>`).join('') : ''; };
+  const side = `<div class="b-side"><button class="primary" style="width:100%" onclick="A.newGame()">New game</button>
+    ${grp('Needs you', needsMe)}${grp('Lobby', g => g.state === 'lobby')}${grp('In progress', g => g.state === 'live' && !needsMe(g))}
+    ${grp('Finished', g => g.state === 'done')}${grp("Can't resume on this build", g => g.state === 'broken')}</div>`;
+  let main;
+  if (S.view === 'home') main = `<div class="c-empty">Pick a game on the left, or start a new one.</div>`;
+  else if (S.view === 'other') main = otherGamePage(OTHER_GAMES.find(g => g.id === S.open));
+  else if (S.view === 'board') main = boardStub();
+  else {
+    const vis = S.picks.filter(p => !(as === 'sam' && p.inv === S.stale));
+    const sel = vis.find(p => p.inv === S.bTab) || (!S.adding && (vis.find(mine) || vis[0]));
+    const adding = S.adding || !sel;
+    const canAdd = S.picks.length < 4 && !(S.justJoined && as === 'sam');
+    const panel = adding
+      ? (S.justJoined && as === 'sam' ? '<div class="muted">Join to add an investigator.</div>' :
+        `<div class="muted small" style="margin-bottom:0.4rem">Choose an investigator. It comes with its default deck.</div><div class="portraits">${POOL.map(i => {
+          const o = ownerOf(i), stale = as === 'sam' && S.stale === i, taken = o && !stale;
+          return `<div class="portrait ${taken ? 'taken' : ''}" ${taken ? '' : `onclick="A.add('${i}')"`}><div class="nm">${name(i)}</div>${INV[i].cls}<br>
+            <span class="small">${taken ? (o === as ? 'yours' : ACC[o] + "'s") : 'free'}</span></div>`; }).join('')}</div>`)
+      : `<div style="display:flex;gap:2rem;align-items:flex-start"><div><div style="font-size:1.1rem"><b>${name(sel.inv)}</b> <span class="muted">${INV[sel.inv].cls}</span></div>
+          <div class="small">Held by ${mine(sel) ? 'you' : ACC[sel.owner]} · seat ${S.picks.indexOf(sel) + 1}${S.lead === sel.inv ? ' · <span class="lead">★ lead investigator</span>' : ''}</div>
+          <div style="margin-top:0.6rem">${mine(sel) ? weakSelect(sel) : `<span class="muted small">${deckLabel(sel)}</span>`}</div>
+          ${mine(sel) ? `<div style="margin-top:0.4rem"><button class="link" onclick="A.drop('${sel.inv}')">Remove ${name(sel.inv)}</button></div>` : ''}</div>
+          ${isCreator() ? `<div class="small" style="border-left:1px solid #ddd;padding-left:1rem"><b>As creator</b><br>
+            <button onclick="A.move('${sel.inv}',-1)">◀ earlier</button> <button onclick="A.move('${sel.inv}',1)">later ▶</button><br>
+            <button style="margin-top:0.3rem" ${S.lead === sel.inv ? 'disabled' : ''} onclick="A.lead('${sel.inv}')">★ Make lead</button></div>` : ''}</div>
+          <div class="fake muted small" style="margin-top:1rem;border:1px dashed #ccc;padding:1rem;text-align:center">after Start, this panel becomes ${name(sel.inv)}'s board</div>`;
+    main = `<h2 style="display:flex;gap:0.6rem;align-items:center">The Gathering <span class="pill lobby">Lobby</span> ${rareMenu('b-lobby', gameMenuItems(lobbyGame()))}
+        <span style="margin-left:auto" class="small">${S.members.map(m => `${ACC[m]}${m === CREATOR ? ' (creator)' : ''}`).join(' · ')}</span></h2>
+      ${S.justJoined && as === 'sam' ? joinBanner() : ''}
+      <div class="linkbox"><span>Invite:</span><code>${LINK}</code><button onclick="A.copy()">Copy</button></div>
+      <div class="tabs">${vis.map(p => `<span class="tab ${mine(p) ? 'mine' : ''} ${!adding && sel && sel.inv === p.inv ? 'on' : ''}" onclick="A.bTab('${p.inv}')">${S.lead === p.inv ? '<span class="lead">★</span> ' : ''}${name(p.inv)} <span class="muted small">${mine(p) ? '' : ACC[p.owner]}</span></span>`).join('')}
+        ${canAdd ? `<span class="tab add ${adding ? 'on' : ''}" onclick="A.bAdd()">+ Add investigator</span>` : ''}</div>
+      <div class="panel">${panel}</div>
+      <div class="b-foot">${startBlock()}</div>`;
+  }
+  return top + `<div class="b-shell">${side}<div class="b-main">${main}</div></div>`;
+}
+
+// ---------- variant C: the pool first, games as a menu ----------
+function renderC() {
+  const gs = games(), n = gs.filter(needsMe).length;
+  const drop = S.cDrop ? `<div class="c-drop">${gs.map(g => `<div class="it" onclick="A.open('${g.id}')">
+      <div><b>The Gathering</b> <span class="muted small">by ${g.creator === as ? 'you' : ACC[g.creator]} · ${g.ago}</span><div class="small">${rosterText(g)}</div>
+      <div class="small ${g.state === 'broken' ? 'broken-why' : 'muted'}">${subline(g)}</div></div><div>${statusPill(g)}</div></div>`).join('')}
+      <div style="border-top:1px solid #eee;padding:0.4rem"><button class="primary" onclick="A.newGame()">New game</button></div></div>` : '';
+  const top = `<header class="app" style="position:relative"><h1>Eldritch</h1>
+    <button class="c-games-btn" onclick="A.cDrop()">Your games ▾${n ? `<span class="dot">${n}</span>` : ''}</button>
+    <span class="who">Signed in as ${ACC[as]} · <button class="link">Sign out</button></span>${drop}</header>`;
+  if (S.view === 'home') return top + `<div class="c-empty">Signed in. Your games are in the menu above.<br><span class="small">(With exactly one game needing you, this screen would open it instead.)</span></div>`;
+  if (S.view === 'other') return top + `<div class="c-wrap">${otherGamePage(OTHER_GAMES.find(g => g.id === S.open))}</div>`;
+  if (S.view === 'board') return top + boardStub();
+  const vis = S.picks.filter(p => !(as === 'sam' && p.inv === S.stale));
+  const watching = S.justJoined && as === 'sam';
+  return top + `<div class="c-wrap">
+    <div style="display:flex;gap:1rem;align-items:center"><h2 style="margin:0">The Gathering</h2><span class="pill lobby">Lobby</span>
+      <div class="c-members">${S.members.map(m => `<span class="c-member">${ACC[m]}${m === CREATOR ? ' ✎' : ''}</span>`).join('')}</div>
+      <div class="linkbox" style="margin-left:auto"><code>${LINK}</code><button onclick="A.copy()">Copy invite</button></div>
+      ${rareMenu('c-lobby', gameMenuItems(lobbyGame()))}</div>
+    ${watching ? joinBanner() : ''}
+    <div class="c-pool">${POOL.map(i => {
+      const p = vis.find(x => x.inv === i), m = p && mine(p);
+      return `<div class="c-inv ${p ? (m ? 'mine' : 'theirs') : ''}"><div class="nm">${name(i)}</div><div class="muted">${INV[i].cls}</div><div class="grow"></div>
+        ${!p ? (watching ? '<span class="muted">free</span>' : `<button onclick="A.add('${i}')">Take ${name(i).split(' ')[0].replace(/"/g, '')}</button>`)
+          : m ? `${weakSelect(p)}<button class="link" onclick="A.drop('${i}')">give up</button>`
+          : `<span>${ACC[p.owner]}'s</span><span class="muted small">${deckLabel(p)}</span>`}</div>`; }).join('')}</div>
+    <div class="c-chairs">${[0, 1, 2, 3].map(k => { const p = vis[k];
+      if (!p) return `<div class="c-chair empty"><div class="n">${k + 1}</div>empty</div>`;
+      return `<div class="c-chair ${mine(p) ? 'mine' : ''}"><div class="n">${k + 1}</div><b>${name(p.inv)}</b><br><span class="small">${mine(p) ? 'you' : ACC[p.owner]}</span><br>
+        ${isCreator() ? `<button onclick="A.move('${p.inv}',-1)">◀</button>
+          <button title="Lead investigator" onclick="A.lead('${p.inv}')" style="${S.lead === p.inv ? 'background:#f3e1a0' : ''}">★</button>
+          <button onclick="A.move('${p.inv}',1)">▶</button>` : (S.lead === p.inv ? '<span class="lead">★ lead</span>' : '')}</div>`; }).join('')}
+      <div class="c-start">${startBlock().replace('<span class="muted">', '<span class="muted small" style="text-align:center">')}</div></div>
+    <div class="muted small" style="margin-top:0.4rem">Seats run clockwise from 1. ${isCreator() ? 'Only you, as creator, order them and pick the ★ lead.' : 'Tal, as creator, orders them and picks the ★ lead.'}</div></div>`;
+}
+
+// ---------- render ----------
+const NOTES = {
+  1: 'Sam is on a new machine with no link. Where does Sam land, and how does Sam find the lobby? The list also shows the other three states: in progress (one needs Sam), finished, and kept as unresumable.',
+  2: 'Sam has just opened the invite link. Join, then add Daisy. Switch "as" to Tal to watch Sam appear.',
+  3: 'Tal, as creator: reorder the seating, move ★ lead, change a weakness. Switch to Sam to see what is disabled for a member.',
+  4: 'Sam\'s screen still shows Agnes as free. Click to take her: the server refuses because Tal got there first.',
+  5: 'Press Start as Tal, then switch to Sam: both are on the board, the roster is frozen, and reassigning is under ⋯.',
+};
+function render() {
+  const view = { A: renderA, B: renderB, C: renderC }[variant]();
+  document.getElementById('root').innerHTML = view + (S.toast ? `<div class="toast ${S.toast.bad ? 'bad' : ''}">${S.toast.msg}</div>` : '');
+  const nmin = localStorage.getItem('lobbyNotesMin') === '1';
+  document.getElementById('notes').className = 'notes' + (nmin ? ' min' : '');
+  document.getElementById('notes').innerHTML = `<b>Moment ${moment}: ${MOMENTS[moment]}</b>
+    <button class="link" style="float:right" onclick="localStorage.setItem('lobbyNotesMin', '${nmin ? 0 : 1}'); render()">${nmin ? 'show' : 'hide'}</button>
+    <p>${NOTES[moment]}</p><p class="muted">State: ${S.started ? 'started' : 'lobby'} · seating ${S.picks.map(p => p.inv).join(' → ') || '(empty)'} · lead ${S.lead || '-'}</p>`;
+  const keys = Object.keys(VARIANTS);
+  document.getElementById('switcher').innerHTML = `
+    <button onclick="cycle(-1)">◀</button><span>${variant} (${VARIANTS[variant]})</span><button onclick="cycle(1)">▶</button>
+    <span>as <select onchange="as=this.value; S.menu=null; S.cDrop=false; setUrl(); render()">
+      <option value="you" ${as === 'you' ? 'selected' : ''}>Tal (creator)</option><option value="sam" ${as === 'sam' ? 'selected' : ''}>Sam (member)</option></select></span>
+    <span><select onchange="moment=+this.value; S=preset(moment); setUrl(); render()">${Object.entries(MOMENTS).map(([k, t]) =>
+      `<option value="${k}" ${+k === moment ? 'selected' : ''}>${k}. ${t}</option>`).join('')}</select></span>
+    <button onclick="S=preset(moment); render()">reset</button>`;
+}
+function cycle(d) { const k = Object.keys(VARIANTS); variant = k[(k.indexOf(variant) + d + k.length) % k.length]; S.menu = null; setUrl(); render(); }
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,select,textarea,[contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1);
+});
+setUrl(); render();
+</script>
+</body>
+</html>
