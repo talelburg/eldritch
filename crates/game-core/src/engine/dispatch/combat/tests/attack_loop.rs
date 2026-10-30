@@ -3,8 +3,7 @@ use crate::action::{Action, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::OptionTarget;
 use crate::state::{EnemyPhaseFrame, LocationId};
-use crate::test_support::{enemy, location};
-use crate::test_support::{TestSession, TEST_REGISTRIES};
+use crate::test_support::{enemy, location, TestSession, TEST_REGISTRIES};
 
 /// The parked loop's re-exposure: the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -223,8 +222,8 @@ fn engaged_by_two() -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(here))
         .with_seat(test_support::seat(1).at(here))
-        .with_enemy_engaged(e_a, InvestigatorId(1))
-        .with_enemy_engaged(e_b, InvestigatorId(1))
+        .with_enemy(e_a.engaged_with(InvestigatorId(1)))
+        .with_enemy(e_b.engaged_with(InvestigatorId(1)))
         .open_turn(InvestigatorId(1))
         .session()
 }

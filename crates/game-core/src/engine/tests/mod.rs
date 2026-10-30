@@ -110,7 +110,7 @@ fn fight_evade_board(fighter: Seat, enemy: StagedEnemy) -> GameStateBuilder {
         .with_registries(TEST_REGISTRIES)
         .with_seat(fighter)
         .with_location(location(HERE))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV)
 }

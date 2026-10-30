@@ -13,7 +13,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, HealthValue, Prey};
+use card_dsl::card_data::{CardKind, ClueValue, HealthValue, Prey};
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -21,7 +21,7 @@ use game_core::state::{
     MythosResume, Owner, Phase, SkillKind,
 };
 use game_core::test_support::{
-    self, act, agenda, clues, enemy, location, seat, BoardLookup as _, Either, MockRegistry, Seat,
+    self, act, agenda, clues, enemy, location, seat, AnyKind, BoardLookup as _, MockRegistry, Seat,
     StagedAgenda, TestSession,
 };
 
@@ -46,20 +46,6 @@ const PROBE_LATE_AGENDA: &str = "_stage_late_agenda";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-fn metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: name.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn enemy_kind(fight: u8, health: HealthValue, hunter: bool) -> CardKind {
     CardKind::Enemy {
         fight,
@@ -81,17 +67,17 @@ fn enemy_kind(fight: u8, health: HealthValue, hunter: bool) -> CardKind {
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_ENEMY,
                 "Stage Probe",
                 enemy_kind(4, HealthValue::PerInvestigator(3), true),
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 SPAWNER,
                 "Stage Spawner",
                 enemy_kind(1, HealthValue::Fixed(1), false),
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_LOC,
                 "Stage Room",
                 CardKind::Location {
@@ -101,7 +87,7 @@ fn registries() -> Registries {
                 },
             ))
             .with_card(test_support::test_investigator_card(PROBE_INV))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_ACT,
                 "Stage Act",
                 CardKind::Act {
@@ -109,7 +95,7 @@ fn registries() -> Registries {
                     victory: None,
                 },
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_OBJECTIVE_ACT,
                 "Stage Objective",
                 CardKind::Act {
@@ -117,12 +103,12 @@ fn registries() -> Registries {
                     victory: None,
                 },
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_AGENDA,
                 "Stage Agenda",
                 CardKind::Agenda { doom_threshold: 4 },
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 PROBE_LATE_AGENDA,
                 "Stage Late Agenda",
                 CardKind::Agenda { doom_threshold: 7 },
@@ -299,7 +285,7 @@ fn add_location_after_staging_mints_a_fresh_id() {
     let mut state = GameStateBuilder::new()
         .with_location(location(LocationId(0)))
         .build();
-    let added = state.add_location(&metadata(
+    let added = state.add_location(&test_support::test_card_metadata(
         PROBE_LOC,
         "Stage Room",
         CardKind::Location {
@@ -402,7 +388,7 @@ fn card_in_play_lists_the_cards_there() {
 
 #[test]
 fn printed_and_stock_seats_share_one_collection() {
-    let seats: Vec<Seat<Either>> = vec![
+    let seats: Vec<Seat<AnyKind>> = vec![
         seat(1).skill(SkillKind::Combat, 5).into(),
         seat(2).as_card(PROBE_INV).into(),
     ];

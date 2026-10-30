@@ -135,7 +135,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
                 // convention).
                 .in_play([GUARD_DOG, ROLAND]),
         )
-        .with_enemy_engaged(goat_spawn(), INV)
+        .with_enemy(goat_spawn().engaged_with(INV))
         .open_turn(INV)
         .session();
     let dog = session.state().in_play(INV, GUARD_DOG);

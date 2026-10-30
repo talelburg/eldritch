@@ -516,9 +516,7 @@ mod advance_act_tests {
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
-    use crate::test_support::location;
-    use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, act, TestSession, TEST_REGISTRIES};
+    use crate::test_support::{self, act, location, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {

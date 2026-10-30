@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, enemy, location, seat, Either, Printed, Seat, TestSession};
+use game_core::test_support::{self, enemy, location, seat, AnyKind, Printed, Seat, TestSession};
 
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -53,7 +53,7 @@ fn skids() -> Seat<Printed> {
 }
 
 /// `skids`'s open turn at `HERE`, which connects to `THERE`.
-fn staged(skids: impl Into<Seat<Either>>) -> GameStateBuilder {
+fn staged(skids: impl Into<Seat<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids)
@@ -199,7 +199,7 @@ fn the_ability_is_refused_outside_his_turn() {
 #[test]
 fn the_ability_is_not_offered_in_the_enemy_phase() {
     let paused = staged(skids().in_play([BEAT_COP]).deck([EMERGENCY_CACHE]))
-        .with_enemy_engaged(enemy(7).as_card(GHOUL_MINION), INV)
+        .with_enemy(enemy(7).as_card(GHOUL_MINION).engaged_with(INV))
         .session()
         .take(&TurnAction::EndTurn);
     assert_eq!(paused.state().phase, Phase::Enemy);

@@ -167,7 +167,7 @@ impl Board {
             .with_seat(other)
             .with_location(parlor)
             .with_location(test_support::location(HALLWAY))
-            .with_enemy_engaged(ghoul, self.actor)
+            .with_enemy(ghoul.engaged_with(self.actor))
             .with_enemy(acolyte)
             .with_seating([KEEPER, OTHER])
             .open_turn(self.actor)

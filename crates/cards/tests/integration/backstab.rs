@@ -51,7 +51,7 @@ fn board(agility: i8) -> GameState {
                 .actions(3),
         )
         .with_location(test_support::location(HERE))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

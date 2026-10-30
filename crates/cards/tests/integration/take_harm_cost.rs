@@ -20,8 +20,7 @@ use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::OptionTarget;
-use game_core::engine::Registries;
+use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{

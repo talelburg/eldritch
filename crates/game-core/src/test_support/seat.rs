@@ -39,10 +39,10 @@ use crate::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Investigator, InvestigatorId,
     LocationId, Owner, SkillKind, Skills, Status, UseKind,
 };
-use crate::test_support::{test_investigator, Either, Printed, Stock};
+use crate::test_support::{test_investigator, AnyKind, Printed, Stock};
 
 /// A seated investigator under construction; see [`seat`]. `K` is
-/// [`Stock`], [`Printed`] (after [`as_card`](Seat::as_card)) or [`Either`].
+/// [`Stock`], [`Printed`] (after [`as_card`](Seat::as_card)) or [`AnyKind`].
 #[derive(Debug, Clone)]
 #[must_use = "a Seat does nothing until it is passed to GameStateBuilder::with_seat"]
 pub struct Seat<K = Stock> {
@@ -303,13 +303,13 @@ impl<K> Seat<K> {
     }
 }
 
-impl From<Seat<Stock>> for Seat<Either> {
+impl From<Seat<Stock>> for Seat<AnyKind> {
     fn from(seat: Seat<Stock>) -> Self {
         seat.kind()
     }
 }
 
-impl From<Seat<Printed>> for Seat<Either> {
+impl From<Seat<Printed>> for Seat<AnyKind> {
     fn from(seat: Seat<Printed>) -> Self {
         seat.kind()
     }
@@ -404,7 +404,7 @@ impl GameStateBuilder {
     /// the seat needs a lookup (a printed investigator or a threat-area card)
     /// before the test named its registries, or as [`as_card`](Seat::as_card)
     /// describes.
-    pub fn with_seat(self, seat: impl Into<Seat<Either>>) -> Self {
+    pub fn with_seat(self, seat: impl Into<Seat<AnyKind>>) -> Self {
         let Seat {
             mut investigator,
             printed,
@@ -453,8 +453,8 @@ impl GameStateBuilder {
     /// the first seat.
     pub fn with_two_seats_led_by_the_second(
         self,
-        first: impl Into<Seat<Either>>,
-        second: impl Into<Seat<Either>>,
+        first: impl Into<Seat<AnyKind>>,
+        second: impl Into<Seat<AnyKind>>,
     ) -> Self {
         let (first, second) = (first.into(), second.into());
         let order = [first.investigator.id, second.investigator.id];

@@ -34,22 +34,9 @@ const FILLER: &str = "TEST-FILLER";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-fn metadata(code: &str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_string(),
-        name: code.to_string(),
-        text: None,
-        traits: vec![],
-        back_name: None,
-        back_text: None,
-        pack_code: "test".to_string(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn event(code: &str) -> CardMetadata {
-    metadata(
+    test_support::test_card_metadata(
+        code,
         code,
         CardKind::Event {
             class: Class::Neutral,
@@ -64,7 +51,8 @@ fn event(code: &str) -> CardMetadata {
 }
 
 fn asset(code: &str) -> CardMetadata {
-    metadata(
+    test_support::test_card_metadata(
+        code,
         code,
         CardKind::Asset {
             class: Class::Neutral,

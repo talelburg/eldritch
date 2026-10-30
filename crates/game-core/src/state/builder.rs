@@ -611,7 +611,7 @@ impl GameStateBuilder {
                 .investigators
                 .get(&investigator)
                 .unwrap_or_else(|| {
-                    panic!("with_enemy_engaged: {investigator:?} was never added to the builder")
+                    panic!("with_enemy: {enemy:?} is engaged_with({investigator:?}), who was never added to the builder")
                 })
                 .current_location;
             if let Some(enemy) = enemies.get_mut(&enemy) {

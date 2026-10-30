@@ -8,7 +8,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
+use card_dsl::card_data::{CardKind, Class, SkillIcons, Skills};
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
@@ -26,24 +26,10 @@ const ASSET: &str = "_seat_asset";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-fn metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: name.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: None,
-        kind,
-    }
-}
-
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 SEAT_INV,
                 "Seat Probe",
                 CardKind::Investigator {
@@ -58,7 +44,7 @@ fn registries() -> Registries {
                     sanity: 9,
                 },
             ))
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 ASSET,
                 "Seat Asset",
                 CardKind::Asset {

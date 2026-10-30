@@ -304,8 +304,7 @@ mod tests {
 
     use super::*;
     use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
-    use crate::test_support::enemy;
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{self, enemy, TEST_REGISTRIES};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record

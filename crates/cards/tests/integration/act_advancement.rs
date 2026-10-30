@@ -49,7 +49,7 @@ fn defeat(code: &str, damage: u8) -> TestSession {
     let enemy = test_support::enemy(FOE).as_card(code).damage(damage);
     let session = TestSession::new(
         act3_state(seat(1).at(HERE).skill(SkillKind::Combat, 4), |b| {
-            b.with_enemy_engaged(enemy, INV)
+            b.with_enemy(enemy.engaged_with(INV))
         }),
         TEST_REGISTRIES,
     )

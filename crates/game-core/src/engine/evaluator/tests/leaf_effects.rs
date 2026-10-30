@@ -291,7 +291,7 @@ fn disengage_leaves_an_enemy_engaged_with_another_investigator_engaged() {
         .with_location(location(HERE))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
-        .with_enemy_engaged(enemy, InvestigatorId(2))
+        .with_enemy(enemy.engaged_with(InvestigatorId(2)))
         .build();
     let mut events = Vec::new();
     let mut bound = ctx(1);

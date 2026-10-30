@@ -28,7 +28,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
 use game_core::test_support::{
-    enemy, location, seat, BoardLookup as _, Either, Printed, Seat, TestSession,
+    enemy, location, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -60,7 +60,7 @@ fn wendy() -> Seat<Printed> {
 /// `wendy`'s open turn at `HERE`, drawing from `bag` under
 /// [`FIRST_THEN_SECOND`].
 fn board(
-    wendy: impl Into<Seat<Either>>,
+    wendy: impl Into<Seat<AnyKind>>,
     bag: impl IntoIterator<Item = ChaosToken>,
 ) -> GameStateBuilder {
     GameStateBuilder::new()
@@ -74,7 +74,7 @@ fn board(
 
 /// Wendy's willpower test against `difficulty`, committing `commit`.
 fn willpower_test(
-    wendy: impl Into<Seat<Either>>,
+    wendy: impl Into<Seat<AnyKind>>,
     bag: impl IntoIterator<Item = ChaosToken>,
     difficulty: i8,
     commit: &[&str],
@@ -189,7 +189,7 @@ fn a_cancelled_skull_does_not_discard_baseball_bat() {
         wendy().hand([EMERGENCY_CACHE]).in_play([BASEBALL_BAT]),
         [ChaosToken::Skull, ChaosToken::Numeric(0)],
     )
-    .with_enemy_engaged(enemy(ENEMY).fight(3).health(3), INV)
+    .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
     .build();
     let bat = state.in_play(INV, BASEBALL_BAT);
     let session = TestSession::new(state, TEST_REGISTRIES)

@@ -35,7 +35,7 @@
 //! after the first would be reasoning about a board that no longer has an
 //! investigator on it. Prior art: `ability_source_control.rs`.
 
-use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -103,20 +103,6 @@ fn probe_abilities() -> Vec<Ability> {
             period: UsagePeriod::Round,
         }),
     ]
-}
-
-fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetadata {
-    CardMetadata {
-        code: code.to_string(),
-        name: name.to_string(),
-        text: None,
-        traits: vec![],
-        back_name: None,
-        back_text: None,
-        pack_code: "test".to_string(),
-        weakness: None,
-        kind,
-    }
 }
 
 /// Two locations printing the same card, an enemy on each, and three
@@ -203,7 +189,7 @@ fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
         cards: MockRegistry::new()
-            .with_card(metadata(
+            .with_card(test_support::test_card_metadata(
                 WARD,
                 "Ward",
                 CardKind::Treachery {

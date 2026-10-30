@@ -54,7 +54,7 @@ fn board(connections: &[LocationId], engaged: &[EnemyId], token: ChaosToken) -> 
         .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
         .with_chaos_bag(ChaosBag::new([token]));
     for &id in engaged {
-        builder = builder.with_enemy_engaged(enemy(id).evade(2), INV);
+        builder = builder.with_enemy(enemy(id).evade(2).engaged_with(INV));
     }
     builder.open_turn(INV).session()
 }
@@ -232,8 +232,8 @@ fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
         .with_seat(seat(2).at(HERE))
         .with_seating([INV, INV2])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_enemy_engaged(enemy(GHOUL).evade(2), INV)
-        .with_enemy_engaged(enemy(RAT).evade(2), INV)
+        .with_enemy(enemy(GHOUL).evade(2).engaged_with(INV))
+        .with_enemy(enemy(RAT).evade(2).engaged_with(INV))
         .open_turn(INV)
         .session();
     let (session, attic) = with_attic(session, &[HERE]);

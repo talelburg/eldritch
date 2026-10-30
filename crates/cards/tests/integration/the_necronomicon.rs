@@ -50,7 +50,7 @@ use game_core::state::{
     TokenResolution, UseKind, Zone,
 };
 use game_core::test_support::{
-    self, enemy, horror, location, seat, uses, BoardLookup as _, Either, Seat, TestSession,
+    self, enemy, horror, location, seat, uses, AnyKind, BoardLookup as _, Seat, TestSession,
 };
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
@@ -68,7 +68,7 @@ const ENEMY: EnemyId = EnemyId(100);
 
 /// `investigator`'s turn, alone at `HERE`, with no enemies (so the Draw
 /// action's attacks of opportunity are empty and it resolves synchronously).
-fn board(investigator: impl Into<Seat<Either>>) -> TestSession {
+fn board(investigator: impl Into<Seat<AnyKind>>) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
@@ -264,7 +264,7 @@ fn a_reveal_clause_keyed_on_auto_fail_fires_on_her_elder_sign() {
                 .in_play([(SHRIVELLING, uses(UseKind::Charges, 4))])
                 .threat_area([(NECRONOMICON, horror(3))]),
         )
-        .with_enemy_engaged(enemy(ENEMY).fight(3).health(3), INV)
+        .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
         .open_turn(INV)
         .build();
     let shrivelling = state.in_play(INV, SHRIVELLING);

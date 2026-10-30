@@ -25,7 +25,7 @@ use game_core::state::{
     EliminationCause, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     Status,
 };
-use game_core::test_support::{clues, enemy, location, seat, Either, Seat, TestSession};
+use game_core::test_support::{clues, enemy, location, seat, AnyKind, Seat, TestSession};
 
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
@@ -41,7 +41,7 @@ const GHOUL_MINION: &str = "01160";
 
 /// The agenda board — 01107 current, a Hallway and a Parlor, `investigator`
 /// seated alone — on top of `builder`, which names the moment.
-fn board_from(builder: GameStateBuilder, investigator: impl Into<Seat<Either>>) -> GameState {
+fn board_from(builder: GameStateBuilder, investigator: impl Into<Seat<AnyKind>>) -> GameState {
     board_with_hallway_to(builder, investigator, [PARLOR])
 }
 
@@ -49,7 +49,7 @@ fn board_from(builder: GameStateBuilder, investigator: impl Into<Seat<Either>>) 
 /// which `builder` stages connected back.
 fn board_with_hallway_to(
     builder: GameStateBuilder,
-    investigator: impl Into<Seat<Either>>,
+    investigator: impl Into<Seat<AnyKind>>,
     hallway_connections: impl IntoIterator<Item = LocationId>,
 ) -> GameState {
     builder
@@ -292,12 +292,12 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
 }
 
 /// [`table_at_act`], seating `seats` (numbered 1 up, in that order) as given.
-fn table_of_seats_at_act(seats: Vec<impl Into<Seat<Either>>>, act_index: usize) -> GameState {
+fn table_of_seats_at_act(seats: Vec<impl Into<Seat<AnyKind>>>, act_index: usize) -> GameState {
     let n = u32::try_from(seats.len()).expect("a handful of seats");
     // A card each for Upkeep 4.4 to draw. 01107 prints a doom threshold of 10.
     seats
         .into_iter()
-        .map(|s| Into::<Seat<Either>>::into(s).deck(["01088"]))
+        .map(|s| Into::<Seat<AnyKind>>::into(s).deck(["01088"]))
         .fold(
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,

@@ -1,6 +1,5 @@
 use super::*;
-use crate::test_support::TEST_REGISTRIES;
-use crate::test_support::{enemy, location};
+use crate::test_support::{enemy, location, TEST_REGISTRIES};
 
 #[test]
 fn elimination_step1_removes_controlled_and_owned_cards() {

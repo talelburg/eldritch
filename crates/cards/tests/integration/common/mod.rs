@@ -1,8 +1,8 @@
 //! Shared helpers for the card integration tests.
 
 use cards::TEST_REGISTRIES;
-use game_core::state::LocationId;
-use game_core::test_support::{location, TestSession};
+use game_core::state::{EnemyId, LocationId};
+use game_core::test_support::{enemy, location, StagedEnemy, TestSession};
 
 /// The Attic 01113: *"**Forced** - After you enter the Attic: Take 1 horror."*
 const ATTIC: &str = "01113";
@@ -35,4 +35,12 @@ pub(crate) fn with_attic(
         attic = Some(id);
     });
     (session, attic.expect("minted"))
+}
+
+/// A stock enemy `id` whose attack deals `damage` damage and `horror` horror:
+/// the attacker a test about being attacked stages. Set its health with
+/// `.health(n)`, and engage it with `.engaged_with(inv)`, which places it at
+/// that investigator's location.
+pub(crate) fn attacker(id: impl Into<EnemyId>, damage: u8, horror: u8) -> StagedEnemy {
+    enemy(id).attack_damage(damage).attack_horror(horror)
 }

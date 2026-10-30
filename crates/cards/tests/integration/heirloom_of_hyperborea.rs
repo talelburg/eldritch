@@ -174,7 +174,7 @@ fn a_non_spell_played_from_a_reaction_window_offers_nothing() {
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::location(HERE))
         .with_seat(agnes(&[DODGE]))
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.engaged_with(INV))
         .open_turn(INV)
         .build();
     let dodge = OptionTarget::HandCardByCode {

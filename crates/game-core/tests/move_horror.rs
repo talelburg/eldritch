@@ -29,7 +29,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{
-    self, horror, seat, test_investigator_card, BoardLookup as _, Either, MockRegistry, Seat,
+    self, horror, seat, test_investigator_card, AnyKind, BoardLookup as _, MockRegistry, Seat,
     TestSession,
 };
 use game_core::{assert_event, assert_no_event};
@@ -114,7 +114,7 @@ fn registries() -> Registries {
 }
 
 /// `seated` on their open turn, alone at `HERE`.
-fn board(seated: impl Into<Seat<Either>>) -> GameState {
+fn board(seated: impl Into<Seat<AnyKind>>) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_location(test_support::location(HERE))

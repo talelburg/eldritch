@@ -111,8 +111,7 @@ fn lift_in_play_card(cx: &mut Cx, code: &str) -> Option<CardInPlay> {
 mod tests {
     use super::*;
     use crate::state::{CardCode, CardInstanceId, GameState, GameStateBuilder, LocationId, Owner};
-    use crate::test_support::location;
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{self, location, TEST_REGISTRIES};
 
     const INV: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);

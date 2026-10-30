@@ -17,6 +17,7 @@
 //! pile from the game."* Psychosis 01099 reacts to the same horror:
 //! *"**Forced** - After you take 1 or more horror: Take 1 direct damage."*
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -24,9 +25,7 @@ use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
 };
-use game_core::test_support::{
-    self, seat, BoardLookup as _, Either, Printed, Seat, StagedEnemy, TestSession,
-};
+use game_core::test_support::{self, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const AGNES: &str = "01004";
@@ -37,6 +36,9 @@ const PSYCHOSIS: &str = "01099";
 const GUTS: &str = "01089";
 
 const INV: InvestigatorId = InvestigatorId(1);
+/// The enemy every test here stages: 3 health and an attack of 1 horror and
+/// no damage, so its attack is itself a horror placement and it survives
+/// Agnes's 1 damage.
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
@@ -46,17 +48,8 @@ fn agnes() -> Seat<Printed> {
     seat(1).as_card(AGNES).at(HERE)
 }
 
-/// A 3-health enemy whose attack deals 1 horror and no damage, so its
-/// attack is itself a horror placement and survives Agnes's 1 damage.
-fn horror_enemy() -> StagedEnemy {
-    test_support::enemy(ENEMY)
-        .health(3)
-        .attack_damage(0)
-        .attack_horror(1)
-}
-
 /// `agnes`'s turn at `HERE`, with a second location, `THERE`, and no enemy.
-fn staged(agnes: impl Into<Seat<Either>>) -> GameStateBuilder {
+fn staged(agnes: impl Into<Seat<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(agnes)
@@ -65,11 +58,11 @@ fn staged(agnes: impl Into<Seat<Either>>) -> GameStateBuilder {
         .open_turn(INV)
 }
 
-/// `agnes` at her turn menu with [`horror_enemy`] engaged with her (so it is
-/// at her location).
-fn board(agnes: impl Into<Seat<Either>>) -> TestSession {
+/// `agnes` at her turn menu with the [`ENEMY`] engaged with her (so it is at
+/// her location).
+fn board(agnes: impl Into<Seat<AnyKind>>) -> TestSession {
     staged(agnes)
-        .with_enemy_engaged(horror_enemy(), INV)
+        .with_enemy(attacker(ENEMY, 0, 1).health(3).engaged_with(INV))
         .session()
 }
 
@@ -114,7 +107,7 @@ fn her_reaction_to_abandoned_and_alone_waits_for_the_revelation_and_precedes_psy
             .discard([GUTS])
             .deck([ABANDONED_AND_ALONE, GUTS]),
     )
-    .with_enemy(horror_enemy().at(HERE))
+    .with_enemy(attacker(ENEMY, 0, 1).health(3).at(HERE))
     .session()
     .take(&TurnAction::Draw { investigator: INV });
 
@@ -170,7 +163,7 @@ fn horror_partly_soaked_still_offers_her_reaction() {
 #[test]
 fn no_enemy_at_her_location_means_no_offer() {
     let session = staged(agnes())
-        .with_enemy(horror_enemy().at(THERE))
+        .with_enemy(attacker(ENEMY, 0, 1).health(3).at(THERE))
         .session()
         .take_horror(INV, 1);
 

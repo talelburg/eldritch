@@ -72,14 +72,14 @@ fn fight_board(investigator: Seat, attack_damage: u8) -> TestSession {
         .with_location(location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
-        .with_enemy_engaged(
+        .with_enemy(
             enemy(RETALIATOR)
                 .retaliate()
                 .fight(5)
                 .health(5)
                 .attack_damage(attack_damage)
-                .attack_horror(0),
-            INV,
+                .attack_horror(0)
+                .engaged_with(INV),
         )
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

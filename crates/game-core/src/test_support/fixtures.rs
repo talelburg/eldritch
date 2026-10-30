@@ -7,15 +7,14 @@
 //!
 //! # `#[non_exhaustive]` interaction
 //!
-//! [`Investigator`] and [`Location`] are `#[non_exhaustive]`, so
-//! downstream test crates cannot construct them via struct literal —
-//! they MUST go through the stagers. That's deliberate (it forces
-//! a single source of test defaults) but it also means **adding a
-//! field to those structs requires updating these fixtures in the
-//! same PR**, otherwise the new field defaults to whatever
-//! `test_investigator` / `test_location` set, which may not match the
-//! field's intent. Reviewers: flag a missing fixture update when a
-//! field addition lands.
+//! [`Investigator`], [`Enemy`] and [`Location`] are `#[non_exhaustive]`, so
+//! downstream test crates cannot construct them via struct literal — they MUST
+//! go through the stagers. That's deliberate (it forces a single source of
+//! test defaults) but it also means **adding a field to those structs requires
+//! updating these fixtures in the same PR**, otherwise the new field defaults
+//! to whatever `test_investigator` / `test_enemy` / `test_location` set, which
+//! may not match the field's intent. Reviewers: flag a missing fixture update
+//! when a field addition lands.
 
 use std::collections::BTreeSet;
 
@@ -77,6 +76,28 @@ pub fn test_investigator(id: u32) -> Investigator {
     }
 }
 
+/// Metadata for a synthetic card `code` named `name`, of `kind`: no traits, no
+/// text, no back, not a weakness.
+///
+/// For an integration binary that registers its own synthetic cards on a
+/// [`MockRegistry`](crate::test_support::MockRegistry). It builds metadata,
+/// not a probe card: the abilities a probe exists for stay in the test file
+/// that reads them.
+#[must_use]
+pub fn test_card_metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
+    CardMetadata {
+        code: code.to_owned(),
+        name: name.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_mock".to_owned(),
+        weakness: None,
+        kind,
+    }
+}
+
 /// Metadata for a stock investigator card printed as `code`: 3 in every
 /// skill, 8 health, 8 sanity, Neutral, no traits, named after its code.
 ///
@@ -85,16 +106,10 @@ pub fn test_investigator(id: u32) -> Investigator {
 /// one ability shape on otherwise identical printed stats.
 #[must_use]
 pub fn test_investigator_card(code: &str) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: code.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: None,
-        kind: CardKind::Investigator {
+    test_card_metadata(
+        code,
+        code,
+        CardKind::Investigator {
             class: Class::Neutral,
             skills: Skills {
                 willpower: 3,
@@ -105,13 +120,13 @@ pub fn test_investigator_card(code: &str) -> CardMetadata {
             health: 8,
             sanity: 8,
         },
-    }
+    )
 }
 
 /// The stock location [`location`](super::location) starts from.
 ///
-/// - Shroud 2, 0 clues, revealed.
-/// - No connections.
+/// - Shroud 2, a printed clue value of 0, 0 clues, revealed.
+/// - No connections, nothing attached and no cards at it.
 /// - `code` is `CardCode("_test_loc_{id}")` — underscore-prefixed so it
 ///   can't collide with real `ArkhamDB` codes.
 #[must_use]

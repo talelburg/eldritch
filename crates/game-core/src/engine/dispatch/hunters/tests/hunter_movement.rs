@@ -1,8 +1,7 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
-use crate::test_support::{enemy, location};
-use crate::test_support::{StagedEnemy, StagedLocation, TEST_REGISTRIES};
+use crate::test_support::{enemy, location, StagedEnemy, StagedLocation, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Location "A".

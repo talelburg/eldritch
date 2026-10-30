@@ -50,7 +50,7 @@ fn engage_action_takes_an_enemy_from_another_investigator_disengaging_them_first
     let other = InvestigatorId(2);
     let session = engage_board(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
-        .with_enemy_engaged(enemy(TARGET), other)
+        .with_enemy(enemy(TARGET).engaged_with(other))
         .session()
         .take(&ENGAGE);
 
@@ -70,7 +70,7 @@ fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
     let session = engage_board(seat(1).at(HERE))
         // Not engaged yet.
         .with_enemy(enemy(TARGET).at(HERE))
-        .with_enemy_engaged(attacker(301, 1, 0), INV)
+        .with_enemy(attacker(301, 1, 0).engaged_with(INV))
         .session()
         .take(&ENGAGE);
 
@@ -99,7 +99,7 @@ fn engage_action_rejects_enemy_not_at_location() {
 #[test]
 fn engage_action_rejects_already_engaged_enemy() {
     let state = engage_board(seat(1).at(HERE))
-        .with_enemy_engaged(enemy(TARGET), INV)
+        .with_enemy(enemy(TARGET).engaged_with(INV))
         .build();
     // Already engaged → Engage is not legal.
     assert!(!offers_engage(&state, TARGET));

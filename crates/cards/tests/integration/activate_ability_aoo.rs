@@ -35,6 +35,7 @@
 //! effect of their own — have no corpus card to exercise them and are covered by
 //! `crates/game-core/tests/action_designator_aoo.rs`.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
@@ -67,14 +68,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const ATTACKER: EnemyId = EnemyId(7);
 
-/// A ready enemy dealing `damage` / 0 horror, with 5 health. Engage it with
-/// `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(damage: u8) -> StagedEnemy {
-    test_support::enemy(ATTACKER)
-        .attack_damage(damage)
-        .health(5)
-}
-
 /// `investigator`'s turn at the Study, engaged by `attacker`, against a
 /// single-`0` chaos bag (for a skill test the activation starts).
 fn engaged_session(investigator: Seat, attacker: StagedEnemy) -> TestSession {
@@ -83,7 +76,7 @@ fn engaged_session(investigator: Seat, attacker: StagedEnemy) -> TestSession {
         .with_location(test_support::location(HERE))
         .with_seat(investigator)
         .open_turn(INV)
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.engaged_with(INV))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()
 }
@@ -130,7 +123,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
             .in_play([GUARD_DOG])
             .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))])
             .harm(1, 0),
-        ready_attacker(2),
+        attacker(ATTACKER, 2, 0).health(5),
     );
     let dog = session.state().card(INV, GUARD_DOG);
 
@@ -185,7 +178,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
     let session = activate(
         engaged_session(
             seat(1).at(HERE).in_play([GUARD_DOG, MACHETE]),
-            ready_attacker(2),
+            attacker(ATTACKER, 2, 0).health(5),
         ),
         MACHETE,
         0,
@@ -221,7 +214,10 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
     // constant +1 combat).
     let session = activate(
-        engaged_session(seat(1).at(HERE).in_play([BEAT_COP]), ready_attacker(2)),
+        engaged_session(
+            seat(1).at(HERE).in_play([BEAT_COP]),
+            attacker(ATTACKER, 2, 0).health(5),
+        ),
         BEAT_COP,
         1,
     );
@@ -269,7 +265,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
             seat(1)
                 .at(HERE)
                 .in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))]),
-            ready_attacker(2),
+            attacker(ATTACKER, 2, 0).health(5),
         ),
         FLASHLIGHT,
         0,
@@ -315,7 +311,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
             .harm(2, 2)
             .hand([DODGE])
             .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))]),
-        ready_attacker(2),
+        attacker(ATTACKER, 2, 0).health(5),
     );
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
@@ -373,7 +369,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
                 .at(HERE)
                 .harm(2, 0)
                 .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))]),
-            ready_attacker(50),
+            attacker(ATTACKER, 50, 0).health(5),
         ),
         FIRST_AID,
         0,

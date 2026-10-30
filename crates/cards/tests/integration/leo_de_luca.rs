@@ -11,6 +11,7 @@
 //! lose 1 action from your total pool of actions for the turn. If you then play
 //! a second copy of the card, you gain a further additional action."*
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionTarget};
@@ -18,9 +19,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    self, seat, BoardLookup as _, Either, Seat, StagedEnemy, TestSession,
-};
+use game_core::test_support::{self, seat, AnyKind, BoardLookup as _, Seat, TestSession};
 
 const LEO: &str = "01048";
 const SKIDS: &str = "01003";
@@ -48,18 +47,12 @@ fn with_leo() -> Seat {
 }
 
 /// `investigator`'s open turn at `HERE`.
-fn staged(investigator: impl Into<Seat<Either>>) -> GameStateBuilder {
+fn staged(investigator: impl Into<Seat<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(test_support::location(HERE))
         .open_turn(INV)
-}
-
-/// A ready enemy whose attack deals 2 damage and no horror: enough to defeat
-/// Leo's 2 health.
-fn ghoul() -> StagedEnemy {
-    test_support::enemy(100).attack_damage(2).attack_horror(0)
 }
 
 /// The actions they can still take this turn: standard plus additional.
@@ -184,7 +177,9 @@ fn with_leo_and_skids_grant_leos_is_used_first_without_asking() {
 #[test]
 fn leo_defeated_after_the_first_action_costs_no_action() {
     let session = staged(with_leo())
-        .with_enemy_engaged(ghoul(), INV)
+        // An attack of 2 damage and no horror: enough to defeat Leo's 2
+        // health.
+        .with_enemy(attacker(100, 2, 0).engaged_with(INV))
         .session();
     let leo = session.state().in_play(INV, LEO);
     let session = session.take(&RESOURCE);

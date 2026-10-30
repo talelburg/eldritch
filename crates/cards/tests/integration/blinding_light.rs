@@ -70,7 +70,7 @@ fn staged(investigator: Seat, token: ChaosToken, engaged: &[EnemyId]) -> GameSta
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]));
     for &id in engaged {
-        builder = builder.with_enemy_engaged(evasive_enemy(id), INV);
+        builder = builder.with_enemy(evasive_enemy(id).engaged_with(INV));
     }
     builder
 }

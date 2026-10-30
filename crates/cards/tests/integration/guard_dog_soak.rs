@@ -30,6 +30,7 @@
 //! window between assigning and placing. See
 //! `docs/adr/0009-damage-is-assigned-then-placed.md`.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -48,14 +49,6 @@ const GUARD_DOG: &str = "01021";
 /// reaction. A damage soaker that legally co-exists with Guard Dog (Body
 /// vs Ally slot) and never reacts — used for the self-binding case.
 const BULLETPROOF_VEST: &str = "01094";
-
-/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
-/// with `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(id: u32, damage: u8, max_health: u8) -> StagedEnemy {
-    test_support::enemy(id)
-        .attack_damage(damage)
-        .health(max_health)
-}
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
@@ -84,7 +77,7 @@ fn soak_state(assets: &[&str], damage: u8, enemies: Vec<StagedEnemy>) -> GameSta
                 .with_location(test_support::location(HERE))
                 .with_seat(investigator)
                 .open_turn(INV),
-            |builder, enemy| builder.with_enemy_engaged(enemy, INV),
+            |builder, enemy| builder.with_enemy(enemy.engaged_with(INV)),
         )
         .build()
 }
@@ -155,7 +148,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let inv_id = INV;
     // Attack deals 2 damage; Guard Dog (health 3) soaks all of it, the
     // investigator takes none.
-    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![attacker(7, 2, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
     // Distribute the attack: assign both points onto Guard Dog.
@@ -232,7 +225,7 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let inv_id = INV;
     // Attack deals 3 damage = Guard Dog's printed health → the assignment is
     // lethal, and the dog is defeated once it is placed.
-    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 3, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![attacker(7, 3, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(
@@ -316,7 +309,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
     // The attacker has 1 health, so Guard Dog's 1 retaliate damage defeats it
     // in the `when` cell of its own attack's damage. Enemy phase, so it *would*
     // have exhausted had it survived (unlike the AoO/Retaliate cases).
-    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 1)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![attacker(7, 2, 0).health(1)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
     let session = fire_retaliate(
@@ -364,7 +357,7 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // survived); a fresh 2-damage attack pushes it to 4 >= 3 → defeated.
     let enemy_id = EnemyId(7);
     let inv_id = INV;
-    let mut state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 3)]);
+    let mut state = soak_state(&[GUARD_DOG], 0, vec![attacker(7, 2, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
     // Survived a prior attack: 2 already accumulated (under health 3).
     preload_guard_dog(&mut state, 2);
@@ -431,7 +424,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let state = soak_state(
         &[GUARD_DOG, BULLETPROOF_VEST],
         0,
-        vec![ready_attacker(7, 2, 3)],
+        vec![attacker(7, 2, 0).health(3)],
     );
     let dog = state.in_play(INV, GUARD_DOG);
     let vest = state.in_play(INV, BULLETPROOF_VEST);
@@ -519,7 +512,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let state = soak_state(
         &[GUARD_DOG],
         0,
-        vec![ready_attacker(7, 1, 3), ready_attacker(8, 1, 3)],
+        vec![attacker(7, 1, 0).health(3), attacker(8, 1, 0).health(3)],
     );
     let dog = state.in_play(INV, GUARD_DOG);
 
@@ -657,7 +650,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).
-    let attacker = ready_attacker(7, 2, 3);
+    let attacker = attacker(7, 2, 0).health(3);
 
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -665,7 +658,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         .with_location(hallway)
         .with_seat(seat(1).at(from).in_play([GUARD_DOG]))
         .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
+        .with_enemy(attacker.engaged_with(inv_id))
         .build();
     let dog = state.in_play(INV, GUARD_DOG);
 
@@ -782,7 +775,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     // assigned to the investigator — landing on the investigator card's
     // `accumulated_damage`. The investigator has 8 health, so 2 < 8 →
     // the investigator survives.
-    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 5, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![attacker(7, 5, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
@@ -853,7 +846,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
     // 8 >= 8 → the investigator is eliminated (Defeated), not the card
     // discarded to a pile.
-    let state = soak_state(&[GUARD_DOG], 7, vec![ready_attacker(7, 4, 3)]);
+    let state = soak_state(&[GUARD_DOG], 7, vec![attacker(7, 4, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(
@@ -917,7 +910,7 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
     // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The
     // investigator is eliminated in step 2, draining cards_in_play to
     // removed_from_game before the asset sweep runs.
-    let mut state = soak_state(&[GUARD_DOG], 5, vec![ready_attacker(7, 4, 3)]);
+    let mut state = soak_state(&[GUARD_DOG], 5, vec![attacker(7, 4, 0).health(3)]);
     let dog = state.in_play(INV, GUARD_DOG);
     preload_guard_dog(&mut state, 2);
 

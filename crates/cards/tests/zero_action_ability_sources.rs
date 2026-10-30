@@ -82,8 +82,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::Registries;
-use game_core::engine::{InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -214,7 +213,7 @@ fn board_seating(mine: Seat) -> GameState {
         .with_location(here)
         .with_location(there)
         .with_location(far)
-        .with_enemy_engaged(nearby, MINE)
+        .with_enemy(nearby.engaged_with(MINE))
         .with_enemy(distant)
         .with_active_investigator(MINE)
         .with_seating([MINE, NEIGHBOUR, STRANGER])

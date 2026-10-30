@@ -37,7 +37,11 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::location(HERE))
         .with_seat(seat(1).at(HERE))
-        .with_enemy_engaged(test_support::enemy(ATTACKER).as_card("01102"), LEAD)
+        .with_enemy(
+            test_support::enemy(ATTACKER)
+                .as_card("01102")
+                .engaged_with(LEAD),
+        )
         .open_turn(LEAD)
         // The card places doom on the current agenda, so one must be current
         // for the effect to have the potential to change the game state (RR

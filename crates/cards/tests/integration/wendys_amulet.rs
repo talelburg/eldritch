@@ -303,7 +303,12 @@ fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity
                 .deck([GUTS]),
         )
         .open_turn(INV)
-        .with_enemy_engaged(enemy(ATTACKER).attack_damage(1).attack_horror(0), INV)
+        .with_enemy(
+            enemy(ATTACKER)
+                .attack_damage(1)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
         .session();
     let resources = s.state().investigators[&INV].resources;
 

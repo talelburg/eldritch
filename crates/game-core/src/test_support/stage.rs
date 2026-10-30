@@ -65,11 +65,11 @@ pub struct Printed;
 /// It is what the builder takes, and the common type for a collection that
 /// mixes the two: `vec![seat(1).into(), seat(2).as_card(..).into()]`.
 #[derive(Debug, Clone, Copy)]
-pub struct Either;
+pub struct AnyKind;
 
 /// Whether `code` has the shape of a printed `ArkhamDB` code — five digits
 /// and an optional lowercase letter (`01160`, `01145b`).
-pub(crate) fn is_printed_code(code: &str) -> bool {
+fn is_printed_code(code: &str) -> bool {
     let digits = code
         .strip_suffix(|c: char| c.is_ascii_lowercase())
         .unwrap_or(code);
@@ -82,21 +82,20 @@ pub(crate) fn is_printed_code(code: &str) -> bool {
 ///
 /// If `code` has the shape of a printed `ArkhamDB` code: a stock piece may
 /// model an engine primitive but not impersonate a printed card (ADR 0016), so
-/// a printed card is staged through `as_card`, which brings its printed
-/// fields. `stager` names the call for the message (`"enemy(3)"`).
-pub(crate) fn synthetic_code(stager: &str, code: impl Into<CardCode>) -> CardCode {
-    let code = code.into();
+/// a printed card is staged the way that reads its printed fields. `call`
+/// names the call for the message (`"enemy(3).code(01160)"`), and `remedy`
+/// says how to stage the printed card instead.
+pub(crate) fn synthetic_code(call: &str, code: CardCode, remedy: &str) -> CardCode {
     assert!(
         !is_printed_code(code.as_str()),
-        "{stager}.code({code}): {code} is a printed ArkhamDB code, and a stock piece can't \
-         impersonate a printed card (ADR 0016). Stage the card with `.as_card(\"{code}\")`, \
-         which reads its printed fields, or use a synthetic code"
+        "{call}: {code} is a printed ArkhamDB code, and a stock piece can't impersonate a \
+         printed card (ADR 0016). {remedy}, or use a synthetic code"
     );
     code
 }
 
 /// An enemy under construction; see [`enemy`]. `K` is [`Stock`], [`Printed`]
-/// or [`Either`].
+/// or [`AnyKind`].
 #[derive(Debug, Clone)]
 #[must_use = "a staged enemy does nothing until it is passed to with_enemy, place or mint"]
 pub struct StagedEnemy<K = Stock> {
@@ -109,9 +108,8 @@ pub struct StagedEnemy<K = Stock> {
 
 /// Start staging the enemy `id`, a stock enemy.
 ///
-/// With no setters it has fight 2, evade 2 and health 2, attacks for 1 damage
-/// and 0 horror, has no keywords, and is not spawned, ready and unengaged,
-/// owned by the encounter deck, with a synthetic code no registry knows.
+/// With no setters it is the stock enemy `test_enemy` builds, in
+/// `test_support/fixtures.rs`, whose doc lists its values.
 pub fn enemy(id: impl Into<EnemyId>) -> StagedEnemy<Stock> {
     let EnemyId(id) = id.into();
     StagedEnemy {
@@ -158,7 +156,12 @@ impl StagedEnemy<Stock> {
     /// If `code` has the shape of a printed `ArkhamDB` code; stage that card
     /// with [`as_card`](Self::as_card).
     pub fn code(self, code: impl Into<CardCode>) -> Self {
-        let code = synthetic_code(&format!("enemy({})", self.staged.piece.id.0), code);
+        let code = code.into();
+        let code = synthetic_code(
+            &format!("enemy({}).code({code})", self.staged.piece.id.0),
+            code.clone(),
+            &format!("Stage the card with `.as_card(\"{code}\")`, which reads its printed fields"),
+        );
         self.printed(|enemy| enemy.code = code)
     }
 
@@ -268,7 +271,7 @@ impl<K> StagedEnemy<K> {
             .resolve(Some(registries.cards), investigator_count)
     }
 
-    fn either(self) -> StagedEnemy<Either> {
+    fn any_kind(self) -> StagedEnemy<AnyKind> {
         StagedEnemy {
             staged: self.staged,
             engaged: self.engaged,
@@ -277,32 +280,20 @@ impl<K> StagedEnemy<K> {
     }
 }
 
-impl From<StagedEnemy<Stock>> for StagedEnemy<Either> {
+impl From<StagedEnemy<Stock>> for StagedEnemy<AnyKind> {
     fn from(enemy: StagedEnemy<Stock>) -> Self {
-        enemy.either()
+        enemy.any_kind()
     }
 }
 
-impl From<StagedEnemy<Printed>> for StagedEnemy<Either> {
+impl From<StagedEnemy<Printed>> for StagedEnemy<AnyKind> {
     fn from(enemy: StagedEnemy<Printed>) -> Self {
-        enemy.either()
-    }
-}
-
-/// A bare [`Enemy`], staged as it stands — with no engagement to resolve, even
-/// if its `engaged_with` is set.
-impl From<Enemy> for StagedEnemy<Either> {
-    fn from(enemy: Enemy) -> Self {
-        Self {
-            staged: Staged::stock(enemy),
-            engaged: None,
-            kind: PhantomData,
-        }
+        enemy.any_kind()
     }
 }
 
 /// A location under construction; see [`location`]. `K` is [`Stock`],
-/// [`Printed`] or [`Either`].
+/// [`Printed`] or [`AnyKind`].
 #[derive(Debug, Clone)]
 #[must_use = "a staged location does nothing until it is passed to with_location, place or mint"]
 pub struct StagedLocation<K = Stock> {
@@ -312,9 +303,8 @@ pub struct StagedLocation<K = Stock> {
 
 /// Start staging the location `id`, a stock location.
 ///
-/// With no setters it has shroud 2 and a printed clue value of 0, and is
-/// revealed with no clues on it, no connections and nothing attached, with a
-/// synthetic code no registry knows.
+/// With no setters it is the stock location `test_location` builds, in
+/// `test_support/fixtures.rs`, whose doc lists its values.
 ///
 /// A staged location is revealed with no clues whether stock or printed:
 /// staging never places printed clues as revealing would. Say otherwise with
@@ -364,7 +354,12 @@ impl StagedLocation<Stock> {
     /// If `code` has the shape of a printed `ArkhamDB` code; stage that card
     /// with [`as_card`](Self::as_card).
     pub fn code(self, code: impl Into<CardCode>) -> Self {
-        let code = synthetic_code(&format!("location({})", self.staged.piece.id.0), code);
+        let code = code.into();
+        let code = synthetic_code(
+            &format!("location({}).code({code})", self.staged.piece.id.0),
+            code.clone(),
+            &format!("Stage the card with `.as_card(\"{code}\")`, which reads its printed fields"),
+        );
         self.printed(|location| location.code = code)
     }
 
@@ -430,7 +425,7 @@ impl<K> StagedLocation<K> {
         self.staged.resolve(Some(registries.cards), 1)
     }
 
-    fn either(self) -> StagedLocation<Either> {
+    fn any_kind(self) -> StagedLocation<AnyKind> {
         StagedLocation {
             staged: self.staged,
             kind: PhantomData,
@@ -438,25 +433,15 @@ impl<K> StagedLocation<K> {
     }
 }
 
-impl From<StagedLocation<Stock>> for StagedLocation<Either> {
+impl From<StagedLocation<Stock>> for StagedLocation<AnyKind> {
     fn from(location: StagedLocation<Stock>) -> Self {
-        location.either()
+        location.any_kind()
     }
 }
 
-impl From<StagedLocation<Printed>> for StagedLocation<Either> {
+impl From<StagedLocation<Printed>> for StagedLocation<AnyKind> {
     fn from(location: StagedLocation<Printed>) -> Self {
-        location.either()
-    }
-}
-
-/// A bare [`Location`], staged as it stands.
-impl From<Location> for StagedLocation<Either> {
-    fn from(location: Location) -> Self {
-        Self {
-            staged: Staged::stock(location),
-            kind: PhantomData,
-        }
+        location.any_kind()
     }
 }
 
@@ -468,7 +453,7 @@ impl GameStateBuilder {
     /// Test-only, like [`with_seat`](Self::with_seat): a scenario puts its
     /// locations into play with
     /// [`add_location`](GameState::add_location).
-    pub fn with_location(mut self, location: impl Into<StagedLocation<Either>>) -> Self {
+    pub fn with_location(mut self, location: impl Into<StagedLocation<AnyKind>>) -> Self {
         self.stage_location(location.into().staged);
         self
     }
@@ -483,7 +468,7 @@ impl GameStateBuilder {
     ///
     /// [`build`](Self::build) panics if the enemy is engaged with an
     /// investigator that was never added.
-    pub fn with_enemy(mut self, enemy: impl Into<StagedEnemy<Either>>) -> Self {
+    pub fn with_enemy(mut self, enemy: impl Into<StagedEnemy<AnyKind>>) -> Self {
         let StagedEnemy {
             staged, engaged, ..
         } = enemy.into();
@@ -493,21 +478,6 @@ impl GameStateBuilder {
             self.stage_engagement(id, investigator);
         }
         self
-    }
-
-    /// Add `enemy` engaged with `investigator`, placed at that investigator's
-    /// location at [`build`](Self::build) — the same as
-    /// `with_enemy(enemy(..).engaged_with(investigator))`.
-    ///
-    /// # Panics
-    ///
-    /// [`build`](Self::build) panics if `investigator` was never added.
-    pub fn with_enemy_engaged(
-        self,
-        enemy: impl Into<StagedEnemy<Either>>,
-        investigator: InvestigatorId,
-    ) -> Self {
-        self.with_enemy(enemy.into().engaged_with(investigator))
     }
 }
 

@@ -38,8 +38,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::Registries;
-use game_core::engine::{self, PromptNature};
+use game_core::engine::{self, PromptNature, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{

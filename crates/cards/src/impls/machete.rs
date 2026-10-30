@@ -162,7 +162,7 @@ mod tests {
             for (id, engaged_with) in engagements {
                 let enemy = test_support::enemy(*id);
                 builder = match engaged_with {
-                    Some(investigator) => builder.with_enemy_engaged(enemy, *investigator),
+                    Some(investigator) => builder.with_enemy(enemy.engaged_with(*investigator)),
                     None => builder.with_enemy(enemy),
                 };
             }

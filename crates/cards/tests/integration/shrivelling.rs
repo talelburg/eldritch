@@ -48,7 +48,7 @@ fn board(token: ChaosToken) -> GameState {
                 .in_play([(SHRIVELLING, uses(UseKind::Charges, 4))]),
         )
         .with_location(location(HERE))
-        .with_enemy_engaged(enemy(ENEMY).fight(3).health(3), INV)
+        .with_enemy(enemy(ENEMY).fight(3).health(3).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build()

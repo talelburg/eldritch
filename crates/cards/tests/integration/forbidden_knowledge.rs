@@ -160,7 +160,7 @@ fn its_cost_horror_on_agnes_offers_her_reaction() {
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::location(HERE))
         .with_seat(holding(4).as_card(AGNES).at(HERE).actions(3).resources(0))
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .open_turn(INV)
         .session();
     let session = use_it(session);

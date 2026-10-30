@@ -250,7 +250,7 @@ fn a_failed_parley_leaves_her_where_she_is() {
 fn the_parley_provokes_no_attack_of_opportunity() {
     let attacker = test_support::enemy(100).attack_damage(2);
 
-    let result = parley_on(board(ChaosToken::Numeric(0)).with_enemy_engaged(attacker, INV));
+    let result = parley_on(board(ChaosToken::Numeric(0)).with_enemy(attacker.engaged_with(INV)));
     assert_eq!(
         result.state().investigators[&INV].damage(),
         0,

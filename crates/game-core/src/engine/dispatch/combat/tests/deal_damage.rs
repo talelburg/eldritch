@@ -1,7 +1,6 @@
 use super::*;
 use crate::state::EmitEventFrame;
-use crate::test_support::BoardLookup as _;
-use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
+use crate::test_support::{BoardLookup as _, TEST_REGISTRIES, TEST_REGISTRY};
 
 #[test]
 fn advance_distribution_drains_without_soakers_and_prompts_with_one() {

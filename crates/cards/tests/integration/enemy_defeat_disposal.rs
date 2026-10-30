@@ -91,7 +91,7 @@ fn solo_investigator_facing(
         .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8).deck(["01088"]))
         // Fight is location-gated; an engaged enemy is at its
         // investigator's location.
-        .with_enemy_engaged(enemy, INV)
+        .with_enemy(enemy.engaged_with(INV))
         .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

@@ -3,8 +3,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, Spaw
 use super::*;
 use crate::engine::outcome::OptionId;
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
-use crate::test_support::location;
-use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{location, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 /// The investigator's location.

@@ -111,7 +111,7 @@ fn every_category_board() -> GameState {
     study_board(me_with_rosary_and_flashlight().clues(2))
         .with_location(test_support::location(HERE).connections([HALL]))
         .with_location(hall)
-        .with_enemy_engaged(test_support::enemy(7), INV)
+        .with_enemy(test_support::enemy(7).engaged_with(INV))
         .with_enemy(rat)
         .with_act_deck([act("_act1", 2), act("_act2", 99)])
         .build()
@@ -303,10 +303,10 @@ fn crowded_board(investigator: Seat) -> GameState {
         .with_enemy(rat)
         .with_enemy(wanderer)
         .open_turn(INV)
-        .with_enemy_engaged(test_support::enemy(7), INV)
-        .with_enemy_engaged(test_support::enemy(9), other_inv)
-        .with_enemy_engaged(unhittable, INV)
-        .with_enemy_engaged(unshakeable, INV)
+        .with_enemy(test_support::enemy(7).engaged_with(INV))
+        .with_enemy(test_support::enemy(9).engaged_with(other_inv))
+        .with_enemy(unhittable.engaged_with(INV))
+        .with_enemy(unshakeable.engaged_with(INV))
         .build()
 }
 

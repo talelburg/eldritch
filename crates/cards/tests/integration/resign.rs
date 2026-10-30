@@ -201,7 +201,7 @@ fn the_resigners_cards_are_removed_from_the_game() {
 fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
     let ghoul_id = EnemyId(1);
 
-    let result = resign(board(false).with_enemy_engaged(enemy(ghoul_id), RESIGNER));
+    let result = resign(board(false).with_enemy(enemy(ghoul_id).engaged_with(RESIGNER)));
 
     assert_eq!(
         result.state.enemies[&ghoul_id].engaged_with, None,

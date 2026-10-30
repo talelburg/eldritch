@@ -1,8 +1,7 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::GameStateBuilder;
-use crate::test_support::TEST_REGISTRIES;
-use crate::test_support::{enemy, location};
+use crate::test_support::{enemy, location, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 #[test]

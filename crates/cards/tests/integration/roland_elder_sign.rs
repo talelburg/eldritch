@@ -14,7 +14,7 @@ use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{clues, location, seat, Either, Printed, Seat};
+use game_core::test_support::{clues, location, seat, AnyKind, Printed, Seat};
 
 const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";
@@ -37,7 +37,7 @@ fn run_elder_sign_test(clues_here: u8) -> Vec<Event> {
 
 /// [`run_elder_sign_test`] with Roland seated as `roland`, for a fixture that
 /// adds to his seat.
-fn run_elder_sign_test_seated(roland: impl Into<Seat<Either>>, clues_here: u8) -> Vec<Event> {
+fn run_elder_sign_test_seated(roland: impl Into<Seat<AnyKind>>, clues_here: u8) -> Vec<Event> {
     // Willpower 3 vs difficulty 3. ElderSign bonus = clues at the location,
     // so total = 3 + clues: always a success, by margin = clues.
     let session = GameStateBuilder::new()

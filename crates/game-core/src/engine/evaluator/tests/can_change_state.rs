@@ -176,7 +176,7 @@ fn state_with_enemy(engaged: bool) -> GameState {
         .with_location(location(HERE))
         .with_seat(seat(1).at(HERE));
     if engaged {
-        builder.with_enemy_engaged(enemy, InvestigatorId(1))
+        builder.with_enemy(enemy.engaged_with(InvestigatorId(1)))
     } else {
         builder.with_enemy(enemy)
     }

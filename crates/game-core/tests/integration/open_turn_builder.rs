@@ -73,17 +73,17 @@ fn engaged_board() -> GameStateBuilder {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::location(HERE))
-        .with_enemy_engaged(
+        .with_enemy(
             test_support::enemy(7)
                 .attack_damage(2)
                 .attack_horror(0)
-                .health(5),
-            MINE,
+                .health(5)
+                .engaged_with(MINE),
         )
         .open_turn(MINE)
 }
 
-/// `with_enemy_engaged` puts the enemy where its investigator stands.
+/// `.engaged_with(..)` puts the enemy where its investigator stands.
 #[test]
 fn an_engaged_enemy_is_at_its_investigators_location() {
     let state = engaged_board().build();

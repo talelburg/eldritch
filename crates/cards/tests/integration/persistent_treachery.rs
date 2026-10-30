@@ -2,10 +2,7 @@
 //! resolved through the real `cards` registry — they stay in play, enforce
 //! their constant restriction, and discard at a forced timing point.
 
-use cards::REGISTRY;
-use cards::TEST_REGISTRIES;
-use game_core::assert_event;
-use game_core::assert_no_event;
+use cards::{REGISTRY, TEST_REGISTRIES};
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{InputKind, OptionTarget};
@@ -17,6 +14,7 @@ use game_core::state::{
     Phase, SkillKind, UseKind, Zone,
 };
 use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Obscuring Fog 01168.
 const OBSCURING_FOG: &str = "01168";
@@ -363,7 +361,7 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
             )
             .with_enemy(enemy(8).at(HERE))
             .open_turn(me)
-            .with_enemy_engaged(enemy(7), me)
+            .with_enemy(enemy(7).engaged_with(me))
     };
     let fight = TurnAction::Fight {
         investigator: me,
@@ -595,7 +593,7 @@ fn frozen_in_fear_with_weapon_board(actions: u8) -> TestSession {
                 .actions(actions),
         )
         .with_location(location(HERE))
-        .with_enemy_engaged(enemy(100).fight(3).health(9), INV)
+        .with_enemy(enemy(100).fight(3).health(9).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

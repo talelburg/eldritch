@@ -11,8 +11,7 @@ use super::*;
 use crate::assert_event;
 use crate::engine::enumerate::TurnAction;
 use crate::state::GameStateBuilder;
-use crate::test_support::{self, TEST_REGISTRIES};
-use crate::test_support::{enemy, location};
+use crate::test_support::{self, enemy, location, TEST_REGISTRIES};
 
 const HALLWAY: LocationId = LocationId(1);
 const STUDY: LocationId = LocationId(2);

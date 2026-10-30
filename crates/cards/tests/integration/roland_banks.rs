@@ -14,8 +14,7 @@
 //! direction.
 
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
-use cards::REGISTRY;
-use cards::TEST_REGISTRIES;
+use cards::{REGISTRY, TEST_REGISTRIES};
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -54,7 +53,7 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
                 .in_play([ROLAND]),
         )
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy(ENEMY).fight(1).health(1), INV)
+        .with_enemy(enemy(ENEMY).fight(1).health(1).engaged_with(INV))
         .with_location(location(HERE).clues(location_clues))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

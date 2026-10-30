@@ -24,15 +24,14 @@
 //! **Working a Hunch (01037):** "Fast. Play only during your turn. … discover 1
 //! clue …" A fast event → `AoO`-exempt.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
-use game_core::test_support::{
-    enemy, location, seat, BoardLookup as _, Seat, StagedEnemy, TestSession,
-};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, StagedEnemy, TestSession};
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -66,7 +65,7 @@ fn board(investigator: Seat, clues: u8, attacker: Option<StagedEnemy>) -> TestSe
         .with_seat(investigator)
         .open_turn(INV);
     match attacker {
-        Some(enemy) => builder.with_enemy_engaged(enemy, INV),
+        Some(enemy) => builder.with_enemy(enemy.engaged_with(INV)),
         None => builder,
     }
     .session()
@@ -99,7 +98,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
             .hand([EMERGENCY_CACHE])
             .in_play([GUARD_DOG]),
         0,
-        Some(enemy(7).attack_damage(2).attack_horror(0).health(5)),
+        Some(attacker(7, 2, 0).health(5)),
     );
     let dog = session.state().card(INV, GUARD_DOG);
     let resources_before = session.state().investigators[&INV].resources;
@@ -200,7 +199,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let session = board(
         holding(WORKING_A_HUNCH).in_play([GUARD_DOG]),
         1,
-        Some(enemy(7).attack_damage(2).attack_horror(0).health(5)),
+        Some(attacker(7, 2, 0).health(5)),
     )
     .take(&PLAY_FIRST);
 
@@ -237,7 +236,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     let result = board(
         holding(EMERGENCY_CACHE),
         0,
-        Some(enemy(7).attack_damage(50).attack_horror(0).health(5)),
+        Some(attacker(7, 50, 0).health(5)),
     )
     .take(&PLAY_FIRST)
     .finish();
@@ -284,7 +283,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     let session = board(
         holding(MACHETE).in_play([GUARD_DOG]),
         0,
-        Some(enemy(7).attack_damage(2).attack_horror(0).health(5)),
+        Some(attacker(7, 2, 0).health(5)),
     );
     let dog = session.state().card(INV, GUARD_DOG);
 
@@ -341,14 +340,10 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 #[test]
 fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     // Lethal AoO, no soaker / no Dodge → defeated before Machete enters play.
-    let state = board(
-        holding(MACHETE),
-        0,
-        Some(enemy(7).attack_damage(50).attack_horror(0).health(5)),
-    )
-    .take(&PLAY_FIRST)
-    .finish()
-    .state;
+    let state = board(holding(MACHETE), 0, Some(attacker(7, 50, 0).health(5)))
+        .take(&PLAY_FIRST)
+        .finish()
+        .state;
 
     assert_ne!(
         state.investigators[&INV].status,

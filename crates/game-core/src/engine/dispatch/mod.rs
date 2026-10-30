@@ -751,8 +751,7 @@ mod turn_menu_tests {
     use crate::engine::outcome::OptionTarget;
     use crate::engine::{dispatch, enumerate};
     use crate::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId};
-    use crate::test_support::{self, TEST_REGISTRIES};
-    use crate::test_support::{enemy, location};
+    use crate::test_support::{self, enemy, location, TEST_REGISTRIES};
 
     #[test]
     fn turn_menu_carries_action_targets() {
@@ -764,7 +763,7 @@ mod turn_menu_tests {
             .with_registries(TEST_REGISTRIES)
             .with_location(location(HERE))
             .with_seat(test_support::seat(1).at(HERE))
-            .with_enemy_engaged(enemy(7), InvestigatorId(1))
+            .with_enemy(enemy(7).engaged_with(InvestigatorId(1)))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .open_turn(InvestigatorId(1))
             .build();

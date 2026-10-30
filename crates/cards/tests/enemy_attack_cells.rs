@@ -125,7 +125,7 @@ fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
                 .deck(["_ea_filler"])
                 .threat_area(codes.iter().copied()),
         )
-        .with_enemy_engaged(attacker(enemy_code), INV)
+        .with_enemy(attacker(enemy_code).engaged_with(INV))
         .open_turn(INV)
 }
 

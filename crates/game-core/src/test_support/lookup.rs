@@ -71,7 +71,7 @@ impl BoardLookup for GameState {
         let inv = self
             .investigators
             .get(&investigator)
-            .unwrap_or_else(|| panic!("in_play: no investigator {investigator:?}"));
+            .unwrap_or_else(|| panic!("card_in_play: no investigator {investigator:?}"));
         let cards = || inv.cards_in_play.iter().chain(&inv.threat_area);
         let matches: Vec<&CardInPlay> = cards().filter(|card| card.code == code).collect();
         if let [card] = matches[..] {
@@ -81,7 +81,7 @@ impl BoardLookup for GameState {
             .map(|card| format!("{} {:?}", card.code, card.instance_id))
             .collect();
         panic!(
-            "in_play: {investigator:?} has {} cards {code} in play or in their threat area, \
+            "card_in_play: {investigator:?} has {} cards {code} in play or in their threat area, \
              not exactly one; there: [{}]",
             matches.len(),
             there.join(", "),

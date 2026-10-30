@@ -383,7 +383,8 @@ fn fight_engaged_with_two_enemies_only_touches_the_target() {
     // Make sure the Fight defeats the target so we observe the
     // full attribution + removal path while the other is untouched.
     let target = ghoul().damage(1);
-    let board = fight_evade_board(seat(1).at(HERE), target).with_enemy_engaged(enemy(101), INV);
+    let board =
+        fight_evade_board(seat(1).at(HERE), target).with_enemy(enemy(101).engaged_with(INV));
 
     let session = take_committing_nothing(board, &FIGHT);
 

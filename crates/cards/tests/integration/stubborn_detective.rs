@@ -116,7 +116,7 @@ fn two_rooms(token: ChaosToken) -> GameStateBuilder {
 fn roland_engaged_with_a_ghoul(detective_at: LocationId) -> GameState {
     two_rooms(ChaosToken::Numeric(0))
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(a_ghoul(), INV)
+        .with_enemy(a_ghoul().engaged_with(INV))
         .with_enemy(the_detective(detective_at, INV).exhausted())
         .open_turn(INV)
         .build()
@@ -268,7 +268,7 @@ fn a_second_investigator_at_his_location_is_blanked_too() {
         .with_seat(seat(INV.0).at(THERE).deck([FILLER]))
         .with_seat(seat(OTHER.0).as_card(ROLAND).at(HERE))
         .with_seating([INV, OTHER])
-        .with_enemy_engaged(a_ghoul(), OTHER)
+        .with_enemy(a_ghoul().engaged_with(OTHER))
         .with_enemy(the_detective(HERE, INV).exhausted())
         .open_turn(OTHER)
         .build();
@@ -355,7 +355,7 @@ fn skills_health_sanity_and_traits_read_unchanged_while_blanked() {
 fn rolands_reaction_is_offered_after_he_defeats_the_detective() {
     let state = two_rooms(ChaosToken::Numeric(0))
         .with_seat(seat(INV.0).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(the_detective(HERE, INV).damage(1), INV)
+        .with_enemy(the_detective(HERE, INV).damage(1).engaged_with(INV))
         .open_turn(INV)
         .build();
 

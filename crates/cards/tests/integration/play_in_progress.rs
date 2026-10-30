@@ -85,12 +85,12 @@ fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSe
         )
         .with_location(location(HERE).connections([HALLWAY]))
         .with_location(location(HALLWAY).connections([HERE]))
-        .with_enemy_engaged(
+        .with_enemy(
             enemy(100)
                 .health(9)
                 .attack_damage(attack_damage)
-                .attack_horror(0),
-            INV,
+                .attack_horror(0)
+                .engaged_with(INV),
         )
         .open_turn(INV)
         .session()

@@ -75,7 +75,7 @@ fn board_with_hand(hand: &[&str]) -> TestSession {
                 .hand(hand.iter().copied()),
         )
         .with_location(location(HERE))
-        .with_enemy_engaged(enemy(ENEMY).health(1), INV)
+        .with_enemy(enemy(ENEMY).health(1).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

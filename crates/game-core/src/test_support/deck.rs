@@ -29,7 +29,7 @@
 
 use crate::state::staged::Staged;
 use crate::state::{Act, Agenda, CardCode, GameStateBuilder};
-use crate::test_support::stage::is_printed_code;
+use crate::test_support::stage::synthetic_code;
 
 /// An act in a staged act deck: printed (from its code) or stock
 /// ([`act`]). See [`with_act_deck`](GameStateBuilder::with_act_deck).
@@ -43,23 +43,6 @@ pub struct StagedAct(Staged<Act>);
 #[must_use = "a staged agenda does nothing until it is passed to with_agenda_deck"]
 pub struct StagedAgenda(Staged<Agenda>);
 
-/// The code a stock deck card names, for a registry's ability lookup.
-///
-/// # Panics
-///
-/// If `code` has the shape of a printed `ArkhamDB` code, naming `stager`
-/// (`"act"`) and the deck setter that stages the printed card.
-fn synthetic_deck_code(stager: &str, code: CardCode, threshold: u8) -> CardCode {
-    assert!(
-        !is_printed_code(code.as_str()),
-        "{stager}({code}, {threshold}): {code} is a printed ArkhamDB code, and a stock \
-         {stager} can't impersonate a printed card (ADR 0016). Stage the card by its code, \
-         `with_{stager}_deck([\"{code}\"])`, which reads its printed threshold, or use a \
-         synthetic code"
-    );
-    code
-}
-
 /// A stock act: the synthetic `code` (for a registry's ability lookup), with
 /// the clue threshold `clue_threshold`.
 ///
@@ -68,7 +51,15 @@ fn synthetic_deck_code(stager: &str, code: CardCode, threshold: u8) -> CardCode 
 /// If `code` has the shape of a printed `ArkhamDB` code: stage that card by
 /// its code, which reads its printed threshold.
 pub fn act(code: impl Into<CardCode>, clue_threshold: u8) -> StagedAct {
-    let code = synthetic_deck_code("act", code.into(), clue_threshold);
+    let code = code.into();
+    let code = synthetic_code(
+        &format!("act({code}, {clue_threshold})"),
+        code.clone(),
+        &format!(
+            "Stage the card by its code, `with_act_deck([\"{code}\"])`, which reads its \
+             printed threshold"
+        ),
+    );
     StagedAct(Staged::stock(Act {
         code,
         clue_threshold,
@@ -83,7 +74,15 @@ pub fn act(code: impl Into<CardCode>, clue_threshold: u8) -> StagedAct {
 /// If `code` has the shape of a printed `ArkhamDB` code: stage that card by
 /// its code, which reads its printed threshold.
 pub fn agenda(code: impl Into<CardCode>, doom_threshold: u8) -> StagedAgenda {
-    let code = synthetic_deck_code("agenda", code.into(), doom_threshold);
+    let code = code.into();
+    let code = synthetic_code(
+        &format!("agenda({code}, {doom_threshold})"),
+        code.clone(),
+        &format!(
+            "Stage the card by its code, `with_agenda_deck([\"{code}\"])`, which reads its \
+             printed threshold"
+        ),
+    );
     StagedAgenda(Staged::stock(Agenda {
         code,
         doom_threshold,

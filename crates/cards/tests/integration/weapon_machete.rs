@@ -54,7 +54,7 @@ fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
 
     for n in 0..engaged {
         // Co-located: weapon Fight targets enemies at your location.
-        builder = builder.with_enemy_engaged(enemy(100 + n).fight(3).health(3), INV);
+        builder = builder.with_enemy(enemy(100 + n).fight(3).health(3).engaged_with(INV));
     }
     for n in 0..unengaged {
         builder = builder.with_enemy(enemy(200 + n).fight(3).health(3).at(HERE));
@@ -226,7 +226,7 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     // actor remains engaged with enemy 100 only.
     let state = board_with(1, 0)
         .with_seat(seat(2).at(HERE))
-        .with_enemy_engaged(enemy(200).fight(3).health(3), OTHER)
+        .with_enemy(enemy(200).fight(3).health(3).engaged_with(OTHER))
         .build();
 
     // Attack enemy 200.

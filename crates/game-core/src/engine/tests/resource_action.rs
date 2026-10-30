@@ -11,7 +11,7 @@ fn resource_board(enemy: Option<StagedEnemy>) -> GameStateBuilder {
         .with_seat(seat(1).at(HERE).resources(5))
         .open_turn(INV);
     match enemy {
-        Some(enemy) => board.with_enemy_engaged(enemy, INV),
+        Some(enemy) => board.with_enemy(enemy.engaged_with(INV)),
         None => board,
     }
 }

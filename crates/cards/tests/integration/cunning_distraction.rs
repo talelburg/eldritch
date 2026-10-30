@@ -68,8 +68,8 @@ fn board(first: Seat, include: &[EnemyId]) -> TestSession {
         .with_seat(survivor(2));
     for &id in include {
         builder = match id {
-            ENGAGED => builder.with_enemy_engaged(enemy_at(id, HERE), INV),
-            OTHERS => builder.with_enemy_engaged(enemy_at(id, HERE), INV2),
+            ENGAGED => builder.with_enemy(enemy_at(id, HERE).engaged_with(INV)),
+            OTHERS => builder.with_enemy(enemy_at(id, HERE).engaged_with(INV2)),
             AWAY => builder.with_enemy(enemy_at(id, ELSEWHERE)),
             _ => builder.with_enemy(enemy_at(id, HERE)),
         };

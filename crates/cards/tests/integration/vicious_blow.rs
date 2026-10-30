@@ -29,7 +29,7 @@ fn fight_committing(commit: &[&str]) -> TestSession {
         .with_seat(seat(1).at(HERE).hand([VICIOUS_BLOW]))
         .with_location(location(HERE))
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy(ENEMY).fight(2).health(10), INV)
+        .with_enemy(enemy(ENEMY).fight(2).health(10).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

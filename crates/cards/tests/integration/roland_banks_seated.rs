@@ -35,7 +35,7 @@ fn seated_roland_with_enemy() -> GameState {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(enemy(ENEMY).fight(1).health(1), INV)
+        .with_enemy(enemy(ENEMY).fight(1).health(1).engaged_with(INV))
         .with_location(location(HERE).clues(2))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)

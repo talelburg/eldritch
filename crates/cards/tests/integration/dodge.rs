@@ -11,6 +11,7 @@
 //!
 //! [`apply`]: game_core::engine::apply
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -18,7 +19,7 @@ use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
-use game_core::test_support::{self, seat, Either, Seat, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, AnyKind, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
@@ -28,13 +29,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
-
-/// A ready enemy dealing 2 damage / 1 horror.
-fn ready_attacker() -> StagedEnemy {
-    test_support::enemy(ATTACKER)
-        .attack_damage(2)
-        .attack_horror(1)
-}
 
 /// Investigator 1 at the Study with `DODGE` in hand.
 fn holding_dodge() -> Seat {
@@ -52,12 +46,12 @@ fn holding_dodge() -> Seat {
 /// window auto-skips (Dodge is a reaction event — `check_play_card` rejects a
 /// standalone play, so it is not a framework Fast play), then the attack loop
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
-fn dodge_board(investigator: Seat, attacker: impl Into<StagedEnemy<Either>>) -> GameStateBuilder {
+fn dodge_board(investigator: Seat, attacker: impl Into<StagedEnemy<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::location(HERE))
         .with_seat(investigator)
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.into().engaged_with(INV))
         .open_turn(INV)
 }
 
@@ -157,7 +151,7 @@ fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
 fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     // EndTurn → Enemy phase → the attack loop opens the before-attack cancel
     // window and suspends, offering Dodge from hand.
-    let offered = dodge_board(holding_dodge(), ready_attacker())
+    let offered = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn);
     // No damage dealt yet (the attack hasn't resolved).
@@ -190,7 +184,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 #[test]
 fn declining_the_before_attack_window_lets_the_attack_land() {
     // Skip the window → the attack resolves normally.
-    let session = dodge_board(holding_dodge(), ready_attacker())
+    let session = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn)
         .skip();
@@ -232,7 +226,7 @@ const DISSONANT_VOICES: &str = "01165";
 fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     let session = dodge_board(
         holding_dodge().threat_area([DISSONANT_VOICES]),
-        ready_attacker(),
+        attacker(ATTACKER, 2, 1),
     )
     .session()
     .take(&TurnAction::EndTurn);
@@ -256,7 +250,7 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
 /// lapsed and the attack lands.
 #[test]
 fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
-    let offered_dodge = dodge_board(holding_dodge(), ready_attacker())
+    let offered_dodge = dodge_board(holding_dodge(), attacker(ATTACKER, 2, 1))
         .session()
         .take(&TurnAction::EndTurn);
     assert_eq!(
@@ -329,7 +323,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE).hand([DODGE]))
         .with_seating([attacked, dodger])
-        .with_enemy_engaged(ready_attacker(), attacked)
+        .with_enemy(attacker(ATTACKER, 2, 1).engaged_with(attacked))
         .open_turn(attacked)
         .session()
         .take(&TurnAction::EndTurn)

@@ -26,7 +26,7 @@ use game_core::state::{
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{
-    self, seat, uses, BoardLookup as _, CardSetup, Either, Printed, Seat, TestSession,
+    self, seat, uses, AnyKind, BoardLookup as _, CardSetup, Printed, Seat, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 
@@ -57,7 +57,7 @@ fn daisy() -> Seat<Printed> {
 
 /// `investigator`'s open turn, alone at `HERE`. A `Numeric(0)` chaos bag lets
 /// a skill-testing ability start its test.
-fn board(investigator: impl Into<Seat<Either>>) -> TestSession {
+fn board(investigator: impl Into<Seat<AnyKind>>) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -303,7 +303,10 @@ fn a_non_tome_action_with_leo_in_play_uses_his_without_asking() {
 
 /// Daisy's Willpower 3 test against `difficulty`, with only the elder sign in
 /// the bag, committing nothing. Returns once the test has resolved.
-fn willpower_test_on_the_elder_sign(daisy: impl Into<Seat<Either>>, difficulty: i8) -> TestSession {
+fn willpower_test_on_the_elder_sign(
+    daisy: impl Into<Seat<AnyKind>>,
+    difficulty: i8,
+) -> TestSession {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))

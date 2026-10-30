@@ -2,8 +2,7 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::{EngineOutcome, OptionTarget};
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
-use crate::test_support::{self, Seat, StagedEnemy, TEST_REGISTRIES};
-use crate::test_support::{enemy, location};
+use crate::test_support::{self, enemy, location, Seat, StagedEnemy, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -20,7 +19,7 @@ fn attacked_on_end_turn(investigator: Seat, attackers: Vec<StagedEnemy>) -> Game
             // A filler deck so Upkeep 4.4's draw doesn't deal deck-out horror.
             .with_seat(investigator.at(HERE).deck(["filler0"]))
             .open_turn(INV),
-        |builder, enemy| builder.with_enemy_engaged(enemy, INV),
+        |builder, enemy| builder.with_enemy(enemy.engaged_with(INV)),
     )
 }
 

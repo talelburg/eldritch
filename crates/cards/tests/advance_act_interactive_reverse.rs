@@ -7,8 +7,7 @@
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::InputKind;
-use game_core::engine::Registries;
+use game_core::engine::{InputKind, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameStateBuilder, InvestigatorId};
 use game_core::test_support::{act, seat, MockRegistry};

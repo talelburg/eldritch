@@ -32,8 +32,10 @@ const SWARM_OF_RATS: &str = "01159"; // Creature. (non-Elite) + Hunter
 const INV: InvestigatorId = InvestigatorId(1);
 const A: LocationId = LocationId(1);
 const B: LocationId = LocationId(2);
-/// The ghoul every scenario here moves.
+/// The ghoul the Elite and engaged scenarios move.
 const GHOUL: EnemyId = EnemyId(100);
+/// The Swarm of Rats the non-Elite hunter scenarios move.
+const RATS: EnemyId = EnemyId(101);
 /// The first Barricade attached on a board. A seat cannot attach a card to a
 /// location, so a Barricade's id is named here, and a board with several
 /// numbers them on from this one.
@@ -45,11 +47,11 @@ const MOVE_TO_B: TurnAction = TurnAction::Move {
     destination: B,
 };
 
-/// The ready, unengaged printed enemy `code` at location `at`. Elite-ness
+/// The ready, unengaged printed ghoul `code` at location `at`. Elite-ness
 /// drives the movement block, and it comes from the printed card's traits:
-/// Ghoul Priest 01116 is Elite, Ghoul Minion 01160 and Swarm of Rats 01159 are
-/// not. Hunter-ness is printed too — the Priest and the Rats are hunters, the
-/// Minion is not — and engagement is the caller's to set.
+/// Ghoul Priest 01116 is Elite, Ghoul Minion 01160 is not. Hunter-ness is
+/// printed too — the Priest is a hunter, the Minion is not — and engagement is
+/// the caller's to set.
 fn ghoul(code: &str, at: LocationId) -> StagedEnemy<Printed> {
     test_support::enemy(GHOUL).as_card(code).at(at)
 }
@@ -157,17 +159,17 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: StagedEnemy<Printed>) -> T
 }
 
 /// The hunter-movement scenario: the investigator (prey) at B, the printed
-/// hunter `enemy_code` at A, driven via `EndTurn` into the Enemy phase.
-fn hunter_at_a_moving_toward_b(enemy_code: &str) -> TestSession {
-    map_with_barricade_at_b(B, ghoul(enemy_code, A))
+/// `hunter` at A, driven via `EndTurn` into the Enemy phase.
+fn hunter_at_a_moving_toward_b(hunter: StagedEnemy<Printed>) -> TestSession {
+    map_with_barricade_at_b(B, hunter)
 }
 
 #[test]
 fn non_elite_hunter_cannot_enter_the_barricaded_location() {
-    let r = hunter_at_a_moving_toward_b(SWARM_OF_RATS).take(&TurnAction::EndTurn);
+    let r = hunter_at_a_moving_toward_b(hunter_at(A)).take(&TurnAction::EndTurn);
     assert_phase_reached_enemy(&r);
     assert_eq!(
-        r.state().enemies[&GHOUL].current_location,
+        r.state().enemies[&RATS].current_location,
         Some(A),
         "non-Elite hunter stayed (only path is into the barricaded location)",
     );
@@ -175,7 +177,7 @@ fn non_elite_hunter_cannot_enter_the_barricaded_location() {
 
 #[test]
 fn elite_hunter_enters_the_barricaded_location() {
-    let r = hunter_at_a_moving_toward_b(GHOUL_PRIEST).take(&TurnAction::EndTurn);
+    let r = hunter_at_a_moving_toward_b(ghoul(GHOUL_PRIEST, A)).take(&TurnAction::EndTurn);
     assert_phase_reached_enemy(&r);
     assert_eq!(
         r.state().enemies[&GHOUL].current_location,
@@ -394,10 +396,11 @@ fn map_leaving_barricaded_a_with(
 
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// A ready, unengaged, non-Elite hunter at `at` — the mover every scenario
-/// below shares, since it is the non-Elite case the barricade actually stops.
+/// A ready, unengaged, non-Elite hunter at `at`, Swarm of Rats 01159 — the
+/// mover every scenario below shares, since it is the non-Elite case the
+/// barricade actually stops.
 fn hunter_at(at: LocationId) -> StagedEnemy<Printed> {
-    ghoul(SWARM_OF_RATS, at)
+    test_support::enemy(RATS).as_card(SWARM_OF_RATS).at(at)
 }
 
 /// Assemble a board out of locations (each an id and its connections) /
@@ -496,7 +499,7 @@ fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_m
     let session = end_the_investigation_phase(hallway_attic_cellar(), 2);
     let state = session.state();
     assert_eq!(
-        state.enemies[&GHOUL].current_location,
+        state.enemies[&RATS].current_location,
         Some(HUB),
         "the barricaded location is still one connection away, so its investigator is \
          nearest; the compelled step is blocked, so the hunter does not move — it \
@@ -513,7 +516,7 @@ fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_m
 fn an_unblocked_board_moves_the_hunter_toward_the_nearest_investigator() {
     let session = end_the_investigation_phase(hallway_attic_cellar_barricading(&[]), 2);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(BLOCKED),
         "with no barricade the hunter steps to the nearest investigator's location",
     );
@@ -537,7 +540,7 @@ fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(TARGET),
         "the barricade is not on the shortest path, so the hunter takes it as usual",
     );
@@ -569,7 +572,7 @@ fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(HUB),
         "the hunter does not take the longer unblocked detour",
     );
@@ -595,7 +598,7 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
-        session.state().enemies[&GHOUL].current_location,
+        session.state().enemies[&RATS].current_location,
         Some(OPEN),
         "the blocked step is dropped from the destination set, not the graph",
     );

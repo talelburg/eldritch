@@ -23,7 +23,9 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
     Owner,
 };
-use game_core::test_support::{enemy, location, seat, BoardLookup as _, Either, Seat, TestSession};
+use game_core::test_support::{
+    enemy, location, seat, AnyKind, BoardLookup as _, Seat, TestSession,
+};
 
 const PSYCHOSIS: &str = "01099";
 const AGNES: &str = "01004";
@@ -41,7 +43,7 @@ fn bearer() -> Seat {
 }
 
 /// `bearer`'s open turn at `HERE`.
-fn staged(bearer: impl Into<Seat<Either>>) -> GameStateBuilder {
+fn staged(bearer: impl Into<Seat<AnyKind>>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
@@ -49,7 +51,7 @@ fn staged(bearer: impl Into<Seat<Either>>) -> GameStateBuilder {
         .open_turn(INV)
 }
 
-fn board(bearer: impl Into<Seat<Either>>) -> TestSession {
+fn board(bearer: impl Into<Seat<AnyKind>>) -> TestSession {
     staged(bearer).session()
 }
 
@@ -123,9 +125,12 @@ fn horror_soaked_entirely_by_an_asset_still_fires_with_no_soak_prompt() {
 #[test]
 fn a_deal_with_no_horror_does_not_fire() {
     let session = staged(bearer().deck([HOLY_ROSARY]))
-        .with_enemy_engaged(
-            enemy(ENEMY).health(3).attack_damage(1).attack_horror(0),
-            INV,
+        .with_enemy(
+            enemy(ENEMY)
+                .health(3)
+                .attack_damage(1)
+                .attack_horror(0)
+                .engaged_with(INV),
         )
         .session()
         .take(&TurnAction::EndTurn);
@@ -193,9 +198,12 @@ fn a_co_located_investigator_discards_it_with_two_actions() {
 fn agnes_reaction_resolves_before_the_forced_damage() {
     let agnes = seat(1).as_card(AGNES).at(HERE).threat_area([PSYCHOSIS]);
     let session = staged(agnes)
-        .with_enemy_engaged(
-            enemy(ENEMY).health(3).attack_damage(0).attack_horror(1),
-            INV,
+        .with_enemy(
+            enemy(ENEMY)
+                .health(3)
+                .attack_damage(0)
+                .attack_horror(1)
+                .engaged_with(INV),
         )
         .session()
         .take_horror(INV, 1);

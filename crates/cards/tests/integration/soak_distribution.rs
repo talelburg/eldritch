@@ -24,7 +24,13 @@ fn attack_state() -> GameState {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(seat(1).at(HERE).in_play([GUARD_DOG]).deck([GUARD_DOG; 5]))
-        .with_enemy_engaged(enemy(7).health(5).attack_damage(2).attack_horror(0), INV)
+        .with_enemy(
+            enemy(7)
+                .health(5)
+                .attack_damage(2)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .build()
 }

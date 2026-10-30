@@ -40,7 +40,7 @@ fn board(seat: Seat) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat.at(HERE))
         .with_location(location(HERE))
-        .with_enemy_engaged(enemy(ENEMY).fight(3).health(5), INV)
+        .with_enemy(enemy(ENEMY).fight(3).health(5).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session()

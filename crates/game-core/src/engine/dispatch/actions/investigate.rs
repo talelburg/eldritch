@@ -239,8 +239,7 @@ mod tests {
         Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillKind,
         SkillTestFollowUp, SkillTestId,
     };
-    use crate::test_support::location;
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{self, location, TEST_REGISTRIES};
 
     /// Regression for #471: the `Investigate` follow-up pushes **one**
     /// `DiscoverClue` of

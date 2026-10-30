@@ -1,14 +1,11 @@
 use super::*;
 use crate::action::{Action, PlayerAction};
 use crate::engine::{enumerate::TurnAction, outcome::OptionTarget};
-use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-use crate::test_support::{enemy, location};
+use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use crate::test_support::{enemy, location, TEST_REGISTRIES};
 use crate::{assert_event, test_support};
 
 use card_dsl::card_data::SkillKind;
-
-use crate::state::GameStateBuilder;
-use crate::test_support::TEST_REGISTRIES;
 
 /// Location "A".
 const A: LocationId = LocationId(1);

@@ -236,22 +236,31 @@ fn entering_engages_all_ready_enemies_and_leaves_already_engaged_alone() {
     // the destination engages the entering investigator. An enemy already
     // engaged with another investigator keeps that engagement (an enemy
     // engages only one investigator).
-    let (inv_id, l2, enemy_a, mut state) = move_into_enemy_scenario();
+    let inv_id = InvestigatorId(1);
     let other = InvestigatorId(2);
+    let l1 = LocationId(10);
+    let l2 = LocationId(11);
+    let enemy_a = EnemyId(100);
     let enemy_b = EnemyId(101);
     let enemy_c = EnemyId(102);
 
-    // A second ready, unengaged enemy at the destination.
-    let b = enemy(101).at(l2);
-    // A third enemy at the destination already engaged with someone else,
-    // who is not on this board: minted, so its engagement is left as set
-    // rather than moving it to that investigator.
-    let c = enemy(102)
-        .at(l2)
-        .engaged_with(other)
-        .mint(TEST_REGISTRIES, 1);
-    state.place(b, TEST_REGISTRIES);
-    state.place(StagedEnemy::from(c), TEST_REGISTRIES);
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(test_support::seat(1).at(l1))
+        // The other investigator stands at the destination, so an enemy
+        // there can already be engaged with them: an engaged enemy is at its
+        // investigator's location.
+        .with_seat(test_support::seat(2).at(l2))
+        .with_location(location(l1).connections(vec![l2]))
+        .with_location(location(l2).connections(vec![l1]))
+        // Two ready, unengaged enemies at the destination.
+        .with_enemy(enemy(100).at(l2))
+        .with_enemy(enemy(101).at(l2))
+        // A third at the destination, already engaged with the other
+        // investigator.
+        .with_enemy(enemy(102).engaged_with(other))
+        .open_turn(inv_id)
+        .build();
 
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {
         investigator: inv_id,

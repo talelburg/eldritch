@@ -878,8 +878,7 @@ impl TestSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::location;
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{self, location, TEST_REGISTRIES};
 
     #[test]
     fn test_session_fluent_round_trip() {

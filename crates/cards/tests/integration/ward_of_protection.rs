@@ -34,7 +34,9 @@ use game_core::state::{
     CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
 };
-use game_core::test_support::{enemy, location, seat, BoardLookup as _, Either, Seat, TestSession};
+use game_core::test_support::{
+    enemy, location, seat, AnyKind, BoardLookup as _, Seat, TestSession,
+};
 use game_core::{assert_event, assert_no_event};
 
 const WARD: &str = "01065";
@@ -73,7 +75,7 @@ fn warded(n: u32) -> Seat {
 /// first agenda current (Ancient Evils places its doom there). `edit` adds to
 /// the board. Rests at the first drawer's encounter-draw prompt.
 fn mythos_draw_with(
-    seats: Vec<impl Into<Seat<Either>>>,
+    seats: Vec<impl Into<Seat<AnyKind>>>,
     encounter: &[&str],
     edit: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
 ) -> TestSession {
@@ -99,7 +101,7 @@ fn mythos_draw_with(
         .session()
 }
 
-fn mythos_draw(seats: Vec<impl Into<Seat<Either>>>, encounter: &[&str]) -> TestSession {
+fn mythos_draw(seats: Vec<impl Into<Seat<AnyKind>>>, encounter: &[&str]) -> TestSession {
     mythos_draw_with(seats, encounter, |builder| builder)
 }
 
@@ -233,7 +235,7 @@ fn agnes_reaction_is_offered_for_wards_horror() {
         .deck([GUTS]);
     let s = mythos_draw_with(vec![agnes], &[ANCIENT_EVILS], |builder| {
         // 3 health, so Agnes's 1 damage does not defeat it.
-        builder.with_enemy_engaged(enemy(ENEMY).health(3), INV)
+        builder.with_enemy(enemy(ENEMY).health(3).engaged_with(INV))
     })
     .confirm()
     .pick(ward(INV));

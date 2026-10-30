@@ -34,7 +34,7 @@ fn board(loc_clues: u8) -> GameState {
         )
         .with_location(location(HERE).clues(loc_clues))
         // Co-located: a weapon Fight targets enemies at your location.
-        .with_enemy_engaged(enemy(ENEMY).fight(5).health(3), INV)
+        .with_enemy(enemy(ENEMY).fight(5).health(3).engaged_with(INV))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()

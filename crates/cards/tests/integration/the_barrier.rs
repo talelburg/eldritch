@@ -44,7 +44,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget, Responder};
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{location, seat, Either, Seat, TestSession};
+use game_core::test_support::{location, seat, AnyKind, Seat, TestSession};
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -64,7 +64,7 @@ const LITA: &str = "01117";
 /// the round's last turn open, so ending it runs on to the round end, where
 /// the act's objective is offered.
 fn barrier_table(
-    seats: Vec<Seat<Either>>,
+    seats: Vec<Seat<AnyKind>>,
     seating: &[InvestigatorId],
     lead: InvestigatorId,
     last: InvestigatorId,

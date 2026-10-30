@@ -23,6 +23,7 @@
 //! it is an action and provokes an attack of opportunity (RR p.5). No rulings —
 //! it is listed in `data/arkhamdb-faq/no-rulings.txt`.
 
+use crate::common::attacker;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
@@ -30,7 +31,7 @@ use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
-use game_core::test_support::{self, seat, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, TestSession};
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -39,14 +40,6 @@ const DYING: InvestigatorId = InvestigatorId(1);
 const SURVIVOR: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(101);
 const ELSEWHERE: LocationId = LocationId(102);
-
-/// A ready enemy hitting for 3 damage.
-fn ready_attacker() -> StagedEnemy {
-    test_support::enemy(7)
-        .attack_damage(3)
-        .attack_horror(0)
-        .health(5)
-}
 
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
 /// holding Emergency Cache, with the open turn. `seating` decides whether the
@@ -67,7 +60,7 @@ fn board(seating: &[InvestigatorId]) -> GameStateBuilder {
     builder
         .with_seating(seating.iter().copied())
         .open_turn(DYING)
-        .with_enemy_engaged(ready_attacker(), DYING)
+        .with_enemy(attacker(7, 3, 0).health(5).engaged_with(DYING))
 }
 
 /// Play Emergency Cache, provoking the lethal attack of opportunity.

@@ -117,9 +117,12 @@ fn board(seated: fn(Seat) -> Seat) -> GameState {
         .with_enemy(enemy(BYSTANDER).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
-        .with_enemy_engaged(
-            enemy(ATTACKER).attack_damage(1).attack_horror(0).health(5),
-            INV,
+        .with_enemy(
+            enemy(ATTACKER)
+                .attack_damage(1)
+                .attack_horror(0)
+                .health(5)
+                .engaged_with(INV),
         )
         .build()
 }

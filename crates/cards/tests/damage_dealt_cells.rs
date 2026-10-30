@@ -158,7 +158,7 @@ fn board_with(asset: &str) -> GameStateBuilder {
                 .in_play([asset])
                 .threat_area([PLACED]),
         )
-        .with_enemy_engaged(attacker, INV)
+        .with_enemy(attacker.engaged_with(INV))
         .open_turn(INV)
 }
 

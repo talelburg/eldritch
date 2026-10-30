@@ -68,7 +68,7 @@ fn board(seats: Vec<Seat>, engaged: &[EnemyId], token: ChaosToken) -> TestSessio
         builder = builder.with_seat(seat);
     }
     for &id in engaged {
-        builder = builder.with_enemy_engaged(enemy(id).evade(2), INV);
+        builder = builder.with_enemy(enemy(id).evade(2).engaged_with(INV));
     }
     TestSession::new(builder.open_turn(INV).build(), TEST_REGISTRIES)
 }

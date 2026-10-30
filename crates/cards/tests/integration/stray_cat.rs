@@ -127,7 +127,12 @@ fn it_evades_an_enemy_engaged_with_you_and_breaks_the_engagement() {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(survivor())
-        .with_enemy_engaged(enemy(MINION).as_card(GHOUL_MINION).at(HERE), INV)
+        .with_enemy(
+            enemy(MINION)
+                .as_card(GHOUL_MINION)
+                .at(HERE)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .session();
     let action = activate(&s);

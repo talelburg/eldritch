@@ -70,7 +70,7 @@ fn board(
         builder = builder.with_location(location);
     }
     for enemy in engaged {
-        builder = builder.with_enemy_engaged(enemy, INV);
+        builder = builder.with_enemy(enemy.engaged_with(INV));
     }
     builder
 }
@@ -267,7 +267,7 @@ fn not_playable_in_the_enemy_phase() {
         )
         .with_location(location(HERE))
         .with_location(location(THERE))
-        .with_enemy_engaged(enemy(100), INV)
+        .with_enemy(enemy(100).engaged_with(INV))
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);

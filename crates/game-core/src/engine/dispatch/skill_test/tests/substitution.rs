@@ -1,9 +1,7 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::state::{EnemyId, LocationId};
-use crate::test_support::TestSession;
-use crate::test_support::{enemy, location};
-use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
+use crate::test_support::{enemy, location, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
 
 const HERE: LocationId = LocationId(10);
 const GHOUL: EnemyId = EnemyId(7);
@@ -16,7 +14,7 @@ fn substitution_turn(inv: InvestigatorId) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(test_support::seat(1).at(HERE))
-        .with_enemy_engaged(enemy(GHOUL), inv)
+        .with_enemy(enemy(GHOUL).engaged_with(inv))
         .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];

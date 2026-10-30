@@ -70,7 +70,7 @@ fn study_board(seat_one: Seat, enemies: Vec<StagedEnemy<Printed>>) -> GameStateB
             .with_location(location(HERE).connections([HALLWAY]))
             .with_location(location(HALLWAY).connections([HERE]))
             .with_seat(seat_one),
-        |b, e| b.with_enemy_engaged(e, INV),
+        |b, e| b.with_enemy(e.engaged_with(INV)),
     )
 }
 
@@ -222,7 +222,7 @@ fn not_playable_in_the_enemy_phase() {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(skids().in_play([BEAT_COP]))
-        .with_enemy_engaged(enemy(ATTACKER).as_card(GHOUL_MINION), INV)
+        .with_enemy(enemy(ATTACKER).as_card(GHOUL_MINION).engaged_with(INV))
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);
