@@ -129,3 +129,18 @@ pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
         }
     }
 }
+
+/// How many `games` and `actions` rows `game_id` has.
+pub(crate) async fn stored_rows(pool: &SqlitePool, game_id: &str) -> (i64, i64) {
+    let (games,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_one(pool)
+        .await
+        .expect("count games");
+    let (actions,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM actions WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_one(pool)
+        .await
+        .expect("count actions");
+    (games, actions)
+}

@@ -2,7 +2,7 @@
 //! load-by-replay.
 //!
 //! Driven against an in-memory `SQLite` with a mock scenario registry (seating
-//! runs at creation: the seed is round-1 mulligan-pending, so a
+//! runs at creation: a new game is round-1 mulligan-pending, so a
 //! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
 //! selecting a non-existent card is rejected).
 
@@ -15,15 +15,16 @@ use server::session::{GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
-/// Regression test for the load bug: a game with zero logged actions whose
-/// seed outcome is `AwaitingInput` must load as `AwaitingInput`, not `Done`.
+/// Regression test for the load bug: a game with zero logged actions, whose
+/// setup ends `AwaitingInput` at the mulligan, must load as `AwaitingInput`,
+/// not `Done`.
 #[tokio::test]
 async fn load_restores_awaiting_input_seed_with_empty_log() {
     let pool = common::memory_pool().await;
     let session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
-        "seeded",
+        "fresh",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -37,17 +38,17 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
     ));
     assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
 
-    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("seeded"))
+    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("fresh"))
         .await
         .unwrap()
         .expect("exists");
     assert_eq!(
         loaded.state, session.state,
-        "load reproduces the seeded state"
+        "load reproduces the state setup left"
     );
     assert!(
         matches!(loaded.outcome, EngineOutcome::AwaitingInput { .. }),
-        "load must restore the seed's AwaitingInput outcome from an empty log, got {:?}",
+        "load must restore setup's AwaitingInput outcome from an empty log, got {:?}",
         loaded.outcome
     );
 }
@@ -292,7 +293,8 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         .await
         .unwrap();
 
-    let Err(err) = GameSession::load(pool, common::REGISTRIES, &GameId::new("stale")).await else {
+    let Err(err) = GameSession::load(pool.clone(), common::REGISTRIES, &GameId::new("stale")).await
+    else {
         panic!("a log that cannot be replayed must fail the load");
     };
     assert!(
@@ -305,6 +307,11 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         ),
         "the failure must name the game and the offending action, got {err:?}",
     );
+    assert_eq!(
+        common::stored_rows(&pool, "stale").await,
+        (1, 1),
+        "an unresumable game's rows are kept",
+    );
 }
 
 /// Regression for #467: every game gets a fresh RNG seed, so the setup
@@ -313,7 +320,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
 async fn create_randomizes_the_setup_seed_per_game() {
     // The mock scenario's setup() pins a fixed
     // builder seed (42); create() must override it with host entropy, so two
-    // games created from the same module hold distinct frozen seeds.
+    // games created from the same module hold distinct seeds.
     let pool = common::memory_pool().await;
     let one = GameSession::create(
         pool.clone(),
