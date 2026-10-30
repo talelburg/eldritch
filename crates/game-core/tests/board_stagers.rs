@@ -1,12 +1,15 @@
-//! The board stagers — [`enemy`] and [`location`] beside
-//! [`seat`] — observed only through the built state.
+//! The board stagers — [`enemy`] and [`location`] beside [`seat`], and the
+//! act, agenda and encounter setters on the builder — observed only through
+//! the built state.
 //!
 //! Synthetic probes only (ADR 0016), local to this binary. `_stage_enemy`
 //! models "an enemy whose health is printed per investigator"; `_stage_loc`
 //! models "a location with a printed shroud and a per-investigator clue
 //! value"; `_stage_spawn` models "an enemy encounter card that spawns at the
-//! drawer's location"; `_stage_inv` models "an investigator card". None
-//! stands in for a printed card.
+//! drawer's location"; `_stage_inv` models "an investigator card";
+//! `_stage_act`, `_stage_objective_act`, `_stage_agenda` and
+//! `_stage_late_agenda` model "an act / agenda with a printed threshold" (the
+//! objective act prints none). None stands in for a printed card.
 
 use std::sync::LazyLock;
 
@@ -14,11 +17,12 @@ use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, HealthValue, Prey};
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner,
-    Phase, SkillKind,
+    CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    MythosResume, Owner, Phase, SkillKind,
 };
 use game_core::test_support::{
-    self, clues, enemy, location, seat, BoardLookup as _, Either, MockRegistry, Seat, TestSession,
+    self, act, agenda, clues, enemy, location, seat, BoardLookup as _, Either, MockRegistry, Seat,
+    StagedAgenda, TestSession,
 };
 
 /// An enemy printed 4 fight, 3 evade, 3 health per investigator, 2 damage and
@@ -30,6 +34,14 @@ const PROBE_LOC: &str = "_stage_loc";
 const PROBE_INV: &str = "_stage_inv";
 /// An enemy encounter card with no spawn instruction and no Revelation.
 const SPAWNER: &str = "_stage_spawn";
+/// An act printed with a clue threshold of 2.
+const PROBE_ACT: &str = "_stage_act";
+/// An act that advances on an objective: it prints no clue threshold.
+const PROBE_OBJECTIVE_ACT: &str = "_stage_objective_act";
+/// An agenda printed with a doom threshold of 4.
+const PROBE_AGENDA: &str = "_stage_agenda";
+/// An agenda printed with a doom threshold of 7.
+const PROBE_LATE_AGENDA: &str = "_stage_late_agenda";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -89,6 +101,32 @@ fn registries() -> Registries {
                 },
             ))
             .with_card(test_support::test_investigator_card(PROBE_INV))
+            .with_card(metadata(
+                PROBE_ACT,
+                "Stage Act",
+                CardKind::Act {
+                    clue_threshold: Some(2),
+                    victory: None,
+                },
+            ))
+            .with_card(metadata(
+                PROBE_OBJECTIVE_ACT,
+                "Stage Objective",
+                CardKind::Act {
+                    clue_threshold: None,
+                    victory: None,
+                },
+            ))
+            .with_card(metadata(
+                PROBE_AGENDA,
+                "Stage Agenda",
+                CardKind::Agenda { doom_threshold: 4 },
+            ))
+            .with_card(metadata(
+                PROBE_LATE_AGENDA,
+                "Stage Late Agenda",
+                CardKind::Agenda { doom_threshold: 7 },
+            ))
             .build(),
         scenarios: &ScenarioRegistry::EMPTY,
     });
@@ -378,4 +416,130 @@ fn printed_and_stock_seats_share_one_collection() {
         .build();
     assert_eq!(state.investigators[&INV].skills.combat, 5);
     assert_eq!(state.investigators[&InvestigatorId(2)].name, PROBE_INV);
+}
+
+#[test]
+fn an_act_deck_carries_each_cards_printed_threshold_in_order() {
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_act_deck([PROBE_ACT, PROBE_OBJECTIVE_ACT])
+        .build();
+    let deck: Vec<(&str, u8)> = state
+        .act_deck
+        .iter()
+        .map(|act| (act.code.as_str(), act.clue_threshold))
+        .collect();
+    assert_eq!(deck, [(PROBE_ACT, 2), (PROBE_OBJECTIVE_ACT, 0)]);
+}
+
+#[test]
+fn an_agenda_deck_carries_each_cards_printed_threshold_in_order() {
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_agenda_deck([PROBE_AGENDA, PROBE_LATE_AGENDA])
+        .build();
+    let deck: Vec<(&str, u8)> = state
+        .agenda_deck
+        .iter()
+        .map(|agenda| (agenda.code.as_str(), agenda.doom_threshold))
+        .collect();
+    assert_eq!(deck, [(PROBE_AGENDA, 4), (PROBE_LATE_AGENDA, 7)]);
+}
+
+#[test]
+fn a_deck_mixes_stock_and_printed_cards_in_the_order_written() {
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_agenda_deck([agenda("_stock_agenda", 2), StagedAgenda::from(PROBE_AGENDA)])
+        .build();
+    let deck: Vec<(&str, u8)> = state
+        .agenda_deck
+        .iter()
+        .map(|agenda| (agenda.code.as_str(), agenda.doom_threshold))
+        .collect();
+    assert_eq!(deck, [("_stock_agenda", 2), (PROBE_AGENDA, 4)]);
+}
+
+#[test]
+fn a_stock_act_keeps_its_stated_threshold_with_no_registries() {
+    let state = GameStateBuilder::new()
+        .with_act_deck([act("_act_1", 3), act("_act_2", 1)])
+        .build();
+    let deck: Vec<(&str, u8)> = state
+        .act_deck
+        .iter()
+        .map(|act| (act.code.as_str(), act.clue_threshold))
+        .collect();
+    assert_eq!(deck, [("_act_1", 3), ("_act_2", 1)]);
+}
+
+#[test]
+fn the_current_act_and_agenda_and_the_doom_land() {
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_act_deck([PROBE_ACT, PROBE_OBJECTIVE_ACT])
+        .with_agenda_deck([PROBE_AGENDA, PROBE_LATE_AGENDA])
+        .with_current_act(1)
+        .with_current_agenda(1)
+        .with_agenda_doom(5)
+        .build();
+    assert_eq!(
+        state.act_deck[state.act_index].code.as_str(),
+        PROBE_OBJECTIVE_ACT
+    );
+    assert_eq!(
+        state.agenda_deck[state.agenda_index].code.as_str(),
+        PROBE_LATE_AGENDA
+    );
+    assert_eq!(state.agenda_doom, 5);
+}
+
+#[test]
+#[should_panic(expected = "with_act_deck([\"01108\"])")]
+fn a_stock_act_rejects_a_printed_code() {
+    let _ = act("01108", 2);
+}
+
+#[test]
+#[should_panic(expected = "with_agenda_deck([\"01105\"])")]
+fn a_stock_agenda_rejects_a_printed_code() {
+    let _ = agenda("01105", 3);
+}
+
+#[test]
+#[should_panic(expected = "as_card(_stage_agenda): _stage_agenda is not an act card")]
+fn build_names_a_deck_card_of_the_wrong_type() {
+    let _ = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_act_deck([PROBE_AGENDA])
+        .build();
+}
+
+#[test]
+#[should_panic(expected = "as_card(_stage_act): name the registries")]
+fn build_names_a_printed_deck_card_when_no_registries_were_named() {
+    let _ = GameStateBuilder::new().with_act_deck([PROBE_ACT]).build();
+}
+
+#[test]
+fn the_encounter_deck_and_discard_land_in_order() {
+    let state = GameStateBuilder::new()
+        .with_encounter_deck(["_top", "_second", "_bottom"])
+        .with_encounter_discard(["_first_discarded", "_last_discarded"])
+        .build();
+    assert_eq!(
+        Vec::from(state.encounter_deck),
+        [
+            CardCode::new("_top"),
+            CardCode::new("_second"),
+            CardCode::new("_bottom")
+        ]
+    );
+    assert_eq!(
+        state.encounter_discard,
+        [
+            CardCode::new("_first_discarded"),
+            CardCode::new("_last_discarded")
+        ]
+    );
 }

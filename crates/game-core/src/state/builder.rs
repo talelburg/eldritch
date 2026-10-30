@@ -37,11 +37,11 @@ use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::staged::Staged;
 use crate::state::{
-    CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy,
-    EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowFrame, FastWindowKind, GameState,
-    HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase, TokenModifiers,
-    UpkeepPhaseFrame, UpkeepResume,
+    Act, Agenda, CardCode, CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter,
+    EncounterDrawFrame, Enemy, EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowFrame,
+    FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume,
+    Investigator, InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame,
+    Phase, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -62,6 +62,15 @@ pub struct GameStateBuilder {
     /// reading a printed card's fields once every seat is known.
     locations: BTreeMap<LocationId, Staged<Location>>,
     enemies: BTreeMap<EnemyId, Staged<Enemy>>,
+    /// The act and agenda decks as staged, in order: each card resolves at
+    /// [`build`](Self::build), reading a printed card's threshold.
+    act_deck: Vec<Staged<Act>>,
+    agenda_deck: Vec<Staged<Agenda>>,
+    act_index: usize,
+    agenda_index: usize,
+    agenda_doom: u8,
+    encounter_deck: VecDeque<CardCode>,
+    encounter_discard: Vec<CardCode>,
     chaos_bag: ChaosBag,
     token_modifiers: TokenModifiers,
     phase: Phase,
@@ -99,6 +108,13 @@ impl GameStateBuilder {
             investigators: BTreeMap::new(),
             locations: BTreeMap::new(),
             enemies: BTreeMap::new(),
+            act_deck: Vec::new(),
+            agenda_deck: Vec::new(),
+            act_index: 0,
+            agenda_index: 0,
+            agenda_doom: 0,
+            encounter_deck: VecDeque::new(),
+            encounter_discard: Vec::new(),
             chaos_bag: ChaosBag::new([]),
             token_modifiers: TokenModifiers::default(),
             phase: Phase::Mythos,
@@ -185,6 +201,60 @@ impl GameStateBuilder {
     pub(crate) fn stage_engagement(&mut self, enemy: EnemyId, investigator: InvestigatorId) {
         self.engagements.retain(|&(engaged, _)| engaged != enemy);
         self.engagements.push((enemy, investigator));
+    }
+
+    /// Stage the act deck, replacing any staged before. The test-only
+    /// [`with_act_deck`](Self::with_act_deck) is the caller.
+    pub(crate) fn stage_act_deck(&mut self, deck: Vec<Staged<Act>>) {
+        self.act_deck = deck;
+    }
+
+    /// Stage the agenda deck, replacing any staged before. The test-only
+    /// [`with_agenda_deck`](Self::with_agenda_deck) is the caller.
+    pub(crate) fn stage_agenda_deck(&mut self, deck: Vec<Staged<Agenda>>) {
+        self.agenda_deck = deck;
+    }
+
+    /// Make the act at `index` in the act deck the current act,
+    /// [`GameState::act_index`]. Defaults to 0, the deck's first act.
+    pub fn with_current_act(mut self, index: usize) -> Self {
+        self.act_index = index;
+        self
+    }
+
+    /// Make the agenda at `index` in the agenda deck the current agenda,
+    /// [`GameState::agenda_index`]. Defaults to 0, the deck's first agenda.
+    pub fn with_current_agenda(mut self, index: usize) -> Self {
+        self.agenda_index = index;
+        self
+    }
+
+    /// Put `doom` doom on the current agenda, [`GameState::agenda_doom`].
+    /// Defaults to 0.
+    pub fn with_agenda_doom(mut self, doom: u8) -> Self {
+        self.agenda_doom = doom;
+        self
+    }
+
+    /// Set the encounter deck, [`GameState::encounter_deck`], top card first.
+    /// Replaces any set before; defaults to empty.
+    pub fn with_encounter_deck(
+        mut self,
+        cards: impl IntoIterator<Item = impl Into<CardCode>>,
+    ) -> Self {
+        self.encounter_deck = cards.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Set the encounter discard pile, [`GameState::encounter_discard`],
+    /// bottom card first (the order the engine pushes discards in). Replaces
+    /// any set before; defaults to empty.
+    pub fn with_encounter_discard(
+        mut self,
+        cards: impl IntoIterator<Item = impl Into<CardCode>>,
+    ) -> Self {
+        self.encounter_discard = cards.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Set the chaos bag. Replaces any prior bag.
@@ -499,7 +569,9 @@ impl GameStateBuilder {
     /// ([`as_card`](crate::test_support::StagedEnemy::as_card)) reads it here,
     /// from the registries named by [`with_registries`](Self::with_registries),
     /// with a per-investigator value scaled to every investigator on the
-    /// board — whichever order they and the card were staged in.
+    /// board — whichever order they and the card were staged in. So does each
+    /// printed card in a staged act or agenda deck
+    /// ([`with_act_deck`](Self::with_act_deck)), for its threshold.
     ///
     /// # Panics
     ///
@@ -528,6 +600,16 @@ impl GameStateBuilder {
             .enemies
             .into_iter()
             .map(|(id, staged)| (id, staged.resolve(cards, investigator_count)))
+            .collect();
+        let act_deck: Vec<Act> = self
+            .act_deck
+            .into_iter()
+            .map(|staged| staged.resolve(cards, investigator_count))
+            .collect();
+        let agenda_deck: Vec<Agenda> = self
+            .agenda_deck
+            .into_iter()
+            .map(|staged| staged.resolve(cards, investigator_count))
             .collect();
         let location_ids = Counter::at(next_id(locations.keys().map(|id| id.0)));
         let enemy_ids = Counter::at(next_id(enemies.keys().map(|id| id.0)));
@@ -605,13 +687,13 @@ impl GameStateBuilder {
             continuations,
             scenario_id: self.scenario_id,
             lasting_effects: Vec::new(),
-            encounter_deck: VecDeque::new(),
-            encounter_discard: Vec::new(),
-            agenda_deck: Vec::new(),
-            agenda_index: 0,
-            agenda_doom: 0,
-            act_deck: Vec::new(),
-            act_index: 0,
+            encounter_deck: self.encounter_deck,
+            encounter_discard: self.encounter_discard,
+            agenda_deck,
+            agenda_index: self.agenda_index,
+            agenda_doom: self.agenda_doom,
+            act_deck,
+            act_index: self.act_index,
             ending: None,
             victory_display: Vec::new(),
             removed_from_game: Vec::new(),

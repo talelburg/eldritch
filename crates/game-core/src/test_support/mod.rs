@@ -27,6 +27,7 @@ use crate::state::CardCode;
 
 pub mod assertions;
 mod deal;
+mod deck;
 mod fixtures;
 mod lookup;
 mod mock_registry;
@@ -265,6 +266,7 @@ fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 }
 
 pub use deal::assert_effect_deal;
+pub use deck::{act, agenda, StagedAct, StagedAgenda};
 pub use fixtures::{
     awaiting_commit_input, awaiting_commit_input_for, awaiting_confirm_input,
     awaiting_confirm_input_for, awaiting_pick_single_input, awaiting_pick_single_with,

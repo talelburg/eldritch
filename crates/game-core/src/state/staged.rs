@@ -6,7 +6,9 @@
 //! and the board state around it. The printed fields can't be read then: an
 //! enemy's per-investigator health scales by the investigators on the board,
 //! which are not all seated yet. [`GameStateBuilder::build`] (or `place`, on a
-//! built state) resolves each [`Staged`] piece once that count is known.
+//! built state) resolves each [`Staged`] piece once that count is known. The
+//! act and agenda deck stagers (`with_act_deck`, `with_agenda_deck`) record
+//! each printed card's code the same way, and `build` reads its threshold.
 //!
 //! Plain data, so the production builder holds no fixture type.
 //!
@@ -15,7 +17,7 @@
 use card_dsl::card_data::CardMetadata;
 
 use crate::card_registry::CardRegistry;
-use crate::state::{CardCode, Enemy, Location};
+use crate::state::{Act, Agenda, CardCode, Enemy, Location};
 
 /// A board piece, and the printed card whose printed fields replace its own
 /// when it is [resolved](Self::resolve).
@@ -131,5 +133,27 @@ impl Reprint for Location {
         printed.attachments = self.attachments;
         printed.cards_at_location = self.cards_at_location;
         Some(printed)
+    }
+}
+
+impl Reprint for Act {
+    const KIND: &'static str = "an act";
+
+    /// The printed act, through [`Act::from_metadata`] — the constructor a
+    /// scenario's `setup()` uses. An act in a deck carries no board state.
+    fn reprint(self, metadata: &CardMetadata, _investigator_count: u8) -> Option<Self> {
+        Self::from_metadata(metadata)
+    }
+}
+
+impl Reprint for Agenda {
+    const KIND: &'static str = "an agenda";
+
+    /// The printed agenda, through [`Agenda::from_metadata`] — the
+    /// constructor a scenario's `setup()` uses. An agenda in a deck carries
+    /// no board state: the doom on it is the board's
+    /// ([`agenda_doom`](crate::state::GameState::agenda_doom)).
+    fn reprint(self, metadata: &CardMetadata, _investigator_count: u8) -> Option<Self> {
+        Self::from_metadata(metadata)
     }
 }
