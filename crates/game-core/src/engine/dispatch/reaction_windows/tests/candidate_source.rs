@@ -4,7 +4,7 @@ use crate::test_support::{enemy, location};
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Effect};
 
-use crate::test_support::{self, act, agenda, MockRegistry, SeatLookup as _, TEST_REGISTRIES};
+use crate::test_support::{self, act, agenda, BoardLookup as _, MockRegistry, TEST_REGISTRIES};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// Deliberately resolved by no registry — the test registry knows none.

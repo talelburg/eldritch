@@ -22,7 +22,7 @@ use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, SkillTestId, UsageClock,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Roland Banks.

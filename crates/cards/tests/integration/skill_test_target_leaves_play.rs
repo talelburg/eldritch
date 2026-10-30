@@ -50,7 +50,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const BEAT_COP: &str = "01018";

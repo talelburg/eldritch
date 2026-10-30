@@ -28,7 +28,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DifficultyBasis, EnemyId,
     GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Mock weapon: *"\[action\]: Fight. If a \[skull\] is revealed during this

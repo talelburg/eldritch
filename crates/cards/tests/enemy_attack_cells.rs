@@ -35,7 +35,7 @@ use game_core::state::{
     Continuation, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    self, seat, MockRegistry, SeatLookup as _, StagedEnemy, TestSession,
+    self, seat, BoardLookup as _, MockRegistry, StagedEnemy, TestSession,
 };
 use std::sync::LazyLock;
 

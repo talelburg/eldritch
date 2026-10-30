@@ -16,7 +16,7 @@ use game_core::state::{
     InvestigatorTurnFrame, LocationId, ModifierTarget, MythosPhaseFrame, MythosResume, Owner,
     Phase, SkillKind, UseKind, Zone,
 };
-use game_core::test_support::{enemy, location, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 /// Obscuring Fog 01168.
 const OBSCURING_FOG: &str = "01168";

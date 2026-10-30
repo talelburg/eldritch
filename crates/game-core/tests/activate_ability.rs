@@ -25,7 +25,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, RecordedModifierKind,
     SkillKind, Status,
 };
-use game_core::test_support::{location, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —

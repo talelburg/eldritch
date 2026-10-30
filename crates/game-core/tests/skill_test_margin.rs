@@ -19,7 +19,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup, TestSession};
+use game_core::test_support::{self, seat, BoardLookup, MockRegistry, TestSession};
 
 /// Forced, after any of your tests succeeds by 2 or more: 1 horror.
 const SUCCEED_BY_TWO_OR_MORE: &str = "MOCK-MARGIN-SUCCESS-GE2";

@@ -47,7 +47,7 @@ use crate::state::{
     CardCode, CardInPlay, Counter, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     Location, LocationId, Owner,
 };
-use crate::test_support::{test_enemy, test_location};
+use crate::test_support::fixtures::{test_enemy, test_location};
 
 /// A stager's state before [`as_card`](StagedEnemy::as_card): its printed
 /// fields are the stock fixture's, settable.

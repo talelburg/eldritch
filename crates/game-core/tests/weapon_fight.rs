@@ -25,7 +25,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{
-    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, StagedEnemy, TestSession,
+    self, seat, uses, BoardLookup as _, MockRegistry, SeatCard, StagedEnemy, TestSession,
 };
 use std::sync::LazyLock;
 

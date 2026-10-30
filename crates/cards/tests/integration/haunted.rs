@@ -19,7 +19,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameState, GameStateBuilder,
     InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 const HAUNTED: &str = "01098";
 /// Holy Rosary 01059 — a non-weakness filler for the rest of the deck.

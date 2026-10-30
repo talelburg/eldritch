@@ -271,7 +271,7 @@ fn a_printed_location_carries_the_printed_card_and_its_staged_board_state() {
 #[test]
 fn a_spawn_after_staging_enemy_zero_mints_a_fresh_id() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, the spawner.
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_location(location(HERE))
@@ -282,9 +282,8 @@ fn a_spawn_after_staging_enemy_zero_mints_a_fresh_id() {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck([SPAWNER])
         .build();
-    // The encounter-deck setter is #1252's.
-    state.encounter_deck.push_back(SPAWNER.into());
     let session = TestSession::new(state, registries()).confirm();
     let enemies = &session.state().enemies;
     assert_eq!(enemies.len(), 2, "the spawn joined the staged enemy");

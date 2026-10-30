@@ -65,7 +65,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, StagedEnemy, TestSession};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.

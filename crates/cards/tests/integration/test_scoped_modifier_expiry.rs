@@ -31,7 +31,7 @@ use game_core::state::{
     ChaosToken, GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
     MythosPhaseFrame, MythosResume, Phase, RecordedModifier, SkillTestId, Status,
 };
-use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";

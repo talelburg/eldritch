@@ -22,7 +22,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// A synthetic single-hand asset, seated in the threat area.
 const CHARM: &str = "TEST-THREAT-CHARM";

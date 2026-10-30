@@ -14,7 +14,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Zone};
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const LEATHER_COAT: &str = "01072";

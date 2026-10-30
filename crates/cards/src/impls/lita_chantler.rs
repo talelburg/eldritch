@@ -238,7 +238,7 @@ mod tests {
         AbilitySource, Continuation, EnemyId, GameState, GameStateBuilder,
         InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
-    use game_core::test_support::{self, seat, SeatLookup as _};
+    use game_core::test_support::{self, seat, BoardLookup as _};
 
     use crate::impls;
 

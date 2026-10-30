@@ -439,7 +439,7 @@ mod tests {
         CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     };
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
+    use crate::test_support::{self, BoardLookup as _, TEST_REGISTRIES};
     use crate::test_support::{enemy, location};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`

@@ -21,7 +21,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 const DYNAMITE: &str = "01024";
 /// Hypochondria 01100, in the threat area of the first investigator blasted.

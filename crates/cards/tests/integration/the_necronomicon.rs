@@ -50,7 +50,7 @@ use game_core::state::{
     TokenResolution, UseKind, Zone,
 };
 use game_core::test_support::{
-    self, enemy, horror, location, seat, uses, Either, Seat, SeatLookup as _, TestSession,
+    self, enemy, horror, location, seat, uses, BoardLookup as _, Either, Seat, TestSession,
 };
 use game_core::{assert_event, assert_event_count, assert_no_event};
 

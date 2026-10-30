@@ -47,7 +47,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage

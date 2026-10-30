@@ -18,7 +18,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, Seat, StagedEnemy, TestSession};
 
 const DERRINGER: &str = "01047";
 

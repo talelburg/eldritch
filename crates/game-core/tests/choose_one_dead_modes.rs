@@ -27,7 +27,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: `[action] Test intellect(2). If you succeed, heal 1 damage or horror

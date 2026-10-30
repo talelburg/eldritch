@@ -27,7 +27,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{self, doom, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, doom, seat, BoardLookup as _, Seat, TestSession};
 
 const INITIATE: &str = "01063";
 /// Dark Memory — an Agnes weakness event, trait Spell.

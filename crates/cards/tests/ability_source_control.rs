@@ -26,7 +26,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 use std::sync::LazyLock;
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card

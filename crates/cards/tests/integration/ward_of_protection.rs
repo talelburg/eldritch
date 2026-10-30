@@ -34,7 +34,7 @@ use game_core::state::{
     CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
 };
-use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Either, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const WARD: &str = "01065";

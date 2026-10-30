@@ -31,7 +31,7 @@ use game_core::state::{
     Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{
-    self, clues, seat, MockRegistry, Seat, SeatLookup as _, TestSession,
+    self, clues, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 

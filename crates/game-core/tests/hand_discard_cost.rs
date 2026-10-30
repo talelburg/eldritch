@@ -31,7 +31,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// `[reaction] When you would discover clues at your location, choose and

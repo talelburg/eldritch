@@ -15,7 +15,9 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, seat, uses, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    self, seat, uses, BoardLookup as _, MockRegistry, Seat, TestSession,
+};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";

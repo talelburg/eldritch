@@ -28,7 +28,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
 use game_core::test_support::{
-    enemy, location, seat, Either, Printed, Seat, SeatLookup as _, TestSession,
+    enemy, location, seat, BoardLookup as _, Either, Printed, Seat, TestSession,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 

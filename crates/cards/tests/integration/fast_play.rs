@@ -43,7 +43,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
     LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*

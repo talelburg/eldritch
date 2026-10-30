@@ -40,7 +40,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 /// Crypt Chill.
 const CRYPT_CHILL: &str = "01167";

@@ -22,7 +22,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const CUNNING_DISTRACTION: &str = "01078";

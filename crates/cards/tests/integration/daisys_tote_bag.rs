@@ -11,7 +11,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, horror, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, horror, seat, BoardLookup as _, Seat, TestSession};
 
 const TOTE_BAG: &str = "01008"; // slot-less; the grant
 const NECRONOMICON: &str = "01009"; // Tome, single Hand, a weakness

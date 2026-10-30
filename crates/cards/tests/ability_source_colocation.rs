@@ -46,7 +46,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardInstanceId, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 use std::sync::LazyLock;
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both

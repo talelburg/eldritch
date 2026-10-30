@@ -17,7 +17,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);

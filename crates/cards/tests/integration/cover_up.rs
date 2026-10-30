@@ -14,7 +14,7 @@ use game_core::state::{
     MythosPhaseFrame, MythosResume, Phase,
 };
 use game_core::test_support::{
-    self, act, clues, seat, Seat, SeatLookup as _, StagedAct, TestSession,
+    self, act, clues, seat, BoardLookup as _, Seat, StagedAct, TestSession,
 };
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 

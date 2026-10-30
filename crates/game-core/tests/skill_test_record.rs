@@ -26,7 +26,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, RevealedToken,
     SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 
 const SCENARIO: &str = "skill-test-record-mock";
 const INV: InvestigatorId = InvestigatorId(1);

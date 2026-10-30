@@ -29,7 +29,7 @@ use game_core::state::{
     UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{
-    self, seat, ChoiceResolver, MockRegistry, SeatLookup as _, TestSession,
+    self, seat, BoardLookup as _, ChoiceResolver, MockRegistry, TestSession,
 };
 use game_core::{assert_event, assert_event_count};
 

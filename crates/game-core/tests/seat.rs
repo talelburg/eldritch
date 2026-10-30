@@ -16,7 +16,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
     SkillKind, Status, UseKind,
 };
-use game_core::test_support::{self, clues, seat, uses, MockRegistry, SeatLookup as _};
+use game_core::test_support::{self, clues, seat, uses, BoardLookup as _, MockRegistry};
 
 /// An investigator card printed 2/5/1/4, 7 health, 9 sanity.
 const SEAT_INV: &str = "_seat_inv";

@@ -33,7 +33,7 @@ use game_core::state::{
     TimingPointWindowFrame,
 };
 use game_core::test_support::{
-    self, act, enemy, location, seat, MockRegistry, Seat, SeatLookup as _, TestSession,
+    self, act, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
 };
 
 /// A single-hand asset in play, holding the investigator's one hand slot

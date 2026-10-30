@@ -19,7 +19,7 @@ use game_core::engine::{EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, Seat};
 use game_core::{assert_event, assert_no_event};
 
 /// An event that sits in its owner's play area.

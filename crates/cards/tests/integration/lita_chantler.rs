@@ -68,7 +68,7 @@ use game_core::state::{
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner,
     SkillKind,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 /// Lita Chantler.
 const LITA: &str = "01117";

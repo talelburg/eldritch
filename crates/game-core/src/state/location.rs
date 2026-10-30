@@ -124,37 +124,6 @@ impl Location {
             cards_at_location: Vec::new(),
         })
     }
-
-    /// Construct a revealed location with no connections, from its
-    /// printed identity and stats (`code`, `name`, `shroud`, `clues`).
-    ///
-    /// Set `connections` (and `revealed`, for cards that enter play
-    /// face-down) afterward via the public fields — those are
-    /// scenario-layout concerns, not printed on the card. This is the
-    /// cross-crate constructor scenarios use to build their board; the
-    /// struct is `#[non_exhaustive]`, so a struct literal won't compile
-    /// outside `game-core`.
-    #[must_use]
-    pub fn new(
-        id: LocationId,
-        code: CardCode,
-        name: impl Into<String>,
-        shroud: u8,
-        clues: u8,
-    ) -> Self {
-        Self {
-            id,
-            code,
-            name: name.into(),
-            shroud,
-            clues,
-            printed_clues: ClueValue::Fixed(clues),
-            revealed: true,
-            connections: Vec::new(),
-            attachments: Vec::new(),
-            cards_at_location: Vec::new(),
-        }
-    }
 }
 
 #[cfg(test)]

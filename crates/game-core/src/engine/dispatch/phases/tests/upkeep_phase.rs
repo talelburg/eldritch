@@ -3,7 +3,7 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
-use crate::test_support::{self, SeatLookup as _, TestSession, TEST_REGISTRIES};
+use crate::test_support::{self, BoardLookup as _, TestSession, TEST_REGISTRIES};
 use crate::test_support::{enemy, location};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 

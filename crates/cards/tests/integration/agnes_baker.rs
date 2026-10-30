@@ -25,7 +25,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
 };
 use game_core::test_support::{
-    self, seat, Either, Printed, Seat, SeatLookup as _, StagedEnemy, TestSession,
+    self, seat, BoardLookup as _, Either, Printed, Seat, StagedEnemy, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 

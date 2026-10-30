@@ -33,7 +33,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use std::sync::LazyLock;
 
 /// Synthetic encounter treachery that sits in a threat area and can be

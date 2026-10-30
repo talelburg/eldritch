@@ -67,7 +67,7 @@ use game_core::state::{
     CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Owner, Phase,
 };
-use game_core::test_support::{SeatLookup as _, TestSession};
+use game_core::test_support::{BoardLookup as _, TestSession};
 use game_core::{assert_event, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
@@ -100,7 +100,7 @@ const INV2: InvestigatorId = InvestigatorId(2);
 ///
 /// The Attic is built **through the engine from its own corpus metadata**
 /// (`GameState::add_location`, the same call The Gathering's `setup` makes),
-/// not hand-stamped onto a `test_location`: shroud, printed clues and victory
+/// not hand-stamped onto a stock location: shroud, printed clues and victory
 /// come off card 01113 rather than from a fixture wearing its code, which is
 /// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
 /// Attic: Take 1 horror."* is live in the registry and simply never

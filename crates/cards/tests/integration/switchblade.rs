@@ -21,7 +21,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{enemy, location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 
 const SWITCHBLADE: &str = "01044";
 /// Unexpected Courage 01093: *"Max 1 committed per skill test."*, 2 wild

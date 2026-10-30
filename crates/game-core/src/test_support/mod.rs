@@ -271,10 +271,10 @@ pub use fixtures::{
     awaiting_commit_input, awaiting_commit_input_for, awaiting_confirm_input,
     awaiting_confirm_input_for, awaiting_pick_single_input, awaiting_pick_single_with,
     awaiting_request, awaiting_skippable_commit_input, awaiting_skippable_pick_single_input,
-    awaiting_skippable_pick_single_with, from_frames_unchecked, test_enemy, test_investigator,
-    test_investigator_card, test_location, test_skill_test,
+    awaiting_skippable_pick_single_with, from_frames_unchecked, test_investigator,
+    test_investigator_card, test_skill_test,
 };
-pub use lookup::{BoardLookup, SeatLookup};
+pub use lookup::BoardLookup;
 pub use mock_registry::MockRegistry;
 pub use native::run_native;
 pub use resolver::{ChoiceResolver, ScriptedResolver};

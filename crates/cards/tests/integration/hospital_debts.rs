@@ -29,7 +29,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, GameState, GameStateBuilder, InvestigatorId, LocationId,
     MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 const HOSPITAL_DEBTS: &str = "01011";

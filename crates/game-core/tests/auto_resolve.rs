@@ -57,7 +57,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenResolution, Zone,
 };
-use game_core::test_support::{location, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically

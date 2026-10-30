@@ -161,7 +161,7 @@ fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 mod tests {
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{AbilitySource, GameStateBuilder, InvestigatorId};
-    use game_core::test_support::{clues, seat, SeatLookup as _};
+    use game_core::test_support::{clues, seat, BoardLookup as _};
 
     use super::*;
     use crate::impls;

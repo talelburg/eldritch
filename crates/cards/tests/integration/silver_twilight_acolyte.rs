@@ -32,7 +32,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy, EnemyId,
     GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 
 const ACOLYTE: &str = "01102";
 const MACHETE: &str = "01020";

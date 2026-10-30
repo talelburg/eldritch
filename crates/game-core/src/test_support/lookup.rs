@@ -65,9 +65,6 @@ pub trait BoardLookup {
     fn location(&self, id: LocationId) -> &Location;
 }
 
-/// The former name of [`BoardLookup`], from when it found only seated cards.
-pub use self::BoardLookup as SeatLookup;
-
 impl BoardLookup for GameState {
     fn card_in_play(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> &CardInPlay {
         let code = code.into();

@@ -31,7 +31,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
 use game_core::test_support::{
-    enemy, location, seat, Seat, SeatLookup as _, StagedEnemy, TestSession,
+    enemy, location, seat, BoardLookup as _, Seat, StagedEnemy, TestSession,
 };
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.

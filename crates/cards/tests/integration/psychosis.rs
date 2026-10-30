@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
     Owner,
 };
-use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Either, Seat, TestSession};
 
 const PSYCHOSIS: &str = "01099";
 const AGNES: &str = "01004";

@@ -21,7 +21,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _};
+use game_core::test_support::{self, seat, BoardLookup as _};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const ABANDONED_AND_ALONE: &str = "01015";

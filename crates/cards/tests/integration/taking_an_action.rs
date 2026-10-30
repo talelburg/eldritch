@@ -47,7 +47,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support::{enemy, location, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 /// A probe whose only property is an activated ability costing two actions:
 /// *"\[action\]\[action\]: gain 1 resource."*

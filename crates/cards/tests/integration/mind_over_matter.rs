@@ -16,7 +16,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep,
     SkillKind,
 };
-use game_core::test_support::{enemy, location, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons

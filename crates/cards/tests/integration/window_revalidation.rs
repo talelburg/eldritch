@@ -35,7 +35,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Status, UsageClock,
 };
-use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Either, Seat, TestSession};
 
 use game_core::{assert_event, assert_event_count, assert_no_event};
 

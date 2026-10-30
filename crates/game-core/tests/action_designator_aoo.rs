@@ -50,7 +50,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{enemy, location, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// Synthetic **asset** printing the same residual effect twice — once under a
 /// **Fight** designator, once under none. The pair is the control: only the

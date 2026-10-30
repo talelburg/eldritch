@@ -21,7 +21,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// `Forced - At the end of the round: Discover 2 clues at your location.`
 /// Empties [`LOCATION`], which holds [`LOCATION_CLUES`].

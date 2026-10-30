@@ -43,7 +43,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId,
     GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A

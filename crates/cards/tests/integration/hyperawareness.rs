@@ -30,7 +30,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, SkillKind,
 };
-use game_core::test_support::{seat, SeatLookup as _, TestSession};
+use game_core::test_support::{seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const HYPERAWARENESS: &str = "01034";

@@ -27,7 +27,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 const HEIRLOOM: &str = "01012";
 /// Event. `Spell.`

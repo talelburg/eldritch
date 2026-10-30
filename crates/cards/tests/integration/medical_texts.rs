@@ -22,7 +22,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind,
 };
-use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 
 const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);

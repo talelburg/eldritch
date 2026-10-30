@@ -6,7 +6,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 

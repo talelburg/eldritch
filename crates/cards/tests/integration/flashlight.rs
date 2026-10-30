@@ -18,7 +18,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, UseKind,
 };
-use game_core::test_support::{self, seat, uses, SeatLookup as _, StagedLocation, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, StagedLocation, TestSession};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);

@@ -28,7 +28,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
     SkillKind,
 };
-use game_core::test_support::{enemy, location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 
 const PICKPOCKETING: &str = "01046";

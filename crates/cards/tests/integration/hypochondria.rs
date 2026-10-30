@@ -26,7 +26,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner,
     Status,
 };
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, TestSession};
 
 const HYPOCHONDRIA: &str = "01100";
 const PSYCHOSIS: &str = "01099";

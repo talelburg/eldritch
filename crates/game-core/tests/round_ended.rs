@@ -9,7 +9,9 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{agenda, location, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{
+    agenda, location, seat, BoardLookup as _, MockRegistry, TestSession,
+};
 
 const AGENDA: &str = "TEST-AGENDA";
 

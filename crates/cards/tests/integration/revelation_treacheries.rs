@@ -14,7 +14,7 @@ use game_core::state::{
     CardCode, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, LocationId,
     MythosPhaseFrame, MythosResume, Phase, Zone,
 };
-use game_core::test_support::{location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_count};
 
 /// Holy Rosary 01059 — a real corpus asset.

@@ -38,7 +38,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, EliminationCause, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, StagedEnemy, TestSession};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.

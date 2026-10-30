@@ -26,7 +26,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue

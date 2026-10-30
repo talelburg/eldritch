@@ -1,6 +1,6 @@
 use super::*;
 use crate::state::EmitEventFrame;
-use crate::test_support::SeatLookup as _;
+use crate::test_support::BoardLookup as _;
 use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 #[test]

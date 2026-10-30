@@ -546,7 +546,7 @@ mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Owner};
     use crate::test_support::{
-        self, act, agenda, enemy, location, seat, SeatLookup as _, TEST_REGISTRIES,
+        self, act, agenda, enemy, location, seat, BoardLookup as _, TEST_REGISTRIES,
     };
 
     const STUDY: LocationId = LocationId(1);

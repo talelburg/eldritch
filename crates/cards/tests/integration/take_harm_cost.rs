@@ -28,7 +28,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CardCode, Continuation,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::{self, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, location, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// *"\[fast\] Exhaust and take 1 horror: gain 1 resource."*

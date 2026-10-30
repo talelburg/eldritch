@@ -6,7 +6,7 @@ use crate::state::{
     RecordedModifier, SkillTestId,
 };
 use crate::test_support::{
-    self, enemy, location, seat, SeatLookup as _, StagedLocation, TEST_REGISTRIES,
+    self, enemy, location, seat, BoardLookup as _, StagedLocation, TEST_REGISTRIES,
 };
 
 mod blank;

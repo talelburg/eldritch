@@ -28,7 +28,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 
 const SCAVENGING: &str = "01073";
 /// Items: Flashlight (an `[intellect]` icon, so it can be committed to an

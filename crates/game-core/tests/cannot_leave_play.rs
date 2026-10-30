@@ -30,7 +30,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, horror, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, horror, seat, BoardLookup as _, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// A hand-slot weakness that cannot leave play while it has horror on it.

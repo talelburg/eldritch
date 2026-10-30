@@ -25,7 +25,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, Status,
 };
 use game_core::test_support::{
-    act, agenda, enemy, location, seat, MockRegistry, Seat, SeatLookup as _, StagedLocation,
+    act, agenda, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, StagedLocation,
     TestSession,
 };
 

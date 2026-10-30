@@ -20,7 +20,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);

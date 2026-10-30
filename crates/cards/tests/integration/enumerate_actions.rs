@@ -12,7 +12,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, act, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, act, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).

@@ -22,7 +22,7 @@ use game_core::state::{
     Assignment, CardCode, CardInstanceId, DamageSource, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 
 /// `Forced - When an enemy attack deals damage to this card: mark the
 /// attacking enemy. (Limit once per round.)` / `Forced - When you discover

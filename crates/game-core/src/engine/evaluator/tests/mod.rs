@@ -8,7 +8,7 @@ use crate::state::{
     CardInPlay, DifficultyBasis, GameStateBuilder, InFlightSkillTest, RecordedModifierKind,
     SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep, Status,
 };
-use crate::test_support::{act, agenda, enemy, location, seat, SeatLookup as _, TEST_REGISTRIES};
+use crate::test_support::{act, agenda, enemy, location, seat, BoardLookup as _, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod act_progress;

@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, UseKind, Zone,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, uses, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const FORBIDDEN_KNOWLEDGE: &str = "01058";

@@ -25,7 +25,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BASEBALL_BAT: &str = "01074";

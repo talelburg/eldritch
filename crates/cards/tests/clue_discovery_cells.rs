@@ -32,7 +32,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession};
 use std::sync::LazyLock;
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this

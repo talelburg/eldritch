@@ -35,7 +35,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, StagedEnemy, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, Seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.

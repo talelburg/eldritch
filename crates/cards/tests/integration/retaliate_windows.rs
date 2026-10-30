@@ -42,7 +42,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{enemy, location, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.

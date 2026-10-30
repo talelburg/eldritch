@@ -91,7 +91,7 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, SkillKind,
 };
 use game_core::test_support::{
-    self, act, agenda, seat, MockRegistry, Seat, SeatLookup as _, TestSession,
+    self, act, agenda, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 use std::sync::LazyLock;

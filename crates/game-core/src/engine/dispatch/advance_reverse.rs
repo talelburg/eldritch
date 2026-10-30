@@ -185,14 +185,23 @@ mod tests {
         AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, act, agenda, TestSession, TEST_REGISTRIES};
+    use crate::test_support::{self, act, agenda, StagedAgenda, TestSession, TEST_REGISTRIES};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
+        state_advancing_agenda_from([agenda("_a1", 1), agenda("_a2", 3)], interactive)
+    }
+
+    /// [`state_advancing_agenda`] over the agenda deck `deck`, whose first
+    /// card, `_a1`, is the one advancing.
+    fn state_advancing_agenda_from(
+        deck: impl IntoIterator<Item = StagedAgenda>,
+        interactive: bool,
+    ) -> GameState {
         // A seated lead, who acknowledges the advance.
         let mut state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
             .with_seating([InvestigatorId(1)])
-            .with_agenda_deck([agenda("_a1", 1), agenda("_a2", 3)])
+            .with_agenda_deck(deck)
             .build();
         state.interactive_acknowledge = interactive;
         // An AdvanceReverse frame as advance_agenda would push it (leaving = a1).
@@ -370,8 +379,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "terminal agenda 0 finished without an ending latched")]
     fn a_terminal_card_whose_reverse_reaches_no_ending_panics() {
-        let mut state = state_advancing_agenda(false);
-        state.agenda_deck.truncate(1);
+        let mut state = state_advancing_agenda_from([agenda("_a1", 1)], false);
         let mut events = Vec::new();
         let _ = dispatch::drive(
             &mut Cx::for_test(&mut state, &mut events),

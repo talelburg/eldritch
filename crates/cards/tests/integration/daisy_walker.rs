@@ -26,7 +26,7 @@ use game_core::state::{
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{
-    self, seat, uses, CardSetup, Either, Printed, Seat, SeatLookup as _, TestSession,
+    self, seat, uses, BoardLookup as _, CardSetup, Either, Printed, Seat, TestSession,
 };
 use game_core::{assert_event, assert_no_event};
 

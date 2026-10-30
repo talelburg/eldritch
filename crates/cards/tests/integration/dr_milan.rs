@@ -11,7 +11,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
     LocationId, Owner, SkillKind,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, StagedLocation, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, StagedLocation, TestSession};
 
 const DR_MILAN: &str = "01033";
 /// Obscuring Fog.

@@ -23,7 +23,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
 use game_core::test_support::{
-    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
+    self, seat, uses, BoardLookup as _, MockRegistry, SeatCard, TestSession,
 };
 use std::sync::LazyLock;
 

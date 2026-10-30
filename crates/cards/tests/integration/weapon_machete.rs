@@ -22,7 +22,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, TestSession};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);

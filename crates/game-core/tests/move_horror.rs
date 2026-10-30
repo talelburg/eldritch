@@ -29,7 +29,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{
-    self, horror, seat, test_investigator_card, Either, MockRegistry, Seat, SeatLookup as _,
+    self, horror, seat, test_investigator_card, BoardLookup as _, Either, MockRegistry, Seat,
     TestSession,
 };
 use game_core::{assert_event, assert_no_event};

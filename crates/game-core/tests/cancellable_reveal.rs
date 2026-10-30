@@ -36,7 +36,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 /// Mock asset: *"\[reaction\] When you reveal a chaos token: Cancel that chaos

@@ -19,7 +19,7 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    self, seat, Either, Seat, SeatLookup as _, StagedEnemy, TestSession,
+    self, seat, BoardLookup as _, Either, Seat, StagedEnemy, TestSession,
 };
 
 const LEO: &str = "01048";

@@ -24,7 +24,7 @@ use game_core::event::{Event, FailureReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const LUCKY: &str = "01080";

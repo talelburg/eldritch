@@ -11,7 +11,7 @@ use cards::TEST_REGISTRIES;
 use game_core::state::{
     ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);

@@ -30,7 +30,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support::{location, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, uses, BoardLookup as _, Seat, TestSession};
 
 const SCRYING: &str = "01061";
 const INV: InvestigatorId = InvestigatorId(1);

@@ -24,7 +24,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
-use game_core::test_support::{enemy, location, seat, uses, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const SHRIVELLING: &str = "01060";
