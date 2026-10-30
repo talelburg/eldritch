@@ -13,8 +13,8 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
-use game_core::state::{CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{enemy, location, seat, StagedEnemy, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const SNEAK_ATTACK: &str = "01052";
@@ -27,18 +27,9 @@ const PLAY: TurnAction = TurnAction::PlayCard {
     source: PlaySource::Hand(0),
 };
 
-/// An unengaged 5-health enemy at `at`, exhausted or ready.
-fn enemy(id: u32, at: LocationId, exhausted: bool) -> Enemy {
-    let mut enemy = test_support::test_enemy(id, "Ghoul");
-    enemy.max_health = 5;
-    enemy.current_location = Some(at);
-    enemy.exhausted = exhausted;
-    enemy
-}
-
 /// Sneak Attack in hand with the resources to play it, at `HERE` with a
-/// second location `THERE`, and `enemies` on the board.
-fn board(enemies: impl IntoIterator<Item = Enemy>) -> TestSession {
+/// second location `THERE`, and `enemies` (unengaged) on the board.
+fn board(enemies: impl IntoIterator<Item = StagedEnemy>) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(
@@ -48,8 +39,8 @@ fn board(enemies: impl IntoIterator<Item = Enemy>) -> TestSession {
                 .resources(2)
                 .actions(3),
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_location(test_support::test_location(THERE.0, "There"));
+        .with_location(location(HERE))
+        .with_location(location(THERE));
     for enemy in enemies {
         builder = builder.with_enemy(enemy);
     }
@@ -65,10 +56,10 @@ fn only_exhausted_enemies_at_your_location_are_offered_and_the_chosen_one_takes_
     let (a, b) = (EnemyId(100), EnemyId(101));
     let (ready, away) = (EnemyId(102), EnemyId(103));
     let session = board([
-        enemy(a.0, HERE, true),
-        enemy(b.0, HERE, true),
-        enemy(ready.0, HERE, false),
-        enemy(away.0, THERE, true),
+        enemy(a).health(5).at(HERE).exhausted(),
+        enemy(b).health(5).at(HERE).exhausted(),
+        enemy(ready).health(5).at(HERE),
+        enemy(away).health(5).at(THERE).exhausted(),
     ])
     .take(&PLAY);
 
@@ -103,7 +94,7 @@ fn only_exhausted_enemies_at_your_location_are_offered_and_the_chosen_one_takes_
 #[test]
 fn a_lone_exhausted_enemy_at_your_location_takes_two() {
     let target = EnemyId(100);
-    let session = board([enemy(target.0, HERE, true)]).take(&PLAY);
+    let session = board([enemy(target).health(5).at(HERE).exhausted()]).take(&PLAY);
 
     session.assert_at_turn_menu(INV);
     assert_eq!(damage(&session, target), 2);
@@ -113,7 +104,10 @@ fn a_lone_exhausted_enemy_at_your_location_takes_two() {
 fn not_playable_with_no_exhausted_enemy_at_your_location() {
     // A ready enemy here and an exhausted one elsewhere: neither qualifies,
     // so the effect cannot change the game state and the play is not offered.
-    let session = board([enemy(100, HERE, false), enemy(101, THERE, true)]);
+    let session = board([
+        enemy(100).health(5).at(HERE),
+        enemy(101).health(5).at(THERE).exhausted(),
+    ]);
     assert!(
         !enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&PLAY),
         "Sneak Attack must not be on the turn menu"

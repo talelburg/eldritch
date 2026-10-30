@@ -55,10 +55,10 @@ use cards::TEST_REGISTRIES;
 use game_core::engine;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Owner,
+    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Owner,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, Printed, StagedLocation, TestSession};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
@@ -77,30 +77,38 @@ const PARLOR: LocationId = LocationId(2);
 const ATTIC: LocationId = LocationId(3);
 const ATT_INST: CardInstanceId = CardInstanceId(900);
 
-/// The Parlor as the board actually holds it: the real card code (so the
+/// The Parlor as the board actually holds it: the printed card (so the
 /// registry resolves its front and back), `revealed` set by the caller.
-fn parlor(revealed: bool) -> Location {
-    let mut loc = test_support::test_location(PARLOR.0, "Parlor");
-    loc.code = CardCode::new(PARLOR_CODE);
-    loc.revealed = revealed;
-    loc.connections = vec![HALLWAY];
-    loc
+fn parlor(revealed: bool) -> StagedLocation<Printed> {
+    let parlor = location(PARLOR).as_card(PARLOR_CODE).connections([HALLWAY]);
+    if revealed {
+        parlor
+    } else {
+        parlor.unrevealed()
+    }
 }
 
 /// Hallway ─ Parlor and Hallway ─ Attic, with the investigator in the Hallway
 /// and an open Investigation-phase turn.
 fn board(parlor_revealed: bool) -> GameState {
-    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
-    hallway.connections = vec![PARLOR, ATTIC];
-    let mut attic = test_support::test_location(ATTIC.0, "Attic");
-    attic.connections = vec![HALLWAY];
+    board_with_attic(parlor_revealed, [])
+}
 
+/// [`board`], with `attachments` attached to the Attic.
+fn board_with_attic(
+    parlor_revealed: bool,
+    attachments: impl IntoIterator<Item = CardInPlay>,
+) -> GameState {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(INV.0).at(HALLWAY))
-        .with_location(hallway)
+        .with_location(location(HALLWAY).connections([PARLOR, ATTIC]))
         .with_location(parlor(parlor_revealed))
-        .with_location(attic)
+        .with_location(
+            location(ATTIC)
+                .connections([HALLWAY])
+                .attachments(attachments),
+        )
         .open_turn(INV)
         .build()
 }
@@ -247,9 +255,10 @@ fn the_reveal_alone_flips_the_answer() {
 #[test]
 fn an_enemy_can_enter_the_unrevealed_parlor() {
     let state = board(false);
-    let mut ghoul: Enemy = test_support::test_enemy(1, "Ghoul");
-    ghoul.code = CardCode::new(GHOUL_MINION);
-    ghoul.current_location = Some(HALLWAY);
+    let ghoul = enemy(1)
+        .as_card(GHOUL_MINION)
+        .at(HALLWAY)
+        .mint(TEST_REGISTRIES, 1);
 
     assert!(
         engine::enemy_can_enter_location(&state, TEST_REGISTRIES.cards, &ghoul, PARLOR),
@@ -267,21 +276,19 @@ fn an_enemy_can_enter_the_unrevealed_parlor() {
 /// an investigator still can.
 #[test]
 fn a_barricaded_location_blocks_a_non_elite_enemy_and_not_an_investigator() {
-    let mut state = board(true);
-    state
-        .locations
-        .get_mut(&ATTIC)
-        .expect("Attic is on the board")
-        .attachments
-        .push(CardInPlay::enter_play(
+    let state = board_with_attic(
+        true,
+        [CardInPlay::enter_play(
             CardCode::new(BARRICADE),
             ATT_INST,
             Owner::Investigator(INV),
-        ));
+        )],
+    );
 
-    let mut ghoul: Enemy = test_support::test_enemy(1, "Ghoul");
-    ghoul.code = CardCode::new(GHOUL_MINION);
-    ghoul.current_location = Some(HALLWAY);
+    let ghoul = enemy(1)
+        .as_card(GHOUL_MINION)
+        .at(HALLWAY)
+        .mint(TEST_REGISTRIES, 1);
 
     assert!(
         !engine::enemy_can_enter_location(&state, TEST_REGISTRIES.cards, &ghoul, ATTIC),

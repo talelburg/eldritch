@@ -63,10 +63,9 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId,
+    CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -80,18 +79,6 @@ const AUTOMATIC_45: &str = "01016";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const SPAWN: EnemyId = EnemyId(7);
-
-/// The Goat Spawn's stand-in: ready, **2 damage already on it** and 3 health,
-/// so Guard Dog's 1 retaliate damage defeats it — the example's setup exactly.
-/// Its attack deals 1 damage and no horror.
-fn goat_spawn() -> Enemy {
-    let mut e = test_support::test_enemy(SPAWN.0, "Goat Spawn");
-    e.max_health = 3;
-    e.damage = 2;
-    e.attack_damage = 1;
-    e.attack_horror = 0;
-    e
-}
 
 /// Assign every contested point to `inst`, reproducing the example's "Roland
 /// assigns this damage to his Guard Dog". The distribution must be answered;
@@ -123,12 +110,9 @@ fn has_in_play(state: &GameState, code: &str) -> bool {
 fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // A clue at the location for Roland's reaction to discover — the marker
     // that tells us the nested sequence resolved, and when.
-    let mut study = test_support::test_location(HERE.0, "Study");
-    study.clues = 1;
-
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(study)
+        .with_location(location(HERE).clues(1))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -140,7 +124,17 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
                 // convention).
                 .in_play([GUARD_DOG, ROLAND]),
         )
-        .with_enemy_engaged(goat_spawn(), INV)
+        // The Goat Spawn's stand-in: ready, **2 damage already on it** and 3
+        // health, so Guard Dog's 1 retaliate damage defeats it — the
+        // example's setup exactly. Its attack deals 1 damage and no horror.
+        .with_enemy(
+            enemy(SPAWN)
+                .health(3)
+                .damage(2)
+                .attack_damage(1)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
         .open_turn(INV)
         .session();
     let dog = session.state().in_play(INV, GUARD_DOG);

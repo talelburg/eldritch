@@ -28,10 +28,10 @@ use game_core::assert_event_count;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
+    ChaosToken, GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
     MythosPhaseFrame, MythosResume, Phase, RecordedModifier, SkillTestId, Status,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{location, seat, SeatLookup as _, TestSession};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";
@@ -58,18 +58,16 @@ fn board(damage: u8, soakers: &[&str]) -> GameState {
                 .harm(damage, 0)
                 .in_play(soakers.iter().copied()),
         )
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck([GRASPING_HANDS])
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state
-        .encounter_deck
-        .push_back(CardCode::new(GRASPING_HANDS));
     // One row for the test this board is about to run, one for a different
     // test entirely. The first must go; the second must stay.
     state.recorded_modifiers = vec![row_for(THE_TEST), row_for(ANOTHER_TEST)];

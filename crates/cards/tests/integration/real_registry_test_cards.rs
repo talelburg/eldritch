@@ -8,10 +8,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase, Skills, Status,
 };
-use game_core::test_support::{self, seat, terminal_code, TestSession, TEST_INV};
+use game_core::test_support::{act, location, seat, terminal_code, TestSession, TEST_INV};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
@@ -25,18 +25,18 @@ fn test_investigator_takes_harm_under_the_real_registry() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(location(HERE))
         .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_mythos_draw_remaining([INV])
+        .with_encounter_deck(["01163"])
         .build();
     // Rotting Remains 01163: willpower 3 + (-2) = 1 vs difficulty 3 → fail by 2
     // → 2 horror.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state.encounter_deck.push_back(CardCode::new("01163"));
 
     let session = TestSession::new(state, TEST_REGISTRIES)
         .confirm()
@@ -78,17 +78,13 @@ fn a_real_investigator_keeps_its_corpus_capacity() {
 /// A terminal act's reverse is still served, so advancing it ends the scenario.
 #[test]
 fn a_terminal_act_still_ends_the_scenario() {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).clues(1))
         .open_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
+        .with_act_deck([act(terminal_code(1), 1)])
         .build();
-    // The builder stages no act deck.
-    state.act_deck = vec![Act {
-        code: terminal_code(1),
-        clue_threshold: 1,
-    }];
 
     let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV })

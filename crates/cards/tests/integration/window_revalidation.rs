@@ -35,7 +35,8 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Status, UsageClock,
 };
-use game_core::test_support::{self, seat, Either, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, Either, Seat, SeatLookup as _, TestSession};
+
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
@@ -56,13 +57,6 @@ fn after_defeat_board<S: Into<Seat<Either>>>(
     location_clues: u8,
     shape: impl FnOnce(Seat) -> S,
 ) -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = location_clues;
-
     let investigator = seat(1).at(HERE).skill(SkillKind::Combat, 4);
 
     GameStateBuilder::new()
@@ -71,8 +65,8 @@ fn after_defeat_board<S: Into<Seat<Either>>>(
         .open_turn(INV)
         .with_seat(shape(investigator))
         // Co-located: Fight is location-gated.
-        .with_enemy_engaged(enemy, INV)
-        .with_location(loc)
+        .with_enemy_engaged(enemy(ENEMY).fight(1).health(1), INV)
+        .with_location(location(HERE).clues(location_clues))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()
 }

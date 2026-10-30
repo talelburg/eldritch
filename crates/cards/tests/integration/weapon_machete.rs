@@ -19,10 +19,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, SkillKind,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{enemy, location, seat, SeatLookup as _, TestSession};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,17 +35,10 @@ fn board(enemy_count: u32) -> GameState {
     board_with(enemy_count, 0).build()
 }
 
-/// A fight-3, health-3 Ghoul. Placed at the actor's location by the builder.
-fn ghoul(id: u32, name: &str) -> Enemy {
-    let mut enemy = test_support::test_enemy(id, name);
-    enemy.fight = 3;
-    enemy.max_health = 3;
-    enemy
-}
-
 /// Board with Machete in play, `engaged` enemies engaged with the actor and
-/// `unengaged` enemies merely *co-located* with them (a Fight reaches both).
-/// Engaged enemies take ids `100+n`, unengaged `200+n`.
+/// `unengaged` enemies merely *co-located* with them (a Fight reaches both),
+/// each fight 3 and health 3. Engaged enemies take ids `100+n`, unengaged
+/// `200+n`.
 fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -55,18 +48,16 @@ fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
                 .skill(SkillKind::Combat, 4)
                 .in_play([MACHETE]),
         )
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
 
     for n in 0..engaged {
         // Co-located: weapon Fight targets enemies at your location.
-        builder = builder.with_enemy_engaged(ghoul(100 + n, "Ghoul"), INV);
+        builder = builder.with_enemy_engaged(enemy(100 + n).fight(3).health(3), INV);
     }
     for n in 0..unengaged {
-        let mut enemy = ghoul(200 + n, "Aloof Ghoul");
-        enemy.current_location = Some(HERE);
-        builder = builder.with_enemy(enemy);
+        builder = builder.with_enemy(enemy(200 + n).fight(3).health(3).at(HERE));
     }
 
     builder
@@ -235,7 +226,7 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     // actor remains engaged with enemy 100 only.
     let state = board_with(1, 0)
         .with_seat(seat(2).at(HERE))
-        .with_enemy_engaged(ghoul(200, "Aloof Ghoul"), OTHER)
+        .with_enemy_engaged(enemy(200).fight(3).health(3), OTHER)
         .build();
 
     // Attack enemy 200.

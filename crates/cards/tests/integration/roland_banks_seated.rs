@@ -19,7 +19,7 @@ use game_core::state::{
     AbilityUsageRecord, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase, SkillTestId, UsageClock,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{enemy, location, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const ROLAND: &str = "01001";
@@ -32,18 +32,11 @@ const HERE: LocationId = LocationId(10);
 /// His investigator card is the seat's own — `cards_in_play` is empty, proving
 /// the reaction is found by the investigator-card scan, not the in-play scan.
 fn seated_roland_with_enemy() -> GameState {
-    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.clues = 2;
-
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card(ROLAND).at(HERE))
-        .with_enemy_engaged(enemy, INV)
-        .with_location(loc)
+        .with_enemy_engaged(enemy(ENEMY).fight(1).health(1), INV)
+        .with_location(location(HERE).clues(2))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .build();
