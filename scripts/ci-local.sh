@@ -44,10 +44,10 @@
 #
 # so a `game-core` change can redden a wasm job even though it touched no file
 # under `crates/web/`. Gating the wasm jobs on "did the diff touch crates/web?"
-# would skip them on exactly the changes most likely to break them. So an
-# engine diff selects `wasm-test` and `wasm-clippy`, and a `web` or `protocol`
-# diff selects all three; `wasm-build` is then set aside for CI rather than run,
-# and the plan names it so the skip is visible.
+# would skip them on exactly the changes most likely to break them. So a diff
+# to `web`, `protocol`, or an engine crate selects all three wasm jobs;
+# `wasm-test` and `wasm-clippy` run, `wasm-build` is set aside for CI, and the
+# plan names it so the skip is visible.
 #
 # Scoping is at job granularity only. Narrowing `cargo test --all` to
 # `-p <crate>` is deliberately not done: a `game-core` change breaking `cards`'
@@ -208,19 +208,19 @@ else
     select_job doc "rust sources or manifests changed"
   fi
 
-  # web + protocol are what the wasm bundle is built from directly.
+  # web + protocol are what the wasm bundle is built from directly; the engine
+  # crates are upstream of web, so they can break it just as well (a prompt's
+  # shape changing what the board renders, say). The reason only says which.
+  wasm_why=""
   if diff_touches '^crates/(web|protocol)/'; then
-    select_job wasm-build  "crates/web or crates/protocol changed"
-    select_job wasm-test   "crates/web or crates/protocol changed"
-    select_job wasm-clippy "crates/web or crates/protocol changed"
+    wasm_why="crates/web or crates/protocol changed"
   elif diff_touches '^crates/(game-core|cards|card-dsl)/'; then
-    # Upstream of web, so a wasm build can still break — but the cheap jobs are
-    # also the discerning ones: wasm-clippy is the only job that compiles the
-    # #[cfg(target_arch = "wasm32")] code the host `clippy` job never sees, and
-    # wasm-test catches an engine change (a prompt's shape, say) that breaks
-    # what the board renders.
-    select_job wasm-test   "engine crates changed (upstream of web)"
-    select_job wasm-clippy "engine crates changed (upstream of web)"
+    wasm_why="engine crates changed (upstream of web)"
+  fi
+  if [ -n "$wasm_why" ]; then
+    select_job wasm-build  "$wasm_why"
+    select_job wasm-test   "$wasm_why"
+    select_job wasm-clippy "$wasm_why"
   fi
 
   # The pipeline's `classify` tests are what catch a mis-vendored snapshot bump.
