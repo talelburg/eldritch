@@ -312,15 +312,15 @@ async fn actionable_location_glows_opens_menu_and_submits() {
 
     // Clicking the node's hit-layer opens its menu (events bubble up, so the
     // hit-layer — not the node — carries the open handler).
-    let last = map_in(&root);
-    last.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
+    let map = map_in(&root);
+    map.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit layer")
         .click();
     task::tick().await;
 
-    let item = last
+    let item = map
         .query_selector(".context-menu .menu-item")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
@@ -369,12 +369,12 @@ async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
         vec![ChoiceOption::new(OptionId(0), "Trigger").at(OptionTarget::CardInstance(iid))],
     );
     let root = mount_interactive(game, outcome).await.root;
-    let last = root
+    let slot = root
         .query_selector(".investigator-card .card-slot")
         .expect("query")
         .expect("an investigator-card .card-slot");
     assert!(
-        last.class_name().contains("actionable"),
+        slot.class_name().contains("actionable"),
         "investigator card glows for a reaction anchored to it"
     );
 }

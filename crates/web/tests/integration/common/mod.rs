@@ -9,9 +9,9 @@ use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
-use web::app::{provide_board_contexts, Overlays};
+use web::app::{self, Overlays};
 use web::board::BoardView;
-use web::registry::provide_cards;
+use web::registry;
 use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::Element;
@@ -43,7 +43,7 @@ pub(crate) struct BoardHandle {
 /// Mount `<BoardView/>` and `<Overlays/>` as `App` composes them, rendering
 /// `client` against `registry`, and tick once so render effects have flushed.
 ///
-/// The contexts come from `App`'s own [`provide_board_contexts`], so a board
+/// The contexts come from `App`'s own [`app::provide_board_contexts`], so a board
 /// test can't miss one the app provides.
 pub(crate) async fn mount_board(
     client: ClientState,
@@ -53,9 +53,9 @@ pub(crate) async fn mount_board(
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let root = NodeRef::<Div>::new();
     mount_to_body(move || {
-        provide_cards(registry);
+        registry::provide_cards(registry);
         provide_context(store);
-        provide_board_contexts(store);
+        app::provide_board_contexts(store);
         provide_context::<OutboundTx>(tx.clone());
         view! { <div class="board-root" node_ref=root><BoardView/><Overlays/></div> }
     });

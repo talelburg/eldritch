@@ -13,7 +13,6 @@
 //! real corpus, `cards::TEST_REGISTRY`.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc::UnboundedReceiver;
 use game_core::action::Action;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
@@ -27,10 +26,10 @@ use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::store::{self, ClientState};
+use web::store;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
-use crate::common;
+use crate::common::{self, BoardHandle};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const ROLAND: &str = "01001";
@@ -39,9 +38,7 @@ const ROTTING_REMAINS: &str = "01163";
 /// The in-process server: holds the authoritative `GameState`, applies whatever
 /// the UI submits, and folds the result back into the store.
 struct Harness {
-    root: Element,
-    store: RwSignal<ClientState>,
-    rx: UnboundedReceiver<ClientMessage>,
+    board: BoardHandle,
     state: Option<GameState>,
 }
 
@@ -54,9 +51,7 @@ impl Harness {
         let board =
             common::mount_board(common::hello(state.clone(), outcome), &cards::TEST_REGISTRY).await;
         Self {
-            root: board.root,
-            store: board.store,
-            rx: board.rx,
+            board,
             state: Some(state),
         }
     }
@@ -65,6 +60,7 @@ impl Harness {
     /// the `Applied` back in — the transport's round trip, in-process.
     async fn pump(&mut self) {
         let ClientMessage::Submit { action } = self
+            .board
             .rx
             .try_recv()
             .expect("the click submitted a frame")
@@ -79,7 +75,7 @@ impl Harness {
             "the board offered something the engine rejected: {:?}",
             result.outcome
         );
-        let store = self.store;
+        let store = self.board.store;
         self.state = Some(result.state.clone());
         store.update(|s| {
             store::reduce(
@@ -99,7 +95,8 @@ impl Harness {
     }
 
     fn find(&self, sel: &str) -> HtmlElement {
-        self.root
+        self.board
+            .root
             .query_selector(sel)
             .expect("query")
             .and_then(|n| n.dyn_into::<HtmlElement>().ok())
@@ -108,7 +105,11 @@ impl Harness {
 
     /// True iff nothing under the mounted root matches `sel`.
     fn absent(&self, sel: &str) -> bool {
-        self.root.query_selector(sel).expect("query").is_none()
+        self.board
+            .root
+            .query_selector(sel)
+            .expect("query")
+            .is_none()
     }
 
     fn is_disabled(&self, sel: &str) -> bool {
@@ -121,6 +122,7 @@ impl Harness {
     /// The hand slots on the `n`th investigator panel, in seat order.
     fn hand_slots(&self, n: u32, sel: &str) -> Vec<HtmlElement> {
         let panel = self
+            .board
             .root
             .query_selector_all(".investigator")
             .expect("query")
@@ -281,6 +283,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // 2. The choice is *there*. No second click on the asset, and both printed
     //    modes are offered under their authored labels.
     let branches = h
+        .board
         .root
         .query_selector_all(".decision-modal .decision-branch")
         .expect("query");
