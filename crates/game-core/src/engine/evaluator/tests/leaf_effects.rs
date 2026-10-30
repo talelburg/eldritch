@@ -285,11 +285,10 @@ fn put_into_threat_area_outside_a_revelation_rejects() {
 /// *"Disengage from each enemy engaged with you"* is the controller's).
 #[test]
 fn disengage_leaves_an_enemy_engaged_with_another_investigator_engaged() {
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.current_location = Some(HERE);
+    let enemy = enemy(100).at(HERE);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(location(HERE))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
         .with_enemy_engaged(enemy, InvestigatorId(2))

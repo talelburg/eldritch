@@ -878,6 +878,7 @@ impl TestSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::location;
     use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
@@ -890,7 +891,7 @@ mod tests {
             .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
-            .with_location(test_support::test_location(10, "Study"))
+            .with_location(location(10))
             .with_seating([id, InvestigatorId(2)])
             .open_turn(id)
             .session()

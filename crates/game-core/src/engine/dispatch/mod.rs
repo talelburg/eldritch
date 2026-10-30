@@ -752,6 +752,7 @@ mod turn_menu_tests {
     use crate::engine::{dispatch, enumerate};
     use crate::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId};
     use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support::{enemy, location};
 
     #[test]
     fn turn_menu_carries_action_targets() {
@@ -761,9 +762,9 @@ mod turn_menu_tests {
         const HERE: LocationId = LocationId(10);
         let state = GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE))
             .with_seat(test_support::seat(1).at(HERE))
-            .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), InvestigatorId(1))
+            .with_enemy_engaged(enemy(7), InvestigatorId(1))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .open_turn(InvestigatorId(1))
             .build();

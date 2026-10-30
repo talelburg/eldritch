@@ -61,15 +61,12 @@ mod tests {
     use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
-    use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::state::{GameStateBuilder, LocationId};
+    use crate::test_support::{self, location, StagedLocation, TEST_REGISTRIES};
 
-    fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {
-        let mut loc = Location::new(LocationId(id), CardCode(code.into()), "L", 1, 0);
-        loc.revealed = false;
-        loc.printed_clues = printed;
-        loc.clues = 0;
-        loc
+    /// The face-down location `id`, printing `printed` clues, with none on it.
+    fn unrevealed(id: u32, printed: ClueValue) -> StagedLocation {
+        location(id).unrevealed().printed_clues(printed)
     }
 
     #[test]
@@ -78,7 +75,7 @@ mod tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
-            .with_location(unrevealed(5, "x", ClueValue::PerInvestigator(2)))
+            .with_location(unrevealed(5, ClueValue::PerInvestigator(2)))
             .build();
         let mut events = Vec::new();
         reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
@@ -94,7 +91,7 @@ mod tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
-            .with_location(unrevealed(5, "x", ClueValue::Fixed(3)))
+            .with_location(unrevealed(5, ClueValue::Fixed(3)))
             .build();
         let mut events = Vec::new();
         reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
@@ -108,8 +105,7 @@ mod tests {
     /// revealed."
     #[test]
     fn reveal_adds_to_clues_already_on_the_unrevealed_location() {
-        let mut loc = unrevealed(5, "x", ClueValue::PerInvestigator(1));
-        loc.clues = 2;
+        let loc = unrevealed(5, ClueValue::PerInvestigator(1)).clues(2);
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
@@ -136,13 +132,7 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_location(Location::new(
-                LocationId(5),
-                CardCode("x".into()),
-                "L",
-                1,
-                9,
-            ))
+            .with_location(location(5).clues(9))
             .build();
         let mut events = Vec::new();
         reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));

@@ -1,7 +1,8 @@
 use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, Prey};
 
 use super::*;
-use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
+use crate::state::{CardCode, GameStateBuilder, LocationId};
+use crate::test_support::location;
 
 fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
     CardMetadata {
@@ -24,11 +25,11 @@ fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata 
 #[test]
 fn add_location_mints_sequential_ids_and_extracts_metadata() {
     let mut state = GameStateBuilder::new().build();
-    let a = state.add_location(&location_meta("01111", "Study", 2, 2));
-    let b = state.add_location(&location_meta("01112", "Hallway", 1, 0));
+    let a = state.add_location(&location_meta("_study", "Study", 2, 2));
+    let b = state.add_location(&location_meta("_hallway", "Hallway", 1, 0));
     assert_ne!(a, b, "ids are distinct");
     let study = &state.locations[&a];
-    assert_eq!(study.code.as_str(), "01111");
+    assert_eq!(study.code.as_str(), "_study");
     assert_eq!(study.name, "Study");
     assert_eq!(study.shroud, 2);
     assert_eq!(study.clues, 0, "enters unrevealed with no clues");
@@ -41,8 +42,8 @@ fn add_location_mints_sequential_ids_and_extracts_metadata() {
 #[test]
 fn add_set_aside_card_records_a_location_by_code_only() {
     let mut state = GameStateBuilder::new().build();
-    state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
-    assert_eq!(state.set_aside_cards, vec![CardCode::new("01113")],);
+    state.add_set_aside_card(&location_meta("_attic", "Attic", 1, 2));
+    assert_eq!(state.set_aside_cards, vec![CardCode::new("_attic")],);
     assert!(state.locations.is_empty(), "not in play");
     assert_eq!(
         state.location_ids.peek(),
@@ -85,11 +86,11 @@ fn add_set_aside_card_holds_locations_and_enemies_in_one_zone() {
     // representation. Which one a code is gets read back from the
     // metadata at put-into-play time.
     let mut state = GameStateBuilder::new().build();
-    state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
-    state.add_set_aside_card(&enemy_meta("01116", "Ghoul Priest"));
+    state.add_set_aside_card(&location_meta("_attic", "Attic", 1, 2));
+    state.add_set_aside_card(&enemy_meta("_ghoul_priest", "Ghoul Priest"));
     assert_eq!(
         state.set_aside_cards,
-        vec![CardCode::new("01113"), CardCode::new("01116"),],
+        vec![CardCode::new("_attic"), CardCode::new("_ghoul_priest"),],
     );
 }
 
@@ -98,7 +99,7 @@ fn add_set_aside_card_holds_locations_and_enemies_in_one_zone() {
 fn add_location_panics_on_non_location_metadata() {
     let mut state = GameStateBuilder::new().build();
     let meta = CardMetadata {
-        code: "01108".to_string(),
+        code: "_trapped".to_string(),
         name: "Trapped".to_string(),
         traits: vec![],
         text: None,
@@ -117,20 +118,8 @@ fn add_location_panics_on_non_location_metadata() {
 #[test]
 fn connect_wires_both_directions() {
     let mut state = GameStateBuilder::new()
-        .with_location(Location::new(
-            LocationId(1),
-            CardCode("a".into()),
-            "A",
-            1,
-            0,
-        ))
-        .with_location(Location::new(
-            LocationId(2),
-            CardCode("b".into()),
-            "B",
-            1,
-            0,
-        ))
+        .with_location(location(1))
+        .with_location(location(2))
         .build();
     state.connect(LocationId(1), LocationId(2));
     assert_eq!(
@@ -148,15 +137,7 @@ fn connect_wires_both_directions() {
 fn connect_panics_on_a_location_that_is_not_in_play() {
     // A set-aside card has no `LocationId` at all now, so `connect` has
     // one zone to search. Layout wiring happens at entry instead.
-    let mut state = GameStateBuilder::new()
-        .with_location(Location::new(
-            LocationId(1),
-            CardCode("a".into()),
-            "A",
-            1,
-            0,
-        ))
-        .build();
+    let mut state = GameStateBuilder::new().with_location(location(1)).build();
     state.connect(LocationId(2), LocationId(1));
 }
 

@@ -4,7 +4,7 @@ use super::*;
 use crate::action::EngineRecord;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{dispatch, Cx};
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+use crate::state::{GameStateBuilder, InvestigatorId};
 use crate::test_support::{self, TEST_REGISTRIES};
 
 /// Exercises the early-reject guard: when the handler cannot
@@ -18,13 +18,11 @@ fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
+        // Seed the encounter deck so we can prove the reject fires
+        // *before* the draw mutates state. Use a code that no real
+        // or fake registry knows so we always hit an early rejection.
+        .with_encounter_deck(["__no_such_card"])
         .build();
-    // Seed the encounter deck so we can prove the reject fires
-    // *before* the draw mutates state. Use a code that no real
-    // or fake registry knows so we always hit an early rejection.
-    state
-        .encounter_deck
-        .push_back(CardCode("__no_such_card".into()));
     let pre_deck_len = state.encounter_deck.len();
     let mut events = Vec::new();
 

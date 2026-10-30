@@ -111,8 +111,8 @@ mod tests {
     use card_dsl::dsl::{self, IntExpr};
 
     use super::*;
-    use crate::state::{EnemyId, GameStateBuilder, LocationId};
-    use crate::test_support::{self, seat, TEST_REGISTRIES};
+    use crate::state::{GameStateBuilder, LocationId};
+    use crate::test_support::{enemy, location, seat, TEST_REGISTRIES};
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -136,18 +136,24 @@ mod tests {
     /// A board with the investigator at a revealed [`HERE`] and `enemies`
     /// co-located there.
     fn board(revealed: bool, enemies: u32) -> GameState {
-        let mut loc = test_support::test_location(HERE.0, "Study");
-        loc.revealed = revealed;
+        board_builder(revealed, enemies).build()
+    }
+
+    /// [`board`], before it is built.
+    fn board_builder(revealed: bool, enemies: u32) -> GameStateBuilder {
+        let here = if revealed {
+            location(HERE)
+        } else {
+            location(HERE).unrevealed()
+        };
         let mut builder = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
-            .with_location(loc)
+            .with_location(here)
             .with_seat(seat(ME.0).at(HERE));
         for n in 0..enemies {
-            let mut enemy = test_support::test_enemy(n + 1, "Ghoul");
-            enemy.current_location = Some(HERE);
-            builder = builder.with_enemy(enemy);
+            builder = builder.with_enemy(enemy(n + 1).at(HERE));
         }
-        builder.build()
+        builder
     }
 
     #[test]
@@ -177,14 +183,11 @@ mod tests {
     /// a Fight could target, is no evade target.
     #[test]
     fn an_evade_needs_an_engaged_enemy() {
-        let mut state = board(true, 2);
-        assert!(can_perform(&state, ME, &dsl::evade()).is_err());
-        state
-            .enemies
-            .get_mut(&EnemyId(2))
-            .expect("the board's second enemy")
-            .engaged_with = Some(ME);
-        assert!(can_perform(&state, ME, &dsl::evade()).is_ok());
+        assert!(can_perform(&board(true, 2), ME, &dsl::evade()).is_err());
+        let engaged = board_builder(true, 1)
+            .with_enemy(enemy(2).engaged_with(ME))
+            .build();
+        assert!(can_perform(&engaged, ME, &dsl::evade()).is_ok());
     }
 
     /// The designator no *implemented* card prints rejects rather than

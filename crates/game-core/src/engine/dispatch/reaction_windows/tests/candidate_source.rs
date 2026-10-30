@@ -1,11 +1,10 @@
 use super::*;
-use crate::state::{
-    Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner,
-};
+use crate::state::{CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner};
+use crate::test_support::{enemy, location};
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Effect};
 
-use crate::test_support::{self, MockRegistry, SeatLookup as _, TEST_REGISTRIES};
+use crate::test_support::{self, act, agenda, MockRegistry, SeatLookup as _, TEST_REGISTRIES};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// Deliberately resolved by no registry — the test registry knows none.
@@ -76,16 +75,14 @@ fn an_in_play_candidate_is_present_only_while_its_instance_is() {
 #[test]
 fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
     let instance = CardInstanceId(12);
-    let mut location = test_support::test_location(10, "Study");
-    location.attachments.push(CardInPlay::enter_play(
-        CardCode::new(SOME_CODE),
-        instance,
-        Owner::EncounterDeck,
-    ));
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_location(location)
+        .with_location(location(10).attachments([CardInPlay::enter_play(
+            CardCode::new(SOME_CODE),
+            instance,
+            Owner::EncounterDeck,
+        )]))
         .build();
     assert!(candidate_source_present(
         &state,
@@ -96,16 +93,13 @@ fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
 
 #[test]
 fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
-    let act = |code: &str| Act {
-        code: CardCode::new(code),
-        clue_threshold: 0,
+    let board = || {
+        GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1))
+            .with_act_deck([act(SOME_CODE, 0), act("_next_act", 0)])
     };
-    let mut state = GameStateBuilder::default()
-        .with_registries(TEST_REGISTRIES)
-        .with_seat(test_support::seat(1))
-        .build();
-    state.act_deck = vec![act(SOME_CODE), act("_next_act")];
-    state.act_index = 0;
+    let state = board().build();
     let cand = ResolutionCandidate::new(
         CardCode::new(SOME_CODE),
         INV,
@@ -121,8 +115,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
     // The act advanced: the source did not leave the board, it became a
     // different card — and a candidate minted from the old one is gone all
     // the same, which is the question the code comparison asks.
-    let mut advanced = state.clone();
-    advanced.act_index = 1;
+    let advanced = board().with_current_act(1).build();
     assert!(!candidate_source_present(
         &advanced,
         TEST_REGISTRIES.cards,
@@ -143,15 +136,13 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
 
 #[test]
 fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
-    let mut state = GameStateBuilder::default()
-        .with_registries(TEST_REGISTRIES)
-        .with_seat(test_support::seat(1))
-        .build();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(SOME_CODE),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
+    let board = || {
+        GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1))
+            .with_agenda_deck([agenda(SOME_CODE, 3)])
+    };
+    let state = board().build();
     let cand = ResolutionCandidate::new(
         CardCode::new(SOME_CODE),
         INV,
@@ -164,8 +155,7 @@ fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
         &cand
     ));
 
-    let mut past_the_end = state.clone();
-    past_the_end.agenda_index = 1;
+    let past_the_end = board().with_current_agenda(1).build();
     assert!(!candidate_source_present(
         &past_the_end,
         TEST_REGISTRIES.cards,
@@ -179,8 +169,7 @@ fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
 /// would always answer "gone".
 #[test]
 fn an_enemy_candidate_tracks_its_enemy() {
-    let mut enemy = test_support::test_enemy(4, "Silver Twilight Acolyte");
-    enemy.code = CardCode::new(SOME_CODE);
+    let enemy = enemy(4).code(CardCode::new(SOME_CODE));
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -220,8 +209,7 @@ fn a_location_candidate_tracks_its_location() {
     // The candidate's code is the location's own printed code — the probe
     // asks whether the source still names *the same card*, and a location's
     // `LocationId` and code move together.
-    let mut location = test_support::test_location(10, "Study");
-    location.code = CardCode::new(SOME_CODE);
+    let location = location(10).code(CardCode::new(SOME_CODE));
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))

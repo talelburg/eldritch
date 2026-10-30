@@ -16,18 +16,13 @@ const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
 /// registry serves, not a field on the deck entry.
 fn terminal_act_state() -> GameState {
     // Open the turn so `legal_actions` enumerates `AdvanceAct`.
-    let mut state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).clues(1))
         .open_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
-        .build();
-    // No builder setter for the act deck.
-    state.act_deck = vec![Act {
-        code: test_support::terminal_code(1),
-        clue_threshold: 1,
-    }];
-    state
+        .with_act_deck([act(test_support::terminal_code(1), 1)])
+        .build()
 }
 
 #[test]

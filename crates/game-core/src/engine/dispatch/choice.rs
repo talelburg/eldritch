@@ -440,6 +440,7 @@ mod tests {
     };
     use crate::test_support::TEST_REGISTRY;
     use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
+    use crate::test_support::{enemy, location};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so the mode filter keeps it in the offer. (An
@@ -643,13 +644,13 @@ mod tests {
     fn labelled_board() -> GameState {
         GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
-            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_location(location(HERE).name("Study"))
             .with_seat(
                 test_support::seat(1)
                     .at(HERE)
                     .in_play([test_support::TEST_ASSET]),
             )
-            .with_enemy(test_support::test_enemy(1, "Ghoul Minion"))
+            .with_enemy(enemy(1).name("Ghoul Minion"))
             .build()
     }
 
@@ -790,8 +791,8 @@ mod tests {
     fn grounded_choice_anchors_enemy_options() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let state = GameStateBuilder::new()
-            .with_enemy(test_support::test_enemy(4, "Ghoul Minion"))
-            .with_enemy(test_support::test_enemy(9, "Ravenous Ghoul"))
+            .with_enemy(enemy(4).name("Ghoul Minion"))
+            .with_enemy(enemy(9).name("Ravenous Ghoul"))
             .build();
         let out = resolve_grounded_choice(
             &state,

@@ -127,9 +127,8 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     // discover lands at the tested location.
     let tested = LocationId(20);
     let elsewhere = LocationId(30);
-    let mut tested_loc = test_support::test_location(tested.0, "Study");
-    tested_loc.clues = 2;
-    let elsewhere_loc = test_support::test_location(elsewhere.0, "Hall");
+    let tested_loc = location(tested).clues(2);
+    let elsewhere_loc = location(elsewhere);
 
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

@@ -9,12 +9,11 @@ const NEXT_DOOR: LocationId = LocationId(11);
 /// Investigator 1's open turn at [`HERE`] (location "A"), connected to
 /// [`NEXT_DOOR`] ("B"), with the seat `edit` finishes.
 fn open_turn_on_two_rooms(edit: impl FnOnce(Seat) -> Seat) -> GameStateBuilder {
-    let mut a = test_support::test_location(HERE.0, "A");
-    a.connections = vec![NEXT_DOOR];
+    let a = location(HERE).connections(vec![NEXT_DOOR]);
     GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_location(a)
-        .with_location(test_support::test_location(NEXT_DOOR.0, "B"))
+        .with_location(location(NEXT_DOOR))
         .with_seat(edit(seat(1).at(HERE)))
         .open_turn(InvestigatorId(1))
 }
@@ -44,8 +43,7 @@ fn no_actions_when_not_the_open_turn() {
 #[test]
 fn basic_actions_offered_with_a_revealed_location_and_an_action() {
     // Place the investigator on a revealed location so Investigate is legal.
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.revealed = true;
+    let loc = location(HERE);
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc)
@@ -81,8 +79,7 @@ fn no_action_points_offers_only_end_turn() {
 
 #[test]
 fn investigate_absent_on_an_unrevealed_location() {
-    let mut loc = test_support::test_location(HERE.0, "Study");
-    loc.revealed = false;
+    let loc = location(HERE).unrevealed();
     let state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_location(loc)
@@ -133,34 +130,22 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
     // typed arms). Apply to a fresh clone per action. The board has a
     // connected, revealed destination so a Move is enumerated and checked too.
     // An enemy engaged with the active investigator → Fight + Evade enumerated.
-    let mut foe = test_support::test_enemy(7, "Ghoul");
-    foe.engaged_with = Some(InvestigatorId(1));
-    foe.current_location = Some(HERE);
+    let foe = enemy(7).engaged_with(InvestigatorId(1)).at(HERE);
     // A co-located unengaged enemy → Engage enumerated (its AoO comes from
     // the engaged foe above; that is enemy_attack, never a Rejected).
-    let mut engageable = test_support::test_enemy(8, "Rat");
-    engageable.current_location = Some(HERE);
+    let engageable = enemy(8).at(HERE);
     // An advanceable act (threshold met) → AdvanceAct enumerated: the
     // investigator holds the 2 clues it needs.
-    let mut state = open_turn_on_two_rooms(|s| s.actions(3).clues(2))
+    let state = open_turn_on_two_rooms(|s| s.actions(3).clues(2))
         // Investigate is applied below, and a skill test rejects on an empty
         // bag (a malformed-state guard the enumerator does not replicate).
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_enemy(foe)
         .with_enemy(engageable)
+        // A second act so advancing is a clean transition, not a terminal
+        // resolution.
+        .with_act_deck([act("_act1", 2), act("_act2", 99)])
         .build();
-    // No builder setter loads the act deck. A second act so advancing is a
-    // clean transition, not a terminal resolution.
-    state.act_deck = vec![
-        Act {
-            code: CardCode("_act1".into()),
-            clue_threshold: 2,
-        },
-        Act {
-            code: CardCode("_act2".into()),
-            clue_threshold: 99,
-        },
-    ];
     let actions = legal_actions(&state, &TEST_REGISTRY);
     for (i, action) in actions.iter().enumerate() {
         let result = engine::apply(

@@ -304,6 +304,7 @@ mod tests {
 
     use super::*;
     use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
+    use crate::test_support::enemy;
     use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
@@ -313,12 +314,11 @@ mod tests {
     #[test]
     fn fight_follow_up_adds_bonus_attack_damage() {
         let inv = InvestigatorId(1);
-        let mut enemy = test_support::test_enemy(7, "Goon");
-        enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_enemy(enemy)
+            // Health 10 avoids clamping, so the dealt damage is observable.
+            .with_enemy(enemy(7).health(10))
             .build();
         state
             .continuations

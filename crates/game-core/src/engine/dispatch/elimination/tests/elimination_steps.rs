@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::TEST_REGISTRIES;
+use crate::test_support::{enemy, location};
 
 #[test]
 fn elimination_step1_removes_controlled_and_owned_cards() {
@@ -45,8 +46,7 @@ fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
     let id = InvestigatorId(1);
     let loc_id = LocationId(1);
 
-    let mut loc = test_support::test_location(1, "Study");
-    loc.clues = 1;
+    let loc = location(1).clues(1);
 
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
@@ -82,18 +82,14 @@ fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
 
-    let enemy = {
-        let mut e = test_support::test_enemy(1, "Ghoul");
-        e.current_location = Some(loc);
-        e.engaged_with = Some(dead); // engaged with the about-to-die investigator
-        e
-    };
+    // engaged with the about-to-die investigator
+    let enemy = enemy(1).at(loc).engaged_with(dead);
 
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
         .with_seat(test_support::seat(2).at(loc))
-        .with_location(test_support::test_location(1, "Study"))
+        .with_location(location(1))
         .with_enemy(enemy)
         .with_seating([dead, surv])
         .build();
@@ -126,17 +122,12 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
     let dead = InvestigatorId(1);
     let loc = LocationId(1);
 
-    let enemy = {
-        let mut e = test_support::test_enemy(1, "Ghoul");
-        e.current_location = Some(loc);
-        e.engaged_with = Some(dead);
-        e
-    };
+    let enemy = enemy(1).at(loc).engaged_with(dead);
 
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
-        .with_location(test_support::test_location(1, "Study"))
+        .with_location(location(1))
         .with_enemy(enemy)
         .with_seating([dead])
         .build();
@@ -194,18 +185,13 @@ fn elimination_runs_on_horror_defeat_too() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
 
-    let enemy = {
-        let mut e = test_support::test_enemy(1, "Whippoorwill");
-        e.current_location = Some(loc);
-        e.engaged_with = Some(dead);
-        e
-    };
+    let enemy = enemy(1).at(loc).engaged_with(dead);
 
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc).clues(1))
         .with_seat(test_support::seat(2).at(loc))
-        .with_location(test_support::test_location(1, "Study"))
+        .with_location(location(1))
         .with_enemy(enemy)
         .with_seating([dead, surv])
         .build();
@@ -233,19 +219,14 @@ fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() 
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
 
-    let enemy = {
-        let mut e = test_support::test_enemy(1, "Ghoul");
-        e.current_location = Some(loc);
-        e.engaged_with = Some(dead);
-        e.exhausted = true; // does not re-engage even with a co-located survivor
-        e
-    };
+    // does not re-engage even with a co-located survivor
+    let enemy = enemy(1).at(loc).engaged_with(dead).exhausted();
 
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
         .with_seat(test_support::seat(2).at(loc))
-        .with_location(test_support::test_location(1, "Study"))
+        .with_location(location(1))
         .with_enemy(enemy)
         .with_seating([dead, surv])
         .build();

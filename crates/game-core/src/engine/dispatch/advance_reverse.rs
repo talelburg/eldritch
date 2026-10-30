@@ -182,28 +182,18 @@ mod tests {
     use crate::engine::{dispatch, InputKind};
     use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
-        Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
+        AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, TestSession, TEST_REGISTRIES};
+    use crate::test_support::{self, act, agenda, TestSession, TEST_REGISTRIES};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         // A seated lead, who acknowledges the advance.
         let mut state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
             .with_seating([InvestigatorId(1)])
+            .with_agenda_deck([agenda("_a1", 1), agenda("_a2", 3)])
             .build();
-        state.agenda_deck = vec![
-            Agenda {
-                code: CardCode("_a1".into()),
-                doom_threshold: 1,
-            },
-            Agenda {
-                code: CardCode("_a2".into()),
-                doom_threshold: 3,
-            },
-        ];
-        state.agenda_index = 0;
         state.interactive_acknowledge = interactive;
         // An AdvanceReverse frame as advance_agenda would push it (leaving = a1).
         // Agenda advances are always Forced.
@@ -224,18 +214,8 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
             .with_seating([InvestigatorId(1)])
+            .with_act_deck([act("_c1", 1), act("_c2", 2)])
             .build();
-        state.act_deck = vec![
-            Act {
-                code: CardCode("_c1".into()),
-                clue_threshold: 1,
-            },
-            Act {
-                code: CardCode("_c2".into()),
-                clue_threshold: 2,
-            },
-        ];
-        state.act_index = 0;
         state.interactive_acknowledge = interactive;
         state.continuations.push(AdvanceReverseFrame {
             deck: AdvanceDeck::Act,
@@ -330,15 +310,12 @@ mod tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seating([InvestigatorId(1)])
+            // One act, and it is the one advancing — so it is the terminal
+            // one. The frame is pushed as 01110's forced advance would push
+            // it: the real trigger (the Ghoul Priest's defeat) is scenario
+            // content this crate cannot reach.
+            .with_act_deck([act(test_support::terminal_code(1), 0)])
             .build();
-        // One act, and it is the one advancing — so it is the terminal one. The
-        // frame is pushed as 01110's forced advance would push it: the real
-        // trigger (the Ghoul Priest's defeat) is scenario content this crate
-        // cannot reach.
-        state.act_deck = vec![Act {
-            code: test_support::terminal_code(1),
-            clue_threshold: 0,
-        }];
         state.interactive_acknowledge = true;
         state.continuations.push(AdvanceReverseFrame {
             deck: AdvanceDeck::Act,

@@ -95,8 +95,7 @@ fn an_elder_sign_modifier_evaluates_its_expression() {
     let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("elder-sign-clues-here");
     inv.current_location = Some(LocationId(10));
-    let mut loc = test_support::test_location(10, "Study");
-    loc.clues = 2;
+    let loc = location(10).clues(2);
     let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(loc)

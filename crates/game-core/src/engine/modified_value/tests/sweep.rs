@@ -139,21 +139,18 @@ fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
     /// carries one named id.
     const AT_STUDY: CardInstanceId = CardInstanceId(0);
     let id = InvestigatorId(1);
-    let mut location = test_support::test_location(STUDY.0, "Study");
-    let seated = seat(id.0).at(STUDY);
-    let seated = if controlled {
-        seated.in_play([CARD])
+    let (study, seated) = if controlled {
+        (location(STUDY), seat(id.0).at(STUDY).in_play([CARD]))
     } else {
-        location.cards_at_location.push(CardInPlay::enter_play(
-            CardCode::new(CARD),
-            AT_STUDY,
-            Owner::Scenario,
-        ));
-        seated
+        let at_study = CardInPlay::enter_play(CardCode::new(CARD), AT_STUDY, Owner::Scenario);
+        (
+            location(STUDY).cards_at_location([at_study]),
+            seat(id.0).at(STUDY),
+        )
     };
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(location)
+        .with_location(study)
         .with_seat(seated)
         .build();
     (state, id)
@@ -221,7 +218,7 @@ fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
 fn neighbours_combat_with_buffer(status: Status) -> i32 {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(STUDY.0, "Study"))
+        .with_location(location(STUDY))
         .with_seat(seat(1).at(STUDY).in_play(["combat-plus-1-here"]))
         .with_seat(seat(2).at(STUDY))
         .build();

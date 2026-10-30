@@ -78,19 +78,16 @@ pub fn shortest_first_steps(
 mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Phase};
-    use crate::test_support;
+
+    use crate::test_support::location;
 
     /// Build a diamond: A(1) connects to B(2) and C(3); both connect to
     /// D(4). Bidirectional edges.
     fn diamond() -> GameState {
-        let mut a = test_support::test_location(1, "A");
-        let mut b = test_support::test_location(2, "B");
-        let mut c = test_support::test_location(3, "C");
-        let mut d = test_support::test_location(4, "D");
-        a.connections = vec![LocationId(2), LocationId(3)];
-        b.connections = vec![LocationId(1), LocationId(4)];
-        c.connections = vec![LocationId(1), LocationId(4)];
-        d.connections = vec![LocationId(2), LocationId(3)];
+        let a = location(1).connections(vec![LocationId(2), LocationId(3)]);
+        let b = location(2).connections(vec![LocationId(1), LocationId(4)]);
+        let c = location(3).connections(vec![LocationId(1), LocationId(4)]);
+        let d = location(4).connections(vec![LocationId(2), LocationId(3)]);
         GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
@@ -120,9 +117,8 @@ mod tests {
 
     #[test]
     fn distance_unreachable_is_none() {
-        let mut a = test_support::test_location(1, "A");
-        let island = test_support::test_location(9, "Island");
-        a.connections = vec![];
+        let a = location(1).connections(vec![]);
+        let island = location(9);
         let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
@@ -134,12 +130,9 @@ mod tests {
     #[test]
     fn first_steps_single_when_one_shortest_path() {
         // Linear A-B-D (remove C). Only step toward D from A is B.
-        let mut a = test_support::test_location(1, "A");
-        let mut b = test_support::test_location(2, "B");
-        let mut d = test_support::test_location(4, "D");
-        a.connections = vec![LocationId(2)];
-        b.connections = vec![LocationId(1), LocationId(4)];
-        d.connections = vec![LocationId(2)];
+        let a = location(1).connections(vec![LocationId(2)]);
+        let b = location(2).connections(vec![LocationId(1), LocationId(4)]);
+        let d = location(4).connections(vec![LocationId(2)]);
         let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
@@ -163,9 +156,8 @@ mod tests {
 
     #[test]
     fn first_steps_empty_when_unreachable() {
-        let mut a = test_support::test_location(1, "A");
-        let island = test_support::test_location(9, "Island");
-        a.connections = vec![];
+        let a = location(1).connections(vec![]);
+        let island = location(9);
         let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)

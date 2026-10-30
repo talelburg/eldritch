@@ -165,38 +165,23 @@ impl Enemy {
 #[cfg(test)]
 mod hunter_prey_field_tests {
     use super::*;
-    use crate::test_support;
+    use crate::test_support::{enemy, TEST_REGISTRIES};
 
     #[test]
     fn enemy_carries_hunter_and_prey() {
-        let e = Enemy {
-            id: EnemyId(1),
-            name: "Ghoul Priest".into(),
-            fight: 4,
-            evade: 4,
-            max_health: 5,
-            damage: 0,
-            attack_damage: 2,
-            attack_horror: 2,
-            current_location: None,
-            exhausted: false,
-            engaged_with: None,
-            hunter: true,
-            prey: Prey::Default,
-            retaliate: true,
-            code: CardCode::new("01116"),
-            victory: Some(2),
-            attachments: Vec::new(),
-            owner: Owner::EncounterDeck,
-        };
+        let e = enemy(1)
+            .hunter()
+            .retaliate()
+            .prey(Prey::Default)
+            .mint(TEST_REGISTRIES, 1);
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);
         assert!(e.retaliate);
     }
 
     #[test]
-    fn test_enemy_fixture_carries_a_code() {
-        let e = test_support::test_enemy(7, "Ghoul");
+    fn a_stock_enemy_carries_a_code() {
+        let e = enemy(7).mint(TEST_REGISTRIES, 1);
         assert!(
             !e.code.as_str().is_empty(),
             "every enemy carries its printed code"

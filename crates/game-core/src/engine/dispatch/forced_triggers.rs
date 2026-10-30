@@ -148,9 +148,10 @@ mod tests {
     use crate::engine::dispatch::prompt;
     use crate::engine::outcome::OptionTarget;
     use crate::state::{
-        AbilityAddress, AbilitySource, Agenda, CandidateSource, CardCode, CardInstanceId,
-        Continuation, GameStateBuilder, InvestigatorId, LocationId, ResolutionCandidate,
+        AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
+        GameStateBuilder, InvestigatorId, LocationId, ResolutionCandidate,
     };
+    use crate::test_support::agenda;
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {
@@ -268,17 +269,14 @@ mod tests {
 
     #[test]
     fn acknowledge_forced_anchors_an_agenda_source_to_the_agenda_card() {
-        // A forced ability on the current agenda (What's Going On?! 01105's
-        // on-advance reverse) anchors its "Resolve" to the agenda card.
-        let mut state = GameStateBuilder::default().build();
-        state.agenda_deck = vec![Agenda {
-            code: CardCode::new("01105"),
-            doom_threshold: 3,
-        }];
-        state.agenda_index = 0;
+        // A forced ability on the current agenda (an on-advance reverse, like
+        // What's Going On?! 01105's) anchors its "Resolve" to the agenda card.
+        let mut state = GameStateBuilder::default()
+            .with_agenda_deck([agenda("_agenda", 3)])
+            .build();
         state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
-                CardCode::new("01105"),
+                CardCode::new("_agenda"),
                 InvestigatorId(1),
                 AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Agenda),

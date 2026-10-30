@@ -2,16 +2,12 @@ use super::*;
 
 #[test]
 fn act_and_agenda_carry_card_code() {
-    let act = Act {
-        code: CardCode("01108".into()),
-        clue_threshold: 2,
-    };
-    let agenda = Agenda {
-        code: CardCode("01105".into()),
-        doom_threshold: 3,
-    };
-    assert_eq!(act.code, CardCode("01108".into()));
-    assert_eq!(agenda.code, CardCode("01105".into()));
+    let state = crate::state::GameStateBuilder::new()
+        .with_act_deck([crate::test_support::act("_act", 2)])
+        .with_agenda_deck([crate::test_support::agenda("_agenda", 3)])
+        .build();
+    assert_eq!(state.act_deck[0].code, CardCode("_act".into()));
+    assert_eq!(state.agenda_deck[0].code, CardCode("_agenda".into()));
 }
 
 #[test]
@@ -25,9 +21,8 @@ fn saved_state_whose_enemy_carries_traits_still_loads() {
     // A save may carry a `traits` key on each enemy, a copy of its printed
     // traits that the engine does not keep. It must keep loading: the key is
     // ignored, not rejected.
-    let enemy = crate::test_support::test_enemy(1, "Ghoul Minion");
     let state = crate::state::GameStateBuilder::new()
-        .with_enemy(enemy)
+        .with_enemy(crate::test_support::enemy(1))
         .build();
     let mut json = serde_json::to_value(&state).expect("serialize");
     json["enemies"]
