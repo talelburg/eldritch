@@ -48,7 +48,7 @@ pub struct GameState {
     ///
     /// Brought into play by card effects, via
     /// [`put_set_aside_card_into_play`], which dispatches on the card's
-    /// [`CardKind`](card_dsl::card_data::CardKind), or its location-only sibling
+    /// [`CardKind`], or its location-only sibling
     /// [`put_set_aside_location_into_play`], which returns the minted
     /// [`LocationId`]: The Gathering's Act-1 reverse puts the four house
     /// locations into play through the sibling (the `01108:board-build`

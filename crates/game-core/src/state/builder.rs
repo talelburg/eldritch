@@ -32,10 +32,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::card_registry::CardRegistry;
 use crate::engine::Registries;
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
-use crate::state::staged::Staged;
+use crate::state::staged::{Reprint, Staged};
 use crate::state::{
     Act, Agenda, CardCode, CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter,
     EncounterDrawFrame, Enemy, EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowFrame,
@@ -601,16 +602,8 @@ impl GameStateBuilder {
             .into_iter()
             .map(|(id, staged)| (id, staged.resolve(cards, investigator_count)))
             .collect();
-        let act_deck: Vec<Act> = self
-            .act_deck
-            .into_iter()
-            .map(|staged| staged.resolve(cards, investigator_count))
-            .collect();
-        let agenda_deck: Vec<Agenda> = self
-            .agenda_deck
-            .into_iter()
-            .map(|staged| staged.resolve(cards, investigator_count))
-            .collect();
+        let act_deck = resolve_deck(self.act_deck, cards, investigator_count);
+        let agenda_deck = resolve_deck(self.agenda_deck, cards, investigator_count);
         let location_ids = Counter::at(next_id(locations.keys().map(|id| id.0)));
         let enemy_ids = Counter::at(next_id(enemies.keys().map(|id| id.0)));
         for (enemy, investigator) in self.engagements {
@@ -706,6 +699,17 @@ impl GameStateBuilder {
 /// its first mint takes none of them.
 fn next_id(ids: impl Iterator<Item = u32>) -> u32 {
     ids.map(|id| id.saturating_add(1)).max().unwrap_or(0)
+}
+
+/// Each card of a staged deck, [resolved](Staged::resolve), in order.
+fn resolve_deck<T: Reprint>(
+    deck: Vec<Staged<T>>,
+    cards: Option<&CardRegistry>,
+    investigator_count: u8,
+) -> Vec<T> {
+    deck.into_iter()
+        .map(|staged| staged.resolve(cards, investigator_count))
+        .collect()
 }
 
 impl Default for GameStateBuilder {
