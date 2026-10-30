@@ -227,9 +227,10 @@ impl fmt::Display for ReplayFailure {
 }
 
 /// The response that gives `answer` to `request`, the prompt the engine asks
-/// now: checks the prompt is the one `answer` was logged against, then finds
-/// each logged pick among `request`'s options and answers with the id it has
 /// now.
+///
+/// Checks the prompt is the one `answer` was logged against, then finds each
+/// logged pick among `request`'s options and answers with the id it has now.
 ///
 /// # Errors
 ///
