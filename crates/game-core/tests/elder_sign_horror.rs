@@ -72,7 +72,7 @@ fn board(code: &str, horror: u8) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).as_card(code).at(HERE).harm(0, horror))
-        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_location(test_support::location(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .open_turn(INV)
         .build()

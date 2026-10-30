@@ -20,8 +20,8 @@ use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{Act, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::state::{CardInstanceId, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{act, seat, MockRegistry, TestSession};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -79,19 +79,15 @@ fn resources(session: &TestSession) -> u8 {
 /// (the `at`-forced source) in their threat area. Settled, it rests
 /// at the round end's `when` reaction window.
 fn round_end_window() -> TestSession {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         .ending_upkeep_phase()
         // `TESTX` is a code the registry doesn't know, so the encounter deck
         // owns it.
         .with_seat(seat(1).threat_area([TEST_X]))
         .with_seating([InvestigatorId(1)])
+        .with_act_deck([act(TEST_ACT, 0)])
         .build();
-    state.act_deck = vec![Act {
-        code: CardCode::new(TEST_ACT),
-        clue_threshold: 0,
-    }];
-    state.act_index = 0;
     TestSession::new(state, registries())
 }
 

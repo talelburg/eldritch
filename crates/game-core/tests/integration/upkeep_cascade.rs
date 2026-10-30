@@ -13,10 +13,10 @@
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::state::{
-    Act, Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Owner, Phase,
 };
-use game_core::test_support::{self, TestSession, TEST_INV, TEST_REGISTRIES};
+use game_core::test_support::{self, act, agenda, TestSession, TEST_INV, TEST_REGISTRIES};
 
 /// Per-file code prefix. None of these codes is looked up — the deck, the
 /// hand and the readied asset are opaque tokens to every step the cascade runs —
@@ -37,43 +37,26 @@ fn deck_code(i: u32) -> CardCode {
 /// advances the terminal agenda: these tests are about Upkeep, and a scenario
 /// that ends mid-cascade would test something else.
 fn setup() -> GameState {
-    let mut location = test_support::test_location(10, "Upkeep Location");
-    location.code = CardCode::new(format!("{PREFIX}loc"));
-
     let mut state = GameStateBuilder::new()
-        .with_location(location)
+        .with_location(test_support::location(10).code(format!("{PREFIX}loc")))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        // Something for the Mythos step-1.4 prompt to be pending over. These tests
+        // pause at that prompt and never resolve it, so the card is never drawn.
+        .with_encounter_deck([format!("{PREFIX}encounter")])
+        .with_agenda_deck([
+            agenda(format!("{PREFIX}agenda_1"), 2),
+            // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
+            agenda(test_support::terminal_code(2), 2),
+        ])
+        .with_act_deck([
+            act(format!("{PREFIX}act_1"), 2),
+            // Terminal: last in the deck. Its reverse reaches R1.
+            act(test_support::terminal_code(1), 2),
+        ])
         .build();
     // `seat_and_open` places roster investigators at `starting_location` and
     // reveals it; point it at the already-revealed location above.
     state.starting_location = Some(LocationId(10));
-    // Something for the Mythos step-1.4 prompt to be pending over. These tests
-    // pause at that prompt and never resolve it, so the card is never drawn.
-    state
-        .encounter_deck
-        .push_back(CardCode::new(format!("{PREFIX}encounter")));
-    state.agenda_deck = vec![
-        Agenda {
-            code: CardCode::new(format!("{PREFIX}agenda_1")),
-            doom_threshold: 2,
-        },
-        Agenda {
-            // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
-            code: test_support::terminal_code(2),
-            doom_threshold: 2,
-        },
-    ];
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new(format!("{PREFIX}act_1")),
-            clue_threshold: 2,
-        },
-        Act {
-            // Terminal: last in the deck. Its reverse reaches R1.
-            code: test_support::terminal_code(1),
-            clue_threshold: 2,
-        },
-    ];
     state
 }
 

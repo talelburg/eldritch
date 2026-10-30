@@ -15,10 +15,9 @@ use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::InputKind;
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, TestSession, TEST_INV, TEST_REGISTRIES};
+use game_core::test_support::{self, act, agenda, TestSession, TEST_INV, TEST_REGISTRIES};
 
 /// Per-file code prefix. Nothing here is looked up in the registry — the
 /// hand-size discard path only moves cards between hand and discard — so the
@@ -39,41 +38,24 @@ const PADDED_HAND: usize = 11;
 /// a chaos bag, and two-card act/agenda decks ending in a terminal card. Phase =
 /// Mythos, round = 0 — ready for [`engine::seat_and_open`].
 fn setup() -> GameState {
-    let mut location = test_support::test_location(10, "Upkeep Location");
-    location.code = CardCode::new(format!("{PREFIX}loc"));
-
     let mut state = GameStateBuilder::new()
-        .with_location(location)
+        .with_location(test_support::location(10).code(format!("{PREFIX}loc")))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        // Something for the Mythos step-1.4 prompt to be pending over; these tests
+        // stop at that prompt and never resolve it, so it is never drawn.
+        .with_encounter_deck([format!("{PREFIX}encounter")])
+        .with_agenda_deck([
+            agenda(format!("{PREFIX}agenda_1"), 2),
+            // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
+            agenda(test_support::terminal_code(2), 2),
+        ])
+        .with_act_deck([
+            act(format!("{PREFIX}act_1"), 2),
+            // Terminal: last in the deck. Its reverse reaches R1.
+            act(test_support::terminal_code(1), 2),
+        ])
         .build();
     state.starting_location = Some(LocationId(10));
-    // Something for the Mythos step-1.4 prompt to be pending over; these tests
-    // stop at that prompt and never resolve it, so it is never drawn.
-    state
-        .encounter_deck
-        .push_back(CardCode::new(format!("{PREFIX}encounter")));
-    state.agenda_deck = vec![
-        Agenda {
-            code: CardCode::new(format!("{PREFIX}agenda_1")),
-            doom_threshold: 2,
-        },
-        Agenda {
-            // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
-            code: test_support::terminal_code(2),
-            doom_threshold: 2,
-        },
-    ];
-    state.act_deck = vec![
-        Act {
-            code: CardCode::new(format!("{PREFIX}act_1")),
-            clue_threshold: 2,
-        },
-        Act {
-            // Terminal: last in the deck. Its reverse reaches R1.
-            code: test_support::terminal_code(1),
-            clue_threshold: 2,
-        },
-    ];
     state
 }
 

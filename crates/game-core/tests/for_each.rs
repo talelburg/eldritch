@@ -16,8 +16,8 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, Status};
-use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::state::{self, GameStateBuilder, InvestigatorId, Status};
+use game_core::test_support::{act, seat, MockRegistry, TestSession};
 
 const ACT: &str = "_fe_act";
 const DEFEAT_THE_SECOND: &str = "test:defeat-the-second";
@@ -65,19 +65,15 @@ fn registries() -> Registries {
 /// walk goes on to the third.
 #[test]
 fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_seat(seat(3))
         .with_seating([FIRST, SECOND, THIRD])
         .ending_enemy_phase()
+        .with_act_deck([act(ACT, 99)])
         .build();
-    // No builder setter stages the act deck.
-    state.act_deck = vec![Act {
-        code: CardCode::new(ACT),
-        clue_threshold: 99,
-    }];
 
     // Settling runs step 3.4: the Enemy phase ends, and the act's forced
     // ability walks its targets.
@@ -113,7 +109,7 @@ fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
 /// and wraps to the first seat last.
 #[test]
 fn investigators_walk_in_player_order_from_the_lead() {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1))
         .with_seat(seat(2))
@@ -121,11 +117,8 @@ fn investigators_walk_in_player_order_from_the_lead() {
         .with_seating([FIRST, SECOND, THIRD])
         .with_lead(SECOND)
         .ending_enemy_phase()
+        .with_act_deck([act(ACT, 99)])
         .build();
-    state.act_deck = vec![Act {
-        code: CardCode::new(ACT),
-        clue_threshold: 99,
-    }];
 
     let session = TestSession::new(state, registries());
 

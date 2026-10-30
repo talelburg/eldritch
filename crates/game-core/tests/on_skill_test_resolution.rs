@@ -75,12 +75,10 @@ fn registries() -> Registries {
 /// single-`Numeric(0)` chaos bag (so token-modifier contribution is always 0),
 /// and clean pending modifiers.
 fn session_with_hand(hand: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(HERE.0, "Study");
-    location.clues = 3;
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
-        .with_location(location)
+        .with_location(test_support::location(HERE).clues(3))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

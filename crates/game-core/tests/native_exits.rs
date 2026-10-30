@@ -20,11 +20,10 @@ use game_core::engine::{
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, SkillSubstitution,
-    Zone,
+    self, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, SkillSubstitution, Zone,
 };
-use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
+use game_core::test_support::{act, agenda, location, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const TRAUMA_ACT: &str = "_nx_act_trauma";
@@ -125,21 +124,14 @@ fn lead(seated: Seat) -> GameStateBuilder {
         .open_turn(INV)
 }
 
-/// `builder` built, with `act` as the current act.
-fn with_act(builder: GameStateBuilder, act: &str) -> GameState {
-    let mut state = builder.build();
-    // No builder setter stages the act deck.
-    state.act_deck = vec![Act {
-        code: CardCode::new(act),
-        clue_threshold: 99,
-    }];
-    state.act_index = 0;
-    state
+/// `builder` built, with `code` as the current act.
+fn with_act(builder: GameStateBuilder, code: &str) -> GameState {
+    builder.with_act_deck([act(code, 99)]).build()
 }
 
-/// The plain lead, and `act` as the current act.
-fn state_with_act(act: &str) -> GameState {
-    with_act(lead(seat(1)), act)
+/// The plain lead, and `code` as the current act.
+fn state_with_act(code: &str) -> GameState {
+    with_act(lead(seat(1)), code)
 }
 
 /// End the lead's turn, and with it the Investigation phase, so play runs into
@@ -174,12 +166,10 @@ fn suffer_trauma_announces_trauma_suffered() {
 
 #[test]
 fn place_doom_on_agenda_places_doom_on_the_current_agenda() {
-    let mut state = state_with_act(DOOM_ACT);
-    // No builder setter stages the agenda deck.
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new("TEST-AGENDA"),
-        doom_threshold: 10,
-    }];
+    let state = with_act(
+        lead(seat(1)).with_agenda_deck([agenda("TEST-AGENDA", 10)]),
+        DOOM_ACT,
+    );
     let session = run(state);
     assert_eq!(
         session.state().agenda_doom,
@@ -205,8 +195,8 @@ fn placement_state(at: Option<LocationId>) -> GameState {
     };
     with_act(
         lead(seated)
-            .with_location(test_support::test_location(HERE.0, "Origin"))
-            .with_location(test_support::test_location(DEST.0, "Destination")),
+            .with_location(location(HERE))
+            .with_location(location(DEST)),
         PLACE_ACT,
     )
 }
@@ -258,9 +248,10 @@ fn clue_card_state(clues: u8) -> GameState {
         Owner::EncounterDeck,
     );
     card.clues = clues;
-    let mut location = test_support::test_location(HERE.0, "Elsewhere");
-    location.attachments.push(card);
-    with_act(lead(seat(1)).with_location(location), CLUES_ACT)
+    with_act(
+        lead(seat(1)).with_location(location(HERE).attachments([card])),
+        CLUES_ACT,
+    )
 }
 
 fn clues_on_clue_card(state: &GameState) -> u8 {
@@ -284,10 +275,12 @@ fn remove_clues_saturates_at_zero() {
 
 #[test]
 fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discard() {
-    let mut state = state_with_act(DIG_ACT);
-    // No builder setter stages the encounter deck or discard.
-    state.encounter_deck = ["TOP", "NEXT"].map(CardCode::new).into();
-    state.encounter_discard = vec![CardCode::new("OLD")];
+    let state = with_act(
+        lead(seat(1))
+            .with_encounter_deck(["TOP", "NEXT"])
+            .with_encounter_discard(["OLD"]),
+        DIG_ACT,
+    );
     let session = run(state);
     // The next round's encounter draw has not been taken yet.
     assert_eq!(
@@ -310,9 +303,7 @@ fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discar
 
 #[test]
 fn take_encounter_top_on_an_empty_deck_takes_nothing_and_does_not_reshuffle() {
-    let mut state = state_with_act(DIG_ACT);
-    // No builder setter stages the encounter discard.
-    state.encounter_discard = vec![CardCode::new("OLD")];
+    let state = with_act(lead(seat(1)).with_encounter_discard(["OLD"]), DIG_ACT);
     let session = run(state);
     assert!(session.state().encounter_deck.is_empty());
     assert_eq!(session.state().encounter_discard, [CardCode::new("OLD")]);
