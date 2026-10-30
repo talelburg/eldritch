@@ -7,6 +7,7 @@
 mod common;
 
 mod closing_demo;
+mod config;
 mod connect_pool;
 mod game_session;
 mod health;

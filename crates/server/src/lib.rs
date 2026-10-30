@@ -5,6 +5,7 @@
 //! logic in a library target lets integration tests in `tests/` drive
 //! it directly.
 
+pub mod config;
 pub mod db;
 mod id;
 pub mod lifecycle;
@@ -44,7 +45,7 @@ impl AppState {
     /// location (`crates/web/dist`, relative to the workspace root).
     #[must_use]
     pub fn new(db: SqlitePool, registries: Registries) -> Self {
-        Self::new_with_dist(db, registries, PathBuf::from("crates/web/dist"))
+        Self::new_with_dist(db, registries, PathBuf::from(config::DEV_DIST_DIR))
     }
 
     /// Build application state with an explicit client-bundle directory.
@@ -63,8 +64,8 @@ impl AppState {
 ///
 /// They are the real `scenarios::REGISTRY` (which includes The Gathering) and
 /// the real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
-/// hands them to [`AppState::new`]. Tests pass their own pairing instead and
-/// build any mock scenario module locally
+/// hands them to [`AppState::new_with_dist`]. Tests pass their own pairing
+/// instead and build any mock scenario module locally
 /// (`crates/server/tests/integration/common/mod.rs`); there is no shared fixture
 /// crate-side (ADR 0016).
 pub const REGISTRIES: Registries = Registries {
