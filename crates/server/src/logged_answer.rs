@@ -10,7 +10,7 @@
 
 use std::fmt;
 
-use game_core::action::InputResponse;
+use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, InputKind, InputRequest, OptionId, OptionTarget, Responder};
 use game_core::state::investigator::InvestigatorId;
 use serde::{Deserialize, Serialize};
@@ -104,10 +104,16 @@ impl PromptIdentity {
     }
 }
 
-/// A response this build can't log against the prompt it answered.
+/// An action this build can't log as the answer to the prompt the game awaits.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Unrecordable {
+    /// It is a player action that answers no prompt.
+    #[error("{0:?} answers no prompt")]
+    NotAnAnswer(PlayerAction),
+    /// The game awaits no answer.
+    #[error("the game awaits no answer")]
+    NoPrompt,
     /// It picks an id the prompt doesn't offer.
     #[error("option {} is not offered", .0.0)]
     NotOffered(OptionId),

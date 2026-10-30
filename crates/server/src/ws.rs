@@ -44,8 +44,8 @@ pub(crate) fn rooms() -> Rooms {
 /// Get the room for `game_id`, lazily loading it from the action log on
 /// a cache miss (e.g. first access, or after a server restart). Returns
 /// `None` if no such game exists — and also if it fails to load (an
-/// unresumable game, say),
-/// which is logged at `error` first rather than passed off as absence.
+/// unresumable game, say), which is logged at `error` first rather than
+/// passed off as absence.
 /// A session that cannot be reconstructed is never served half-built.
 async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<GameRoom>> {
     let mut rooms = state.rooms.lock().await;

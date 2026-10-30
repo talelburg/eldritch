@@ -26,7 +26,7 @@ use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
 use crate::id;
-use crate::logged_answer::{self, LoggedAnswer, ReplayFailure};
+use crate::logged_answer::{self, LoggedAnswer, ReplayFailure, Unrecordable};
 use crate::store::{self, ActionRow, GameRow};
 
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
@@ -134,25 +134,70 @@ enum SetupFailure {
     Seating(String),
 }
 
-/// Run scenario setup from a game's creation inputs. `create` and `load` both
-/// set a game up through here, so a reload re-runs exactly what creation ran.
-fn open(
-    registries: Registries,
-    scenario_id: &ScenarioId,
-    roster: &[RosterEntry],
+/// A stored game's **creation inputs**: everything its setup runs from.
+struct CreationInputs {
+    scenario_id: ScenarioId,
+    roster: Vec<RosterEntry>,
+    /// The roster index of the lead investigator.
     lead: usize,
+    /// The game's RNG seed, which replaces the scenario setup's builder seed.
     seed: u64,
     interactive_acknowledge: bool,
-) -> Result<Opened, SetupFailure> {
-    let module = (registries.scenarios.module_for)(scenario_id)
-        .ok_or_else(|| SetupFailure::UnknownScenario(scenario_id.clone()))?;
+}
+
+impl CreationInputs {
+    /// The `games` row that stores these inputs, with what setup decided from
+    /// them.
+    fn to_row(&self, setup_fingerprint: &SetupFingerprint) -> Result<GameRow, serde_json::Error> {
+        // Seating accepted `lead`, so it indexes the roster and fits.
+        let lead = i64::try_from(self.lead).map_err(|_| {
+            <serde_json::Error as serde::ser::Error>::custom(format!(
+                "lead {} doesn't fit its column",
+                self.lead
+            ))
+        })?;
+        Ok(GameRow {
+            format_version: FORMAT_VERSION,
+            scenario_id: self.scenario_id.as_str().to_owned(),
+            roster: serde_json::to_string(&self.roster)?,
+            lead,
+            rng_seed: to_sql_integer(self.seed),
+            interactive_acknowledge: self.interactive_acknowledge,
+            setup_fingerprint: serde_json::to_string(setup_fingerprint)?,
+        })
+    }
+
+    /// The inputs `row` stores. Its format version must already have been
+    /// checked: the columns are read in the current version's shape.
+    fn from_row(row: GameRow) -> Result<Self, serde_json::Error> {
+        let lead = usize::try_from(row.lead).map_err(|_| {
+            <serde_json::Error as serde::de::Error>::custom(format!(
+                "stored lead {} is not a roster index",
+                row.lead
+            ))
+        })?;
+        Ok(Self {
+            scenario_id: ScenarioId::new(row.scenario_id),
+            roster: serde_json::from_str(&row.roster)?,
+            lead,
+            seed: from_sql_integer(row.rng_seed),
+            interactive_acknowledge: row.interactive_acknowledge,
+        })
+    }
+}
+
+/// Run scenario setup from a game's creation inputs. `create` and `load` both
+/// set a game up through here, so a reload re-runs exactly what creation ran.
+fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, SetupFailure> {
+    let module = (registries.scenarios.module_for)(&inputs.scenario_id)
+        .ok_or_else(|| SetupFailure::UnknownScenario(inputs.scenario_id.clone()))?;
     let mut setup = (module.setup)();
     // The scenario's setup() builds with a fixed builder seed (game-core is
     // no-I/O, so it can't source randomness itself); the game's own seed
     // replaces it, so every game gets its own shuffle and draw order.
-    setup.rng = RngState::new(seed);
-    setup.interactive_acknowledge = interactive_acknowledge;
-    let result = engine::seat_and_open(setup, roster, lead, registries);
+    setup.rng = RngState::new(inputs.seed);
+    setup.interactive_acknowledge = inputs.interactive_acknowledge;
+    let result = engine::seat_and_open(setup, &inputs.roster, inputs.lead, registries);
     match result.outcome {
         EngineOutcome::Rejected { reason } => Err(SetupFailure::Seating(reason.to_string())),
         outcome => Ok(Opened {
@@ -188,44 +233,23 @@ impl GameSession {
         roster: Vec<RosterEntry>,
         lead: usize,
     ) -> Result<Self, SessionError> {
-        let seed = id::random_seed();
-        // Human play surfaces skill-test results with a Confirm-to-dismiss
-        // step; the engine gates that pause on this flag (default off for tests
-        // and non-interactive consumers).
-        let interactive_acknowledge = true;
-        let opened = open(
-            registries,
-            &scenario_id,
-            &roster,
+        let inputs = CreationInputs {
+            scenario_id,
+            roster,
             lead,
-            seed,
-            interactive_acknowledge,
-        )
-        .map_err(|failure| match failure {
+            seed: id::random_seed(),
+            // Human play surfaces skill-test results with a Confirm-to-dismiss
+            // step; the engine gates that pause on this flag (default off for
+            // tests and non-interactive consumers).
+            interactive_acknowledge: true,
+        };
+        let opened = open(registries, &inputs).map_err(|failure| match failure {
             SetupFailure::UnknownScenario(id) => SessionError::UnknownScenario(id),
             SetupFailure::Seating(reason) => SessionError::Seating(reason),
         })?;
-        // Seating accepted `lead`, so it indexes the roster and fits.
-        let lead = i64::try_from(lead)
-            .map_err(|_| SessionError::Seating(format!("lead {lead} is past the roster")))?;
-        let row = GameRow {
-            format_version: FORMAT_VERSION,
-            scenario_id: scenario_id.as_str().to_owned(),
-            roster: serde_json::to_string(&roster)?,
-            lead,
-            rng_seed: i64::from_ne_bytes(seed.to_ne_bytes()),
-            interactive_acknowledge,
-            setup_fingerprint: serde_json::to_string(&SetupFingerprint::of(&opened.state))?,
-        };
+        let row = inputs.to_row(&SetupFingerprint::of(&opened.state))?;
         let game_id = game_id.into();
-        store::insert_game(
-            &db,
-            &game_id,
-            &row,
-            protocol::build_id(),
-            &unix_millis().to_string(),
-        )
-        .await?;
+        store::insert_game(&db, &game_id, &row, protocol::build_id(), unix_millis()).await?;
 
         Ok(Self {
             game_id,
@@ -267,11 +291,13 @@ impl GameSession {
         }
         let answer = match self.record(&action) {
             Ok(answer) => answer,
-            Err(reason) => {
+            Err(unrecordable) => {
                 return Ok((
                     Vec::new(),
                     EngineOutcome::Rejected {
-                        reason: Cow::Owned(format!("the action log can't record this: {reason}")),
+                        reason: Cow::Owned(format!(
+                            "the action log can't record this: {unrecordable}"
+                        )),
                     },
                 ));
             }
@@ -279,7 +305,7 @@ impl GameSession {
 
         let row = ActionRow {
             answer: serde_json::to_string(&answer)?,
-            draws: i64::from_ne_bytes(result.state.rng.draws.to_ne_bytes()),
+            draws: to_sql_integer(result.state.rng.draws),
         };
         store::insert_action(&self.db, &self.game_id, self.seq, &row, unix_millis()).await?;
         self.seq += 1;
@@ -290,14 +316,14 @@ impl GameSession {
     }
 
     /// Log `action` as the answer to the prompt the session awaits.
-    fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, String> {
+    fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, Unrecordable> {
         let PlayerAction::ResolveInput { response } = action else {
-            return Err(format!("{action:?} answers no prompt"));
+            return Err(Unrecordable::NotAnAnswer(action.clone()));
         };
         let EngineOutcome::AwaitingInput { request, .. } = &self.outcome else {
-            return Err("the game awaits no answer".to_owned());
+            return Err(Unrecordable::NoPrompt);
         };
-        logged_answer::record(request, response).map_err(|unrecordable| unrecordable.to_string())
+        logged_answer::record(request, response)
     }
 
     /// Rebuild a stored game against `registries`: re-run setup from its
@@ -334,23 +360,9 @@ impl GameSession {
                 found: row.format_version,
             }));
         }
-        let roster: Vec<RosterEntry> = serde_json::from_str(&row.roster)?;
         let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
-        let lead = usize::try_from(row.lead).map_err(|_| {
-            unresumable(UnresumableReason::Setup(format!(
-                "stored lead {} is not a roster index",
-                row.lead
-            )))
-        })?;
-        let opened = open(
-            registries,
-            &ScenarioId::new(row.scenario_id),
-            &roster,
-            lead,
-            u64::from_ne_bytes(row.rng_seed.to_ne_bytes()),
-            row.interactive_acknowledge,
-        )
-        .map_err(|failure| {
+        let inputs = CreationInputs::from_row(row)?;
+        let opened = open(registries, &inputs).map_err(|failure| {
             unresumable(UnresumableReason::Setup(match failure {
                 SetupFailure::UnknownScenario(id) => {
                     format!("unknown scenario: {}", id.as_str())
@@ -369,11 +381,11 @@ impl GameSession {
         let mut seq: i64 = 0;
         for row in store::load_actions(&db, game_id).await? {
             let answer: LoggedAnswer = serde_json::from_str(&row.answer)?;
-            let draws = u64::from_ne_bytes(row.draws.to_ne_bytes());
+            let draws = from_sql_integer(row.draws);
             // A failed check means the log does not reproduce the session it
             // recorded. Stop loudly rather than serving the prefix that did
             // replay.
-            let result = replay(state, &outcome, &answer, draws, registries)
+            let result = replay_step(state, &outcome, &answer, draws, registries)
                 .map_err(|reason| unresumable(UnresumableReason::Replay { seq, reason }))?;
             state = result.state;
             outcome = result.outcome;
@@ -396,7 +408,7 @@ impl GameSession {
 /// running the four replay checks in order: the prompt is the one it answered,
 /// each pick finds its option, the engine accepts it, and the RNG stands at
 /// the `draws` logged after it.
-fn replay(
+fn replay_step(
     state: GameState,
     outcome: &EngineOutcome,
     answer: &LoggedAnswer,
@@ -425,6 +437,17 @@ fn replay(
         });
     }
     Ok(result)
+}
+
+/// `bits` as `SQLite`'s signed 64-bit integer, for a `u64` column: the same
+/// bits, so [`from_sql_integer`] gives `bits` back.
+fn to_sql_integer(bits: u64) -> i64 {
+    i64::from_ne_bytes(bits.to_ne_bytes())
+}
+
+/// The `u64` whose bits [`to_sql_integer`] stored as `integer`.
+fn from_sql_integer(integer: i64) -> u64 {
+    u64::from_ne_bytes(integer.to_ne_bytes())
 }
 
 /// Milliseconds since the Unix epoch, for the `created_at` and `at` columns.

@@ -23,7 +23,7 @@ CREATE TABLE games (
     rng_seed                INTEGER NOT NULL,
     interactive_acknowledge INTEGER NOT NULL,
     setup_fingerprint       TEXT NOT NULL,   -- JSON of card codes
-    created_at              TEXT NOT NULL    -- unix millis
+    created_at              INTEGER NOT NULL -- unix millis
 );
 
 CREATE TABLE actions (

@@ -30,7 +30,7 @@ pub struct SetupFingerprint {
 /// One investigator's share of a [`SetupFingerprint`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct InvestigatorZones {
-    investigator: u32,
+    investigator: InvestigatorId,
     hand: Vec<String>,
     deck: Vec<String>,
 }
@@ -88,7 +88,7 @@ impl SetupFingerprint {
                 .investigators
                 .values()
                 .map(|inv| InvestigatorZones {
-                    investigator: inv.id.0,
+                    investigator: inv.id,
                     hand: codes(&inv.hand),
                     deck: codes(&inv.deck),
                 })
@@ -118,7 +118,7 @@ impl SetupFingerprint {
             });
         }
         for (stored, now) in self.investigators.iter().zip(&current.investigators) {
-            let id = InvestigatorId(stored.investigator);
+            let id = stored.investigator;
             for (zone, stored, now) in [
                 (Zone::Hand(id), &stored.hand, &now.hand),
                 (Zone::Deck(id), &stored.deck, &now.deck),

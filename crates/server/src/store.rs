@@ -5,10 +5,10 @@
 use protocol::GameId;
 use sqlx::{Error, SqlitePool};
 
-/// What a `games` row holds to rebuild its game: the creation inputs and the
-/// record of what setup decided. No serialized engine state (ADR 0022). The
-/// row's diagnostic columns, `created_build` and `created_at`, are written
-/// beside it and never read back.
+/// What a `games` row holds to rebuild its game: the creation inputs, in their
+/// column form, and the record of what setup decided. No serialized engine
+/// state (ADR 0022). The row's diagnostic columns, `created_build` and
+/// `created_at`, are written beside it and never read back.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
@@ -24,13 +24,13 @@ pub(crate) struct GameRow {
 }
 
 /// Insert a new game's row, created by build `created_build` at `created_at`
-/// (unix millis, as a string).
+/// (unix millis).
 pub(crate) async fn insert_game(
     db: &SqlitePool,
     game_id: &GameId,
     row: &GameRow,
     created_build: &str,
-    created_at: &str,
+    created_at: i64,
 ) -> Result<(), Error> {
     sqlx::query(
         "INSERT INTO games (game_id, format_version, created_build, scenario_id, roster, lead, \
