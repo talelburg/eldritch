@@ -36,11 +36,13 @@ evidence about a card and is evidence about a hand-written approximation of one.
 Nothing checks a synthetic against the snapshot, because there is nothing to
 check it against.
 
-Two more instances, in two other crates. `crates/scenarios/tests/opening_hand_weaknesses.rs:60-63`
-pads a player deck with `01001`–`01004` — Roland Banks, Daisy Walker, "Skids"
-O'Toole and Agnes Baker, four real *investigator* cards, in a zone none of them
-can legally occupy — because the test needs four opaque tokens and reached for
-real codes. And `crates/web/tests/integration/board.rs:161` asserted
+Two more instances, in two other crates. The opening-hand weaknesses test, then
+in `scenarios` and since moved to
+`crates/cards/tests/integration/opening_hand_weaknesses.rs`, padded a player
+deck with `01001`–`01004` — Roland Banks, Daisy Walker, "Skids" O'Toole and
+Agnes Baker, four real *investigator* cards, in a zone none of them can legally
+occupy — because the test needed four opaque tokens and reached for real codes.
+And `crates/web/tests/integration/board.rs:161` asserted
 `html.contains("_synth_fast_event")` — over a hand seeded at `:119-122` — while
 the file's test registry (`:33`)
 knew only `TEST_INV` and the terminal act/agenda cards: the assertion
