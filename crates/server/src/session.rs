@@ -2,18 +2,21 @@
 //! `SQLite` action log.
 //!
 //! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
-//! the `interactive_acknowledge` flag) plus an ordered log of applied actions
+//! the `interactive_acknowledge` flag) plus an ordered log of its answers
 //! (ADR 0022). No engine state is stored. The live session keeps the derived
-//! state in memory and appends each accepted action to the log;
-//! [`GameSession::load`] re-runs setup from the inputs, checks it against the
-//! stored [`SetupFingerprint`], and replays the log, reproducing state
-//! bit-for-bit. A stored game that fails a check is an **unresumable game**:
-//! the load fails with [`SessionError::Unresumable`] and its rows are kept.
+//! state in memory and appends each accepted answer to the log as a
+//! [`LoggedAnswer`] with the RNG checkpoint after it; [`GameSession::load`]
+//! re-runs setup from the inputs, checks it against the stored
+//! [`SetupFingerprint`], and replays the log, checking each answer, reproducing
+//! state bit-for-bit. A stored game that fails a check is an **unresumable
+//! game**: the load fails with [`SessionError::Unresumable`] and its rows are
+//! kept.
 
+use std::borrow::Cow;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{Action, PlayerAction, RosterEntry};
-use game_core::engine::{self, EngineOutcome, Registries};
+use game_core::engine::{self, ApplyResult, EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
@@ -23,12 +26,13 @@ use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
 use crate::id;
-use crate::store::{self, GameRow};
+use crate::logged_answer::{self, LoggedAnswer, ReplayFailure};
+use crate::store::{self, ActionRow, GameRow};
 
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
 /// whenever either changes; a game stored under any other version is
 /// unresumable ([`UnresumableReason::Version`]).
-pub const FORMAT_VERSION: i64 = 1;
+pub const FORMAT_VERSION: i64 = 2;
 
 /// Errors from [`GameSession`] persistence operations.
 #[derive(Debug, thiserror::Error)]
@@ -83,13 +87,13 @@ pub enum UnresumableReason {
     /// when the game was created.
     #[error("setup now decides differently: {0}")]
     Fingerprint(FingerprintMismatch),
-    /// A logged action was rejected on replay.
-    #[error("replay rejected at action {seq}: {reason}")]
+    /// A logged answer fails a replay check.
+    #[error("action {seq} no longer replays: {reason}")]
     Replay {
         /// Zero-based position of the offending action in the log.
         seq: i64,
-        /// The engine's rejection reason.
-        reason: String,
+        /// The check it fails.
+        reason: ReplayFailure,
     },
 }
 
@@ -234,41 +238,66 @@ impl GameSession {
         })
     }
 
-    /// Apply a player action: validate via the engine, persist it on
-    /// acceptance, and advance the in-memory state.
+    /// Apply a player action: validate via the engine, log the answer it gives
+    /// on acceptance, and advance the in-memory state.
     ///
     /// A rejected action persists nothing and leaves the state
     /// unchanged (the engine guarantees this); the returned
-    /// [`EngineOutcome`] carries the rejection reason.
+    /// [`EngineOutcome`] carries the rejection reason. An action the engine
+    /// accepts but the log can't record ([`logged_answer::record`]) is
+    /// rejected the same way, since a game must never hold a move its log
+    /// can't replay.
     ///
     /// # Errors
     ///
-    /// [`SessionError::Serde`] if the action fails to serialize, or
-    /// [`SessionError::Db`] if persisting the accepted action fails. An engine
-    /// *rejection* is not an error — it is returned in the `EngineOutcome`.
+    /// [`SessionError::Serde`] if the answer fails to serialize, or
+    /// [`SessionError::Db`] if persisting it fails. An engine *rejection* is
+    /// not an error — it is returned in the `EngineOutcome`.
     pub async fn apply(
         &mut self,
         action: PlayerAction,
     ) -> Result<(Vec<Event>, EngineOutcome), SessionError> {
-        let logged = Action::Player(action);
-        let result = engine::apply(self.state.clone(), logged.clone(), self.registries);
-
-        if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
-            let action_json = serde_json::to_string(&logged)?;
-            store::insert_action(
-                &self.db,
-                &self.game_id,
-                self.seq,
-                &action_json,
-                unix_millis(),
-            )
-            .await?;
-            self.seq += 1;
-            self.state = result.state;
-            self.outcome = result.outcome.clone();
+        let result = engine::apply(
+            self.state.clone(),
+            Action::Player(action.clone()),
+            self.registries,
+        );
+        if matches!(result.outcome, EngineOutcome::Rejected { .. }) {
+            return Ok((result.events, result.outcome));
         }
+        let answer = match self.record(&action) {
+            Ok(answer) => answer,
+            Err(reason) => {
+                return Ok((
+                    Vec::new(),
+                    EngineOutcome::Rejected {
+                        reason: Cow::Owned(format!("the action log can't record this: {reason}")),
+                    },
+                ));
+            }
+        };
+
+        let row = ActionRow {
+            answer: serde_json::to_string(&answer)?,
+            draws: i64::from_ne_bytes(result.state.rng.draws.to_ne_bytes()),
+        };
+        store::insert_action(&self.db, &self.game_id, self.seq, &row, unix_millis()).await?;
+        self.seq += 1;
+        self.state = result.state;
+        self.outcome = result.outcome.clone();
 
         Ok((result.events, result.outcome))
+    }
+
+    /// Log `action` as the answer to the prompt the session awaits.
+    fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, String> {
+        let PlayerAction::ResolveInput { response } = action else {
+            return Err(format!("{action:?} answers no prompt"));
+        };
+        let EngineOutcome::AwaitingInput { request, .. } = &self.outcome else {
+            return Err("the game awaits no answer".to_owned());
+        };
+        logged_answer::record(request, response).map_err(|unrecordable| unrecordable.to_string())
     }
 
     /// Rebuild a stored game against `registries`: re-run setup from its
@@ -337,18 +366,14 @@ impl GameSession {
         let mut state = opened.state;
         let mut outcome = opened.outcome;
         let mut seq: i64 = 0;
-        for action_json in store::load_actions(&db, game_id).await? {
-            let action: Action = serde_json::from_str(&action_json)?;
-            let result = engine::apply(state, action, registries);
-            // A rejection means the log does not reproduce the session it
+        for row in store::load_actions(&db, game_id).await? {
+            let answer: LoggedAnswer = serde_json::from_str(&row.answer)?;
+            let draws = u64::from_ne_bytes(row.draws.to_ne_bytes());
+            // A failed check means the log does not reproduce the session it
             // recorded. Stop loudly rather than serving the prefix that did
             // replay.
-            if let EngineOutcome::Rejected { reason } = &result.outcome {
-                return Err(unresumable(UnresumableReason::Replay {
-                    seq,
-                    reason: reason.to_string(),
-                }));
-            }
+            let result = replay(state, &outcome, &answer, draws, registries)
+                .map_err(|reason| unresumable(UnresumableReason::Replay { seq, reason }))?;
             state = result.state;
             outcome = result.outcome;
             seq += 1;
@@ -364,6 +389,41 @@ impl GameSession {
             registries,
         }))
     }
+}
+
+/// Replay one logged answer against `state`, whose last apply left `outcome`,
+/// running the four replay checks in order: the prompt is the one it answered,
+/// each pick finds its option, the engine accepts it, and the RNG stands at
+/// the `draws` logged after it.
+fn replay(
+    state: GameState,
+    outcome: &EngineOutcome,
+    answer: &LoggedAnswer,
+    draws: u64,
+    registries: Registries,
+) -> Result<ApplyResult, ReplayFailure> {
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        return Err(ReplayFailure::PromptChanged {
+            recorded: answer.prompt.clone(),
+            now: None,
+        });
+    };
+    let response = logged_answer::replay(request, answer)?;
+    let result = engine::apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput { response }),
+        registries,
+    );
+    if let EngineOutcome::Rejected { reason } = &result.outcome {
+        return Err(ReplayFailure::Rejected(reason.to_string()));
+    }
+    if result.state.rng.draws != draws {
+        return Err(ReplayFailure::Draws {
+            recorded: draws,
+            now: result.state.rng.draws,
+        });
+    }
+    Ok(result)
 }
 
 /// Milliseconds since the Unix epoch, for the `created_at` and `at` columns.

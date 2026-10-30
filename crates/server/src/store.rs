@@ -52,18 +52,29 @@ pub(crate) async fn insert_game(
     Ok(())
 }
 
+/// What an `actions` row holds for replay: the logged answer and the RNG
+/// checkpoint after it.
+pub(crate) struct ActionRow {
+    /// JSON of the logged answer.
+    pub(crate) answer: String,
+    /// `RngState::draws` after the action applied, its `u64` bits as
+    /// `SQLite`'s signed 64-bit integer.
+    pub(crate) draws: i64,
+}
+
 /// Append one action row at `seq` for a game, applied at `at` (unix millis).
 pub(crate) async fn insert_action(
     db: &SqlitePool,
     game_id: &GameId,
     seq: i64,
-    action: &str,
+    row: &ActionRow,
     at: i64,
 ) -> Result<(), Error> {
-    sqlx::query("INSERT INTO actions (game_id, seq, action, at) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO actions (game_id, seq, answer, draws, at) VALUES (?, ?, ?, ?, ?)")
         .bind(game_id.as_str())
         .bind(seq)
-        .bind(action)
+        .bind(&row.answer)
+        .bind(row.draws)
         .bind(at)
         .execute(db)
         .await?;
@@ -100,12 +111,18 @@ pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Optio
     ))
 }
 
-/// Fetch a game's action JSON blobs in `seq` order.
-pub(crate) async fn load_actions(db: &SqlitePool, game_id: &GameId) -> Result<Vec<String>, Error> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT action FROM actions WHERE game_id = ? ORDER BY seq")
+/// Fetch a game's action rows in `seq` order.
+pub(crate) async fn load_actions(
+    db: &SqlitePool,
+    game_id: &GameId,
+) -> Result<Vec<ActionRow>, Error> {
+    let rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT answer, draws FROM actions WHERE game_id = ? ORDER BY seq")
             .bind(game_id.as_str())
             .fetch_all(db)
             .await?;
-    Ok(rows.into_iter().map(|(action,)| action).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(answer, draws)| ActionRow { answer, draws })
+        .collect())
 }

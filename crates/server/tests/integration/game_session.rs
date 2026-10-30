@@ -6,11 +6,12 @@
 //! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
 //! selecting a non-existent card is rejected).
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::{InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::GameId;
+use server::logged_answer::ReplayFailure;
 use server::session::{GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
@@ -260,38 +261,21 @@ async fn load_replays_log_to_reproduce_live_state() {
 /// not produce a half-reconstructed session.
 ///
 /// An engine change to what an action *means* can leave a row perfectly
-/// deserializable and not replayable. Simulated here by appending a row the
-/// engine rejects — the same observable a stale log produces.
+/// deserializable and not replayable. Simulated here by turning the logged
+/// mulligan answer into a `Confirm`: it still answers the same prompt, which
+/// the engine rejects a `Confirm` for — the same observable a stale log
+/// produces.
 #[tokio::test]
 async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let pool = common::memory_pool().await;
-    let _session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "stale",
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .unwrap();
-
-    // A mulligan pick of a card that isn't in hand: accepted by serde, rejected
-    // by the engine.
-    let doomed = serde_json::to_string(&Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: vec![OptionId(999_999)],
-        },
-    }))
-    .unwrap();
-    sqlx::query("INSERT INTO actions (game_id, seq, action, at) VALUES (?, ?, ?, ?)")
-        .bind("stale")
-        .bind(0_i64)
-        .bind(&doomed)
-        .bind(0_i64)
-        .execute(&pool)
+    let mut session = common::create_game(&pool, "stale").await;
+    session
+        .apply(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })
         .await
         .unwrap();
+    common::set_logged(&pool, "stale", 0, "$.response", "Confirm").await;
 
     let Err(err) = GameSession::load(pool.clone(), common::REGISTRIES, &GameId::new("stale")).await
     else {
@@ -302,7 +286,10 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
             &err,
             SessionError::Unresumable {
                 game_id,
-                reason: UnresumableReason::Replay { seq: 0, .. },
+                reason: UnresumableReason::Replay {
+                    seq: 0,
+                    reason: ReplayFailure::Rejected(_),
+                },
             } if game_id.as_str() == "stale"
         ),
         "the failure must name the game and the offending action, got {err:?}",

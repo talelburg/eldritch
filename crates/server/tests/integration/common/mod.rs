@@ -13,6 +13,7 @@ use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRe
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
+use serde::Serialize;
 use server::db::MIGRATOR;
 use server::session::GameSession;
 use server::AppState;
@@ -128,6 +129,30 @@ pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
             _ => {}
         }
     }
+}
+
+/// Set one JSON field, at `path`, of the answer logged at `seq` for `game_id`:
+/// the stored-row edit that simulates an engine change between `apply` and
+/// `load`.
+pub(crate) async fn set_logged(
+    pool: &SqlitePool,
+    game_id: &str,
+    seq: i64,
+    path: &str,
+    value: impl Serialize,
+) {
+    let value = serde_json::to_string(&value).expect("serialize the edited value");
+    let edited = sqlx::query(
+        "UPDATE actions SET answer = json_set(answer, ?, json(?)) WHERE game_id = ? AND seq = ?",
+    )
+    .bind(path)
+    .bind(value)
+    .bind(game_id)
+    .bind(seq)
+    .execute(pool)
+    .await
+    .expect("edit the logged answer");
+    assert_eq!(edited.rows_affected(), 1, "one logged answer is edited");
 }
 
 /// How many `games` and `actions` rows `game_id` has.

@@ -8,7 +8,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::game_state::GameState;
 use game_core::state::investigator::InvestigatorId;
@@ -143,6 +143,27 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
 }
 
 #[tokio::test]
+async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "reordered").await;
+    session.apply(keep_opening_hand()).await.unwrap();
+    let gain = turn_option(&session, "Gain resource");
+    let end_turn = turn_option(&session, "End turn");
+    session.apply(pick(gain)).await.unwrap();
+    // As if a PR had reordered the turn menu: the logged pick now carries the
+    // id that is End turn's, but still names Gain resource.
+    common::set_logged(&pool, "reordered", 1, "$.response.PickSingle.option.id", end_turn.0).await;
+
+    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("reordered"))
+        .await
+        .unwrap()
+        .expect("game exists");
+
+    assert_eq!(loaded.state, session.state);
+    assert_eq!(loaded.outcome, session.outcome);
+}
+
+#[tokio::test]
 async fn an_unknown_game_is_absent_not_unresumable() {
     let pool = common::memory_pool().await;
 
@@ -151,6 +172,25 @@ async fn an_unknown_game_is_absent_not_unresumable() {
         .expect("an unknown game is not an error");
 
     assert!(loaded.is_none());
+}
+
+fn pick(option: OptionId) -> PlayerAction {
+    PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(option),
+    }
+}
+
+/// The id of the option labelled `label` on the prompt `session` awaits.
+fn turn_option(session: &GameSession, label: &str) -> OptionId {
+    let EngineOutcome::AwaitingInput { request, .. } = &session.outcome else {
+        panic!("expected a prompt, got {:?}", session.outcome);
+    };
+    request
+        .options
+        .iter()
+        .find(|option| option.label == label)
+        .unwrap_or_else(|| panic!("no `{label}` option in {:?}", request.options))
+        .id
 }
 
 /// Load `game_id`, which must fail as unresumable under its own id, and
