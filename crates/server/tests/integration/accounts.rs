@@ -12,10 +12,21 @@ use server::db::{self, MIGRATOR};
 
 use crate::common::{self, TempDb};
 
-/// The built `server` binary with `args`, against `db`.
+/// The built `server` binary with `args`, against `db`. The sign-in
+/// providers' variables are cleared, so a dev `.env` sourced into the shell
+/// running the tests can't turn a provider on, or stop the binary starting.
 fn binary(db: &TempDb, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
     command.args(args).env("DATABASE_URL", db.url());
+    for name in [
+        "ELDRITCH_PUBLIC_ORIGIN",
+        "ELDRITCH_GITHUB_CLIENT_ID",
+        "ELDRITCH_GITHUB_CLIENT_SECRET",
+        "ELDRITCH_GOOGLE_CLIENT_ID",
+        "ELDRITCH_GOOGLE_CLIENT_SECRET",
+    ] {
+        command.env_remove(name);
+    }
     command
 }
 

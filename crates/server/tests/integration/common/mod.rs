@@ -6,8 +6,9 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fs};
+use std::{env, fs, future};
 
 use axum::body::{self, Body};
 use axum::http::{header, HeaderMap, Request, StatusCode};
@@ -25,6 +26,9 @@ use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
 use server::accounts::{self, AccountsError};
 use server::auth;
+use server::auth::provider::{
+    AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError, ReportedEmail,
+};
 use server::db::MIGRATOR;
 use server::session::GameSession;
 use server::AppState;
@@ -36,6 +40,7 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tower::ServiceExt as _;
+use url::Url;
 
 pub(crate) const TEST_SCENARIO_ID: &str = "test-scenario";
 
@@ -231,14 +236,172 @@ pub(crate) fn picker_entries(page: &str) -> Vec<(String, String)> {
 
 /// The `name=value` pair of the session cookie a response sets.
 pub(crate) fn session_cookie(headers: &HeaderMap) -> String {
+    cookie_pair(headers, auth::SESSION_COOKIE)
+}
+
+/// The `name=value` pair of the cookie `name` a response sets, as a request's
+/// `Cookie` header carries it back.
+pub(crate) fn cookie_pair(headers: &HeaderMap, name: &str) -> String {
+    set_cookie(headers, name)
+        .unwrap_or_else(|| panic!("the {name} cookie is set"))
+        .split(';')
+        .next()
+        .expect("a name=value pair")
+        .to_string()
+}
+
+/// The whole `Set-Cookie` value a response sets for the cookie `name`,
+/// attributes included, if it sets one.
+pub(crate) fn set_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(header::SET_COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
-        .filter_map(|value| value.split(';').next())
-        .find(|pair| pair.starts_with(&format!("{}=", auth::SESSION_COOKIE)))
-        .expect("a session cookie is set")
-        .to_string()
+        .find(|value| value.starts_with(&format!("{name}=")))
+        .map(ToString::to_string)
+}
+
+/// How many rows `sessions` holds.
+pub(crate) async fn session_count(pool: &SqlitePool) -> i64 {
+    let (sessions,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions")
+        .fetch_one(pool)
+        .await
+        .expect("count sessions");
+    sessions
+}
+
+/// The public origin a [`FakeProvider`] app is configured with.
+pub(crate) const FAKE_ORIGIN: &str = "http://localhost:3000";
+
+/// The `state` every [`FakeProvider`] sign-in carries.
+pub(crate) const FAKE_STATE: &str = "fake-state";
+
+/// The PKCE verifier a [`FakeProvider`] sign-in carries, which its exchange
+/// requires back, so a test passes only if the in-flight cookie returned it.
+const FAKE_VERIFIER: &str = "fake-verifier";
+
+/// The code a [`FakeProvider`]'s exchange fails on, as a provider that
+/// answered with an error would.
+pub(crate) const FAILING_CODE: &str = "fails-at-the-provider";
+
+/// An identity provider, `fake` and named "Fake", that reports `emails` for
+/// any code but [`FAILING_CODE`].
+pub(crate) struct FakeProvider {
+    emails: Vec<ReportedEmail>,
+    /// Whether login fails, as a provider whose endpoints couldn't be
+    /// discovered does.
+    unreachable: bool,
+}
+
+impl FakeProvider {
+    /// A provider reporting each `(address, verified)` of `emails`.
+    pub(crate) fn reporting(emails: &[(&str, bool)]) -> Self {
+        Self {
+            emails: emails
+                .iter()
+                .map(|&(address, verified)| ReportedEmail {
+                    address: address.to_string(),
+                    verified,
+                })
+                .collect(),
+            unreachable: false,
+        }
+    }
+
+    /// A provider that can't be reached, so no sign-in through it starts.
+    pub(crate) fn unreachable() -> Self {
+        Self {
+            unreachable: true,
+            ..Self::reporting(&[])
+        }
+    }
+}
+
+impl IdentityProvider for FakeProvider {
+    fn slug(&self) -> &'static str {
+        "fake"
+    }
+
+    fn name(&self) -> &'static str {
+        "Fake"
+    }
+
+    fn authorize_url<'a>(&'a self, redirect_uri: &'a Url) -> AuthorizeFuture<'a> {
+        if self.unreachable {
+            return Box::pin(future::ready(Err(ProviderError::new(
+                "the provider is unreachable",
+            ))));
+        }
+        let mut url = Url::parse("https://fake.example/authorize").expect("a URL");
+        url.query_pairs_mut()
+            .append_pair("redirect_uri", redirect_uri.as_str())
+            .append_pair("state", FAKE_STATE);
+        Box::pin(future::ready(Ok((
+            url,
+            PendingSignIn::new(FAKE_STATE.to_string(), FAKE_VERIFIER.to_string()),
+        ))))
+    }
+
+    fn exchange<'a>(
+        &'a self,
+        code: String,
+        pending: PendingSignIn,
+        redirect_uri: &'a Url,
+    ) -> ExchangeFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(pending.pkce_verifier(), FAKE_VERIFIER);
+            assert_eq!(
+                redirect_uri.as_str(),
+                format!("{FAKE_ORIGIN}/auth/fake/callback")
+            );
+            if code == FAILING_CODE {
+                Err(ProviderError::new("the provider refused the code"))
+            } else {
+                Ok(self.emails.clone())
+            }
+        })
+    }
+}
+
+/// The server's router over `pool` with `provider` on, at [`FAKE_ORIGIN`],
+/// and the dev sign-in `dev_auth` on or off.
+pub(crate) fn provider_app(pool: SqlitePool, provider: FakeProvider, dev_auth: bool) -> Router {
+    let origin = Url::parse(FAKE_ORIGIN).expect("a URL");
+    server::app(
+        AppState::new(pool, REGISTRIES)
+            .with_dev_auth(dev_auth)
+            .with_identity_providers(&origin, vec![Arc::new(provider)]),
+    )
+}
+
+/// `GET uri` on `app` with a loopback `Host` and `cookie` if there is one:
+/// the response's status, headers and body.
+pub(crate) async fn get(
+    app: &Router,
+    uri: &str,
+    cookie: Option<&str>,
+) -> (StatusCode, HeaderMap, String) {
+    let mut request = Request::builder()
+        .uri(uri)
+        .header(header::HOST, "localhost");
+    if let Some(cookie) = cookie {
+        request = request.header(header::COOKIE, cookie);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).expect("build the request"))
+        .await
+        .expect("a response");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("a body");
+    (
+        status,
+        headers,
+        String::from_utf8(body.to_vec()).expect("utf-8 body"),
+    )
 }
 
 /// The two requests a dev-picker sign-in makes, over whichever transport.
@@ -281,21 +444,8 @@ struct InProcess<'a>(&'a Router);
 
 impl DevPicker for InProcess<'_> {
     async fn page(&self) -> String {
-        let request = Request::builder()
-            .uri("/auth/dev")
-            .header(header::HOST, "localhost")
-            .body(Body::empty())
-            .expect("build the picker request");
-        let response = self
-            .0
-            .clone()
-            .oneshot(request)
-            .await
-            .expect("GET the dev picker");
-        let page = body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the picker page");
-        String::from_utf8(page.to_vec()).expect("utf-8 page")
+        let (_, _, page) = get(self.0, "/auth/dev", None).await;
+        page
     }
 
     async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {

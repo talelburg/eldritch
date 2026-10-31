@@ -8,9 +8,13 @@ use std::env;
 use std::error::Error;
 use std::io;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use server::accounts::{self, Account, Email, EntryRef};
+use server::auth::github::GitHub;
+use server::auth::google::Google;
+use server::auth::provider::IdentityProvider;
 use server::config::{Config, ConfigError};
 use server::db::{self, MIGRATOR};
 use server::AppState;
@@ -117,15 +121,31 @@ async fn serve(dev_auth: bool) -> Result<(), Box<dyn Error>> {
         config.bind
     );
 
-    axum::serve(
-        listener,
-        server::app(
-            AppState::new_with_dist(pool, server::REGISTRIES, config.dist_dir)
-                .with_dev_auth(dev_auth),
-        ),
-    )
-    .await?;
+    let providers = identity_providers(&config);
+    let state =
+        AppState::new_with_dist(pool, server::REGISTRIES, config.dist_dir).with_dev_auth(dev_auth);
+    let state = match &config.public_origin {
+        Some(origin) => state.with_identity_providers(origin, providers),
+        None => state,
+    };
+    axum::serve(listener, server::app(state)).await?;
     Ok(())
+}
+
+/// The adapter of each provider `config` turns on, in the order the sign-in
+/// screen lists them.
+fn identity_providers(config: &Config) -> Vec<Arc<dyn IdentityProvider>> {
+    let mut providers: Vec<Arc<dyn IdentityProvider>> = Vec::new();
+    if let Some(credentials) = &config.github {
+        providers.push(Arc::new(GitHub::new(credentials)));
+    }
+    if let Some(credentials) = &config.google {
+        providers.push(Arc::new(Google::new(credentials)));
+    }
+    for provider in &providers {
+        tracing::info!("sign-in with {} is on", provider.name());
+    }
+    providers
 }
 
 /// Run one `accounts` subcommand. Its output goes to stdout and everything

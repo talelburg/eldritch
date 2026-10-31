@@ -8,8 +8,15 @@
 //! request, so `server accounts remove` takes effect on the next request or
 //! connect.
 //!
-//! The only sign-in here is the dev picker, routed when the server runs with
-//! `--dev-auth`, and answered only for a loopback `Host`.
+//! A session starts through one of two sign-ins. Each configured identity
+//! provider has its routes in `oauth`, behind the [`provider`] seam. The
+//! dev picker is routed when the server runs with `--dev-auth`, and answered
+//! only for a loopback `Host`.
+
+pub mod github;
+pub mod google;
+pub(crate) mod oauth;
+pub mod provider;
 
 use std::fmt::{Display, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,10 +33,15 @@ use sqlx::SqlitePool;
 use time::Duration;
 
 use crate::accounts::{self, Account};
+use crate::auth::oauth::ConfiguredProvider;
 use crate::AppState;
 
 /// The name of the cookie that carries the session id.
 pub const SESSION_COOKIE: &str = "eldritch_session";
+
+/// The name of the encrypted cookie that holds a provider sign-in between
+/// its login and its callback.
+pub const SIGN_IN_COOKIE: &str = "eldritch_sign_in";
 
 /// How long a session lasts after the last request it authenticated.
 pub const SESSION_DAYS: i64 = 30;
@@ -105,11 +117,12 @@ pub(crate) async fn signed_in(
 
 /// The `/auth` routes. Any path under `/auth` they don't route answers `404`,
 /// rather than falling through to the client bundle as an unrouted path does.
-pub(crate) fn router(dev_auth: bool) -> Router<AppState> {
+pub(crate) fn router(state: &AppState) -> Router<AppState> {
     let router = Router::new()
         .route("/me", routing::get(me))
         .route("/sign-out", routing::post(sign_out));
-    let router = if dev_auth {
+    let router = oauth::routes(router, &state.identity_providers);
+    let router = if state.dev_auth {
         router.route("/dev", routing::get(dev_picker).post(dev_sign_in))
     } else {
         router
@@ -130,14 +143,17 @@ async fn me(State(state): State<AppState>, headers: HeaderMap, jar: CookieJar) -
         )
             .into_response(),
         Ok(None) => {
-            let methods = if dev_picker_answers(&state, &headers) {
-                vec![SignInMethod {
+            let mut methods: Vec<SignInMethod> = state
+                .identity_providers
+                .iter()
+                .map(ConfiguredProvider::sign_in_method)
+                .collect();
+            if dev_picker_answers(&state, &headers) {
+                methods.push(SignInMethod {
                     label: "Dev sign-in".to_string(),
                     url: DEV_PICKER.to_string(),
-                }]
-            } else {
-                Vec::new()
-            };
+                });
+            }
             (StatusCode::UNAUTHORIZED, Json(SignInRequired { methods })).into_response()
         }
         Err(error) => internal_error("session lookup", &error).into_response(),
@@ -325,9 +341,17 @@ fn picker_page(enabled: &[Account]) -> String {
             "<p>No account is enabled. Add one with <code>server accounts add</code>.</p>",
         );
     }
+    page(
+        "Dev sign-in",
+        &format!(r#"<form method="post" action="{DEV_PICKER}">{buttons}</form>"#),
+    )
+}
+
+/// A whole page titled `title`, with `body` below its heading.
+fn page(title: &str, body: &str) -> String {
     format!(
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>Dev sign-in</title></head>\
-         <body><h1>Dev sign-in</h1><form method=\"post\" action=\"{DEV_PICKER}\">{buttons}</form></body></html>\n"
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>{title}</title></head>\
+         <body><h1>{title}</h1>{body}</body></html>\n"
     )
 }
 

@@ -146,7 +146,60 @@ sudo systemctl reload caddy
 
 `scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or back up and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
 
-OAuth callback registration isn't here yet: there's no callback until GitHub and Google sign-in, and #1237 adds the step.
+### 11. Sign-in providers
+
+Friends sign in through GitHub or Google. Each provider needs an app registered under your account, whose callback URL is the server's public origin followed by `/auth/<provider>/callback`. The server builds that URL from `ELDRITCH_PUBLIC_ORIGIN` rather than from the request, because the dev proxy rewrites `Host`. A provider is on once both its client id and its secret are set. With one of the two missing, or a provider on and no origin, the server refuses to start and the journal names the missing variable.
+
+**GitHub.** One OAuth app serves both dev and production, since an OAuth app takes up to 10 redirect URIs. Register it at <https://github.com/settings/developers> → *OAuth Apps* → *New OAuth App*: homepage URL `https://eldritch.gripe`, and both redirect URIs:
+
+- `https://eldritch.gripe/auth/github/callback`
+- `http://localhost:3000/auth/github/callback`
+
+Leave *Allow wildcard matching* and *Enable Device Flow* off. On the app's page, *Generate a new client secret*, and copy it at once: GitHub shows it only once.
+
+**Google.** One OAuth client serves both dev and production, since a Google client takes several redirect URIs. In the [Google Cloud console](https://console.cloud.google.com/), create a project, then under *Google Auth Platform*:
+
+1. **The consent screen** (*Branding* and *Audience*): user type *External*, left in *Testing*. Publishing it needs a homepage and a privacy policy URL, and the project has no privacy policy. A *Testing* app turns away everyone not on its test-user list with *Access blocked*, so each friend who signs in with Google is also added under *Audience* → *Test users* (see [The allowlist](#the-allowlist)). It also shows them Google's unverified-app warning, which they click through.
+2. **Scopes** (*Data access*): only `openid` and `email`.
+3. **The client** (*Clients* → *Create client*): application type *Web application*, with both authorized redirect URIs:
+   - `https://eldritch.gripe/auth/google/callback`
+   - `http://localhost:3000/auth/google/callback`
+
+Copy the client id and secret it shows.
+
+**On the box**, set the app's values in the environment file, which is readable only by root, then restart:
+
+```sh
+sudoedit /etc/eldritch/eldritch.env
+#   ELDRITCH_PUBLIC_ORIGIN=https://eldritch.gripe
+#   ELDRITCH_GITHUB_CLIENT_ID=<the GitHub app's client id>
+#   ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+#   ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
+#   ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
+sudo systemctl restart eldritch
+journalctl -u eldritch -n 20      # "sign-in with GitHub is on", and Google's line
+```
+
+Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sign in at `https://eldritch.gripe`.
+
+**In dev**, put the same client ids and secrets in `.env`, with the local origin, at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
+
+```sh
+# .env
+ELDRITCH_PUBLIC_ORIGIN=http://localhost:3000
+ELDRITCH_GITHUB_CLIENT_ID=<the GitHub app's client id>
+ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
+ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
+```
+
+```sh
+set -a; . ./.env; set +a
+cargo run -p server -- --dev-auth          # the dev picker stays beside the providers
+cd crates/web && trunk serve               # in a second terminal
+```
+
+Open `http://localhost:3000`, and not `127.0.0.1:3000`. The in-flight sign-in cookie is set for the host the browser is on, and each provider sends the browser back to `localhost`, so a sign-in started on `127.0.0.1` comes back without it and gets the "try again" page.
 
 ## Deploying
 
@@ -180,6 +233,7 @@ accounts remove sam@gmail.com                        # or the entry's id
 
 - **One entry per person.** Each entry is an account ([ADR 0023](adr/0023-an-account-is-an-allowlist-entry-matched-by-any-verified-email.md)), and a sign-in through any of its emails is that account. `add` refuses an email another entry already holds, naming that entry.
 - **`remove` disables the entry and ends its sessions.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact. Its holder's next request or connect finds them signed out. A game socket already open stays open until it next reconnects.
+- **Google has a second list.** The Google consent screen stays in *Testing* (see [Sign-in providers](#11-sign-in-providers)), so a friend who signs in with Google needs their Google address added under *Google Auth Platform* → *Audience* → *Test users* as well as here. GitHub has no such list.
 - **It runs the migrations first,** as the server does at startup, so run it through `current`, never an older release.
 
 ## Drills
