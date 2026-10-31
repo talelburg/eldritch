@@ -5,20 +5,22 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
-use axum::response::Response;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse as _, Response};
 use axum::Error;
+use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::EngineOutcome;
-use protocol::{ClientMessage, GameId, ServerMessage};
+use protocol::{ClientMessage, GameId, ServerMessage, CLOSE_UNAUTHENTICATED};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
 
 use crate::session::GameSession;
-use crate::AppState;
+use crate::{auth, AppState};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
 /// of a single scenario; a slow client that overruns it gets a
@@ -74,12 +76,39 @@ async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<Game
 
 /// Axum handler: upgrade a `GET /ws/{game_id}` request to a
 /// websocket attached to that game's broadcast group.
+///
+/// The session is resolved before the game. Without one, the socket is
+/// upgraded and then closed with [`CLOSE_UNAUTHENTICATED`] before any
+/// message, rather than refused: a refused upgrade reaches script only as
+/// close code 1006, which reads the same as an unknown game.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
     Path(game_id): Path<GameId>,
+    jar: CookieJar,
     ws: WebSocketUpgrade,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, game_id))
+    match auth::signed_in(&state.db, &jar).await {
+        Ok(Some(_)) => ws.on_upgrade(move |socket| handle_socket(socket, state, game_id)),
+        Ok(None) => ws.on_upgrade(close_unauthenticated),
+        Err(error) => {
+            tracing::error!(%error, "session lookup failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Close `socket` as unauthenticated, then read it until the client's
+/// closing frame, so the close handshake completes and the client sees the
+/// code.
+async fn close_unauthenticated(mut socket: WebSocket) {
+    let frame = CloseFrame {
+        code: CLOSE_UNAUTHENTICATED,
+        reason: "not signed in".into(),
+    };
+    if socket.send(Message::Close(Some(frame))).await.is_err() {
+        return;
+    }
+    while let Some(Ok(_)) = socket.recv().await {}
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {

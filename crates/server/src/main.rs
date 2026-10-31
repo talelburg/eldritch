@@ -24,6 +24,10 @@ use tracing_subscriber::EnvFilter;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+    /// Serve the dev sign-in picker at /auth/dev, which signs in as any
+    /// account on the allowlist. It answers only a loopback Host.
+    #[arg(long)]
+    dev_auth: bool,
 }
 
 #[derive(Subcommand)]
@@ -44,7 +48,8 @@ enum AccountsCommand {
         #[arg(required = true)]
         emails: Vec<String>,
     },
-    /// Disable an entry, keeping it for the games that refer to it.
+    /// Disable an entry, keeping it for the games that refer to it, and end
+    /// its sessions.
     Remove {
         /// One of the entry's emails, or its id.
         entry: String,
@@ -55,8 +60,9 @@ enum AccountsCommand {
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, Box<dyn Error>> {
-    match Cli::parse().command {
-        None => serve().await.map(|()| ExitCode::SUCCESS),
+    let cli = Cli::parse();
+    match cli.command {
+        None => serve(cli.dev_auth).await.map(|()| ExitCode::SUCCESS),
         Some(Command::Accounts(command)) => Ok(run_accounts(command).await),
     }
 }
@@ -79,7 +85,7 @@ async fn open_database(config: &Config) -> Result<SqlitePool, Box<dyn Error>> {
     Ok(pool)
 }
 
-async fn serve() -> Result<(), Box<dyn Error>> {
+async fn serve(dev_auth: bool) -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(env_filter())
         .init();
@@ -100,6 +106,10 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         );
     }
 
+    if dev_auth {
+        tracing::warn!("--dev-auth is on: /auth/dev signs any loopback request in as any account");
+    }
+
     let listener = TcpListener::bind(config.bind).await?;
     tracing::info!(
         "eldritch server (build {}) listening on http://{}",
@@ -109,11 +119,10 @@ async fn serve() -> Result<(), Box<dyn Error>> {
 
     axum::serve(
         listener,
-        server::app(AppState::new_with_dist(
-            pool,
-            server::REGISTRIES,
-            config.dist_dir,
-        )),
+        server::app(
+            AppState::new_with_dist(pool, server::REGISTRIES, config.dist_dir)
+                .with_dev_auth(dev_auth),
+        ),
     )
     .await?;
     Ok(())

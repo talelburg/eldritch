@@ -146,7 +146,7 @@ sudo systemctl reload caddy
 
 `scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or back up and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
 
-OAuth callback registration isn't here yet: there's no callback until Accounts, and #1236 adds the step.
+OAuth callback registration isn't here yet: there's no callback until GitHub and Google sign-in, and #1237 adds the step.
 
 ## Deploying
 
@@ -179,7 +179,7 @@ accounts remove sam@gmail.com                        # or the entry's id
 ```
 
 - **One entry per person.** Each entry is an account ([ADR 0023](adr/0023-an-account-is-an-allowlist-entry-matched-by-any-verified-email.md)), and a sign-in through any of its emails is that account. `add` refuses an email another entry already holds, naming that entry.
-- **`remove` disables the entry.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact.
+- **`remove` disables the entry and ends its sessions.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact. Its holder's next request or connect finds them signed out. A game socket already open stays open until it next reconnects.
 - **It runs the migrations first,** as the server does at startup, so run it through `current`, never an older release.
 
 ## Drills

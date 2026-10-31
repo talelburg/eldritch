@@ -6,6 +6,7 @@
 //! it directly.
 
 pub mod accounts;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod fingerprint;
@@ -40,6 +41,8 @@ pub struct AppState {
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
     /// served as the router fallback.
     dist_dir: PathBuf,
+    /// Whether the dev sign-in picker is routed (`--dev-auth`).
+    dev_auth: bool,
 }
 
 impl AppState {
@@ -59,7 +62,15 @@ impl AppState {
             registries,
             rooms: ws::rooms(),
             dist_dir,
+            dev_auth: false,
         }
+    }
+
+    /// Route the dev sign-in picker, `/auth/dev`, or not. Off by default. On,
+    /// it answers only requests whose `Host` is loopback.
+    #[must_use]
+    pub fn with_dev_auth(self, dev_auth: bool) -> Self {
+        Self { dev_auth, ..self }
     }
 }
 
@@ -76,9 +87,10 @@ pub const REGISTRIES: Registries = Registries {
     scenarios: &scenarios::REGISTRY,
 };
 
-/// Build the application router with all routes and shared state. The
-/// JSON API and WebSocket take precedence; everything else falls back
-/// to the client bundle, with `index.html` as the SPA fallback.
+/// Build the application router with all routes and shared state.
+///
+/// The JSON API, `/auth` and the WebSocket take precedence; everything else
+/// falls back to the client bundle, with `index.html` as the SPA fallback.
 pub fn app(state: AppState) -> Router {
     let index_html = state.dist_dir.join("index.html");
     // `.fallback()` (not `.not_found_service()`) keeps the response at
@@ -90,6 +102,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", routing::get(health))
         .route("/games", routing::post(lifecycle::create_game))
+        .nest("/auth", auth::router(state.dev_auth))
         .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)
         .with_state(state)

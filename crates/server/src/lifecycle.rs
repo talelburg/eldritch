@@ -5,16 +5,20 @@ use axum::http::StatusCode;
 use axum::Json;
 use protocol::{CreateGameRequest, CreateGameResponse};
 
+use crate::auth::SignedInAccount;
 use crate::session::{GameSession, SessionError};
 use crate::{id, AppState};
 
 /// `POST /games`: set up a new game from a scenario and return its id.
 ///
-/// `201 Created` with the `game_id` on success; `400 Bad Request` for an
-/// unknown scenario; `422 Unprocessable Entity` for a roster the engine
-/// rejects; `500` on a persistence failure.
+/// `201 Created` with the `game_id` on success; `401 Unauthorized` when not
+/// signed in, whatever the body; `400 Bad Request` for an unknown scenario;
+/// `422 Unprocessable Entity` for a roster the engine rejects; `500` on a
+/// persistence failure.
 pub(crate) async fn create_game(
     State(state): State<AppState>,
+    // TODO(#1239): record the account as the game's creator.
+    _account: SignedInAccount,
     Json(request): Json<CreateGameRequest>,
 ) -> Result<(StatusCode, Json<CreateGameResponse>), StatusCode> {
     match GameSession::create(

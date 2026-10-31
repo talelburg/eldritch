@@ -9,7 +9,6 @@ use game_core::test_support::TEST_INV;
 use protocol::GameId;
 use serde_json::Value;
 use server::session::GameSession;
-use server::AppState;
 use tower::ServiceExt as _;
 
 use crate::common::{self, TEST_SCENARIO_ID};
@@ -17,12 +16,13 @@ use crate::common::{self, TEST_SCENARIO_ID};
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool.clone(), common::REGISTRIES));
+    let (app, cookie) = common::signed_in_app(pool.clone(), common::REGISTRIES).await;
 
     let request = Request::builder()
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
+        .header("cookie", &cookie)
         .body(Body::from(format!(
             r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
         )))
@@ -49,12 +49,13 @@ async fn post_games_creates_game_and_returns_id() {
 #[tokio::test]
 async fn post_games_unknown_scenario_is_bad_request() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool, common::REGISTRIES));
+    let (app, cookie) = common::signed_in_app(pool, common::REGISTRIES).await;
 
     let request = Request::builder()
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
+        .header("cookie", &cookie)
         .body(Body::from(
             r#"{"scenario_id":"no-such-scenario","roster":[],"lead":0}"#,
         ))
@@ -69,12 +70,13 @@ async fn post_games_unknown_scenario_is_bad_request() {
 #[tokio::test]
 async fn post_games_with_a_lead_past_the_roster_is_unprocessable() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool, common::REGISTRIES));
+    let (app, cookie) = common::signed_in_app(pool, common::REGISTRIES).await;
 
     let request = Request::builder()
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
+        .header("cookie", &cookie)
         .body(Body::from(format!(
             r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":1}}"#
         )))

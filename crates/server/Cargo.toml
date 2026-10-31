@@ -16,6 +16,8 @@ protocol = { path = "../protocol" }
 cards = { path = "../cards" }
 scenarios = { path = "../scenarios" }
 axum = { version = "0.8", features = ["ws"] }
+# Session cookies: `CookieJar` reads and sets them.
+axum-extra = { version = "0.12", features = ["cookie"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 futures-util = "0.3"
@@ -25,9 +27,16 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "migrate"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+# A session cookie's `Max-Age`: `axum-extra`'s cookies take a `time::Duration`.
+time = "0.3"
 tower-http = { version = "0.7", features = ["fs"] }
 uuid = { version = "1", features = ["v4"] }
+# A session id's 256 bits come from the OS RNG; `uuid` v4 carries only 122.
+getrandom = "0.4"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tokio-tungstenite = "0.29"
+# Signs the socket tests in through the dev picker over real HTTP. Redirects
+# stay unfollowed, so the picker's `Set-Cookie` is read off its own 303.
+reqwest = { version = "0.13", default-features = false, features = ["form"] }

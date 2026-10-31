@@ -162,8 +162,11 @@ pub async fn add(
     })
 }
 
-/// Disable the entry `entry` names, and return its id. Disabling one already
-/// disabled succeeds.
+/// Disable the entry `entry` names, end its sessions, and return its id.
+/// Disabling one already disabled succeeds.
+///
+/// A connection already open as the account stays open: sign-in is checked
+/// on each request and each connect, so it is the next of those that fails.
 ///
 /// # Errors
 ///
@@ -192,6 +195,10 @@ pub async fn remove(db: &SqlitePool, entry: &EntryRef) -> Result<AccountId, Acco
         }));
     };
     sqlx::query("UPDATE accounts SET disabled = 1 WHERE account_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE account_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;

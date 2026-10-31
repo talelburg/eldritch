@@ -137,6 +137,44 @@ pub struct CreateGameResponse {
     pub game_id: GameId,
 }
 
+/// The close code ending a game's WebSocket whose upgrade had no valid session.
+///
+/// It is from the private range: RFC 6455 §7.4.2, *"Status codes in the
+/// range 4000-4999 are reserved for private use."* The server upgrades and
+/// then closes, rather than refusing the upgrade, because a refused upgrade
+/// reaches script only as close code 1006 (WHATWG `WebSockets`: *"the
+/// WebSocket connection close code would be 1006"*), which a client can't
+/// tell from a game id the server doesn't know.
+pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
+
+/// Body of `GET /auth/me`'s `200`: the account the request's session signs
+/// in as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedIn {
+    /// The account's stable id.
+    pub account_id: i64,
+    /// The name the host set for it, shown at the table.
+    pub display_name: String,
+}
+
+/// Body of `GET /auth/me`'s `401`: the ways to sign in that this server
+/// offers. Empty when it offers none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInRequired {
+    /// Each available sign-in method.
+    pub methods: Vec<SignInMethod>,
+}
+
+/// One way to sign in: the label a sign-in screen shows, and the URL it
+/// sends the browser to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInMethod {
+    /// What the sign-in screen calls it.
+    pub label: String,
+    /// Where the browser goes to sign in this way, a same-origin path.
+    pub url: String,
+}
+
 #[cfg(test)]
 mod id_tests {
     use super::*;
