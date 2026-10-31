@@ -150,14 +150,12 @@ sudo systemctl reload caddy
 
 Friends sign in through GitHub or Google. Each provider needs an app registered under your account, whose callback URL is the server's public origin followed by `/auth/<provider>/callback`. The server builds that URL from `ELDRITCH_PUBLIC_ORIGIN` rather than from the request, because the dev proxy rewrites `Host`. A provider is on once both its client id and its secret are set. With one of the two missing, or a provider on and no origin, the server refuses to start and the journal names the missing variable.
 
-**GitHub.** Register two OAuth apps at <https://github.com/settings/developers> → *OAuth Apps* → *New OAuth App*. Each OAuth app takes one callback URL:
+**GitHub.** One OAuth app serves both dev and production, since an OAuth app takes up to 10 redirect URIs. Register it at <https://github.com/settings/developers> → *OAuth Apps* → *New OAuth App*: homepage URL `https://eldritch.gripe`, and both redirect URIs:
 
-| App | Homepage URL | Authorization callback URL |
-|---|---|---|
-| production | `https://eldritch.gripe` | `https://eldritch.gripe/auth/github/callback` |
-| dev | `http://localhost:3000` | `http://localhost:3000/auth/github/callback` |
+- `https://eldritch.gripe/auth/github/callback`
+- `http://localhost:3000/auth/github/callback`
 
-Leave *Enable Device Flow* off. On each app's page, *Generate a new client secret*, and copy it at once: GitHub shows it only once.
+Leave *Allow wildcard matching* and *Enable Device Flow* off. On the app's page, *Generate a new client secret*, and copy it at once: GitHub shows it only once.
 
 **Google.** One OAuth client serves both dev and production, since a Google client takes several redirect URIs. In the [Google Cloud console](https://console.cloud.google.com/), create a project, then under *Google Auth Platform*:
 
@@ -169,12 +167,12 @@ Leave *Enable Device Flow* off. On each app's page, *Generate a new client secre
 
 Copy the client id and secret it shows.
 
-**On the box**, set the production app's values in the environment file, which is readable only by root, then restart:
+**On the box**, set the app's values in the environment file, which is readable only by root, then restart:
 
 ```sh
 sudoedit /etc/eldritch/eldritch.env
 #   ELDRITCH_PUBLIC_ORIGIN=https://eldritch.gripe
-#   ELDRITCH_GITHUB_CLIENT_ID=<the production app's client id>
+#   ELDRITCH_GITHUB_CLIENT_ID=<the GitHub app's client id>
 #   ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
 #   ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
 #   ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
@@ -184,12 +182,12 @@ journalctl -u eldritch -n 20      # "sign-in with GitHub is on", and Google's li
 
 Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sign in at `https://eldritch.gripe`.
 
-**In dev**, put the dev app's values in `.env` at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
+**In dev**, put the same values in `.env` at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
 
 ```sh
 # .env
 ELDRITCH_PUBLIC_ORIGIN=http://localhost:3000
-ELDRITCH_GITHUB_CLIENT_ID=<the dev app's client id>
+ELDRITCH_GITHUB_CLIENT_ID=<the GitHub app's client id>
 ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
 ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
 ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
