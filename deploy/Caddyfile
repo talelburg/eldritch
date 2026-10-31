@@ -1,8 +1,8 @@
-# Installed to /etc/caddy/Caddyfile by hand (docs/deploy.md), with the domain
-# below replaced. Caddy gets the certificate for it, so DNS must point at the box
+# Installed to /etc/caddy/Caddyfile by hand (docs/deploy.md). Caddy gets the
+# certificate for the domain below, so its DNS records must point at the box
 # before Caddy loads this file.
 
-eldritch.example.com {
+eldritch.gripe {
 	reverse_proxy 127.0.0.1:8000 {
 		# A config reload keeps open WebSockets for up to this long instead of
 		# closing them, so `systemctl reload caddy` doesn't kick players out.

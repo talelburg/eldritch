@@ -15,8 +15,8 @@ If the session goes wrong, `scripts/deploy.sh --rollback` puts the previous rele
 
 | | |
 |---|---|
-| Domain | *(recorded after setup)* |
-| Box | *(recorded after setup)*, Hetzner CX23, Ubuntu 24.04 LTS |
+| Domain | [eldritch.gripe](https://eldritch.gripe), from Cloudflare Registrar |
+| Box | `78.46.203.30` and `2a01:4f8:c016:2b28::1`, a Hetzner CX23 on Ubuntu 24.04 LTS |
 
 `/srv/eldritch/`, owned by the `eldritch` system user:
 
@@ -123,7 +123,6 @@ sudo install -m 644 eldritch.service /etc/systemd/system/eldritch.service
 sudo install -d /etc/eldritch
 sudo install -m 600 eldritch.env.example /etc/eldritch/eldritch.env
 sudo install -m 644 Caddyfile /etc/caddy/Caddyfile
-sudo sed -i 's/eldritch.example.com/<your domain>/' /etc/caddy/Caddyfile
 sudo systemctl daemon-reload
 sudo systemctl enable eldritch   # enable only: there is no release to start yet
 ```
@@ -132,7 +131,12 @@ Don't reload Caddy yet: it would ask for a certificate before DNS points at the 
 
 ### 9. DNS
 
-In Cloudflare, add an `A` record pointing the domain at the box's IPv4 and an `AAAA` record pointing it at the IPv6, both **DNS only (grey cloud)**. A proxied record would put Cloudflare's TLS in front of Caddy's and its timeouts on the WebSocket. Once `dig +short <domain>` returns the box's address:
+In Cloudflare, add an `A` record pointing the domain at the box's IPv4 and an `AAAA` record pointing it at the IPv6, both **DNS only (grey cloud)**. A proxied record would put Cloudflare's TLS in front of Caddy's and its timeouts on the WebSocket.
+
+- **The IPv6 address is `::1` in the block Hetzner shows.** The console lists the server's network, `2a01:…::/64`; the server itself is on `2a01:…::1`, which `ip -6 addr show scope global` on the box confirms.
+- **The name in the records is the name in the Caddyfile.** The records are for the bare domain, so the Caddyfile serves `eldritch.gripe`. Serving `www.` too needs its own record.
+
+Once the box's `dig +short <domain>` and `dig +short AAAA <domain>` return its addresses (WSL has no `dig`; a resolver may hold a stale answer for its TTL):
 
 ```sh
 sudo systemctl reload caddy
