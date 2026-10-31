@@ -161,13 +161,13 @@ Leave *Enable Device Flow* off. On each app's page, *Generate a new client secre
 
 **Google.** One OAuth client serves both dev and production, since a Google client takes several redirect URIs. In the [Google Cloud console](https://console.cloud.google.com/), create a project, then under *Google Auth Platform*:
 
-1. **The consent screen** (*Branding* and *Audience*): user type *External*, publishing status *Testing*.
-2. **Scopes** (*Data access*): only `openid` and `email`. Both are non-sensitive, so Google asks for no verification.
+1. **The consent screen** (*Branding* and *Audience*): user type *External*. Then, under *Audience*, *Publish app*, so its publishing status is *In production*. A *Testing* app turns away everyone not on its test-user list with *Access blocked*.
+2. **Scopes** (*Data access*): only `openid` and `email`. Both are non-sensitive, so publishing needs no review from Google.
 3. **The client** (*Clients* → *Create client*): application type *Web application*, with both authorized redirect URIs:
    - `https://eldritch.gripe/auth/google/callback`
    - `http://localhost:3000/auth/google/callback`
 
-Copy the client id and secret it shows. A friend Google turns away with *Access blocked* is outside the Testing audience: add their address under *Audience* → *Test users*, or publish the app, which the two non-sensitive scopes let you do without a review.
+Copy the client id and secret it shows.
 
 **On the box**, set the production app's values in the environment file, which is readable only by root, then restart:
 
