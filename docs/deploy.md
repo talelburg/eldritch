@@ -23,7 +23,7 @@ If the session goes wrong, `scripts/deploy.sh --rollback` puts the previous rele
 ```
 releases/<sha>/   server, dist/, migrations/   (the last 5 are kept)
 data/eldritch.db  the database
-backups/pre-<sha>.db   the snapshot taken just before <sha> went on
+backups/pre-<sha>.db   the backup taken just before <sha> went on
 current -> releases/<sha>    what the service runs
 previous -> releases/<sha>   what --rollback goes back to
 ```
@@ -44,7 +44,7 @@ A Hetzner CX23 in Falkenstein or Nuremberg, the nearest CX locations to the grou
 - SSH key: your WSL key, `~/.ssh/id_ed25519.pub`. With a key, Hetzner sets no root password.
 - Networking: keep both IPv4 and IPv6.
 - Firewall: inbound TCP 22, 80 and 443. UDP 443 is optional and lets Caddy serve HTTP/3.
-- Volumes, backups, placement groups, labels and cloud config: none. Backups come from `deploy.sh`'s snapshots and #1227, not provider snapshots.
+- Volumes, backups, placement groups, labels and cloud config: none. Backups come from `deploy.sh`'s pre-deploy backups and #1227, not Hetzner's.
 
 ### 3. Your login user, and ssh locked down
 
@@ -110,7 +110,7 @@ sudo -n apt update                # refused: a password is required
 
 ### 7. Packages
 
-On the box: `sudo apt install sqlite3`, which `deploy.sh` uses for snapshots and the live-game check. Install Caddy from Caddy's own apt repository, using the Debian/Ubuntu commands at <https://caddyserver.com/docs/install>. `http://<box ip>` should then show Caddy's placeholder page.
+On the box: `sudo apt install sqlite3`, which `deploy.sh` uses for its backups and the live-game check. Install Caddy from Caddy's own apt repository, using the Debian/Ubuntu commands at <https://caddyserver.com/docs/install>. `http://<box ip>` should then show Caddy's placeholder page.
 
 In WSL: `sudo apt install shellcheck`, to lint `deploy.sh`.
 
@@ -140,7 +140,7 @@ sudo systemctl reload caddy
 
 ### 10. The first deploy
 
-`scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or snapshot and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
+`scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or back up and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
 
 OAuth callback registration isn't here yet: there's no callback until Accounts, and #1236 adds the step.
 
@@ -149,7 +149,7 @@ OAuth callback registration isn't here yet: there's no callback until Accounts, 
 `scripts/deploy.sh [<ref>]` deploys GitHub's `main` head by default, or the commit `<ref>` names. It takes a release only from CI's artifacts, so it fails with a message when that commit has no green run yet. Two quick merges cancel the earlier run, so only the later one is deployable. To deploy a branch before merging, build it first: `gh workflow run ci --ref <branch>`.
 
 - **The guard.** If a game was played or created in the last 30 minutes, the deploy refuses, because it would restart the server under the group. `--force` overrides it.
-- **Order.** Copy the release → stop → snapshot the database to `backups/pre-<sha>.db` → `previous` takes the old `current` → `current` takes the new release → start → prune to the last 5 releases (never `current` or `previous`).
+- **Order.** Copy the release → stop → back the database up to `backups/pre-<sha>.db` → `previous` takes the old `current` → `current` takes the new release → start → prune to the last 5 releases (never `current` or `previous`).
 - **Already on the box.** A release still under `releases/` isn't downloaded again.
 - **Going back across a migration.** A deploy refuses to put a release on a database that holds a migration the release doesn't know, because sqlx would refuse to start it. `--rollback` is the way back.
 
@@ -158,7 +158,7 @@ OAuth callback registration isn't here yet: there's no callback until Accounts, 
 `scripts/deploy.sh --rollback` points `current` back at `previous` and clears `previous`, so a second rollback refuses. The guard doesn't apply: rolling back mid-session is the point.
 
 - **No new migration since the previous release:** the database is kept. Games played since the deploy either replay on the old release or are kept as unresumable (see *unresumable game* in `GLOSSARY.md`).
-- **A migration the previous release lacks:** the previous release can't start on this database, so the rollback restores `backups/pre-<current sha>.db`, the snapshot taken just before the current release went on. It first says how many actions and games that discards, and asks `y/N`.
+- **A migration the previous release lacks:** the previous release can't start on this database, so the rollback restores `backups/pre-<current sha>.db`, the backup taken just before the current release went on. It first says how many actions and games that discards, and asks `y/N`.
 
 ## Drills
 

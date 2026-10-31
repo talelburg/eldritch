@@ -1,6 +1,6 @@
 # The eldritch server, run from whichever release `current` points at.
 # Installed to /etc/systemd/system/eldritch.service by hand (docs/deploy.md);
-# scripts/deploy.sh only stops, starts and restarts it.
+# scripts/deploy.sh only stops and starts it.
 
 [Unit]
 Description=Eldritch game server
