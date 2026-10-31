@@ -57,6 +57,7 @@ async fn overlay_is_absent_in_every_status_but_the_mismatch() {
         ConnStatus::Reconnecting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
+        ConnStatus::SignedOut(vec![]),
     ] {
         let (store, container) = mount();
         store.update(|s| s.status = status.clone());

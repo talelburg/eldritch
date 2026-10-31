@@ -35,6 +35,7 @@ mod picker;
 mod prompt_banner;
 mod provisional_verdict;
 mod registry_smoke;
+mod sign_in;
 mod skill_test_result;
 mod skill_test_result_across_batches;
 mod smoke;

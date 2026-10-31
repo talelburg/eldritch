@@ -1,18 +1,23 @@
-//! Browser transport (wasm only): bootstrap a game, connect its
-//! WebSocket, fold inbound frames into the store, forward outbound
+//! Browser transport (wasm only): check sign-in, bootstrap a game, connect
+//! its WebSocket, fold inbound frames into the store, forward outbound
 //! actions, and reconnect on close.
 
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{select, SinkExt as _, StreamExt as _};
 use gloo_net::http::Request;
-use gloo_net::websocket::{futures::WebSocket, Message};
+use gloo_net::websocket::futures::WebSocket;
+use gloo_net::websocket::{Message, WebSocketError};
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
-use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
+use protocol::{
+    ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage, SignInRequired,
+    SignedIn,
+};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Storage;
 
 use crate::picker::CreateTx;
+use crate::socket_ending::{self, SocketEnding};
 use crate::store::{self, ConnStatus, StoreSignal};
 use crate::url;
 
@@ -20,6 +25,8 @@ use crate::url;
 const GAME_ID_KEY: &str = "eldritch_game_id";
 /// Fixed reconnect backoff. Plenty for solo play; not exponential.
 const RECONNECT_MS: u32 = 1000;
+/// HTTP 401, which the server answers when the request isn't signed in.
+const UNAUTHORIZED: u16 = 401;
 
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
@@ -39,21 +46,37 @@ async fn run(
     mut rx: UnboundedReceiver<ClientMessage>,
     mut create_rx: UnboundedReceiver<CreateGameRequest>,
 ) {
+    // Signed out, the sign-in screen is up and a sign-in reloads the page.
+    if !check_sign_in(store).await {
+        return;
+    }
     let mut game_id: GameId = match bootstrap(store, &mut create_rx).await {
         Some(id) => id,
-        None => return, // bootstrap set ConnStatus::Failed already
+        None => return, // bootstrap set Failed or SignedOut already
     };
 
     loop {
-        match connect_once(&store, &game_id, &mut rx).await {
+        let outcome = connect_once(&store, &game_id, &mut rx).await;
+        if let ConnectOutcome::Ended(ending) = outcome {
+            if !ending.keeps_saved_game() {
+                clear_saved_id();
+            }
+        }
+        match outcome {
             // A wire-format skew: the status is already set to VersionMismatch.
             // Stop the loop entirely — retrying just hits the same stale server.
             ConnectOutcome::VersionMismatch => return,
+            // The session is gone. Show the sign-in screen and stop, keeping
+            // the saved id: a sign-in reloads the page onto the same game.
+            ConnectOutcome::Ended(SocketEnding::Unauthenticated) => {
+                check_sign_in(store).await;
+                return;
+            }
             // Opened, but the server closed before any Hello: a valid game
             // always sends Hello immediately, so the id is unknown to the
-            // server (e.g. a DB reset). Discard it and create a fresh game.
-            ConnectOutcome::StaleId => {
-                clear_saved_id();
+            // server (e.g. a DB reset). It was discarded above; create a
+            // fresh game.
+            ConnectOutcome::Ended(SocketEnding::StaleId) => {
                 let Some(req) = await_roster(&store, &mut create_rx).await else {
                     return;
                 };
@@ -66,7 +89,7 @@ async fn run(
             // live session — keep the SAME id and just retry. The server
             // may be restarting; recreating here would abandon the game
             // (and wipe the saved id) on every transient outage.
-            ConnectOutcome::Unreachable | ConnectOutcome::Disconnected => {}
+            ConnectOutcome::Unreachable | ConnectOutcome::Ended(SocketEnding::Disconnected) => {}
         }
 
         store.update(|s| s.status = ConnStatus::Reconnecting);
@@ -74,18 +97,14 @@ async fn run(
     }
 }
 
-/// Outcome of one socket lifetime — the reconnect loop treats these three
-/// cases differently (only `StaleId` discards the saved game id).
+/// Outcome of one socket lifetime — the reconnect loop treats each case
+/// differently (only a stale id discards the saved game id).
 enum ConnectOutcome {
     /// `WebSocket::open` failed: the server is unreachable (down or
     /// restarting). Keep the id and retry.
     Unreachable,
-    /// Opened, but the server closed before sending any `Hello` — the id
-    /// is stale (unknown to the server). Discard it and recreate.
-    StaleId,
-    /// Connected, saw `Hello`, then the socket closed: a normal
-    /// disconnect. Keep the id and reconnect.
-    Disconnected,
+    /// Opened, then closed, sorted by [`socket_ending::sort`].
+    Ended(SocketEnding),
     /// A server frame failed to deserialize — the client and server binaries
     /// disagree on the wire format. Terminal: do not retry (a retry hits the
     /// same stale server). The status is set to `VersionMismatch` before this
@@ -93,8 +112,36 @@ enum ConnectOutcome {
     VersionMismatch,
 }
 
+/// Ask the server who this client is signed in as. Signed in, record the
+/// account and return `true`. Signed out, show the sign-in screen with the
+/// methods the server listed and return `false`; any other answer sets
+/// `Failed` and returns `false` too.
+async fn check_sign_in(store: StoreSignal) -> bool {
+    let Ok(resp) = Request::get("/auth/me").send().await else {
+        store.update(|s| s.status = ConnStatus::Failed);
+        return false;
+    };
+    if resp.ok() {
+        if let Ok(account) = resp.json::<SignedIn>().await {
+            store.update(|s| s.account = Some(account));
+            return true;
+        }
+    } else if resp.status() == UNAUTHORIZED {
+        if let Ok(required) = resp.json::<SignInRequired>().await {
+            store.update(|s| {
+                s.account = None;
+                s.status = ConnStatus::SignedOut(required.methods);
+            });
+            return false;
+        }
+    }
+    store.update(|s| s.status = ConnStatus::Failed);
+    false
+}
+
 /// Resolve a game id: reuse a saved one, else await a roster from the picker
-/// and create. Returns `None` (and sets `Failed`) if creation fails.
+/// and create. Returns `None` (and sets `Failed` or `SignedOut`) if
+/// creation fails.
 async fn bootstrap(
     store: StoreSignal,
     create_rx: &mut UnboundedReceiver<CreateGameRequest>,
@@ -122,6 +169,11 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
         .send()
         .await
         .ok()?;
+    if resp.status() == UNAUTHORIZED {
+        // The session ended since boot: show the sign-in screen instead.
+        check_sign_in(store).await;
+        return None;
+    }
     if let Ok(r) = resp.json::<CreateGameResponse>().await {
         save_id(&r.game_id);
         Some(r.game_id)
@@ -133,8 +185,8 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 
 /// One socket lifetime: open, mark Connected, pump inbound->reduce and
 /// outbound->sink until close. The returned [`ConnectOutcome`] tells the
-/// reconnect loop whether the id is stale, the server is unreachable, or
-/// it was a normal disconnect.
+/// reconnect loop whether the server is unreachable, the frames were skewed,
+/// or how the socket ended.
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
@@ -149,6 +201,7 @@ async fn connect_once(
     let (mut write, read) = ws.split();
     let mut read = read.fuse();
     let mut saw_hello = false;
+    let mut close_code = None;
     let mut version_mismatch = false;
 
     loop {
@@ -166,8 +219,16 @@ async fn connect_once(
                         break;
                     }
                 }
-                Some(Ok(Message::Bytes(_))) => {}
-                Some(Err(_)) | None => break, // socket closed/errored
+                // The close event carries the code the ending is sorted by.
+                Some(Err(WebSocketError::ConnectionClose(event))) => {
+                    close_code = Some(event.code);
+                    break;
+                }
+                // Binary frames aren't part of the protocol. An error event
+                // comes before the close event that ends the stream, so read
+                // on to the close for its code.
+                Some(Ok(Message::Bytes(_)) | Err(_)) => {}
+                None => break,
             },
             outbound = rx.next() => {
                 if let Some(action) = outbound {
@@ -180,10 +241,8 @@ async fn connect_once(
     }
     if version_mismatch {
         ConnectOutcome::VersionMismatch
-    } else if saw_hello {
-        ConnectOutcome::Disconnected
     } else {
-        ConnectOutcome::StaleId
+        ConnectOutcome::Ended(socket_ending::sort(saw_hello, close_code))
     }
 }
 
@@ -215,6 +274,18 @@ pub fn reload() {
     if let Some(w) = web_sys::window() {
         let _ = w.location().reload();
     }
+}
+
+/// Sign out, then reload: boot finds no session and shows the sign-in screen.
+///
+/// The saved game id is kept, so signing back in returns to the same game.
+/// The reload happens even if the request fails, and the boot then shows
+/// whatever the server says.
+pub fn sign_out() {
+    spawn_local(async {
+        let _ = Request::post("/auth/sign-out").send().await;
+        reload();
+    });
 }
 
 /// Forget the saved game id and reload, so `bootstrap()` re-enters the picker

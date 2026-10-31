@@ -15,6 +15,8 @@ use crate::picker::PickerView;
 #[cfg(target_arch = "wasm32")]
 use crate::prompt_banner::PromptBanner;
 #[cfg(target_arch = "wasm32")]
+use crate::sign_in::SignInView;
+#[cfg(target_arch = "wasm32")]
 use crate::skill_test_result::SkillTestResultView;
 use crate::status_bar::StatusBarView;
 use crate::store::{self, StoreSignal};
@@ -97,16 +99,17 @@ pub fn provide_board_contexts(store: StoreSignal) {
 }
 
 /// Everything the app layers over the board: the pre-game picker, the skill-test
-/// result modal, the decision modal, the prompt banner and the version-mismatch
-/// overlay.
+/// result modal, the decision modal, the prompt banner, the sign-in screen and
+/// the version-mismatch overlay.
 ///
 /// A component rather than four inline tags so a headless test can mount the
 /// exact set the app does — which is how "`.action-bar` is absent from the DOM"
 /// is asserted against the real composition rather than against a copy of it.
 /// Each of them is its own viewport-fixed overlay, and the picker only renders
 /// pre-game.
-/// The version-mismatch overlay is last, and stacks above the rest: it is
-/// terminal, so nothing it covers can still be acted on.
+/// The sign-in screen covers the rest, since nothing behind it answers while
+/// signed out. The version-mismatch overlay is last, and stacks above
+/// everything: it is terminal, so nothing it covers can still be acted on.
 #[component]
 pub fn Overlays() -> impl IntoView {
     view! {
@@ -117,6 +120,7 @@ pub fn Overlays() -> impl IntoView {
                 <SkillTestResultView/>
                 <DecisionView/>
                 <PromptBanner/>
+                <SignInView/>
                 <VersionMismatchView/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
