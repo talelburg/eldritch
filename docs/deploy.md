@@ -250,7 +250,7 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
    sudo systemctl start eldritch-backup
    sudo journalctl -u eldritch-backup -n 20
    $RCLONE ls r2:eldritch-backups        # nightly-<today>.db and the pre-*.db files
-   ls -l /srv/eldritch/backups/last-upload
+   sudo -u eldritch ls -l /srv/eldritch/backups/   # last-upload, the nightly, no .tmp
    ```
 
 ### Restoring
