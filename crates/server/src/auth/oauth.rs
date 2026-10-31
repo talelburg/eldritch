@@ -75,7 +75,10 @@ pub(crate) fn routes(
         router
             .route(
                 &format!("/{slug}/login"),
-                routing::get(move |jar: PrivateCookieJar| login(for_login.clone(), jar)),
+                routing::get(move |jar: PrivateCookieJar| {
+                    let response = login(&for_login, jar);
+                    async move { response }
+                }),
             )
             .route(
                 &format!("/{slug}/callback"),
@@ -102,10 +105,8 @@ struct InFlight {
 
 /// `GET /auth/{provider}/login`: set the in-flight cookie and send the
 /// browser to the provider.
-async fn login(configured: ConfiguredProvider, jar: PrivateCookieJar) -> Response {
-    let (url, pending) = configured
-        .provider
-        .authorize_url(&configured.redirect_uri);
+fn login(configured: &ConfiguredProvider, jar: PrivateCookieJar) -> Response {
+    let (url, pending) = configured.provider.authorize_url(&configured.redirect_uri);
     let in_flight = InFlight {
         provider: configured.provider.slug().to_string(),
         pending,
@@ -247,10 +248,12 @@ fn ask_the_host(provider: &str, checked: &[Email], unverified: &[ReportedEmail])
 
 /// `items` as an HTML list, escaped.
 fn list<'a>(items: impl Iterator<Item = &'a str>) -> String {
-    let items: String = items
-        .map(|item| format!("<li>{}</li>", auth::escape(item)))
-        .collect();
-    format!("<ul>{items}</ul>")
+    let mut list = items.fold(String::from("<ul>"), |mut list, item| {
+        let _ = write!(list, "<li>{}</li>", auth::escape(item));
+        list
+    });
+    list.push_str("</ul>");
+    list
 }
 
 /// A whole page titled `title`, with `body` below its heading.

@@ -126,9 +126,11 @@ fn a_github_id_and_secret_beside_the_public_origin_turn_github_on() {
 
 #[test]
 fn the_public_origin_alone_turns_no_provider_on() {
-    let config =
-        Config::from_lookup(lookup(&[("ELDRITCH_PUBLIC_ORIGIN", "https://eldritch.gripe")]))
-            .unwrap();
+    let config = Config::from_lookup(lookup(&[(
+        "ELDRITCH_PUBLIC_ORIGIN",
+        "https://eldritch.gripe",
+    )]))
+    .unwrap();
 
     assert_eq!(
         config,
@@ -193,15 +195,20 @@ fn a_public_origin_that_is_not_an_http_origin_is_an_error_naming_it() {
             .expect_err("not an http(s) origin")
             .to_string();
 
-        assert!(error.contains("ELDRITCH_PUBLIC_ORIGIN"), "{value:?}: {error}");
+        assert!(
+            error.contains("ELDRITCH_PUBLIC_ORIGIN"),
+            "{value:?}: {error}"
+        );
     }
 }
 
 #[test]
 fn a_trailing_slash_on_the_public_origin_is_the_same_origin() {
-    let config =
-        Config::from_lookup(lookup(&[("ELDRITCH_PUBLIC_ORIGIN", "https://eldritch.gripe/")]))
-            .unwrap();
+    let config = Config::from_lookup(lookup(&[(
+        "ELDRITCH_PUBLIC_ORIGIN",
+        "https://eldritch.gripe/",
+    )]))
+    .unwrap();
 
     assert_eq!(
         config.public_origin,

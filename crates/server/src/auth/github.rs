@@ -38,6 +38,10 @@ pub struct GitHub {
 
 impl GitHub {
     /// The adapter for the app `credentials` names, on github.com.
+    ///
+    /// # Panics
+    ///
+    /// The HTTP client's TLS backend failed to start.
     #[must_use]
     pub fn new(credentials: &ProviderCredentials) -> Self {
         let web = Url::parse(WEB).expect("GitHub's web URL parses");
@@ -59,7 +63,10 @@ impl GitHub {
                 credentials.client_secret.expose().to_string(),
             ))
             .set_auth_uri(AuthUrl::from_url(endpoint(web, "login/oauth/authorize")))
-            .set_token_uri(TokenUrl::from_url(endpoint(web, "login/oauth/access_token")))
+            .set_token_uri(TokenUrl::from_url(endpoint(
+                web,
+                "login/oauth/access_token",
+            )))
             .set_auth_type(AuthType::RequestBody);
         // No redirects, which both `oauth2`'s docs and GitHub's token
         // endpoint call for: a followed redirect is a way to aim the server's

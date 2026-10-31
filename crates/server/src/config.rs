@@ -79,9 +79,7 @@ pub enum ConfigError {
     },
     /// `ELDRITCH_PUBLIC_ORIGIN` isn't an `http` or `https` origin with no
     /// path, query or credentials.
-    #[error(
-        "{PUBLIC_ORIGIN} is not an http(s) origin such as https://eldritch.gripe: {value:?}"
-    )]
+    #[error("{PUBLIC_ORIGIN} is not an http(s) origin such as https://eldritch.gripe: {value:?}")]
     InvalidPublicOrigin {
         /// The value as set.
         value: String,
@@ -102,7 +100,9 @@ pub enum ConfigError {
     },
     /// A provider is on but `ELDRITCH_PUBLIC_ORIGIN`, which its redirect URI
     /// is built from, isn't set.
-    #[error("{provider} is set but {PUBLIC_ORIGIN} is not: a provider's callback is built from it")]
+    #[error(
+        "{provider} is set but {PUBLIC_ORIGIN} is not: a provider's callback is built from it"
+    )]
     MissingPublicOrigin {
         /// The provider's client-id variable.
         provider: &'static str,

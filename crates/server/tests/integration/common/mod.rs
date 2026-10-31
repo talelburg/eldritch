@@ -358,7 +358,9 @@ pub(crate) async fn get(
     uri: &str,
     cookie: Option<&str>,
 ) -> (StatusCode, HeaderMap, String) {
-    let mut request = Request::builder().uri(uri).header(header::HOST, "localhost");
+    let mut request = Request::builder()
+        .uri(uri)
+        .header(header::HOST, "localhost");
     if let Some(cookie) = cookie {
         request = request.header(header::COOKIE, cookie);
     }

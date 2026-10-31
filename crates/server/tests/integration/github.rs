@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{routing, Form, Json, Router};
 use serde_json::json;
@@ -34,7 +34,11 @@ async fn emails(headers: HeaderMap) -> Response {
     if !headers.contains_key(header::USER_AGENT) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if headers.get(header::AUTHORIZATION).map(|v| v.as_bytes()) != Some(b"Bearer gho_t") {
+    if headers
+        .get(header::AUTHORIZATION)
+        .map(HeaderValue::as_bytes)
+        != Some(b"Bearer gho_t")
+    {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     Json(json!([

@@ -103,8 +103,10 @@ async fn login_sends_the_browser_to_the_provider_with_the_configured_callback() 
     let location = Url::parse(location(&headers)).expect("an absolute provider URL");
     assert_eq!(location.host_str(), Some("fake.example"));
     assert!(
-        location.query_pairs().any(|(name, value)| name == "redirect_uri"
-            && value == format!("{FAKE_ORIGIN}/auth/fake/callback")),
+        location
+            .query_pairs()
+            .any(|(name, value)| name == "redirect_uri"
+                && value == format!("{FAKE_ORIGIN}/auth/fake/callback")),
         "{location}"
     );
     let cookie = common::set_cookie(&headers, auth::SIGN_IN_COOKIE).expect("in-flight cookie");
@@ -184,7 +186,10 @@ async fn an_address_not_on_the_list_gets_the_ask_the_host_page() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(page.contains("Fake"), "names the provider: {page}");
     assert!(page.contains("alex@work.com"), "{page}");
-    assert!(page.contains("alex@&lt;b&gt;home&lt;/b&gt;.com"), "escaped: {page}");
+    assert!(
+        page.contains("alex@&lt;b&gt;home&lt;/b&gt;.com"),
+        "escaped: {page}"
+    );
     assert!(page.contains("Ask the host"), "{page}");
     assert_eq!(common::session_count(&pool).await, 0);
 }

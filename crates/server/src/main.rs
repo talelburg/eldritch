@@ -120,10 +120,11 @@ async fn serve(dev_auth: bool) -> Result<(), Box<dyn Error>> {
         config.bind
     );
 
-    let state = AppState::new_with_dist(pool, server::REGISTRIES, config.dist_dir)
-        .with_dev_auth(dev_auth);
+    let providers = identity_providers(&config);
+    let state =
+        AppState::new_with_dist(pool, server::REGISTRIES, config.dist_dir).with_dev_auth(dev_auth);
     let state = match &config.public_origin {
-        Some(origin) => state.with_identity_providers(origin, identity_providers(&config)),
+        Some(origin) => state.with_identity_providers(origin, providers),
         None => state,
     };
     axum::serve(listener, server::app(state)).await?;
