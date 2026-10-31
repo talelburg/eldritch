@@ -216,10 +216,12 @@ rollback() {
   change "$AS rm $ROOT/previous"
   start_server
   check_up "$prev"
+  local verb="rolled back"
+  [ "$DRY_RUN" = 0 ] || verb="dry run: would roll back"
   if [ "$restore" = 1 ]; then
-    say "deploy: rolled back to $prev, database restored to before $cur"
+    say "deploy: $verb to $prev, database restored to before $cur"
   else
-    say "deploy: rolled back to $prev, database kept"
+    say "deploy: $verb to $prev, database kept"
   fi
 }
 
@@ -312,10 +314,12 @@ deploy() {
     change "$AS rm -rf $ROOT/releases/$name $ROOT/backups/pre-$name.db"
   done <<<"$releases"
 
+  local verb=deployed
+  [ "$DRY_RUN" = 0 ] || verb="dry run: would deploy"
   if [ -n "$cur" ]; then
-    say "deploy: deployed $sha (previous: $cur)"
+    say "deploy: $verb $sha (previous: $cur)"
   else
-    say "deploy: deployed $sha (first release on the box)"
+    say "deploy: $verb $sha (first release on the box)"
   fi
 }
 
