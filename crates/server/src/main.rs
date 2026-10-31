@@ -10,7 +10,7 @@ use std::io;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use server::accounts::{self, Account, EntryRef};
+use server::accounts::{self, Account, Email, EntryRef};
 use server::config::{Config, ConfigError};
 use server::db::{self, MIGRATOR};
 use server::AppState;
@@ -176,6 +176,11 @@ fn entry_line(account: &Account) -> String {
         "{}\t{}\t{}\t{status}",
         account.id,
         account.display_name,
-        account.emails.join(", ")
+        account
+            .emails
+            .iter()
+            .map(Email::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
     )
 }

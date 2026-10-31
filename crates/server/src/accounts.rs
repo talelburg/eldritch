@@ -2,8 +2,9 @@
 //! (ADR 0023).
 //!
 //! The host edits it over ssh with `server accounts`, which calls [`add`],
-//! [`remove`] and [`list`]. An email is stored lowercased, so the uniqueness
-//! check and a sign-in's lookup agree whatever case it was typed or reported in.
+//! [`remove`] and [`list`]. An email is held as an [`Email`], trimmed and
+//! lowercased, so the uniqueness check, `remove` and a sign-in's lookup agree
+//! whatever case or padding it was typed or reported in.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -20,6 +21,38 @@ impl fmt::Display for AccountId {
     }
 }
 
+/// An email address as the allowlist holds it: trimmed and lowercased.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Email(String);
+
+impl Email {
+    /// Read an email as typed or reported, trimming and lowercasing it.
+    ///
+    /// # Errors
+    ///
+    /// [`AccountsError::InvalidEmail`] when it holds no `@`.
+    pub fn parse(raw: &str) -> Result<Self, AccountsError> {
+        let email = raw.trim().to_lowercase();
+        if email.contains('@') {
+            Ok(Self(email))
+        } else {
+            Err(AccountsError::InvalidEmail(email))
+        }
+    }
+
+    /// The normalised address.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Email {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// One allowlist entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
@@ -27,8 +60,8 @@ pub struct Account {
     pub id: AccountId,
     /// The name the host set, shown at the table.
     pub display_name: String,
-    /// Every email that signs in as this account, lowercased and sorted.
-    pub emails: Vec<String>,
+    /// Every email that signs in as this account, sorted.
+    pub emails: Vec<Email>,
     /// Set by [`remove`]: a disabled account is kept for the games that refer
     /// to it, but nobody signs in as it.
     pub disabled: bool,
@@ -38,8 +71,8 @@ pub struct Account {
 /// anything else an [`AccountId`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryRef {
-    /// The entry holding this email, in any case.
-    Email(String),
+    /// The entry holding this email.
+    Email(Email),
     /// The entry with this id.
     Id(AccountId),
 }
@@ -52,7 +85,7 @@ impl EntryRef {
     /// [`AccountsError::InvalidEntry`] when it holds no `@` and isn't an id.
     pub fn parse(entry: &str) -> Result<Self, AccountsError> {
         if entry.contains('@') {
-            Ok(Self::Email(entry.to_lowercase()))
+            Email::parse(entry).map(Self::Email)
         } else {
             entry
                 .parse()
@@ -74,8 +107,8 @@ pub enum AccountsError {
     /// An email to add is already on another entry.
     #[error("{email} is already on entry {holder} ({holder_name})")]
     EmailTaken {
-        /// The email, lowercased.
-        email: String,
+        /// The email.
+        email: Email,
         /// The entry holding it.
         holder: AccountId,
         /// That entry's display name.
@@ -94,7 +127,7 @@ pub enum AccountsError {
 
 /// Add an entry named `display_name` holding `emails`, and return it.
 ///
-/// The emails are lowercased, and one typed twice is held once. The whole
+/// The emails are read as [`Email`]s, and one typed twice is held once. The whole
 /// entry is refused if any of them is on another entry already.
 ///
 /// # Errors
@@ -111,25 +144,21 @@ pub async fn add(
     if display_name.is_empty() {
         return Err(AccountsError::EmptyName);
     }
-    let mut lowered = Vec::with_capacity(emails.len());
-    for email in emails {
-        let email = email.trim().to_lowercase();
-        if !email.contains('@') {
-            return Err(AccountsError::InvalidEmail(email));
-        }
-        lowered.push(email);
-    }
-    lowered.sort();
-    lowered.dedup();
+    let mut emails = emails
+        .iter()
+        .map(|email| Email::parse(email))
+        .collect::<Result<Vec<_>, _>>()?;
+    emails.sort();
+    emails.dedup();
 
     let mut tx = db.begin().await?;
-    for email in &lowered {
+    for email in &emails {
         let holder: Option<(i64, String)> = sqlx::query_as(
             "SELECT accounts.account_id, accounts.display_name
              FROM account_emails JOIN accounts USING (account_id)
              WHERE account_emails.email = ?",
         )
-        .bind(email)
+        .bind(email.as_str())
         .fetch_optional(&mut *tx)
         .await?;
         if let Some((holder, holder_name)) = holder {
@@ -145,9 +174,9 @@ pub async fn add(
             .bind(display_name)
             .fetch_one(&mut *tx)
             .await?;
-    for email in &lowered {
+    for email in &emails {
         sqlx::query("INSERT INTO account_emails (email, account_id) VALUES (?, ?)")
-            .bind(email)
+            .bind(email.as_str())
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -157,7 +186,7 @@ pub async fn add(
     Ok(Account {
         id: AccountId(id),
         display_name: display_name.to_string(),
-        emails: lowered,
+        emails,
         disabled: false,
     })
 }
@@ -177,7 +206,7 @@ pub async fn remove(db: &SqlitePool, entry: &EntryRef) -> Result<AccountId, Acco
     let id: Option<(i64,)> = match entry {
         EntryRef::Email(email) => {
             sqlx::query_as("SELECT account_id FROM account_emails WHERE email = ?")
-                .bind(email)
+                .bind(email.as_str())
                 .fetch_optional(&mut *tx)
                 .await?
         }
@@ -190,7 +219,7 @@ pub async fn remove(db: &SqlitePool, entry: &EntryRef) -> Result<AccountId, Acco
     };
     let Some((id,)) = id else {
         return Err(AccountsError::NoSuchEntry(match entry {
-            EntryRef::Email(email) => email.clone(),
+            EntryRef::Email(email) => email.to_string(),
             EntryRef::Id(id) => id.to_string(),
         }));
     };
@@ -234,7 +263,7 @@ pub async fn list(db: &SqlitePool) -> Result<Vec<Account>, AccountsError> {
             .await?;
     for (id, email) in emails {
         if let Some(account) = accounts.get_mut(&id) {
-            account.emails.push(email);
+            account.emails.push(Email(email));
         }
     }
     Ok(accounts.into_values().collect())

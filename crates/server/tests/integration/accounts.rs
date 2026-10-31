@@ -107,6 +107,17 @@ fn a_removed_entry_is_listed_disabled() {
     );
 }
 
+/// `remove` reads an email the way `add` stored it: trimmed and lowercased.
+#[test]
+fn removing_by_a_padded_mixed_case_email_disables_its_entry() {
+    let db = TempDb::new("accounts");
+    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+
+    accounts(&db, &["remove", " SAM@gmail.com "]);
+
+    assert_eq!(list(&db), "1\tSam\tsam@gmail.com\tdisabled\n");
+}
+
 #[test]
 fn removing_an_entry_nobody_holds_is_refused() {
     let db = TempDb::new("accounts");
