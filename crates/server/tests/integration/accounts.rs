@@ -2,25 +2,29 @@
 //! binary against a temporary `SQLite` file, the way the host runs it over ssh.
 
 use std::io::{Read as _, Write as _};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use axum::http::{header, StatusCode};
+use axum::http::StatusCode;
 use server::db::{self, MIGRATOR};
-use server::AppState;
 
 use crate::common::{self, TempDb};
+
+/// The built `server` binary with `args`, against `db`.
+fn binary(db: &TempDb, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+    command.args(args).env("DATABASE_URL", db.url());
+    command
+}
 
 /// Run the built `server` binary with `args` against `db`.
 ///
 /// `RUST_LOG=debug` makes the server log everything it would, so a test
 /// reading `list`'s stdout also checks no log line lands there.
 fn server(db: &TempDb, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_server"))
-        .args(args)
-        .env("DATABASE_URL", db.url())
+    binary(db, args)
         .env("RUST_LOG", "debug")
         .output()
         .expect("run the server binary")
@@ -145,30 +149,19 @@ async fn removing_an_entry_ends_its_sessions() {
     common::create_game(&pool, "g-removed").await;
     accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
     accounts(&db, &["add", "--name", "Alex", "alex@x.com"]);
-    let addr = common::serve(server::app(
-        AppState::new(pool, common::REGISTRIES).with_dev_auth(true),
-    ))
-    .await;
+    let addr = common::serve_dev_auth(pool, true).await;
     let sam = common::sign_in_over_http(addr, "Sam").await;
     let alex = common::sign_in_over_http(addr, "Alex").await;
 
     accounts(&db, &["remove", "sam@gmail.com"]);
 
-    assert_eq!(me(addr, &sam).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        common::me(addr, Some(&sam)).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
     let mut ws = common::connect_with(addr, "g-removed", Some(&sam)).await;
     common::assert_closed_unauthenticated(&mut ws).await;
-    assert_eq!(me(addr, &alex).await, StatusCode::OK);
-}
-
-/// The status of `GET /auth/me` at `addr` with `cookie`.
-async fn me(addr: SocketAddr, cookie: &str) -> StatusCode {
-    common::http()
-        .get(format!("http://{addr}/auth/me"))
-        .header(header::COOKIE, cookie)
-        .send()
-        .await
-        .expect("GET /auth/me")
-        .status()
+    assert_eq!(common::me(addr, Some(&alex)).await.status(), StatusCode::OK);
 }
 
 #[test]
@@ -210,9 +203,7 @@ fn serve_binary(db: &TempDb, args: &[&str], paths: &[&str]) -> Vec<String> {
         .and_then(|listener| listener.local_addr())
         .expect("pick a free port")
         .port();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_server"))
-        .args(args)
-        .env("DATABASE_URL", db.url())
+    let mut child = binary(db, args)
         .env("ELDRITCH_BIND", format!("127.0.0.1:{port}"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())

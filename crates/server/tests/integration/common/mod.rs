@@ -21,6 +21,7 @@ use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuild
 use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
 use reqwest::redirect::Policy;
+use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
 use server::accounts::{self, AccountsError};
 use server::auth;
@@ -165,8 +166,16 @@ pub(crate) async fn add_test_account(pool: &SqlitePool) {
     }
 }
 
-/// Serve `app` on an ephemeral loopback port; return its bound address.
-pub(crate) async fn serve(app: Router) -> SocketAddr {
+/// The server's router over `pool` and `registries`, with the dev sign-in
+/// `dev_auth` on or off.
+pub(crate) fn dev_auth_app(pool: SqlitePool, registries: Registries, dev_auth: bool) -> Router {
+    server::app(AppState::new(pool, registries).with_dev_auth(dev_auth))
+}
+
+/// Serve [`dev_auth_app`] over `pool` and the mock [`REGISTRIES`] on an
+/// ephemeral loopback port; return its bound address.
+pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAddr {
+    let app = dev_auth_app(pool, REGISTRIES, dev_auth);
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind ephemeral port");
@@ -181,19 +190,30 @@ pub(crate) async fn serve(app: Router) -> SocketAddr {
 /// allowlist; return its bound address.
 pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     add_test_account(&pool).await;
-    serve(server::app(
-        AppState::new(pool, REGISTRIES).with_dev_auth(true),
-    ))
-    .await
+    serve_dev_auth(pool, true).await
 }
 
 /// An HTTP client that leaves redirects unfollowed, so a response's
 /// `Set-Cookie` is read off the response that set it.
-pub(crate) fn http() -> reqwest::Client {
-    reqwest::Client::builder()
+pub(crate) fn http() -> HttpClient {
+    HttpClient::builder()
         .redirect(Policy::none())
         .build()
         .expect("build the HTTP client")
+}
+
+/// Send `request`, with `cookie` as its `Cookie` header if there is one.
+pub(crate) async fn send_with_cookie(request: RequestBuilder, cookie: Option<&str>) -> Response {
+    let request = match cookie {
+        Some(cookie) => request.header(header::COOKIE, cookie),
+        None => request,
+    };
+    request.send().await.expect("the server answers")
+}
+
+/// `GET /auth/me` at `addr`, with `cookie` if there is one.
+pub(crate) async fn me(addr: SocketAddr, cookie: Option<&str>) -> Response {
+    send_with_cookie(http().get(format!("http://{addr}/auth/me")), cookie).await
 }
 
 /// Each account the dev picker page offers: its id and its name.
@@ -221,78 +241,106 @@ pub(crate) fn session_cookie(headers: &HeaderMap) -> String {
         .to_string()
 }
 
-/// Sign in as the account named `name` through the dev picker at `addr`, the
-/// way a browser does; return the session cookie as a `Cookie` header value.
-pub(crate) async fn sign_in_over_http(addr: SocketAddr, name: &str) -> String {
-    let http = http();
-    let page = http
-        .get(format!("http://{addr}/auth/dev"))
-        .send()
-        .await
-        .expect("GET the dev picker")
-        .text()
-        .await
-        .expect("the picker page");
+/// The two requests a dev-picker sign-in makes, over whichever transport.
+trait DevPicker {
+    /// `GET /auth/dev`: the picker page.
+    async fn page(&self) -> String;
+    /// `POST /auth/dev` picking `id`: the response's status and headers.
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap);
+}
+
+/// The dev picker of a server listening at an address, reached over HTTP.
+struct OverHttp(SocketAddr);
+
+impl DevPicker for OverHttp {
+    async fn page(&self) -> String {
+        http()
+            .get(format!("http://{}/auth/dev", self.0))
+            .send()
+            .await
+            .expect("GET the dev picker")
+            .text()
+            .await
+            .expect("the picker page")
+    }
+
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {
+        let response = http()
+            .post(format!("http://{}/auth/dev", self.0))
+            .form(&[("account_id", id)])
+            .send()
+            .await
+            .expect("POST the dev picker");
+        (response.status(), response.headers().clone())
+    }
+}
+
+/// The dev picker of a router served in-process. Its requests name a
+/// loopback `Host`, which the picker requires.
+struct InProcess<'a>(&'a Router);
+
+impl DevPicker for InProcess<'_> {
+    async fn page(&self) -> String {
+        let request = Request::builder()
+            .uri("/auth/dev")
+            .header(header::HOST, "localhost")
+            .body(Body::empty())
+            .expect("build the picker request");
+        let response = self
+            .0
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("GET the dev picker");
+        let page = body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the picker page");
+        String::from_utf8(page.to_vec()).expect("utf-8 page")
+    }
+
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/auth/dev")
+            .header(header::HOST, "localhost")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(format!("account_id={id}")))
+            .expect("build the sign-in request");
+        let response = self
+            .0
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("POST the dev picker");
+        (response.status(), response.headers().clone())
+    }
+}
+
+/// Sign in as the account named `name` through `picker`, the way a browser
+/// does; return the session cookie as a `Cookie` header value.
+async fn sign_in_through(picker: impl DevPicker, name: &str) -> String {
+    let page = picker.page().await;
     let (id, _) = picker_entries(&page)
         .into_iter()
         .find(|(_, label)| label == name)
         .unwrap_or_else(|| panic!("the picker offers {name}: {page}"));
-    let response = http
-        .post(format!("http://{addr}/auth/dev"))
-        .form(&[("account_id", id)])
-        .send()
-        .await
-        .expect("POST the dev picker");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    session_cookie(response.headers())
+    let (status, headers) = picker.pick(&id).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    session_cookie(&headers)
 }
 
-/// Sign in through the dev picker of `app`, served in-process, as the first
-/// account it offers; return the session cookie as a `Cookie` header value.
-/// The requests name a loopback `Host`, which the picker requires.
-pub(crate) async fn sign_in(app: &Router) -> String {
-    let page = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/auth/dev")
-                .header(header::HOST, "localhost")
-                .body(Body::empty())
-                .expect("build the picker request"),
-        )
-        .await
-        .expect("GET the dev picker");
-    let page = body::to_bytes(page.into_body(), usize::MAX)
-        .await
-        .expect("the picker page");
-    let page = String::from_utf8(page.to_vec()).expect("utf-8 page");
-    let (id, _) = picker_entries(&page)
-        .into_iter()
-        .next()
-        .unwrap_or_else(|| panic!("the picker offers an account: {page}"));
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/auth/dev")
-                .header(header::HOST, "localhost")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(format!("account_id={id}")))
-                .expect("build the sign-in request"),
-        )
-        .await
-        .expect("POST the dev picker");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    session_cookie(response.headers())
+/// Sign in as the account named `name` through the dev picker at `addr`;
+/// return the session cookie as a `Cookie` header value.
+pub(crate) async fn sign_in_over_http(addr: SocketAddr, name: &str) -> String {
+    sign_in_through(OverHttp(addr), name).await
 }
 
 /// Serve the router for a `POST /games` test: the dev sign-in on and the
 /// [`TEST_ACCOUNT`] signed in. Returns the router and the session cookie.
 pub(crate) async fn signed_in_app(pool: SqlitePool, registries: Registries) -> (Router, String) {
     add_test_account(&pool).await;
-    let app = server::app(AppState::new(pool, registries).with_dev_auth(true));
-    let cookie = sign_in(&app).await;
+    let app = dev_auth_app(pool, registries, true);
+    let cookie = sign_in_through(InProcess(&app), TEST_ACCOUNT).await;
     (app, cookie)
 }
 
