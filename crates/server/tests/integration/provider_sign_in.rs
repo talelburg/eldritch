@@ -40,13 +40,7 @@ async fn start(app: &Router) -> (String, String) {
         .expect("the provider is sent a state")
         .1
         .into_owned();
-    let cookie = common::set_cookie(&headers, auth::SIGN_IN_COOKIE)
-        .expect("the in-flight cookie is set")
-        .split(';')
-        .next()
-        .expect("a name=value pair")
-        .to_string();
-    (state, cookie)
+    (state, common::cookie_pair(&headers, auth::SIGN_IN_COOKIE))
 }
 
 /// The response's `Location`.

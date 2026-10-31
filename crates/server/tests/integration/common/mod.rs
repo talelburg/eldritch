@@ -236,8 +236,14 @@ pub(crate) fn picker_entries(page: &str) -> Vec<(String, String)> {
 
 /// The `name=value` pair of the session cookie a response sets.
 pub(crate) fn session_cookie(headers: &HeaderMap) -> String {
-    set_cookie(headers, auth::SESSION_COOKIE)
-        .expect("a session cookie is set")
+    cookie_pair(headers, auth::SESSION_COOKIE)
+}
+
+/// The `name=value` pair of the cookie `name` a response sets, as a request's
+/// `Cookie` header carries it back.
+pub(crate) fn cookie_pair(headers: &HeaderMap, name: &str) -> String {
+    set_cookie(headers, name)
+        .unwrap_or_else(|| panic!("the {name} cookie is set"))
         .split(';')
         .next()
         .expect("a name=value pair")
@@ -438,21 +444,8 @@ struct InProcess<'a>(&'a Router);
 
 impl DevPicker for InProcess<'_> {
     async fn page(&self) -> String {
-        let request = Request::builder()
-            .uri("/auth/dev")
-            .header(header::HOST, "localhost")
-            .body(Body::empty())
-            .expect("build the picker request");
-        let response = self
-            .0
-            .clone()
-            .oneshot(request)
-            .await
-            .expect("GET the dev picker");
-        let page = body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the picker page");
-        String::from_utf8(page.to_vec()).expect("utf-8 page")
+        let (_, _, page) = get(self.0, "/auth/dev", None).await;
+        page
     }
 
     async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {
