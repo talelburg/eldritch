@@ -20,8 +20,13 @@ axum = { version = "0.8", features = ["ws"] }
 # encrypts the cookie that holds a provider sign-in in flight.
 axum-extra = { version = "0.12", features = ["cookie", "cookie-private"] }
 # GitHub sign-in. Its default features are reqwest on rustls, so the build
-# needs no OpenSSL; its `oauth2::reqwest` re-export is the HTTP client.
+# needs no OpenSSL.
 oauth2 = "5"
+# The HTTP client the providers' requests go through: the reqwest `oauth2`
+# itself depends on, named here so its items are reached directly. The
+# version tracks `oauth2`'s, and the features are `oauth2`'s too, so the
+# lock holds one reqwest 0.12.
+reqwest_012 = { package = "reqwest", version = "0.12", default-features = false }
 # Google sign-in: OpenID Connect discovery and ID-token verification, on
 # `oauth2` 5 with the same default features, so rustls too.
 openidconnect = "4"

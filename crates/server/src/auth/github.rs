@@ -1,23 +1,21 @@
 //! The GitHub [`IdentityProvider`]: an OAuth app asking for `user:email`,
 //! whose code is exchanged for a token that reads `GET /user/emails` once.
 
-use std::borrow::Cow;
 use std::future;
 
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::header::{ACCEPT, USER_AGENT};
-use oauth2::reqwest::redirect::Policy;
-use oauth2::reqwest::{Client as HttpClient, Response};
 use oauth2::{
     AuthType, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointNotSet,
-    EndpointSet, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse as _,
-    TokenUrl,
+    EndpointSet, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse as _, TokenUrl,
 };
+use reqwest_012::header::{ACCEPT, USER_AGENT};
+use reqwest_012::{Client as HttpClient, Response};
 use serde::Deserialize;
 use url::Url;
 
 use crate::auth::provider::{
-    AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError, ReportedEmail,
+    self, AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError,
+    ReportedEmail,
 };
 use crate::config::ProviderCredentials;
 
@@ -69,16 +67,9 @@ impl GitHub {
                 "login/oauth/access_token",
             )))
             .set_auth_type(AuthType::RequestBody);
-        // No redirects, which both `oauth2`'s docs and GitHub's token
-        // endpoint call for: a followed redirect is a way to aim the server's
-        // requests elsewhere.
-        let http = HttpClient::builder()
-            .redirect(Policy::none())
-            .build()
-            .expect("the HTTP client builds");
         Self {
             client,
-            http,
+            http: provider::http_client(),
             emails_url: endpoint(api, "user/emails"),
         }
     }
@@ -108,7 +99,7 @@ impl IdentityProvider for GitHub {
             .authorize_url(CsrfToken::new_random)
             .add_scope(Scope::new("user:email".to_string()))
             .set_pkce_challenge(challenge)
-            .set_redirect_uri(Cow::Owned(RedirectUrl::from_url(redirect_uri.clone())))
+            .set_redirect_uri(provider::redirect_url(redirect_uri))
             .url();
         Box::pin(future::ready(Ok((
             url,
@@ -130,7 +121,7 @@ impl IdentityProvider for GitHub {
                 .client
                 .exchange_code(AuthorizationCode::new(code))
                 .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier().to_string()))
-                .set_redirect_uri(Cow::Owned(RedirectUrl::from_url(redirect_uri.clone())))
+                .set_redirect_uri(provider::redirect_url(redirect_uri))
                 .request_async(&self.http)
                 .await
                 .map_err(ProviderError::new)?;

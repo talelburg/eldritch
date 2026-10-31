@@ -7,20 +7,18 @@
 //! startup. The server then starts while Google is unreachable, and a key
 //! Google rotates is picked up by the next sign-in.
 
-use std::borrow::Cow;
-
-use oauth2::reqwest::redirect::Policy;
-use oauth2::reqwest::Client as HttpClient;
 use oauth2::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
     EndpointSet, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
 };
 use openidconnect::core::{CoreClient, CoreIdTokenClaims, CoreProviderMetadata, CoreResponseType};
 use openidconnect::{AuthenticationFlow, IssuerUrl, Nonce, TokenResponse as _};
+use reqwest_012::Client as HttpClient;
 use url::Url;
 
 use crate::auth::provider::{
-    AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError, ReportedEmail,
+    self, AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError,
+    ReportedEmail,
 };
 use crate::config::ProviderCredentials;
 
@@ -56,16 +54,10 @@ impl Google {
     /// The HTTP client's TLS backend failed to start.
     #[must_use]
     pub fn new(credentials: &ProviderCredentials) -> Self {
-        // No redirects, which `openidconnect`'s docs call for: a followed
-        // redirect is a way to aim the server's requests elsewhere.
-        let http = HttpClient::builder()
-            .redirect(Policy::none())
-            .build()
-            .expect("the HTTP client builds");
         Self {
             client_id: ClientId::new(credentials.client_id.clone()),
             client_secret: ClientSecret::new(credentials.client_secret.expose().to_string()),
-            http,
+            http: provider::http_client(),
         }
     }
 
@@ -133,7 +125,7 @@ impl IdentityProvider for Google {
                 .exchange_code(AuthorizationCode::new(code))
                 .map_err(ProviderError::new)?
                 .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier().to_string()))
-                .set_redirect_uri(Cow::Owned(RedirectUrl::from_url(redirect_uri.clone())))
+                .set_redirect_uri(provider::redirect_url(redirect_uri))
                 .request_async(&self.http)
                 .await
                 .map_err(ProviderError::new)?;

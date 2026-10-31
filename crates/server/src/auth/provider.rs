@@ -6,10 +6,14 @@
 //! above the seam, in `auth::oauth`, so no adapter matches against the
 //! allowlist.
 
+use std::borrow::Cow;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 
+use oauth2::RedirectUrl;
+use reqwest_012::redirect::Policy;
+use reqwest_012::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -123,4 +127,25 @@ impl ProviderError {
     pub fn new(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
         Self(error.into())
     }
+}
+
+/// The HTTP client an adapter sends its requests to the provider through.
+///
+/// It follows no redirects, which `oauth2`'s and `openidconnect`'s docs and
+/// GitHub's token endpoint all call for: a followed redirect is a way to aim
+/// the server's requests elsewhere.
+///
+/// # Panics
+///
+/// The client's TLS backend failed to start.
+pub(crate) fn http_client() -> HttpClient {
+    HttpClient::builder()
+        .redirect(Policy::none())
+        .build()
+        .expect("the HTTP client builds")
+}
+
+/// `redirect_uri` as the `oauth2` request builders take it.
+pub(crate) fn redirect_url(redirect_uri: &Url) -> Cow<'static, RedirectUrl> {
+    Cow::Owned(RedirectUrl::from_url(redirect_uri.clone()))
 }
