@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Builds a release artifact for any branch on demand (`gh workflow run ci
+  # --ref <branch>`), so a PR's own sha can go onto the box before merging.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -113,3 +116,54 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p web --all-targets --target wasm32-unknown-unknown --all-features -- -D warnings
+
+  # The deployable build (#1226): the release `server` binary, the release
+  # client bundle and the server's migrations, tarred so the binary keeps its
+  # executable bit through the artifact zip. `scripts/deploy.sh` fetches it by
+  # name. Never on a pull request, and only once all seven jobs are green.
+  release:
+    name: release
+    if: github.event_name != 'pull_request'
+    needs: [fmt, clippy, test, doc, wasm-build, wasm-test, wasm-clippy]
+    # Pinned to the box's OS: the binary links glibc dynamically (sqlx bundles
+    # libsqlite3), so a newer `ubuntu-latest` could build one the box can't run.
+    runs-on: ubuntu-24.04
+    env:
+      # Compiled into both the server and the wasm bundle through
+      # `protocol::build_id()`; an unstamped bundle reports "dev" and #583 reads
+      # every client as skewed. Set on this job only: workflow-wide, it would
+      # rebuild `protocol` and everything above it in every job.
+      ELDRITCH_BUILD: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      - uses: Swatinem/rust-cache@v2
+      - name: Install trunk
+        uses: taiki-e/install-action@v2.87.30
+        with:
+          tool: trunk@0.21.14
+      - run: cargo build --release --locked -p server
+      - name: Build web crate
+        working-directory: crates/web
+        # Same retry as `wasm-build`: trunk fetches wasm-bindgen and wasm-opt
+        # at build time, and a release-CDN blip must not cost the artifact.
+        run: |
+          for attempt in 1 2 3; do
+            if trunk build --release; then exit 0; fi
+            echo "::warning::trunk build attempt ${attempt} failed (transient tool download?); retrying in $((attempt * 15))s"
+            sleep "$((attempt * 15))"
+          done
+          echo "::error::trunk build failed after 3 attempts"
+          exit 1
+      - name: Package
+        run: |
+          mkdir -p release
+          cp target/release/server release/
+          cp -r crates/web/dist release/dist
+          cp -r crates/server/migrations release/migrations
+          tar -czf "eldritch-${GITHUB_SHA}.tar.gz" -C release .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: eldritch-${{ github.sha }}
+          path: eldritch-${{ github.sha }}.tar.gz
+          if-no-files-found: error

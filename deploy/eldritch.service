@@ -1,0 +1,28 @@
+# The eldritch server, run from whichever release `current` points at.
+# Installed to /etc/systemd/system/eldritch.service by hand (docs/deploy.md);
+# scripts/deploy.sh only stops, starts and restarts it.
+
+[Unit]
+Description=Eldritch game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eldritch
+Group=eldritch
+EnvironmentFile=/etc/eldritch/eldritch.env
+WorkingDirectory=/srv/eldritch
+ExecStart=/srv/eldritch/current/server
+Restart=always
+RestartSec=2
+
+# The server writes only the database directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/srv/eldritch/data
+
+[Install]
+WantedBy=multi-user.target
