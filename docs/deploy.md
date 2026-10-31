@@ -182,7 +182,7 @@ journalctl -u eldritch -n 20      # "sign-in with GitHub is on", and Google's li
 
 Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sign in at `https://eldritch.gripe`.
 
-**In dev**, put the same values in `.env` at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
+**In dev**, put the same client ids and secrets in `.env`, with the local origin, at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
 
 ```sh
 # .env
