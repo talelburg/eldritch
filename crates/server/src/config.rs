@@ -44,8 +44,7 @@ pub struct ProviderCredentials {
     pub client_secret: Secret,
 }
 
-/// A value that must stay out of logs: its `Debug` form is `Secret(..)`, and
-/// it has no `Display`.
+/// A value that must stay out of logs: its `Debug` form is `Secret(..)`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
 
