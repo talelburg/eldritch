@@ -11,7 +11,7 @@
 //! The only sign-in here is the dev picker, routed when the server runs with
 //! `--dev-auth`, and answered only for a loopback `Host`.
 
-use std::fmt::Write as _;
+use std::fmt::{Display, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{FromRequestParts, State};
@@ -20,11 +20,12 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{routing, Form, Json, Router};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use protocol::{SignInMethod, SignInRequired, SignedIn};
+use protocol::{AccountId, SignInMethod, SignInRequired, SignedIn};
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use time::Duration;
 
-use crate::accounts::{self, Account, AccountId};
+use crate::accounts::{self, Account};
 use crate::AppState;
 
 /// The name of the cookie that carries the session id.
@@ -46,7 +47,7 @@ pub(crate) struct SignedInAccount {
     /// Its host-set display name.
     pub(crate) display_name: String,
     /// The session id, for sliding the cookie's own expiry.
-    session_id: String,
+    session_id: SessionId,
 }
 
 /// As an extractor, a handler taking a [`SignedInAccount`] answers `401` to a
@@ -63,10 +64,7 @@ impl FromRequestParts<AppState> for SignedInAccount {
         match signed_in(&state.db, &jar).await {
             Ok(Some(account)) => Ok(account),
             Ok(None) => Err(StatusCode::UNAUTHORIZED),
-            Err(error) => {
-                tracing::error!(%error, "session lookup failed");
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
+            Err(error) => Err(internal_error("session lookup", &error)),
         }
     }
 }
@@ -82,10 +80,9 @@ pub(crate) async fn signed_in(
     db: &SqlitePool,
     jar: &CookieJar,
 ) -> Result<Option<SignedInAccount>, sqlx::Error> {
-    let Some(cookie) = jar.get(SESSION_COOKIE) else {
+    let Some(session_id) = SessionId::from_cookie(jar) else {
         return Ok(None);
     };
-    let session_id = cookie.value();
     let now = now_ms();
     let row: Option<(i64, String)> = sqlx::query_as(
         "UPDATE sessions SET expires_at = ?
@@ -95,14 +92,14 @@ pub(crate) async fn signed_in(
            (SELECT display_name FROM accounts WHERE account_id = sessions.account_id)",
     )
     .bind(now + SESSION_MS)
-    .bind(session_id)
+    .bind(session_id.as_str())
     .bind(now)
     .fetch_optional(db)
     .await?;
     Ok(row.map(|(id, display_name)| SignedInAccount {
         id: AccountId(id),
         display_name,
-        session_id: session_id.to_string(),
+        session_id,
     }))
 }
 
@@ -127,7 +124,7 @@ async fn me(State(state): State<AppState>, headers: HeaderMap, jar: CookieJar) -
         Ok(Some(account)) => (
             refreshed(jar, &account),
             Json(SignedIn {
-                account_id: account.id.0,
+                account_id: account.id,
                 display_name: account.display_name,
             }),
         )
@@ -143,20 +140,20 @@ async fn me(State(state): State<AppState>, headers: HeaderMap, jar: CookieJar) -
             };
             (StatusCode::UNAUTHORIZED, Json(SignInRequired { methods })).into_response()
         }
-        Err(error) => database_error(&error),
+        Err(error) => internal_error("session lookup", &error).into_response(),
     }
 }
 
 /// `POST /auth/sign-out`: delete the request's session and clear its cookie.
 /// Succeeds whether or not there was a session.
 async fn sign_out(State(state): State<AppState>, jar: CookieJar) -> Response {
-    if let Some(cookie) = jar.get(SESSION_COOKIE) {
+    if let Some(session_id) = SessionId::from_cookie(&jar) {
         if let Err(error) = sqlx::query("DELETE FROM sessions WHERE session_id = ?")
-            .bind(cookie.value())
+            .bind(session_id.as_str())
             .execute(&state.db)
             .await
         {
-            return database_error(&error);
+            return internal_error("sign-out", &error).into_response();
         }
     }
     let jar = jar.remove(Cookie::build(SESSION_COOKIE).path("/"));
@@ -166,19 +163,16 @@ async fn sign_out(State(state): State<AppState>, jar: CookieJar) -> Response {
 /// `GET /auth/dev`: a page listing every enabled account, each a button that
 /// signs in as it.
 async fn dev_picker(_: LoopbackDevAuth, State(state): State<AppState>) -> Response {
-    match accounts::list(&state.db).await {
-        Ok(entries) => Html(picker_page(&entries)).into_response(),
-        Err(error) => {
-            tracing::error!(%error, "listing the accounts for the dev picker");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
+    match accounts::list_enabled(&state.db).await {
+        Ok(enabled) => Html(picker_page(&enabled)).into_response(),
+        Err(error) => internal_error("listing the dev picker's accounts", &error).into_response(),
     }
 }
 
 /// The dev picker's form: the account picked.
 #[derive(Deserialize)]
 struct DevSignIn {
-    account_id: i64,
+    account_id: AccountId,
 }
 
 /// `POST /auth/dev`: sign in as the picked account, then go to `/`. A picked
@@ -189,36 +183,28 @@ async fn dev_sign_in(
     jar: CookieJar,
     Form(form): Form<DevSignIn>,
 ) -> Response {
-    let picked = AccountId(form.account_id);
-    let enabled = match accounts::list(&state.db).await {
-        Ok(entries) => entries
-            .iter()
-            .any(|account| account.id == picked && !account.disabled),
-        Err(error) => {
-            tracing::error!(%error, "listing the accounts for the dev picker");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-    if !enabled {
-        return StatusCode::BAD_REQUEST.into_response();
+    match accounts::is_enabled(&state.db, form.account_id).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::BAD_REQUEST.into_response(),
+        Err(error) => return internal_error("account lookup", &error).into_response(),
     }
-    match create_session(&state.db, picked).await {
+    match create_session(&state.db, form.account_id).await {
         // Relative, so a sign-in through `trunk serve`'s proxy on :3000
         // lands back on :3000.
         Ok(session_id) => (jar.add(session_cookie(session_id)), Redirect::to("/")).into_response(),
-        Err(error) => database_error(&error),
+        Err(error) => internal_error("starting a session", &error).into_response(),
     }
 }
 
 /// Start a session for `account`; return its id.
-async fn create_session(db: &SqlitePool, account: AccountId) -> Result<String, sqlx::Error> {
-    let session_id = new_session_id();
+async fn create_session(db: &SqlitePool, account: AccountId) -> Result<SessionId, sqlx::Error> {
+    let session_id = SessionId::new();
     let now = now_ms();
     sqlx::query(
         "INSERT INTO sessions (session_id, account_id, created_at, expires_at)
          VALUES (?, ?, ?, ?)",
     )
-    .bind(&session_id)
+    .bind(session_id.as_str())
     .bind(account.0)
     .bind(now)
     .bind(now + SESSION_MS)
@@ -238,26 +224,45 @@ fn refreshed(jar: CookieJar, account: &SignedInAccount) -> CookieJar {
 /// by localhost."* `Lax` rather than `Strict`, so the cookie still goes with
 /// a top-level navigation from another site, such as a followed link to the
 /// game.
-fn session_cookie(session_id: String) -> Cookie<'static> {
-    Cookie::build((SESSION_COOKIE, session_id))
+fn session_cookie(session_id: SessionId) -> Cookie<'static> {
+    Cookie::build((SESSION_COOKIE, session_id.0))
         .http_only(true)
         .secure(true)
         .same_site(SameSite::Lax)
         .path("/")
-        .max_age(time::Duration::days(SESSION_DAYS))
+        .max_age(Duration::days(SESSION_DAYS))
         .build()
 }
 
-/// A new session id: 256 bits from the OS RNG, hex-encoded.
-fn new_session_id() -> String {
-    let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes).expect("the OS RNG is available");
-    bytes
-        .iter()
-        .fold(String::with_capacity(64), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        })
+/// A session's id, as its cookie carries it and `sessions` keys it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionId(String);
+
+impl SessionId {
+    /// A new session id: 256 bits from the OS RNG, hex-encoded.
+    fn new() -> Self {
+        let mut bytes = [0_u8; 32];
+        getrandom::fill(&mut bytes).expect("the OS RNG is available");
+        Self(
+            bytes
+                .iter()
+                .fold(String::with_capacity(64), |mut hex, byte| {
+                    let _ = write!(hex, "{byte:02x}");
+                    hex
+                }),
+        )
+    }
+
+    /// The id `jar`'s session cookie carries, if it has one.
+    fn from_cookie(jar: &CookieJar) -> Option<Self> {
+        jar.get(SESSION_COOKIE)
+            .map(|cookie| Self(cookie.value().to_string()))
+    }
+
+    /// The id as stored.
+    fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Proof that the dev picker answers this request (see [`dev_picker_answers`]).
@@ -304,10 +309,10 @@ fn is_loopback(host: &str) -> bool {
     matches!(name, "localhost" | "127.0.0.1" | "::1")
 }
 
-/// The dev picker page for `entries`, listing the enabled ones.
-fn picker_page(entries: &[Account]) -> String {
+/// The dev picker page offering each of `enabled`.
+fn picker_page(enabled: &[Account]) -> String {
     let mut buttons = String::new();
-    for account in entries.iter().filter(|account| !account.disabled) {
+    for account in enabled {
         let _ = write!(
             buttons,
             r#"<p><button name="account_id" value="{}">{}</button></p>"#,
@@ -350,8 +355,8 @@ fn now_ms() -> i64 {
     i64::try_from(since_epoch.as_millis()).expect("milliseconds fit in i64")
 }
 
-/// Log a database failure and answer `500`.
-fn database_error(error: &sqlx::Error) -> Response {
-    tracing::error!(%error, "session lookup failed");
-    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+/// Log that `operation` failed with `error`, and answer `500`.
+pub(crate) fn internal_error(operation: &str, error: &impl Display) -> StatusCode {
+    tracing::error!(%error, "{operation} failed");
+    StatusCode::INTERNAL_SERVER_ERROR
 }

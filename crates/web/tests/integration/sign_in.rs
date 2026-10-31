@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{SignInMethod, SignedIn};
+use protocol::{AccountId, SignInMethod, SignedIn};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::sign_in::SignInView;
@@ -130,7 +130,7 @@ async fn signed_in_the_status_bar_offers_sign_out() {
     store.update(|s| {
         s.status = ConnStatus::Connected;
         s.account = Some(SignedIn {
-            account_id: 1,
+            account_id: AccountId(1),
             display_name: "Sam".to_string(),
         });
     });

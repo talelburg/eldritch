@@ -4,6 +4,8 @@
 //! The server is authoritative; clients submit [`PlayerAction`]s and render the
 //! state the server broadcasts.
 
+use std::fmt;
+
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -113,6 +115,22 @@ impl From<&str> for GameId {
     }
 }
 
+/// An account's stable id: its allowlist entry's primary key, never reused.
+///
+/// Part of the client/server contract: `GET /auth/me` reports it, and the dev
+/// picker's form posts it. Transparent over `i64`, so it serialises as a bare
+/// JSON number. Lives here rather than in `server` for the same reason as
+/// [`GameId`]: the client reads it too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AccountId(pub i64);
+
+impl fmt::Display for AccountId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Body of `POST /games`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateGameRequest {
@@ -152,7 +170,7 @@ pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedIn {
     /// The account's stable id.
-    pub account_id: i64,
+    pub account_id: AccountId,
     /// The name the host set for it, shown at the table.
     pub display_name: String,
 }
@@ -184,6 +202,14 @@ mod id_tests {
         let id = GameId::new("abc");
         assert_eq!(serde_json::to_string(&id).unwrap(), "\"abc\"");
         let back: GameId = serde_json::from_str("\"abc\"").unwrap();
+        assert_eq!(back, id);
+    }
+
+    #[test]
+    fn an_account_id_serializes_as_a_bare_number() {
+        let id = AccountId(7);
+        assert_eq!(serde_json::to_string(&id).unwrap(), "7");
+        let back: AccountId = serde_json::from_str("7").unwrap();
         assert_eq!(back, id);
     }
 }

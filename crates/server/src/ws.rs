@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
@@ -90,10 +89,7 @@ pub(crate) async fn game_ws(
     match auth::signed_in(&state.db, &jar).await {
         Ok(Some(_)) => ws.on_upgrade(move |socket| handle_socket(socket, state, game_id)),
         Ok(None) => ws.on_upgrade(close_unauthenticated),
-        Err(error) => {
-            tracing::error!(%error, "session lookup failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
+        Err(error) => auth::internal_error("session lookup", &error).into_response(),
     }
 }
 

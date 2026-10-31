@@ -9,17 +9,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use protocol::AccountId;
 use sqlx::SqlitePool;
-
-/// An account's stable id: the allowlist entry's primary key, never reused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AccountId(pub i64);
-
-impl fmt::Display for AccountId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 /// An email address as the allowlist holds it: trimmed and lowercased.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -267,4 +258,31 @@ pub async fn list(db: &SqlitePool) -> Result<Vec<Account>, AccountsError> {
         }
     }
     Ok(accounts.into_values().collect())
+}
+
+/// Every entry someone can sign in as, in id order: [`list`] without the
+/// disabled ones.
+///
+/// # Errors
+///
+/// [`AccountsError::Database`].
+pub async fn list_enabled(db: &SqlitePool) -> Result<Vec<Account>, AccountsError> {
+    let mut accounts = list(db).await?;
+    accounts.retain(|account| !account.disabled);
+    Ok(accounts)
+}
+
+/// Whether `id` names an entry someone can sign in as: one that exists and
+/// isn't disabled.
+///
+/// # Errors
+///
+/// [`AccountsError::Database`].
+pub async fn is_enabled(db: &SqlitePool, id: AccountId) -> Result<bool, AccountsError> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT account_id FROM accounts WHERE account_id = ? AND disabled = 0")
+            .bind(id.0)
+            .fetch_optional(db)
+            .await?;
+    Ok(row.is_some())
 }
