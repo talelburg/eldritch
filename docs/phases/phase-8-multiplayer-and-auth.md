@@ -49,6 +49,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1233 | One integration-test binary per crate, PR #1249; slices #1246, #1247, #1248 |
 | #1234 | Board fixtures beside `Seat`, PR #1259; slices #1251–#1258 |
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
+| #1237 | GitHub and Google sign-in against the allowlist, PR #1277; slices #1275, #1276 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 
 ## Ordering
@@ -62,7 +63,7 @@ tracker, and the tracker's dependency view is authoritative.
 - **Tests:** #1233 (✅ PR #1249) → #1234 (✅ PR #1259). #1179 (✅ PR #1260) follows #1233. The two-investigator engine tests
   of lane 3 copy #1234's fixtures.
 - **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227.
-- **Accounts:** #1236 (✅ PR #1271) → #1237.
+- **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
 - **Engine and server:** #1229 (the session core, a refactor), #1238, #580.
 - **Liveness:** #1140.
 
@@ -82,7 +83,8 @@ phase 9 is scoped.
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
 **4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
-rarely used, so it comes late and stays small.
+rarely used, so it comes late and stays small. #1274, returning to the page a
+sign-in started from, follows #1237 and #1239.
 
 **5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243.**
 
