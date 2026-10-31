@@ -11,34 +11,10 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::sign_in::SignInView;
 use web::status_bar::StatusBarView;
-use web::store::{ClientState, ConnStatus};
-use web_sys::HtmlElement;
+use web::store::ConnStatus;
+use web_sys::Element;
 
-/// Mount `view` into a container of its own over a fresh store; return the
-/// store and the container. The DOM accumulates across tests in one browser
-/// session, so every assertion is scoped to this container.
-fn mount<V: IntoView + 'static>(
-    view: impl FnOnce() -> V + 'static,
-) -> (RwSignal<ClientState>, HtmlElement) {
-    let container = document()
-        .create_element("div")
-        .expect("create_element")
-        .dyn_into::<HtmlElement>()
-        .expect("HtmlElement");
-    document()
-        .body()
-        .expect("body")
-        .append_child(&container)
-        .expect("append_child");
-
-    let store = RwSignal::new(ClientState::default());
-    mount_to(container.clone(), move || {
-        provide_context(store);
-        view()
-    })
-    .forget();
-    (store, container)
-}
+use crate::common::mount;
 
 fn dev_picker() -> SignInMethod {
     SignInMethod {
@@ -64,7 +40,7 @@ async fn signed_out_the_screen_links_each_listed_method() {
     let link = links
         .item(0)
         .expect("a link")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element");
     assert_eq!(link.get_attribute("href").as_deref(), Some("/auth/dev"));
     assert_eq!(link.text_content().as_deref(), Some("Dev sign-in"));

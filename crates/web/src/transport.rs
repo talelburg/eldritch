@@ -69,7 +69,13 @@ async fn run(
             // The session is gone. Show the sign-in screen and stop, keeping
             // the saved id: a sign-in reloads the page onto the same game.
             ConnectOutcome::Ended(SocketEnding::Unauthenticated) => {
-                check_sign_in(store).await;
+                // If `/auth/me` still signs us in, the server refused the
+                // socket a session it accepts over HTTP, which only a server
+                // bug does. Nothing is live, so say so rather than leave the
+                // status at Connected.
+                if check_sign_in(store).await {
+                    store.update(|s| s.status = ConnStatus::Failed);
+                }
                 return;
             }
             // Opened, but the server closed before any Hello: a valid game
