@@ -16,8 +16,14 @@ protocol = { path = "../protocol" }
 cards = { path = "../cards" }
 scenarios = { path = "../scenarios" }
 axum = { version = "0.8", features = ["ws"] }
-# Session cookies: `CookieJar` reads and sets them.
-axum-extra = { version = "0.12", features = ["cookie"] }
+# Session cookies: `CookieJar` reads and sets them. `PrivateCookieJar`
+# encrypts the cookie that holds a provider sign-in in flight.
+axum-extra = { version = "0.12", features = ["cookie", "cookie-private"] }
+# GitHub sign-in. Its default features are reqwest on rustls, so the build
+# needs no OpenSSL; its `oauth2::reqwest` re-export is the HTTP client.
+oauth2 = "5"
+# The public origin and the redirect URIs built from it.
+url = "2"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 futures-util = "0.3"
