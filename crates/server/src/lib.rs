@@ -5,6 +5,7 @@
 //! logic in a library target lets integration tests in `tests/` drive
 //! it directly.
 
+pub mod accounts;
 pub mod config;
 pub mod db;
 pub mod fingerprint;

@@ -1,9 +1,13 @@
-//! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
-//! client.
+//! Shared helpers for server integration tests: the mock registries, an in-memory pool, a temporary database file, a
+//! spawned server, and a websocket client.
 //!
 //! Declared once, in the integration root, so a helper no test uses is flagged as dead code.
 
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fs};
 
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::action::RosterEntry;
@@ -88,6 +92,49 @@ pub(crate) async fn memory_pool() -> SqlitePool {
         .expect("open in-memory sqlite");
     MIGRATOR.run(&pool).await.expect("migrate");
     pool
+}
+
+/// A uniquely named `SQLite` file in the temp directory, for a test that needs
+/// a database a second process can open. The file isn't created here, and it
+/// is removed on drop with its WAL and shared-memory files.
+pub(crate) struct TempDb {
+    path: PathBuf,
+}
+
+impl TempDb {
+    /// A fresh path whose name starts `eldritch-<label>-`. The counter keeps
+    /// two tests started in the same nanosecond apart.
+    pub(crate) fn new(label: &str) -> Self {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after the epoch")
+            .as_nanos();
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        Self {
+            path: env::temp_dir().join(format!("eldritch-{label}-{nanos}-{n}.db")),
+        }
+    }
+
+    /// The file's path.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The `sqlite:` URL that opens the file.
+    pub(crate) fn url(&self) -> String {
+        format!("sqlite:{}", self.path.display())
+    }
+}
+
+impl Drop for TempDb {
+    fn drop(&mut self) {
+        for suffix in ["", "-wal", "-shm"] {
+            let mut path = self.path.clone().into_os_string();
+            path.push(suffix);
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 /// Spawn the server on an ephemeral port; return its bound address.
