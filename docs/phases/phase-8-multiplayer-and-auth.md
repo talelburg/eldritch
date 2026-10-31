@@ -42,6 +42,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
+| #1236 | Accounts, sessions and the dev sign-in, PR #1271 |
 
 ## Ordering
 
@@ -54,7 +55,7 @@ tracker, and the tracker's dependency view is authoritative.
 - **Tests:** #1233 → #1234. #1179 follows #1233. The two-investigator engine tests
   of lane 3 copy #1234's fixtures.
 - **Hosting:** #1225 and #1224 → #1226 → #1227.
-- **Accounts:** #1236 → #1237.
+- **Accounts:** #1236 (✅ PR #1271) → #1237.
 - **Engine and server:** #1229 (the session core, a refactor), #1238, #580.
 - **Liveness:** #1140.
 

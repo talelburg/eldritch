@@ -19,30 +19,13 @@ use web::store::{ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
 use web_sys::HtmlElement;
 
-/// Mount `VersionMismatchView` into a container of its own, and return that
-/// container alongside the store. The DOM accumulates across tests in one
-/// browser session, so a document-wide query would see the *other* test's
-/// overlay; scoping every assertion to this test's container is what lets
+use crate::common;
+
+/// Mount `VersionMismatchView` with [`common::mount`]. Scoping every
+/// assertion to its container, rather than the shared document, is what lets
 /// "renders nothing" be asserted at all.
 fn mount() -> (RwSignal<ClientState>, HtmlElement) {
-    let container = document()
-        .create_element("div")
-        .expect("create_element")
-        .dyn_into::<HtmlElement>()
-        .expect("HtmlElement");
-    document()
-        .body()
-        .expect("body")
-        .append_child(&container)
-        .expect("append_child");
-
-    let store = RwSignal::new(ClientState::default());
-    mount_to(container.clone(), move || {
-        provide_context(store);
-        leptos::view! { <VersionMismatchView/> }
-    })
-    .forget();
-    (store, container)
+    common::mount(|| leptos::view! { <VersionMismatchView/> })
 }
 
 #[wasm_bindgen_test]
@@ -57,6 +40,7 @@ async fn overlay_is_absent_in_every_status_but_the_mismatch() {
         ConnStatus::Reconnecting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
+        ConnStatus::SignedOut(vec![]),
     ] {
         let (store, container) = mount();
         store.update(|s| s.status = status.clone());

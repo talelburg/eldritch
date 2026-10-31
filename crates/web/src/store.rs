@@ -4,7 +4,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{ChaosToken, GameState, TokenResolution};
 use leptos::prelude::*;
-use protocol::ServerMessage;
+use protocol::{ServerMessage, SignInMethod, SignedIn};
 
 /// Connection lifecycle, set by the transport (not by `reduce`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -19,6 +19,9 @@ pub enum ConnStatus {
     /// A server frame failed to deserialize — the client and server binaries
     /// disagree on the wire format. Terminal: restart the server and reload.
     VersionMismatch,
+    /// Not signed in: render the sign-in screen, offering these methods. The
+    /// saved game id is kept, so signing in returns to the same game.
+    SignedOut(Vec<SignInMethod>),
 }
 
 /// One applied submit's worth of events, for the event-log view.
@@ -48,6 +51,9 @@ pub struct ClientState {
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
     pub status: ConnStatus,
+    /// The account this client is signed in as, once the server has said.
+    /// Set by the transport, not by `reduce`.
+    pub account: Option<SignedIn>,
     pub last_rejection: Option<String>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the

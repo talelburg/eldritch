@@ -1,10 +1,17 @@
-//! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
-//! client.
+//! Shared helpers for server integration tests: the mock registries, an in-memory pool, a temporary database file, a
+//! spawned server, and a websocket client.
 //!
 //! Declared once, in the integration root, so a helper no test uses is flagged as dead code.
 
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fs};
 
+use axum::body::{self, Body};
+use axum::http::{header, HeaderMap, Request, StatusCode};
+use axum::Router;
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::action::RosterEntry;
 use game_core::engine::Registries;
@@ -13,15 +20,22 @@ use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRe
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
+use reqwest::redirect::Policy;
+use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
+use server::accounts::{self, AccountsError};
+use server::auth;
 use server::db::MIGRATOR;
 use server::session::GameSession;
 use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tower::ServiceExt as _;
 
 pub(crate) const TEST_SCENARIO_ID: &str = "test-scenario";
 
@@ -90,9 +104,78 @@ pub(crate) async fn memory_pool() -> SqlitePool {
     pool
 }
 
-/// Spawn the server on an ephemeral port; return its bound address.
-pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
-    let app = server::app(AppState::new(pool, REGISTRIES));
+/// A uniquely named `SQLite` file in the temp directory, for a test that needs
+/// a database a second process can open. The file isn't created here, and it
+/// is removed on drop with its WAL and shared-memory files.
+pub(crate) struct TempDb {
+    path: PathBuf,
+}
+
+impl TempDb {
+    /// A fresh path whose name starts `eldritch-<label>-`. The counter keeps
+    /// two tests started in the same nanosecond apart.
+    pub(crate) fn new(label: &str) -> Self {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after the epoch")
+            .as_nanos();
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        Self {
+            path: env::temp_dir().join(format!("eldritch-{label}-{nanos}-{n}.db")),
+        }
+    }
+
+    /// The file's path.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The `sqlite:` URL that opens the file.
+    pub(crate) fn url(&self) -> String {
+        format!("sqlite:{}", self.path.display())
+    }
+}
+
+impl Drop for TempDb {
+    fn drop(&mut self) {
+        for suffix in ["", "-wal", "-shm"] {
+            let mut path = self.path.clone().into_os_string();
+            path.push(suffix);
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+/// A committed client bundle, for a test whose request would otherwise fall
+/// through to a missing one: the real `crates/web/dist/` is Trunk's output,
+/// absent in CI and fresh checkouts.
+pub(crate) const FIXTURE_DIST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/dist");
+
+/// The display name of the account [`spawn_server`] adds, which [`connect`]
+/// signs in as.
+pub(crate) const TEST_ACCOUNT: &str = "Tester";
+
+/// Add the [`TEST_ACCOUNT`] entry to `pool` unless it is there already, so a
+/// test that serves the same database twice can call it twice.
+pub(crate) async fn add_test_account(pool: &SqlitePool) {
+    let email = "tester@example.com".to_string();
+    match accounts::add(pool, TEST_ACCOUNT, &[email]).await {
+        Ok(_) | Err(AccountsError::EmailTaken { .. }) => {}
+        Err(error) => panic!("add the test account: {error}"),
+    }
+}
+
+/// The server's router over `pool` and `registries`, with the dev sign-in
+/// `dev_auth` on or off.
+pub(crate) fn dev_auth_app(pool: SqlitePool, registries: Registries, dev_auth: bool) -> Router {
+    server::app(AppState::new(pool, registries).with_dev_auth(dev_auth))
+}
+
+/// Serve [`dev_auth_app`] over `pool` and the mock [`REGISTRIES`] on an
+/// ephemeral loopback port; return its bound address.
+pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAddr {
+    let app = dev_auth_app(pool, REGISTRIES, dev_auth);
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind ephemeral port");
@@ -103,13 +186,210 @@ pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     addr
 }
 
+/// Spawn the server with the dev sign-in on and the [`TEST_ACCOUNT`] on its
+/// allowlist; return its bound address.
+pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
+    add_test_account(&pool).await;
+    serve_dev_auth(pool, true).await
+}
+
+/// An HTTP client that leaves redirects unfollowed, so a response's
+/// `Set-Cookie` is read off the response that set it.
+pub(crate) fn http() -> HttpClient {
+    HttpClient::builder()
+        .redirect(Policy::none())
+        .build()
+        .expect("build the HTTP client")
+}
+
+/// Send `request`, with `cookie` as its `Cookie` header if there is one.
+pub(crate) async fn send_with_cookie(request: RequestBuilder, cookie: Option<&str>) -> Response {
+    let request = match cookie {
+        Some(cookie) => request.header(header::COOKIE, cookie),
+        None => request,
+    };
+    request.send().await.expect("the server answers")
+}
+
+/// `GET /auth/me` at `addr`, with `cookie` if there is one.
+pub(crate) async fn me(addr: SocketAddr, cookie: Option<&str>) -> Response {
+    send_with_cookie(http().get(format!("http://{addr}/auth/me")), cookie).await
+}
+
+/// Each account the dev picker page offers: its id and its name.
+pub(crate) fn picker_entries(page: &str) -> Vec<(String, String)> {
+    const BUTTON: &str = r#"<button name="account_id" value=""#;
+    page.split(BUTTON)
+        .skip(1)
+        .map(|rest| {
+            let (id, rest) = rest.split_once("\">").expect("a button's value");
+            let (name, _) = rest.split_once("</button>").expect("a button's label");
+            (id.to_string(), name.to_string())
+        })
+        .collect()
+}
+
+/// The `name=value` pair of the session cookie a response sets.
+pub(crate) fn session_cookie(headers: &HeaderMap) -> String {
+    headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .find(|pair| pair.starts_with(&format!("{}=", auth::SESSION_COOKIE)))
+        .expect("a session cookie is set")
+        .to_string()
+}
+
+/// The two requests a dev-picker sign-in makes, over whichever transport.
+trait DevPicker {
+    /// `GET /auth/dev`: the picker page.
+    async fn page(&self) -> String;
+    /// `POST /auth/dev` picking `id`: the response's status and headers.
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap);
+}
+
+/// The dev picker of a server listening at an address, reached over HTTP.
+struct OverHttp(SocketAddr);
+
+impl DevPicker for OverHttp {
+    async fn page(&self) -> String {
+        http()
+            .get(format!("http://{}/auth/dev", self.0))
+            .send()
+            .await
+            .expect("GET the dev picker")
+            .text()
+            .await
+            .expect("the picker page")
+    }
+
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {
+        let response = http()
+            .post(format!("http://{}/auth/dev", self.0))
+            .form(&[("account_id", id)])
+            .send()
+            .await
+            .expect("POST the dev picker");
+        (response.status(), response.headers().clone())
+    }
+}
+
+/// The dev picker of a router served in-process. Its requests name a
+/// loopback `Host`, which the picker requires.
+struct InProcess<'a>(&'a Router);
+
+impl DevPicker for InProcess<'_> {
+    async fn page(&self) -> String {
+        let request = Request::builder()
+            .uri("/auth/dev")
+            .header(header::HOST, "localhost")
+            .body(Body::empty())
+            .expect("build the picker request");
+        let response = self
+            .0
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("GET the dev picker");
+        let page = body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the picker page");
+        String::from_utf8(page.to_vec()).expect("utf-8 page")
+    }
+
+    async fn pick(&self, id: &str) -> (StatusCode, HeaderMap) {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/auth/dev")
+            .header(header::HOST, "localhost")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(format!("account_id={id}")))
+            .expect("build the sign-in request");
+        let response = self
+            .0
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("POST the dev picker");
+        (response.status(), response.headers().clone())
+    }
+}
+
+/// Sign in as the account named `name` through `picker`, the way a browser
+/// does; return the session cookie as a `Cookie` header value.
+async fn sign_in_through(picker: impl DevPicker, name: &str) -> String {
+    let page = picker.page().await;
+    let (id, _) = picker_entries(&page)
+        .into_iter()
+        .find(|(_, label)| label == name)
+        .unwrap_or_else(|| panic!("the picker offers {name}: {page}"));
+    let (status, headers) = picker.pick(&id).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    session_cookie(&headers)
+}
+
+/// Sign in as the account named `name` through the dev picker at `addr`;
+/// return the session cookie as a `Cookie` header value.
+pub(crate) async fn sign_in_over_http(addr: SocketAddr, name: &str) -> String {
+    sign_in_through(OverHttp(addr), name).await
+}
+
+/// Serve the router for a `POST /games` test: the dev sign-in on and the
+/// [`TEST_ACCOUNT`] signed in. Returns the router and the session cookie.
+pub(crate) async fn signed_in_app(pool: SqlitePool, registries: Registries) -> (Router, String) {
+    add_test_account(&pool).await;
+    let app = dev_auth_app(pool, registries, true);
+    let cookie = sign_in_through(InProcess(&app), TEST_ACCOUNT).await;
+    (app, cookie)
+}
+
 pub(crate) type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-/// Open a websocket to a game.
+/// Sign in as the [`TEST_ACCOUNT`] through the dev picker, then open a
+/// websocket to a game with that session.
 pub(crate) async fn connect(addr: SocketAddr, game_id: &str) -> Client {
-    let url = format!("ws://{addr}/ws/{game_id}");
-    let (ws, _response) = connect_async(url).await.expect("ws connect");
+    let cookie = sign_in_over_http(addr, TEST_ACCOUNT).await;
+    connect_with(addr, game_id, Some(&cookie)).await
+}
+
+/// Open a websocket to a game, sending `cookie` on the upgrade if there is one.
+pub(crate) async fn connect_with(addr: SocketAddr, game_id: &str, cookie: Option<&str>) -> Client {
+    let mut request = format!("ws://{addr}/ws/{game_id}")
+        .into_client_request()
+        .expect("a websocket request");
+    if let Some(cookie) = cookie {
+        request
+            .headers_mut()
+            .insert(header::COOKIE, cookie.parse().expect("a cookie header"));
+    }
+    let (ws, _response) = connect_async(request).await.expect("ws connect");
     ws
+}
+
+/// Read `ws` to its end and require it to be closed with
+/// [`protocol::CLOSE_UNAUTHENTICATED`] before any message arrives.
+pub(crate) async fn assert_closed_unauthenticated(ws: &mut Client) {
+    loop {
+        match ws
+            .next()
+            .await
+            .expect("a close frame")
+            .expect("no ws error")
+        {
+            Message::Close(Some(frame)) => {
+                assert_eq!(
+                    frame.code,
+                    CloseCode::from(protocol::CLOSE_UNAUTHENTICATED),
+                    "closed as unauthenticated"
+                );
+                return;
+            }
+            Message::Text(text) => panic!("no message before the close: {text}"),
+            Message::Close(None) => panic!("the close carries a code"),
+            _ => {}
+        }
+    }
 }
 
 /// Send a client message as JSON text.

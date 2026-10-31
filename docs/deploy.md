@@ -146,7 +146,7 @@ sudo systemctl reload caddy
 
 `scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or back up and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
 
-OAuth callback registration isn't here yet: there's no callback until Accounts, and #1236 adds the step.
+OAuth callback registration isn't here yet: there's no callback until GitHub and Google sign-in, and #1237 adds the step.
 
 ## Deploying
 
@@ -163,6 +163,24 @@ OAuth callback registration isn't here yet: there's no callback until Accounts, 
 
 - **No new migration since the previous release:** the database is kept. Games played since the deploy either replay on the old release or are kept as unresumable (see *unresumable game* in `GLOSSARY.md`).
 - **A migration the previous release lacks:** the previous release can't start on this database, so the rollback restores `backups/pre-<current sha>.db`, the backup taken just before the current release went on. It first says how many actions and games that discards, and asks `y/N`.
+
+A rollback that restores the backup also discards any allowlist edit made since the deploy.
+
+## The allowlist
+
+Sam can play once Sam's email is on the allowlist. You keep it on the box, over ssh, with the server binary's `accounts` subcommand. It runs as `eldritch`, as the service does. The environment file is readable only by root, so the command names its one variable itself: `DATABASE_URL`, the same path as in `deploy/eldritch.env.example`. On the box:
+
+```sh
+alias accounts='sudo -u eldritch env DATABASE_URL=sqlite:///srv/eldritch/data/eldritch.db /srv/eldritch/current/server accounts'
+
+accounts add --name Sam sam@gmail.com sam@work.com   # one entry, every email Sam signs in with
+accounts list                                        # id, name, emails, enabled or disabled
+accounts remove sam@gmail.com                        # or the entry's id
+```
+
+- **One entry per person.** Each entry is an account ([ADR 0023](adr/0023-an-account-is-an-allowlist-entry-matched-by-any-verified-email.md)), and a sign-in through any of its emails is that account. `add` refuses an email another entry already holds, naming that entry.
+- **`remove` disables the entry and ends its sessions.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact. Its holder's next request or connect finds them signed out. A game socket already open stays open until it next reconnects.
+- **It runs the migrations first,** as the server does at startup, so run it through `current`, never an older release.
 
 ## Drills
 

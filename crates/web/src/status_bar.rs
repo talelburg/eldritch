@@ -1,8 +1,9 @@
-//! The app status bar: connection status, last rejection, who the game is
-//! waiting on, and the New-game button — rendered inline with the page heading
-//! to keep the header compact.
+//! The app status bar, rendered inline with the page heading.
 //!
-//! Reads the store; the New-game button is wasm-only (it drives the transport).
+//! It shows the connection status, the last rejection, who the game is
+//! waiting on, the New-game button, and the signed-in account with its
+//! sign-out control. It reads the store; the buttons act only on wasm, where
+//! the transport is.
 
 use std::collections::BTreeSet;
 
@@ -26,11 +27,23 @@ pub fn StatusBarView() -> impl IntoView {
         ConnStatus::Failed => "failed",
         ConnStatus::AwaitingRoster => "awaiting-roster",
         ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
+        ConnStatus::SignedOut(_) => "signed out",
     };
     let rejection = move || store.get().last_rejection.unwrap_or_default();
     let waiting = move || {
         store.with(waiting_on).map(|names| {
             view! { <span class="waiting-on">"Waiting on: " {names}</span> }
+        })
+    };
+
+    let account = move || {
+        store.get().account.map(|account| {
+            view! {
+                <span class="account">"signed in as " {account.display_name}</span>
+                <button class="sign-out" on:click=move |_| sign_out()>
+                    "Sign out"
+                </button>
+            }
         })
     };
 
@@ -57,8 +70,16 @@ pub fn StatusBarView() -> impl IntoView {
                     ().into_any()
                 }
             }
+            {account}
         </div>
     }
+}
+
+/// Sign out through the transport. Off wasm there is no transport, and the
+/// control does nothing.
+fn sign_out() {
+    #[cfg(target_arch = "wasm32")]
+    transport::sign_out();
 }
 
 /// Who the live prompt waits on, by investigator name, read off its

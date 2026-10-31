@@ -66,11 +66,11 @@ cargo test -p cards --test integration play_card::<test_fn_name>     # one modul
 cargo run -p card-data-pipeline    # regenerate the corpus (only after bumping data/arkhamdb-snapshot)
 
 # Dev loop (two terminals) — hot-reload on :3000, proxying to the server
-cargo run -p server                                  # API + WS on :8000
+cargo run -p server -- --dev-auth                    # API + WS on :8000, with the dev sign-in
 cd crates/web && trunk serve                         # WASM + hot-reload on :3000
 # then open http://localhost:3000 — proxy config is in crates/web/Trunk.toml
 # Single-port alternative (no hot-reload; what production serves):
-#   cd crates/web && trunk build  &&  cargo run -p server   # open :8000
+#   cd crates/web && trunk build  &&  cargo run -p server -- --dev-auth   # open :8000
 ```
 
 ## Architecture

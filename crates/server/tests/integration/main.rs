@@ -6,6 +6,8 @@
 
 mod common;
 
+mod accounts;
+mod auth;
 mod closing_demo;
 mod config;
 mod connect_pool;
