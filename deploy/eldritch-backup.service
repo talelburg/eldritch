@@ -1,0 +1,25 @@
+# The nightly backup: deploy/eldritch-backup.sh, started by
+# eldritch-backup.timer. Installed to /etc/systemd/system/ by hand
+# (docs/deploy.md, "Backups"). Run it now with:
+#   sudo systemctl start eldritch-backup
+
+[Unit]
+Description=Eldritch nightly database backup to R2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=eldritch
+Group=eldritch
+WorkingDirectory=/srv/eldritch
+ExecStart=/usr/local/bin/eldritch-backup
+
+# Sandboxed like eldritch.service. It writes the copies to backups/, and
+# data/ because reading a database a crash left with a hot journal rolls
+# that journal back.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/srv/eldritch/backups /srv/eldritch/data
