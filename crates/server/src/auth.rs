@@ -165,10 +165,7 @@ async fn sign_out(State(state): State<AppState>, jar: CookieJar) -> Response {
 
 /// `GET /auth/dev`: a page listing every enabled account, each a button that
 /// signs in as it.
-async fn dev_picker(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if !dev_picker_answers(&state, &headers) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
+async fn dev_picker(_: LoopbackDevAuth, State(state): State<AppState>) -> Response {
     match accounts::list(&state.db).await {
         Ok(entries) => Html(picker_page(&entries)).into_response(),
         Err(error) => {
@@ -187,14 +184,11 @@ struct DevSignIn {
 /// `POST /auth/dev`: sign in as the picked account, then go to `/`. A picked
 /// id that names no enabled account is a `400`.
 async fn dev_sign_in(
+    _: LoopbackDevAuth,
     State(state): State<AppState>,
-    headers: HeaderMap,
     jar: CookieJar,
     Form(form): Form<DevSignIn>,
 ) -> Response {
-    if !dev_picker_answers(&state, &headers) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
     let picked = AccountId(form.account_id);
     let enabled = match accounts::list(&state.db).await {
         Ok(entries) => entries
@@ -264,6 +258,27 @@ fn new_session_id() -> String {
             let _ = write!(hex, "{byte:02x}");
             hex
         })
+}
+
+/// Proof that the dev picker answers this request (see [`dev_picker_answers`]).
+/// As an extractor it answers `404` otherwise, and placed before a body
+/// extractor it answers before the body is read, so a public request is `404`
+/// whatever it carries.
+struct LoopbackDevAuth;
+
+impl FromRequestParts<AppState> for LoopbackDevAuth {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if dev_picker_answers(state, &parts.headers) {
+            Ok(Self)
+        } else {
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
 }
 
 /// Whether the dev picker answers this request: the server runs with

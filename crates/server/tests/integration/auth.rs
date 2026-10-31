@@ -86,6 +86,34 @@ async fn with_the_flag_the_dev_routes_are_not_found_for_a_public_host() {
     }
 }
 
+/// The `Host` is checked before the body is read, so a public request is
+/// `404` whatever it carries, not the `415` or `422` of an unreadable form.
+#[tokio::test]
+async fn with_the_flag_a_dev_sign_in_for_a_public_host_is_not_found_whatever_its_body() {
+    for (content_type, body) in [
+        ("application/x-www-form-urlencoded", "account_id=not-an-id"),
+        ("application/x-www-form-urlencoded", ""),
+        ("text/plain", "account_id=1"),
+    ] {
+        let app = server::app(
+            AppState::new(common::memory_pool().await, common::REGISTRIES).with_dev_auth(true),
+        );
+        let request = Request::builder()
+            .method("POST")
+            .uri("/auth/dev")
+            .header(header::HOST, "eldritch.gripe")
+            .header(header::CONTENT_TYPE, content_type)
+            .body(Body::from(body))
+            .expect("build the request");
+
+        assert_eq!(
+            app.oneshot(request).await.expect("a response").status(),
+            StatusCode::NOT_FOUND,
+            "{content_type}: {body:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn with_the_flag_the_dev_picker_answers_every_loopback_host() {
     for host in [
