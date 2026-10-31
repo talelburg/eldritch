@@ -159,8 +159,8 @@ Leave *Allow wildcard matching* and *Enable Device Flow* off. On the app's page,
 
 **Google.** One OAuth client serves both dev and production, since a Google client takes several redirect URIs. In the [Google Cloud console](https://console.cloud.google.com/), create a project, then under *Google Auth Platform*:
 
-1. **The consent screen** (*Branding* and *Audience*): user type *External*. Then, under *Audience*, *Publish app*, so its publishing status is *In production*. A *Testing* app turns away everyone not on its test-user list with *Access blocked*.
-2. **Scopes** (*Data access*): only `openid` and `email`. Both are non-sensitive, so publishing needs no review from Google.
+1. **The consent screen** (*Branding* and *Audience*): user type *External*, left in *Testing*. Publishing it needs a homepage and a privacy policy URL, and the project has no privacy policy. A *Testing* app turns away everyone not on its test-user list with *Access blocked*, so each friend who signs in with Google is also added under *Audience* → *Test users* (see [The allowlist](#the-allowlist)). It also shows them Google's unverified-app warning, which they click through.
+2. **Scopes** (*Data access*): only `openid` and `email`.
 3. **The client** (*Clients* → *Create client*): application type *Web application*, with both authorized redirect URIs:
    - `https://eldritch.gripe/auth/google/callback`
    - `http://localhost:3000/auth/google/callback`
@@ -233,6 +233,7 @@ accounts remove sam@gmail.com                        # or the entry's id
 
 - **One entry per person.** Each entry is an account ([ADR 0023](adr/0023-an-account-is-an-allowlist-entry-matched-by-any-verified-email.md)), and a sign-in through any of its emails is that account. `add` refuses an email another entry already holds, naming that entry.
 - **`remove` disables the entry and ends its sessions.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact. Its holder's next request or connect finds them signed out. A game socket already open stays open until it next reconnects.
+- **Google has a second list.** The Google consent screen stays in *Testing* (see [Sign-in providers](#11-sign-in-providers)), so a friend who signs in with Google needs their Google address added under *Google Auth Platform* → *Audience* → *Test users* as well as here. GitHub has no such list.
 - **It runs the migrations first,** as the server does at startup, so run it through `current`, never an older release.
 
 ## Drills
