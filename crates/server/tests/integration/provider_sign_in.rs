@@ -58,6 +58,13 @@ fn location(headers: &HeaderMap) -> &str {
         .expect("an ASCII Location")
 }
 
+/// Assert the response clears the in-flight cookie, at the path it was set on.
+fn assert_in_flight_cleared(headers: &HeaderMap) {
+    let cleared = common::set_cookie(headers, auth::SIGN_IN_COOKIE).expect("a removal");
+    assert!(cleared.contains("Max-Age=0"), "{cleared}");
+    assert!(cleared.contains("Path=/auth"), "{cleared}");
+}
+
 /// Start a sign-in on `app` and come back from the provider with `code`.
 async fn sign_in(app: &Router, code: &str) -> (StatusCode, HeaderMap, String) {
     let (state, cookie) = start(app).await;
@@ -206,9 +213,7 @@ async fn the_callback_clears_the_in_flight_cookie() {
 
     let (_, headers, _) = sign_in(&app, "a-code").await;
 
-    let cleared = common::set_cookie(&headers, auth::SIGN_IN_COOKIE).expect("a removal");
-    assert!(cleared.contains("Max-Age=0"), "{cleared}");
-    assert!(cleared.contains("Path=/auth"), "{cleared}");
+    assert_in_flight_cleared(&headers);
 }
 
 #[tokio::test]
@@ -247,6 +252,26 @@ async fn an_address_not_on_the_list_gets_the_ask_the_host_page() {
         "escaped: {page}"
     );
     assert!(page.contains("Ask the host"), "{page}");
+    assert_eq!(common::session_count(&pool).await, 0);
+}
+
+/// A verified address that isn't an email address is listed as unusable, and
+/// the page doesn't claim the provider verified nothing.
+#[tokio::test]
+async fn a_verified_address_that_cannot_be_an_email_is_listed_as_unusable() {
+    let pool = pool_with_sam().await;
+    let app = common::provider_app(
+        pool.clone(),
+        FakeProvider::reporting(&[("sam-at-gmail", true)]),
+        false,
+    );
+
+    let (status, _, page) = sign_in(&app, "a-code").await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(page.contains("sam-at-gmail"), "{page}");
+    assert!(page.contains("aren't email addresses"), "{page}");
+    assert!(!page.contains("no verified address"), "{page}");
     assert_eq!(common::session_count(&pool).await, 0);
 }
 
@@ -301,11 +326,12 @@ async fn a_callback_whose_state_does_not_match_gets_the_try_again_page() {
     let (_, cookie) = start(&app).await;
 
     for query in ["code=a-code&state=forged", "code=a-code"] {
-        let (status, _, page) =
+        let (status, headers, page) =
             common::get(&app, &format!("/auth/fake/callback?{query}"), Some(&cookie)).await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
         assert!(page.contains("Try again"), "{query}: {page}");
+        assert_in_flight_cleared(&headers);
     }
     assert_eq!(common::session_count(&pool).await, 0);
 }
@@ -344,7 +370,7 @@ async fn a_sign_in_cancelled_at_the_provider_gets_the_try_again_page() {
     );
     let (state, cookie) = start(&app).await;
 
-    let (status, _, page) = common::get(
+    let (status, headers, page) = common::get(
         &app,
         &format!("/auth/fake/callback?error=access_denied&state={state}"),
         Some(&cookie),
@@ -354,6 +380,7 @@ async fn a_sign_in_cancelled_at_the_provider_gets_the_try_again_page() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(page.contains("Try again"), "{page}");
     assert!(page.contains(r#"href="/""#), "links home: {page}");
+    assert_in_flight_cleared(&headers);
     assert_eq!(common::session_count(&pool).await, 0);
 }
 
@@ -366,9 +393,10 @@ async fn an_exchange_that_fails_at_the_provider_gets_the_try_again_page() {
         false,
     );
 
-    let (status, _, page) = sign_in(&app, FAILING_CODE).await;
+    let (status, headers, page) = sign_in(&app, FAILING_CODE).await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
     assert!(page.contains("Try again"), "{page}");
+    assert_in_flight_cleared(&headers);
     assert_eq!(common::session_count(&pool).await, 0);
 }

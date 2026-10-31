@@ -201,13 +201,22 @@ async fn signed_in_account(
 
     let (verified, unverified): (Vec<ReportedEmail>, Vec<ReportedEmail>) =
         reported.into_iter().partition(|email| email.verified);
-    let checked: Vec<Email> = verified
-        .iter()
-        .filter_map(|email| Email::parse(&email.address).ok())
-        .collect();
+    let mut checked = Vec::new();
+    let mut unusable = Vec::new();
+    for email in verified {
+        match Email::parse(&email.address) {
+            Ok(parsed) => checked.push(parsed),
+            Err(_) => unusable.push(email),
+        }
+    }
     match accounts::enabled_by_email(&state.db, &checked).await {
         Ok(Some(account)) => Ok(account),
-        Ok(None) => Err(ask_the_host(provider.name(), &checked, &unverified)),
+        Ok(None) => Err(ask_the_host(
+            provider.name(),
+            &checked,
+            &unusable,
+            &unverified,
+        )),
         Err(error) => Err(auth::internal_error("matching a sign-in", &error).into_response()),
     }
 }
@@ -223,17 +232,31 @@ fn try_again(status: StatusCode) -> Response {
 }
 
 /// The page for a sign-in none of whose verified addresses is on an enabled
-/// allowlist entry: every address `provider` reported, and what to do.
-fn ask_the_host(provider: &str, checked: &[Email], unverified: &[ReportedEmail]) -> Response {
+/// allowlist entry: every address `provider` reported, and what to do. The
+/// verified ones are split into those `checked` against the allowlist and
+/// those `unusable` as an email address.
+fn ask_the_host(
+    provider: &str,
+    checked: &[Email],
+    unusable: &[ReportedEmail],
+    unverified: &[ReportedEmail],
+) -> Response {
     let provider = auth::escape(provider);
     let mut body = String::new();
-    if checked.is_empty() {
-        let _ = write!(body, "<p>{provider} reported no verified address.</p>");
-    } else {
+    if !checked.is_empty() {
         let _ = write!(
             body,
             "<p>{provider} reported these verified addresses, and none of them can sign in here:</p>{}",
             list(checked.iter().map(Email::as_str))
+        );
+    } else if unusable.is_empty() {
+        let _ = write!(body, "<p>{provider} reported no verified address.</p>");
+    }
+    if !unusable.is_empty() {
+        let _ = write!(
+            body,
+            "<p>{provider} verified these, but they aren't email addresses, so they weren't checked:</p>{}",
+            list(unusable.iter().map(|email| email.address.as_str()))
         );
     }
     if !unverified.is_empty() {
