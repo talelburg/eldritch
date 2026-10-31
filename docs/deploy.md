@@ -214,11 +214,12 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
 
    A token scoped to one bucket can't check that the bucket exists, hence `no_check_bucket`.
 
-3. Smoke-test the token as `eldritch`. All three must succeed:
+3. Smoke-test the token as `eldritch`. All three must succeed. Upload from a file: rclone 1.60's `rcat` stores the object and then fails with `501 NotImplemented` on R2.
 
    ```sh
    RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
-   echo ok | $RCLONE rcat r2:eldritch-backups/smoke.txt
+   echo ok > /tmp/smoke.txt
+   $RCLONE copyto /tmp/smoke.txt r2:eldritch-backups/smoke.txt
    $RCLONE ls r2:eldritch-backups
    $RCLONE deletefile r2:eldritch-backups/smoke.txt
    ```
@@ -228,7 +229,7 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
 5. Optionally, check the lock. The delete must fail with `ObjectLockedByBucketPolicy`; the file then expires under `expire-90d`:
 
    ```sh
-   echo lock | $RCLONE rcat r2:eldritch-backups/lock-test.txt
+   $RCLONE copyto /tmp/smoke.txt r2:eldritch-backups/lock-test.txt
    $RCLONE deletefile r2:eldritch-backups/lock-test.txt
    ```
 
