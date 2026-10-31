@@ -297,7 +297,7 @@ Run on setup day, and as the acceptance of #1227. It starts a second server on p
   ```
 
 - [ ] From WSL, `ssh -L 8001:127.0.0.1:8001 eldritch`, open `http://localhost:8001`, and resume a game that existed before the backup. The client resumes the game whose id its browser saved, and `localhost:8001` is a different origin from the domain, so it opens on the picker. Take an id from `sudo -u eldritch sqlite3 /srv/eldritch/backups/drill.db "SELECT game_id FROM games"`, then in the browser console run `localStorage.setItem("eldritch_game_id", "<game_id>"); location.reload()`. After a real restore at the domain, players' browsers still hold their ids.
-- [ ] Stop the drill server (Ctrl-C) and `sudo -u eldritch rm -f /srv/eldritch/backups/drill.db*`.
+- [ ] Stop the drill server (Ctrl-C) and `sudo -u eldritch sh -c 'rm -f /srv/eldritch/backups/drill.db*'` (the glob has to expand as `eldritch`, which alone can list `backups/`).
 - [ ] The next morning, check that the timer fired on its own: `systemctl list-timers eldritch-backup`, `sudo journalctl -u eldritch-backup`, and a new nightly in R2.
 
 ## Drills
