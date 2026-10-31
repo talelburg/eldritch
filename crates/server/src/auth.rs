@@ -14,6 +14,7 @@
 //! only for a loopback `Host`.
 
 pub mod github;
+pub mod google;
 pub(crate) mod oauth;
 pub mod provider;
 

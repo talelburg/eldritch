@@ -2,11 +2,18 @@
 //! fake provider reports the emails, and the tests follow the browser from
 //! `/auth/fake/login` through `/auth/fake/callback`.
 
+use std::sync::Arc;
+
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::Router;
 use protocol::{SignInMethod, SignInRequired, SignedIn};
 use server::accounts::{self, Email, EntryRef};
 use server::auth;
+use server::auth::github::GitHub;
+use server::auth::google::Google;
+use server::auth::provider::IdentityProvider;
+use server::config::{ProviderCredentials, Secret};
+use server::AppState;
 use sqlx::SqlitePool;
 use url::Url;
 
@@ -90,6 +97,40 @@ async fn signed_out_me_lists_each_provider_before_the_dev_picker() {
 }
 
 #[tokio::test]
+async fn signed_out_me_lists_github_then_google() {
+    let credentials = ProviderCredentials {
+        client_id: "client-id".to_string(),
+        client_secret: Secret::new("client-secret".to_string()),
+    };
+    let providers: Vec<Arc<dyn IdentityProvider>> = vec![
+        Arc::new(GitHub::new(&credentials)),
+        Arc::new(Google::new(&credentials)),
+    ];
+    let app = server::app(
+        AppState::new(common::memory_pool().await, common::REGISTRIES)
+            .with_identity_providers(&Url::parse(FAKE_ORIGIN).expect("a URL"), providers),
+    );
+
+    let (status, _, body) = common::get(&app, "/auth/me", None).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let required: SignInRequired = serde_json::from_str(&body).expect("a method list");
+    assert_eq!(
+        required.methods,
+        vec![
+            SignInMethod {
+                label: "Sign in with GitHub".to_string(),
+                url: "/auth/github/login".to_string(),
+            },
+            SignInMethod {
+                label: "Sign in with Google".to_string(),
+                url: "/auth/google/login".to_string(),
+            },
+        ]
+    );
+}
+
+#[tokio::test]
 async fn login_sends_the_browser_to_the_provider_with_the_configured_callback() {
     let app = common::provider_app(
         common::memory_pool().await,
@@ -120,6 +161,21 @@ async fn login_sends_the_browser_to_the_provider_with_the_configured_callback() 
         assert!(cookie.contains(attribute), "{attribute}: {cookie}");
     }
     assert!(!cookie.contains(FAKE_STATE), "encrypted: {cookie}");
+}
+
+#[tokio::test]
+async fn a_login_the_provider_cannot_start_gets_the_try_again_page_and_no_cookie() {
+    let app = common::provider_app(
+        common::memory_pool().await,
+        FakeProvider::unreachable(),
+        false,
+    );
+
+    let (status, headers, page) = common::get(&app, "/auth/fake/login", None).await;
+
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(page.contains("Try again"), "{page}");
+    assert_eq!(common::set_cookie(&headers, auth::SIGN_IN_COOKIE), None);
 }
 
 /// Sam's first verified address isn't on the list; the second is.

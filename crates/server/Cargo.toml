@@ -22,6 +22,9 @@ axum-extra = { version = "0.12", features = ["cookie", "cookie-private"] }
 # GitHub sign-in. Its default features are reqwest on rustls, so the build
 # needs no OpenSSL; its `oauth2::reqwest` re-export is the HTTP client.
 oauth2 = "5"
+# Google sign-in: OpenID Connect discovery and ID-token verification, on
+# `oauth2` 5 with the same default features, so rustls too.
+openidconnect = "4"
 # The public origin and the redirect URIs built from it.
 url = "2"
 clap = { version = "4", features = ["derive"] }

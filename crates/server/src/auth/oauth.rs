@@ -75,10 +75,7 @@ pub(crate) fn routes(
         router
             .route(
                 &format!("/{slug}/login"),
-                routing::get(move |jar: PrivateCookieJar| {
-                    let response = login(&for_login, jar);
-                    async move { response }
-                }),
+                routing::get(move |jar: PrivateCookieJar| login(for_login.clone(), jar)),
             )
             .route(
                 &format!("/{slug}/callback"),
@@ -104,9 +101,17 @@ struct InFlight {
 }
 
 /// `GET /auth/{provider}/login`: set the in-flight cookie and send the
-/// browser to the provider.
-fn login(configured: &ConfiguredProvider, jar: PrivateCookieJar) -> Response {
-    let (url, pending) = configured.provider.authorize_url(&configured.redirect_uri);
+/// browser to the provider, or answer the "try again" page when the provider
+/// couldn't be asked where to send it.
+async fn login(configured: ConfiguredProvider, jar: PrivateCookieJar) -> Response {
+    let provider = &configured.provider;
+    let (url, pending) = match provider.authorize_url(&configured.redirect_uri).await {
+        Ok(authorize) => authorize,
+        Err(error) => {
+            tracing::warn!(%error, provider = provider.slug(), "starting a sign-in failed");
+            return try_again(StatusCode::BAD_GATEWAY);
+        }
+    };
     let in_flight = InFlight {
         provider: configured.provider.slug().to_string(),
         pending,

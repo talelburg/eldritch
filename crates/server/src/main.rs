@@ -13,6 +13,7 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use server::accounts::{self, Account, Email, EntryRef};
 use server::auth::github::GitHub;
+use server::auth::google::Google;
 use server::auth::provider::IdentityProvider;
 use server::config::{Config, ConfigError};
 use server::db::{self, MIGRATOR};
@@ -137,6 +138,9 @@ fn identity_providers(config: &Config) -> Vec<Arc<dyn IdentityProvider>> {
     let mut providers: Vec<Arc<dyn IdentityProvider>> = Vec::new();
     if let Some(credentials) = &config.github {
         providers.push(Arc::new(GitHub::new(credentials)));
+    }
+    if let Some(credentials) = &config.google {
+        providers.push(Arc::new(Google::new(credentials)));
     }
     for provider in &providers {
         tracing::info!("sign-in with {} is on", provider.name());

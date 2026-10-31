@@ -26,8 +26,9 @@ pub trait IdentityProvider: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// The URL to send the browser to, asking the provider to send it back to
-    /// `redirect_uri`, and the state to keep until it does.
-    fn authorize_url(&self, redirect_uri: &Url) -> (Url, PendingSignIn);
+    /// `redirect_uri`, and the state to keep until it does. It fails when
+    /// the provider must be asked where to send the browser, and couldn't be.
+    fn authorize_url<'a>(&'a self, redirect_uri: &'a Url) -> AuthorizeFuture<'a>;
 
     /// Exchange the `code` the provider sent back for every email address it
     /// reports. `pending` is what [`authorize_url`](Self::authorize_url)
@@ -40,9 +41,13 @@ pub trait IdentityProvider: Send + Sync {
     ) -> ExchangeFuture<'a>;
 }
 
+/// What [`IdentityProvider::authorize_url`] returns.
+pub type AuthorizeFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(Url, PendingSignIn), ProviderError>> + Send + 'a>>;
+
 /// What [`IdentityProvider::exchange`] returns.
 pub type ExchangeFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<ReportedEmail>, ExchangeError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<Vec<ReportedEmail>, ProviderError>> + Send + 'a>>;
 
 /// A sign-in sent to the provider and not yet back: what the callback needs
 /// to check and finish it. It is kept in an encrypted cookie, never in the
@@ -51,6 +56,10 @@ pub type ExchangeFuture<'a> =
 pub struct PendingSignIn {
     state: String,
     pkce_verifier: String,
+    /// The `nonce` an `OpenID` Connect provider must put in its ID token.
+    /// Absent for a provider that issues no ID token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    nonce: Option<String>,
 }
 
 impl PendingSignIn {
@@ -61,6 +70,16 @@ impl PendingSignIn {
         Self {
             state,
             pkce_verifier,
+            nonce: None,
+        }
+    }
+
+    /// This sign-in, whose ID token must carry `nonce`.
+    #[must_use]
+    pub fn with_nonce(self, nonce: String) -> Self {
+        Self {
+            nonce: Some(nonce),
+            ..self
         }
     }
 
@@ -75,6 +94,12 @@ impl PendingSignIn {
     pub fn pkce_verifier(&self) -> &str {
         &self.pkce_verifier
     }
+
+    /// The `nonce` the provider was sent, if it was sent one.
+    #[must_use]
+    pub fn nonce(&self) -> Option<&str> {
+        self.nonce.as_deref()
+    }
 }
 
 /// An email address a provider reports for the person signing in.
@@ -87,13 +112,14 @@ pub struct ReportedEmail {
     pub verified: bool,
 }
 
-/// The exchange or the email fetch failed at the provider.
+/// A request to the provider failed: finding its endpoints, exchanging the
+/// code, fetching the emails, or verifying what it sent back.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct ExchangeError(Box<dyn Error + Send + Sync>);
+pub struct ProviderError(Box<dyn Error + Send + Sync>);
 
-impl ExchangeError {
-    /// The exchange failed with `error`.
+impl ProviderError {
+    /// The request failed with `error`.
     pub fn new(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
         Self(error.into())
     }

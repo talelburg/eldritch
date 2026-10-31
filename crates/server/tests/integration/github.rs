@@ -71,7 +71,11 @@ fn redirect_uri() -> Url {
 
 #[tokio::test]
 async fn github_asks_for_the_email_scope_with_pkce_and_the_state() {
-    let (url, pending) = github().await.authorize_url(&redirect_uri());
+    let (url, pending) = github()
+        .await
+        .authorize_url(&redirect_uri())
+        .await
+        .expect("GitHub's URL needs no request");
 
     let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
     assert_eq!(url.path(), "/login/oauth/authorize");
@@ -85,7 +89,10 @@ async fn github_asks_for_the_email_scope_with_pkce_and_the_state() {
 #[tokio::test]
 async fn github_reports_every_address_with_its_own_verified_flag() {
     let github = github().await;
-    let (_, pending) = github.authorize_url(&redirect_uri());
+    let (_, pending) = github
+        .authorize_url(&redirect_uri())
+        .await
+        .expect("GitHub's URL needs no request");
 
     let reported = github
         .exchange("the-code".to_string(), pending, &redirect_uri())
@@ -109,7 +116,10 @@ async fn github_reports_every_address_with_its_own_verified_flag() {
 #[tokio::test]
 async fn a_code_github_refuses_fails_the_exchange() {
     let github = github().await;
-    let (_, pending) = github.authorize_url(&redirect_uri());
+    let (_, pending) = github
+        .authorize_url(&redirect_uri())
+        .await
+        .expect("GitHub's URL needs no request");
 
     let exchanged = github
         .exchange("not-the-code".to_string(), pending, &redirect_uri())

@@ -22,6 +22,8 @@ fn binary(db: &TempDb, args: &[&str]) -> Command {
         "ELDRITCH_PUBLIC_ORIGIN",
         "ELDRITCH_GITHUB_CLIENT_ID",
         "ELDRITCH_GITHUB_CLIENT_SECRET",
+        "ELDRITCH_GOOGLE_CLIENT_ID",
+        "ELDRITCH_GOOGLE_CLIENT_SECRET",
     ] {
         command.env_remove(name);
     }

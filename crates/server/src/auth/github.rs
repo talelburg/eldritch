@@ -2,6 +2,7 @@
 //! whose code is exchanged for a token that reads `GET /user/emails` once.
 
 use std::borrow::Cow;
+use std::future;
 
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::header::{ACCEPT, USER_AGENT};
@@ -16,7 +17,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::auth::provider::{
-    ExchangeError, ExchangeFuture, IdentityProvider, PendingSignIn, ReportedEmail,
+    AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError, ReportedEmail,
 };
 use crate::config::ProviderCredentials;
 
@@ -99,7 +100,8 @@ impl IdentityProvider for GitHub {
         "GitHub"
     }
 
-    fn authorize_url(&self, redirect_uri: &Url) -> (Url, PendingSignIn) {
+    /// Built here, with no request: GitHub's endpoints are fixed.
+    fn authorize_url<'a>(&'a self, redirect_uri: &'a Url) -> AuthorizeFuture<'a> {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         let (url, state) = self
             .client
@@ -108,10 +110,10 @@ impl IdentityProvider for GitHub {
             .set_pkce_challenge(challenge)
             .set_redirect_uri(Cow::Owned(RedirectUrl::from_url(redirect_uri.clone())))
             .url();
-        (
+        Box::pin(future::ready(Ok((
             url,
             PendingSignIn::new(state.secret().clone(), verifier.secret().clone()),
-        )
+        ))))
     }
 
     /// Every address on the account, each with its own `verified` flag, and
@@ -131,7 +133,7 @@ impl IdentityProvider for GitHub {
                 .set_redirect_uri(Cow::Owned(RedirectUrl::from_url(redirect_uri.clone())))
                 .request_async(&self.http)
                 .await
-                .map_err(ExchangeError::new)?;
+                .map_err(ProviderError::new)?;
             // GitHub's API refuses a request without a `User-Agent`.
             let body = self
                 .http
@@ -142,12 +144,12 @@ impl IdentityProvider for GitHub {
                 .send()
                 .await
                 .and_then(Response::error_for_status)
-                .map_err(ExchangeError::new)?
+                .map_err(ProviderError::new)?
                 .bytes()
                 .await
-                .map_err(ExchangeError::new)?;
+                .map_err(ProviderError::new)?;
             let emails: Vec<GitHubEmail> =
-                serde_json::from_slice(&body).map_err(ExchangeError::new)?;
+                serde_json::from_slice(&body).map_err(ProviderError::new)?;
             Ok(emails
                 .into_iter()
                 .map(|email| ReportedEmail {

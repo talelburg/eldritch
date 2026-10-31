@@ -29,6 +29,9 @@ pub struct Config {
     /// The GitHub OAuth app (`ELDRITCH_GITHUB_CLIENT_ID` and
     /// `ELDRITCH_GITHUB_CLIENT_SECRET`), when GitHub sign-in is on.
     pub github: Option<ProviderCredentials>,
+    /// The Google OAuth client (`ELDRITCH_GOOGLE_CLIENT_ID` and
+    /// `ELDRITCH_GOOGLE_CLIENT_SECRET`), when Google sign-in is on.
+    pub google: Option<ProviderCredentials>,
 }
 
 /// The client id and secret a provider issued for this server's app.
@@ -121,6 +124,10 @@ const PUBLIC_ORIGIN: &str = "ELDRITCH_PUBLIC_ORIGIN";
 const GITHUB_CLIENT_ID: &str = "ELDRITCH_GITHUB_CLIENT_ID";
 /// The GitHub OAuth app's client secret.
 const GITHUB_CLIENT_SECRET: &str = "ELDRITCH_GITHUB_CLIENT_SECRET";
+/// The Google OAuth client's id.
+const GOOGLE_CLIENT_ID: &str = "ELDRITCH_GOOGLE_CLIENT_ID";
+/// The Google OAuth client's secret.
+const GOOGLE_CLIENT_SECRET: &str = "ELDRITCH_GOOGLE_CLIENT_SECRET";
 
 /// Where `trunk build` writes the client bundle, relative to the workspace
 /// root: the bundle directory when `ELDRITCH_DIST` is unset.
@@ -153,10 +160,14 @@ impl Config {
         };
         let public_origin = lookup(PUBLIC_ORIGIN).map(public_origin).transpose()?;
         let github = provider(&lookup, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET)?;
-        if github.is_some() && public_origin.is_none() {
-            return Err(ConfigError::MissingPublicOrigin {
-                provider: GITHUB_CLIENT_ID,
-            });
+        let google = provider(&lookup, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)?;
+        if public_origin.is_none() {
+            for (credentials, id_var) in [(&github, GITHUB_CLIENT_ID), (&google, GOOGLE_CLIENT_ID)]
+            {
+                if credentials.is_some() {
+                    return Err(ConfigError::MissingPublicOrigin { provider: id_var });
+                }
+            }
         }
         Ok(Self {
             bind,
@@ -164,6 +175,7 @@ impl Config {
             database_url: lookup(DATABASE_URL).unwrap_or_else(|| "sqlite:eldritch.db".to_string()),
             public_origin,
             github,
+            google,
         })
     }
 }

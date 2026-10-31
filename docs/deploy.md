@@ -148,7 +148,7 @@ sudo systemctl reload caddy
 
 ### 11. Sign-in providers
 
-Friends sign in through GitHub. Each provider needs an app registered under your account, whose callback URL is the server's public origin followed by `/auth/<provider>/callback`. The server builds that URL from `ELDRITCH_PUBLIC_ORIGIN` rather than from the request, because the dev proxy rewrites `Host`. A provider is on once both its client id and its secret are set. With one of the two missing, or a provider on and no origin, the server refuses to start and the journal names the missing variable.
+Friends sign in through GitHub or Google. Each provider needs an app registered under your account, whose callback URL is the server's public origin followed by `/auth/<provider>/callback`. The server builds that URL from `ELDRITCH_PUBLIC_ORIGIN` rather than from the request, because the dev proxy rewrites `Host`. A provider is on once both its client id and its secret are set. With one of the two missing, or a provider on and no origin, the server refuses to start and the journal names the missing variable.
 
 **GitHub.** Register two OAuth apps at <https://github.com/settings/developers> → *OAuth Apps* → *New OAuth App*. Each OAuth app takes one callback URL:
 
@@ -159,6 +159,16 @@ Friends sign in through GitHub. Each provider needs an app registered under your
 
 Leave *Enable Device Flow* off. On each app's page, *Generate a new client secret*, and copy it at once: GitHub shows it only once.
 
+**Google.** One OAuth client serves both dev and production, since a Google client takes several redirect URIs. In the [Google Cloud console](https://console.cloud.google.com/), create a project, then under *Google Auth Platform*:
+
+1. **The consent screen** (*Branding* and *Audience*): user type *External*, publishing status *Testing*.
+2. **Scopes** (*Data access*): only `openid` and `email`. Both are non-sensitive, so Google asks for no verification.
+3. **The client** (*Clients* → *Create client*): application type *Web application*, with both authorized redirect URIs:
+   - `https://eldritch.gripe/auth/google/callback`
+   - `http://localhost:3000/auth/google/callback`
+
+Copy the client id and secret it shows. A friend Google turns away with *Access blocked* is outside the Testing audience: add their address under *Audience* → *Test users*, or publish the app, which the two non-sensitive scopes let you do without a review.
+
 **On the box**, set the production app's values in the environment file, which is readable only by root, then restart:
 
 ```sh
@@ -166,8 +176,10 @@ sudoedit /etc/eldritch/eldritch.env
 #   ELDRITCH_PUBLIC_ORIGIN=https://eldritch.gripe
 #   ELDRITCH_GITHUB_CLIENT_ID=<the production app's client id>
 #   ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+#   ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
+#   ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
 sudo systemctl restart eldritch
-journalctl -u eldritch -n 20      # "sign-in with GitHub is on"
+journalctl -u eldritch -n 20      # "sign-in with GitHub is on", and Google's line
 ```
 
 Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sign in at `https://eldritch.gripe`.
@@ -179,15 +191,17 @@ Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sig
 ELDRITCH_PUBLIC_ORIGIN=http://localhost:3000
 ELDRITCH_GITHUB_CLIENT_ID=<the dev app's client id>
 ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+ELDRITCH_GOOGLE_CLIENT_ID=<the Google client's id>
+ELDRITCH_GOOGLE_CLIENT_SECRET=<its secret>
 ```
 
 ```sh
 set -a; . ./.env; set +a
-cargo run -p server -- --dev-auth          # the dev picker stays beside GitHub
+cargo run -p server -- --dev-auth          # the dev picker stays beside the providers
 cd crates/web && trunk serve               # in a second terminal
 ```
 
-Open `http://localhost:3000`, and not `127.0.0.1:3000`. The in-flight sign-in cookie is set for the host the browser is on, and GitHub sends the browser back to `localhost`, so a sign-in started on `127.0.0.1` comes back without it and gets the "try again" page.
+Open `http://localhost:3000`, and not `127.0.0.1:3000`. The in-flight sign-in cookie is set for the host the browser is on, and each provider sends the browser back to `localhost`, so a sign-in started on `127.0.0.1` comes back without it and gets the "try again" page.
 
 ## Deploying
 

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fs};
+use std::{env, fs, future};
 
 use axum::body::{self, Body};
 use axum::http::{header, HeaderMap, Request, StatusCode};
@@ -27,7 +27,7 @@ use serde::Serialize;
 use server::accounts::{self, AccountsError};
 use server::auth;
 use server::auth::provider::{
-    ExchangeError, ExchangeFuture, IdentityProvider, PendingSignIn, ReportedEmail,
+    AuthorizeFuture, ExchangeFuture, IdentityProvider, PendingSignIn, ProviderError, ReportedEmail,
 };
 use server::db::MIGRATOR;
 use server::session::GameSession;
@@ -282,6 +282,9 @@ pub(crate) const FAILING_CODE: &str = "fails-at-the-provider";
 /// any code but [`FAILING_CODE`].
 pub(crate) struct FakeProvider {
     emails: Vec<ReportedEmail>,
+    /// Whether login fails, as a provider whose endpoints couldn't be
+    /// discovered does.
+    unreachable: bool,
 }
 
 impl FakeProvider {
@@ -295,6 +298,15 @@ impl FakeProvider {
                     verified,
                 })
                 .collect(),
+            unreachable: false,
+        }
+    }
+
+    /// A provider that can't be reached, so no sign-in through it starts.
+    pub(crate) fn unreachable() -> Self {
+        Self {
+            unreachable: true,
+            ..Self::reporting(&[])
         }
     }
 }
@@ -308,15 +320,20 @@ impl IdentityProvider for FakeProvider {
         "Fake"
     }
 
-    fn authorize_url(&self, redirect_uri: &Url) -> (Url, PendingSignIn) {
+    fn authorize_url<'a>(&'a self, redirect_uri: &'a Url) -> AuthorizeFuture<'a> {
+        if self.unreachable {
+            return Box::pin(future::ready(Err(ProviderError::new(
+                "the provider is unreachable",
+            ))));
+        }
         let mut url = Url::parse("https://fake.example/authorize").expect("a URL");
         url.query_pairs_mut()
             .append_pair("redirect_uri", redirect_uri.as_str())
             .append_pair("state", FAKE_STATE);
-        (
+        Box::pin(future::ready(Ok((
             url,
             PendingSignIn::new(FAKE_STATE.to_string(), FAKE_VERIFIER.to_string()),
-        )
+        ))))
     }
 
     fn exchange<'a>(
@@ -332,7 +349,7 @@ impl IdentityProvider for FakeProvider {
                 format!("{FAKE_ORIGIN}/auth/fake/callback")
             );
             if code == FAILING_CODE {
-                Err(ExchangeError::new("the provider refused the code"))
+                Err(ProviderError::new("the provider refused the code"))
             } else {
                 Ok(self.emails.clone())
             }

@@ -30,6 +30,7 @@ fn an_empty_environment_yields_the_dev_defaults() {
             database_url: "sqlite:eldritch.db".to_string(),
             public_origin: None,
             github: None,
+            google: None,
         }
     );
 }
@@ -214,6 +215,89 @@ fn a_trailing_slash_on_the_public_origin_is_the_same_origin() {
         config.public_origin,
         Some(Url::parse("https://eldritch.gripe").unwrap())
     );
+}
+
+/// Google's two variables, with the public origin Google needs beside them.
+const GOOGLE_ON: [(&str, &str); 3] = [
+    ("ELDRITCH_PUBLIC_ORIGIN", "http://localhost:3000"),
+    (
+        "ELDRITCH_GOOGLE_CLIENT_ID",
+        "1234-abc.apps.googleusercontent.com",
+    ),
+    ("ELDRITCH_GOOGLE_CLIENT_SECRET", "GOCSPX-hunter2"),
+];
+
+#[test]
+fn a_google_id_and_secret_beside_the_public_origin_turn_google_on() {
+    let config = Config::from_lookup(lookup(&GOOGLE_ON)).unwrap();
+
+    assert_eq!(
+        config,
+        Config {
+            public_origin: Some(Url::parse("http://localhost:3000").unwrap()),
+            google: Some(ProviderCredentials {
+                client_id: "1234-abc.apps.googleusercontent.com".to_string(),
+                client_secret: Secret::new("GOCSPX-hunter2".to_string()),
+            }),
+            ..defaults()
+        }
+    );
+}
+
+#[test]
+fn github_and_google_can_both_be_on() {
+    let config = Config::from_lookup(lookup(&[
+        GITHUB_ON[0],
+        GITHUB_ON[1],
+        GITHUB_ON[2],
+        GOOGLE_ON[1],
+        GOOGLE_ON[2],
+    ]))
+    .unwrap();
+
+    assert!(config.github.is_some());
+    assert!(config.google.is_some());
+}
+
+#[test]
+fn a_google_id_without_its_secret_is_an_error_naming_the_secret() {
+    let error = Config::from_lookup(lookup(&GOOGLE_ON[..2]))
+        .expect_err("half a pair")
+        .to_string();
+
+    assert!(error.contains("ELDRITCH_GOOGLE_CLIENT_SECRET"), "{error}");
+}
+
+#[test]
+fn a_google_secret_without_its_id_is_an_error_naming_the_id_and_not_the_secret() {
+    let error = Config::from_lookup(lookup(&[GOOGLE_ON[0], GOOGLE_ON[2]]))
+        .expect_err("half a pair")
+        .to_string();
+
+    assert!(error.contains("ELDRITCH_GOOGLE_CLIENT_ID"), "{error}");
+    assert!(!error.contains("GOCSPX-hunter2"), "{error}");
+}
+
+#[test]
+fn google_without_the_public_origin_is_an_error_naming_the_origin() {
+    let error = Config::from_lookup(lookup(&GOOGLE_ON[1..]))
+        .expect_err("no origin to build the callback from")
+        .to_string();
+
+    assert!(error.contains("ELDRITCH_PUBLIC_ORIGIN"), "{error}");
+}
+
+#[test]
+fn an_empty_google_id_is_an_error_naming_it() {
+    let error = Config::from_lookup(lookup(&[
+        GOOGLE_ON[0],
+        ("ELDRITCH_GOOGLE_CLIENT_ID", ""),
+        GOOGLE_ON[2],
+    ]))
+    .expect_err("set but empty is not set")
+    .to_string();
+
+    assert!(error.contains("ELDRITCH_GOOGLE_CLIENT_ID"), "{error}");
 }
 
 #[test]
