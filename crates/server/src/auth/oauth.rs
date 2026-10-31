@@ -25,7 +25,7 @@ use url::Url;
 use crate::accounts::{self, Email};
 use crate::auth::{
     self,
-    provider::{IdentityProvider, PendingSignIn, ReportedEmail},
+    provider::{IdentityProvider, PendingSignIn, ProviderError, ReportedEmail},
     SIGN_IN_COOKIE,
 };
 use crate::AppState;
@@ -57,9 +57,37 @@ impl ConfiguredProvider {
     /// The sign-in screen's link to this provider.
     pub(crate) fn sign_in_method(&self) -> SignInMethod {
         SignInMethod {
-            label: format!("Sign in with {}", self.provider.name()),
-            url: format!("/auth/{}/login", self.provider.slug()),
+            label: format!("Sign in with {}", self.name()),
+            url: format!("/auth/{}/login", self.slug()),
         }
+    }
+
+    /// The provider's path segment.
+    fn slug(&self) -> &'static str {
+        self.provider.slug()
+    }
+
+    /// The provider's name as a person reads it.
+    fn name(&self) -> &'static str {
+        self.provider.name()
+    }
+
+    /// The URL to send the browser to, asking the provider to call back
+    /// here, and the state to keep until it does.
+    async fn authorize(&self) -> Result<(Url, PendingSignIn), ProviderError> {
+        self.provider.authorize_url(&self.redirect_uri).await
+    }
+
+    /// Exchange the `code` the provider called back with for the emails it
+    /// reports, finishing the sign-in `pending` started.
+    async fn exchange(
+        &self,
+        code: String,
+        pending: PendingSignIn,
+    ) -> Result<Vec<ReportedEmail>, ProviderError> {
+        self.provider
+            .exchange(code, pending, &self.redirect_uri)
+            .await
     }
 }
 
@@ -69,7 +97,7 @@ pub(crate) fn routes(
     providers: &[ConfiguredProvider],
 ) -> Router<AppState> {
     providers.iter().fold(router, |router, configured| {
-        let slug = configured.provider.slug();
+        let slug = configured.slug();
         let for_login = configured.clone();
         let for_callback = configured.clone();
         router
@@ -104,16 +132,15 @@ struct InFlight {
 /// browser to the provider, or answer the "try again" page when the provider
 /// couldn't be asked where to send it.
 async fn login(configured: ConfiguredProvider, jar: PrivateCookieJar) -> Response {
-    let provider = &configured.provider;
-    let (url, pending) = match provider.authorize_url(&configured.redirect_uri).await {
+    let (url, pending) = match configured.authorize().await {
         Ok(authorize) => authorize,
         Err(error) => {
-            tracing::warn!(%error, provider = provider.slug(), "starting a sign-in failed");
+            tracing::warn!(%error, provider = configured.slug(), "starting a sign-in failed");
             return try_again(StatusCode::BAD_GATEWAY);
         }
     };
     let in_flight = InFlight {
-        provider: configured.provider.slug().to_string(),
+        provider: configured.slug().to_string(),
         pending,
     };
     let value = serde_json::to_string(&in_flight).expect("an in-flight sign-in serializes");
@@ -179,25 +206,21 @@ async fn signed_in_account(
     callback: Callback,
     in_flight: Option<InFlight>,
 ) -> Result<AccountId, Response> {
-    let provider = &configured.provider;
     if callback.error.is_some() {
         return Err(try_again(StatusCode::FORBIDDEN));
     }
     let pending = in_flight
-        .filter(|in_flight| in_flight.provider == provider.slug())
+        .filter(|in_flight| in_flight.provider == configured.slug())
         .map(|in_flight| in_flight.pending)
         .filter(|pending| callback.state.as_deref() == Some(pending.state()))
         .ok_or_else(|| try_again(StatusCode::BAD_REQUEST))?;
     let code = callback
         .code
         .ok_or_else(|| try_again(StatusCode::BAD_REQUEST))?;
-    let reported = provider
-        .exchange(code, pending, &configured.redirect_uri)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, provider = provider.slug(), "sign-in exchange failed");
-            try_again(StatusCode::BAD_GATEWAY)
-        })?;
+    let reported = configured.exchange(code, pending).await.map_err(|error| {
+        tracing::warn!(%error, provider = configured.slug(), "sign-in exchange failed");
+        try_again(StatusCode::BAD_GATEWAY)
+    })?;
 
     let (verified, unverified): (Vec<ReportedEmail>, Vec<ReportedEmail>) =
         reported.into_iter().partition(|email| email.verified);
@@ -212,7 +235,7 @@ async fn signed_in_account(
     match accounts::enabled_by_email(&state.db, &checked).await {
         Ok(Some(account)) => Ok(account),
         Ok(None) => Err(ask_the_host(
-            provider.name(),
+            configured.name(),
             &checked,
             &unusable,
             &unverified,
