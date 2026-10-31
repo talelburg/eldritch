@@ -1,6 +1,6 @@
 # Deploying the server
 
-How a release gets from CI onto the box, and how the box is brought up once. Decided in [#1223](https://github.com/talelburg/eldritch/issues/1223); built in [#1226](https://github.com/talelburg/eldritch/issues/1226).
+How a release gets from CI onto the box, and how the box is brought up once. Decided in [#1223](https://github.com/talelburg/eldritch/issues/1223); built in [#1226](https://github.com/talelburg/eldritch/issues/1226). Nightly backups to R2 are in [Backups](#backups).
 
 **A normal week:** you merge, CI goes green on `main`, and its `release` job uploads `eldritch-<sha>`: the release `server` binary, the release client bundle, and the server's migrations, all stamped with the sha. Some time before the session, from WSL in this checkout:
 
@@ -36,7 +36,7 @@ The service runs as `eldritch`, listens on `127.0.0.1:8000`, and Caddy serves it
 
 ### 1. Buy the domain
 
-A domain from Cloudflare Registrar, with no "Arkham Horror" in the name (`docs/product-decisions.md`). The R2 backups in #1227 use the same Cloudflare account. Any ending works for the setup. Before picking a cheaper ending, check its renewal price: Cloudflare sells at cost and renews at the price it shows. Don't add DNS records yet.
+A domain from Cloudflare Registrar, with no "Arkham Horror" in the name (`docs/product-decisions.md`). The R2 [backups](#backups) use the same Cloudflare account. Any ending works for the setup. Before picking a cheaper ending, check its renewal price: Cloudflare sells at cost and renews at the price it shows. Don't add DNS records yet.
 
 ### 2. Create the box
 
@@ -217,10 +217,10 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
 3. Smoke-test the token as `eldritch`. All three must succeed:
 
    ```sh
-   R="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
-   echo ok | $R rcat r2:eldritch-backups/smoke.txt
-   $R ls r2:eldritch-backups
-   $R deletefile r2:eldritch-backups/smoke.txt
+   RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
+   echo ok | $RCLONE rcat r2:eldritch-backups/smoke.txt
+   $RCLONE ls r2:eldritch-backups
+   $RCLONE deletefile r2:eldritch-backups/smoke.txt
    ```
 
 4. **Only now**, in the dashboard: open the bucket, then Settings → Bucket lock rules → Add rule. Name `keep-30d`, no prefix, 30 days.
@@ -228,8 +228,8 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
 5. Optionally, check the lock. The delete must fail with `ObjectLockedByBucketPolicy`; the file then expires under `expire-90d`:
 
    ```sh
-   echo lock | $R rcat r2:eldritch-backups/lock-test.txt
-   $R deletefile r2:eldritch-backups/lock-test.txt
+   echo lock | $RCLONE rcat r2:eldritch-backups/lock-test.txt
+   $RCLONE deletefile r2:eldritch-backups/lock-test.txt
    ```
 
 6. Copy `deploy/` to the box (`scp deploy/* eldritch:`), then on the box:
@@ -247,7 +247,7 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
    ```sh
    sudo systemctl start eldritch-backup
    sudo journalctl -u eldritch-backup -n 20
-   $R ls r2:eldritch-backups        # nightly-<today>.db and the pre-*.db files
+   $RCLONE ls r2:eldritch-backups        # nightly-<today>.db and the pre-*.db files
    ls -l /srv/eldritch/backups/last-upload
    ```
 
@@ -261,9 +261,9 @@ From *the box is gone*. Restoring onto a box that still exists skips to step 4.
 4. Fetch the backup you want, newest first:
 
    ```sh
-   R="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
-   $R ls r2:eldritch-backups
-   $R copyto r2:eldritch-backups/nightly-<date>.db /srv/eldritch/backups/restore.db
+   RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
+   $RCLONE ls r2:eldritch-backups
+   $RCLONE copyto r2:eldritch-backups/nightly-<date>.db /srv/eldritch/backups/restore.db
    sudo -u eldritch sqlite3 /srv/eldritch/backups/restore.db "PRAGMA integrity_check"   # ok
    ```
 

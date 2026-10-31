@@ -28,19 +28,26 @@ BUSY_MS=10000
 
 say() { printf 'eldritch-backup: %s\n' "$*" >&2; }
 
-# The timer fires at 04:00 Israel time, which is the same UTC date.
+# The UTC date. At 04:00 Israel time it is also Israel's date; a missed run
+# caught up at boot in the first hours after midnight Israel time takes the
+# previous day's name.
 out="$BACKUPS/nightly-$(date -u +%F).db"
+# The copy is made and checked under a name the upload doesn't match, so a
+# torn or corrupt copy never reaches R2, and a failed same-day rerun leaves
+# the day's good copy alone. VACUUM INTO refuses to overwrite.
+tmp="$out.tmp"
 
-# VACUUM INTO refuses to overwrite, so a second run on the same day would fail.
-rm -f "$out"
-sqlite3 -bail -cmd ".timeout $BUSY_MS" "$DB" "VACUUM INTO '$out'"
+rm -f "$tmp"
+sqlite3 -bail -cmd ".timeout $BUSY_MS" "$DB" "VACUUM INTO '$tmp'"
 
-check=$(sqlite3 -bail "$out" "PRAGMA integrity_check")
+check=$(sqlite3 -bail "$tmp" "PRAGMA integrity_check")
 if [ "$check" != ok ]; then
-  say "integrity check failed on $out, not uploading:"
+  say "integrity check failed on $tmp, not uploading:"
   printf '%s\n' "$check" >&2
+  rm -f "$tmp"
   exit 1
 fi
+mv -f "$tmp" "$out"
 say "copied the database to $out"
 
 # `copy`, never `sync`: pruning here must never delete anything in R2.
