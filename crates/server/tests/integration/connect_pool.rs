@@ -1,31 +1,26 @@
 //! `connect_pool` opens a pool and creates the database file if it does
 //! not already exist (so first boot on a clean host just works).
 
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fs};
-
 use server::db;
 
-fn unique_db_path() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    env::temp_dir().join(format!("eldritch-connect-pool-{nanos}.db"))
-}
+use crate::common::TempDb;
 
 #[tokio::test]
 async fn connect_pool_creates_database_file_if_missing() {
-    let path = unique_db_path();
-    assert!(!path.exists(), "precondition: db file must not pre-exist");
+    let db_file = TempDb::new("connect-pool");
+    assert!(
+        !db_file.path().exists(),
+        "precondition: db file must not pre-exist"
+    );
 
-    let url = format!("sqlite:{}", path.display());
-    let pool = db::connect_pool(&url)
+    let pool = db::connect_pool(&db_file.url())
         .await
         .expect("connect_pool should open (and create) the database");
 
-    assert!(path.exists(), "connect_pool should have created the file");
+    assert!(
+        db_file.path().exists(),
+        "connect_pool should have created the file"
+    );
 
     // The returned pool is usable.
     let (one,): (i64,) = sqlx::query_as("SELECT 1")
@@ -35,5 +30,4 @@ async fn connect_pool_creates_database_file_if_missing() {
     assert_eq!(one, 1);
 
     pool.close().await;
-    let _ = fs::remove_file(&path);
 }

@@ -16,6 +16,7 @@ protocol = { path = "../protocol" }
 cards = { path = "../cards" }
 scenarios = { path = "../scenarios" }
 axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 futures-util = "0.3"
 tracing = "0.1"
