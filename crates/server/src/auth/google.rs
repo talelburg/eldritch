@@ -3,9 +3,9 @@
 //! address.
 //!
 //! Google's endpoints and signing keys are discovered from
-//! [`ISSUER`] on every login and every callback, never at startup. The server
-//! then starts while Google is unreachable, and a key Google rotates is
-//! picked up by the next sign-in.
+//! `https://accounts.google.com` on every login and every callback, never at
+//! startup. The server then starts while Google is unreachable, and a key
+//! Google rotates is picked up by the next sign-in.
 
 use std::borrow::Cow;
 
