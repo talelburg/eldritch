@@ -15,6 +15,7 @@ mod game_session;
 mod health;
 mod lifecycle;
 mod migrations;
+mod provider_sign_in;
 mod registries;
 mod resume;
 mod setup_events;

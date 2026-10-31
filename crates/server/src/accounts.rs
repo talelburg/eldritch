@@ -286,3 +286,29 @@ pub async fn is_enabled(db: &SqlitePool, id: AccountId) -> Result<bool, Accounts
             .await?;
     Ok(row.is_some())
 }
+
+/// The enabled entry holding any of `emails`, if one does. No email is on
+/// two entries (ADR 0023), so at most one entry matches.
+///
+/// # Errors
+///
+/// [`AccountsError::Database`].
+pub async fn enabled_by_email(
+    db: &SqlitePool,
+    emails: &[Email],
+) -> Result<Option<AccountId>, AccountsError> {
+    for email in emails {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT accounts.account_id
+             FROM account_emails JOIN accounts USING (account_id)
+             WHERE account_emails.email = ? AND accounts.disabled = 0",
+        )
+        .bind(email.as_str())
+        .fetch_optional(db)
+        .await?;
+        if let Some((id,)) = row {
+            return Ok(Some(AccountId(id)));
+        }
+    }
+    Ok(None)
+}
