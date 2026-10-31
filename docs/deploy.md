@@ -210,11 +210,12 @@ The bucket lock comes later, in step 4 below, because the smoke test deletes its
    endpoint = https://<ACCOUNT_ID>.r2.cloudflarestorage.com
    acl = private
    no_check_bucket = true
+   no_head = true
    ```
 
-   A token scoped to one bucket can't check that the bucket exists, hence `no_check_bucket`.
+   A token scoped to one bucket can't check that the bucket exists, hence `no_check_bucket`. `no_head` stops rclone checking each upload with `HEAD …?versionId=…`, which R2 answers with `501 NotImplemented`. Without it, each new upload logs an error, then passes on rclone's retry. The upload is still verified: R2 checks the `PUT`'s `Content-Md5` before storing it.
 
-3. Smoke-test the token as `eldritch`. All three must succeed. Upload from a file: rclone 1.60's `rcat` stores the object and then fails with `501 NotImplemented` on R2.
+3. Smoke-test the token as `eldritch`. All three must succeed, with no `ERROR` lines:
 
    ```sh
    RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
