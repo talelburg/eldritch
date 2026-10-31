@@ -13,6 +13,7 @@
 //! dev picker is routed when the server runs with `--dev-auth`, and answered
 //! only for a loopback `Host`.
 
+pub mod github;
 pub(crate) mod oauth;
 pub mod provider;
 

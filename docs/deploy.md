@@ -146,7 +146,48 @@ sudo systemctl reload caddy
 
 `scripts/deploy.sh` on an empty box copies the release, points `current` at it and starts the server. There is no database to check or back up and no release to stop. Open `https://<domain>` and check that a game loads and its WebSocket connects (`wss://`).
 
-OAuth callback registration isn't here yet: there's no callback until GitHub and Google sign-in, and #1237 adds the step.
+### 11. Sign-in providers
+
+Friends sign in through GitHub. Each provider needs an app registered under your account, whose callback URL is the server's public origin followed by `/auth/<provider>/callback`. The server builds that URL from `ELDRITCH_PUBLIC_ORIGIN` rather than from the request, because the dev proxy rewrites `Host`. A provider is on once both its client id and its secret are set. With one of the two missing, or a provider on and no origin, the server refuses to start and the journal names the missing variable.
+
+**GitHub.** Register two OAuth apps at <https://github.com/settings/developers> → *OAuth Apps* → *New OAuth App*. Each OAuth app takes one callback URL:
+
+| App | Homepage URL | Authorization callback URL |
+|---|---|---|
+| production | `https://eldritch.gripe` | `https://eldritch.gripe/auth/github/callback` |
+| dev | `http://localhost:3000` | `http://localhost:3000/auth/github/callback` |
+
+Leave *Enable Device Flow* off. On each app's page, *Generate a new client secret*, and copy it at once: GitHub shows it only once.
+
+**On the box**, set the production app's values in the environment file, which is readable only by root, then restart:
+
+```sh
+sudoedit /etc/eldritch/eldritch.env
+#   ELDRITCH_PUBLIC_ORIGIN=https://eldritch.gripe
+#   ELDRITCH_GITHUB_CLIENT_ID=<the production app's client id>
+#   ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+sudo systemctl restart eldritch
+journalctl -u eldritch -n 20      # "sign-in with GitHub is on"
+```
+
+Then add yourself to the allowlist (see [The allowlist](#the-allowlist)) and sign in at `https://eldritch.gripe`.
+
+**In dev**, put the dev app's values in `.env` at the root of the checkout. Git ignores it, and the server doesn't read it, so source it into the shell that runs the server:
+
+```sh
+# .env
+ELDRITCH_PUBLIC_ORIGIN=http://localhost:3000
+ELDRITCH_GITHUB_CLIENT_ID=<the dev app's client id>
+ELDRITCH_GITHUB_CLIENT_SECRET=<its secret>
+```
+
+```sh
+set -a; . ./.env; set +a
+cargo run -p server -- --dev-auth          # the dev picker stays beside GitHub
+cd crates/web && trunk serve               # in a second terminal
+```
+
+Open `http://localhost:3000`, and not `127.0.0.1:3000`. The in-flight sign-in cookie is set for the host the browser is on, and GitHub sends the browser back to `localhost`, so a sign-in started on `127.0.0.1` comes back without it and gets the "try again" page.
 
 ## Deploying
 

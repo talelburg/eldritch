@@ -12,6 +12,7 @@ mod closing_demo;
 mod config;
 mod connect_pool;
 mod game_session;
+mod github;
 mod health;
 mod lifecycle;
 mod migrations;
