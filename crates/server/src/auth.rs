@@ -341,9 +341,17 @@ fn picker_page(enabled: &[Account]) -> String {
             "<p>No account is enabled. Add one with <code>server accounts add</code>.</p>",
         );
     }
+    page(
+        "Dev sign-in",
+        &format!(r#"<form method="post" action="{DEV_PICKER}">{buttons}</form>"#),
+    )
+}
+
+/// A whole page titled `title`, with `body` below its heading.
+fn page(title: &str, body: &str) -> String {
     format!(
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>Dev sign-in</title></head>\
-         <body><h1>Dev sign-in</h1><form method=\"post\" action=\"{DEV_PICKER}\">{buttons}</form></body></html>\n"
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>{title}</title></head>\
+         <body><h1>{title}</h1>{body}</body></html>\n"
     )
 }
 

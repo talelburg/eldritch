@@ -224,7 +224,7 @@ async fn signed_in_account(
 /// The page for a sign-in that didn't complete: cancelled at the provider,
 /// stale, forged, or failed at the provider.
 fn try_again(status: StatusCode) -> Response {
-    let page = page(
+    let page = auth::page(
         "Sign-in didn't complete",
         r#"<p>Sign-in didn't complete. <a href="/">Try again</a>.</p>"#,
     );
@@ -269,7 +269,7 @@ fn ask_the_host(
     body.push_str("<p>Ask the host to add one of your addresses to the allowlist.</p>");
     (
         StatusCode::FORBIDDEN,
-        Html(page("Not on the allowlist", &body)),
+        Html(auth::page("Not on the allowlist", &body)),
     )
         .into_response()
 }
@@ -282,12 +282,4 @@ fn list<'a>(items: impl Iterator<Item = &'a str>) -> String {
     });
     list.push_str("</ul>");
     list
-}
-
-/// A whole page titled `title`, with `body` below its heading.
-fn page(title: &str, body: &str) -> String {
-    format!(
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>{title}</title></head>\
-         <body><h1>{title}</h1>{body}</body></html>\n"
-    )
 }
