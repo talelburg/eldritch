@@ -34,7 +34,7 @@ pub struct LiveGame {
 
 /// An answer [`LiveGame::submit`] accepted: what a host persists, and what
 /// [`LiveGame::commit`] advances the game to.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[must_use = "an accepted answer changes nothing until it is committed"]
 pub struct Accepted {
     answer: LoggedAnswer,

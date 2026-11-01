@@ -97,13 +97,11 @@ pub enum UnresumableReason {
     },
 }
 
-/// A live game and its connection to the action log.
+/// A loaded game: its live game and its connection to the action log.
 pub struct GameSession {
     /// Stable identifier for this game (primary key in `games`).
     pub game_id: GameId,
-    /// The game as it is being played. Its setup events are re-run by
-    /// [`load`](Self::load), so a session reloaded from the DB carries the
-    /// same list.
+    /// The game as it is being played.
     live: LiveGame,
     /// Connection pool for persistence.
     db: SqlitePool,
@@ -294,7 +292,9 @@ impl GameSession {
     /// each logged answer. Returns `None` if no game with `game_id` exists.
     ///
     /// Each replayed answer overwrites `outcome`; with an empty log the
-    /// session is at setup's outcome, the mulligan prompt.
+    /// session is at setup's outcome, the mulligan prompt. Setup is re-run,
+    /// so a reloaded session carries the same setup events as when it was
+    /// created.
     ///
     /// # Errors
     ///
