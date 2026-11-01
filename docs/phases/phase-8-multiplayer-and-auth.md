@@ -66,7 +66,7 @@ tracker, and the tracker's dependency view is authoritative.
   of lane 3 copy #1234's fixtures.
 - **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
-- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580.
+- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580 (✅ PR #1285).
 - **Liveness:** #1140.
 
 **2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.
