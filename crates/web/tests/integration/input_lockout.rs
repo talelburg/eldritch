@@ -104,9 +104,7 @@ async fn the_picker_and_the_terminal_screens_stay_clickable_while_the_board_is_l
 #[wasm_bindgen_test]
 async fn a_disconnect_shows_reconnecting_over_the_locked_board() {
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
-    handle
-        .store
-        .update(|s| s.status = ConnStatus::Reconnecting);
+    handle.store.update(|s| s.status = ConnStatus::Reconnecting);
     task::tick().await;
 
     let banner = rendered_and_live(&handle, ".lock-banner", &ConnStatus::Reconnecting);
