@@ -24,6 +24,26 @@ pub enum ConnStatus {
     SignedOut(Vec<SignInMethod>),
 }
 
+impl ConnStatus {
+    /// Whether the board and its in-game modals refuse input: at every status
+    /// but `Connected`, so a status added later is locked unless it says
+    /// otherwise. Between a socket opening and its `Hello` the status isn't
+    /// `Connected` yet, so a board still showing pre-drop state stays locked.
+    pub fn locks_board(&self) -> bool {
+        *self != ConnStatus::Connected
+    }
+
+    /// The banner that says why the board is locked, at the statuses that have
+    /// one. The picker and the terminal screens cover the board and explain
+    /// themselves, and the first connect has nothing to explain yet.
+    pub fn lock_banner(&self) -> Option<&'static str> {
+        match self {
+            ConnStatus::Reconnecting => Some("Reconnecting…"),
+            _ => None,
+        }
+    }
+}
+
 /// One applied submit's worth of events, for the event-log view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogBatch {

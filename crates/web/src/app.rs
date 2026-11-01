@@ -47,10 +47,7 @@ pub fn App() -> impl IntoView {
             </header>
             <div class="layout">
                 <EventLogView/>
-                <div class="main-column">
-                    <BoardView/>
-                    <Overlays/>
-                </div>
+                <MainColumn/>
                 <TurnTrackerView/>
             </div>
         </main>
@@ -98,28 +95,83 @@ pub fn provide_board_contexts(store: StoreSignal) {
     });
 }
 
-/// Everything the app layers over the board: the pre-game picker, the skill-test
-/// result modal, the decision modal, the prompt banner, the sign-in screen and
-/// the version-mismatch overlay.
+/// The main column: the board and its in-game modals inside the lockout
+/// wrapper, then the lock banner, then the picker and the terminal screens.
 ///
-/// A component rather than four inline tags so a headless test can mount the
-/// exact set the app does — which is how "`.action-bar` is absent from the DOM"
-/// is asserted against the real composition rather than against a copy of it.
-/// Each of them is its own viewport-fixed overlay, and the picker only renders
-/// pre-game.
-/// The sign-in screen covers the rest, since nothing behind it answers while
-/// signed out. The version-mismatch overlay is last, and stacks above
-/// everything: it is terminal, so nothing it covers can still be acted on.
+/// A component rather than inline tags so a headless test can mount the exact
+/// composition the app does. The web tests' `mount_board` mounts it, so every
+/// board test runs inside the real wrapper, and "`.action-bar` is absent from
+/// the DOM" is asserted against the real composition rather than a copy of it.
+///
+/// The wrapper carries `inert` while [`ConnStatus::locks_board`], so the board
+/// and its modals take no input until a `Hello` says the client is connected.
+/// It is `display: contents` and creates no stacking context, so the modals
+/// inside it stack against the screens outside it by z-index alone.
+///
+/// [`ConnStatus::locks_board`]: crate::store::ConnStatus::locks_board
 #[component]
-pub fn Overlays() -> impl IntoView {
+pub fn MainColumn() -> impl IntoView {
+    let store = store::use_store();
+    view! {
+        <div class="main-column">
+            <div class="board-lock" inert=move || store.with(|s| s.status.locks_board())>
+                <BoardView/>
+                <BoardOverlays/>
+            </div>
+            <LockBanner/>
+            <Screens/>
+        </div>
+    }
+}
+
+/// The board's in-game modals: the skill-test result, the decision modal and
+/// the prompt banner. Each is its own viewport-fixed overlay, and all of them
+/// sit inside the lockout wrapper with the board.
+#[component]
+fn BoardOverlays() -> impl IntoView {
+    view! {
+        {
+            #[cfg(target_arch = "wasm32")]
+            { view! {
+                <SkillTestResultView/>
+                <DecisionView/>
+                <PromptBanner/>
+            }.into_any() }
+            #[cfg(not(target_arch = "wasm32"))]
+            { ().into_any() }
+        }
+    }
+}
+
+/// The banner that says why the board is locked. It sits outside the wrapper,
+/// and renders only at a status with a
+/// [`lock_banner`](crate::store::ConnStatus::lock_banner).
+#[component]
+fn LockBanner() -> impl IntoView {
+    let store = store::use_store();
+    move || {
+        store
+            .with(|s| s.status.lock_banner())
+            .map(|text| view! { <div class="lock-banner">{text}</div> })
+    }
+}
+
+/// The screens that take input while the board is locked: the pre-game
+/// picker, the sign-in screen and the version-mismatch overlay. Each shows
+/// only at a status other than `Connected`, so all of them sit outside the
+/// lockout wrapper.
+///
+/// The picker only renders pre-game. The sign-in screen covers the rest, since
+/// nothing behind it answers while signed out. The version-mismatch overlay is
+/// last, and stacks above everything: it is terminal, so nothing it covers can
+/// still be acted on.
+#[component]
+fn Screens() -> impl IntoView {
     view! {
         {
             #[cfg(target_arch = "wasm32")]
             { view! {
                 <PickerView/>
-                <SkillTestResultView/>
-                <DecisionView/>
-                <PromptBanner/>
                 <SignInView/>
                 <VersionMismatchView/>
             }.into_any() }

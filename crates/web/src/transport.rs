@@ -72,7 +72,7 @@ async fn run(
                 // If `/auth/me` still signs us in, the server refused the
                 // socket a session it accepts over HTTP, which only a server
                 // bug does. Nothing is live, so say so rather than leave the
-                // status at Connected.
+                // status where the socket left it.
                 if check_sign_in(store).await {
                     store.update(|s| s.status = ConnStatus::Failed);
                 }
@@ -189,20 +189,29 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
     }
 }
 
-/// One socket lifetime: open, mark Connected, pump inbound->reduce and
-/// outbound->sink until close. The returned [`ConnectOutcome`] tells the
-/// reconnect loop whether the server is unreachable, the frames were skewed,
-/// or how the socket ended.
+/// One socket lifetime: open, pump inbound->reduce and outbound->sink until
+/// close, and mark Connected when the `Hello` arrives. The returned
+/// [`ConnectOutcome`] tells the reconnect loop whether the server is
+/// unreachable, the frames were skewed, or how the socket ended.
+///
+/// Until the `Hello`, the board still shows the state from before the drop, so
+/// the status stays what it was and the board stays locked. A `Reconnecting`
+/// status holds through the attempt, so its banner doesn't flicker away. At the
+/// end of the lifetime the outbound channel is drained unsent, so nothing
+/// clicked while disconnected goes out on the next socket.
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
     rx: &mut UnboundedReceiver<ClientMessage>,
 ) -> ConnectOutcome {
-    store.update(|s| s.status = ConnStatus::Connecting);
+    store.update(|s| {
+        if s.status != ConnStatus::Reconnecting {
+            s.status = ConnStatus::Connecting;
+        }
+    });
     let Ok(ws) = WebSocket::open(&url::current_ws_url(game_id.as_str())) else {
         return ConnectOutcome::Unreachable;
     };
-    store.update(|s| s.status = ConnStatus::Connected);
 
     let (mut write, read) = ws.split();
     let mut read = read.fuse();
@@ -215,8 +224,16 @@ async fn connect_once(
             incoming = read.next() => match incoming {
                 Some(Ok(Message::Text(txt))) => {
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
-                        saw_hello |= matches!(msg, ServerMessage::Hello { .. });
-                        store.update(|s| store::reduce(s, msg));
+                        let is_hello = matches!(msg, ServerMessage::Hello { .. });
+                        saw_hello |= is_hello;
+                        // One update, so the board unlocks with the fresh
+                        // state already in it.
+                        store.update(|s| {
+                            store::reduce(s, msg);
+                            if is_hello {
+                                s.status = ConnStatus::Connected;
+                            }
+                        });
                     } else {
                         // A frame we can't parse from a server that IS talking
                         // to us is a wire-format skew, not a transient glitch.
@@ -245,6 +262,8 @@ async fn connect_once(
             }
         }
     }
+    // Whatever was queued is for a socket that's gone, so it's dropped unsent.
+    while rx.try_recv().is_ok() {}
     if version_mismatch {
         ConnectOutcome::VersionMismatch
     } else {
