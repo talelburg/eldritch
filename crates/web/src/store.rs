@@ -38,13 +38,23 @@ impl ConnStatus {
     /// but `Connected`, so a status added later is locked unless it says
     /// otherwise. Between a socket opening and its `Hello` the status isn't
     /// `Connected` yet, so a board still showing pre-drop state stays locked.
+    #[must_use]
     pub fn locks_board(&self) -> bool {
         *self != ConnStatus::Connected
+    }
+
+    /// Whether the transport is between attempts to get a lost connection
+    /// back: the statuses a connect attempt keeps rather than overwriting with
+    /// `Connecting`.
+    #[must_use]
+    pub fn is_retrying(&self) -> bool {
+        matches!(self, ConnStatus::Reconnecting | ConnStatus::Restarting)
     }
 
     /// The banner that says why the board is locked, at the statuses that have
     /// one. The picker and the terminal screens cover the board and explain
     /// themselves, and the first connect has nothing to explain yet.
+    #[must_use]
     pub fn lock_banner(&self) -> Option<&'static str> {
         match self {
             ConnStatus::Reconnecting => Some("Reconnecting…"),

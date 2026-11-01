@@ -24,20 +24,12 @@ fn mount() -> (RwSignal<ClientState>, HtmlElement) {
 
 #[wasm_bindgen_test]
 async fn overlay_is_absent_in_every_status_but_the_mismatch() {
-    // Every variant but `VersionMismatch`, listed rather than sampled: the
-    // acceptance criterion is "no overlay in *any* other status", and the guard
-    // is one `!=`, so an added variant should be a compile-time decision here
-    // rather than a silent gap.
-    for status in [
-        ConnStatus::Connecting,
-        ConnStatus::Connected,
-        ConnStatus::Reconnecting,
-        ConnStatus::Restarting,
-        ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
-        ConnStatus::SignedOut(vec![]),
-        ConnStatus::Unresumable,
-    ] {
+    // The acceptance criterion is "no overlay in *any* other status", and the
+    // guard is one `!=`, so an added variant is covered here too.
+    for status in common::every_status()
+        .into_iter()
+        .filter(|s| *s != ConnStatus::VersionMismatch)
+    {
         let (store, container) = mount();
         store.update(|s| s.status = status.clone());
         task::tick().await;
@@ -110,14 +102,10 @@ async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
         outcome: Some(test_support::awaiting_confirm_input("Continue")),
         ..ClientState::default()
     };
-    let root = common::mount_board(client, &test_support::TEST_REGISTRY)
-        .await
-        .root;
+    let handle = common::mount_board(client, &test_support::TEST_REGISTRY).await;
+    let root = &handle.root;
 
-    let lock = root
-        .query_selector(".board-lock")
-        .expect("query")
-        .expect("the lockout wrapper");
+    let lock = handle.lock();
     let banner = lock
         .query_selector(".prompt-banner")
         .expect("query")

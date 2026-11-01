@@ -14,19 +14,11 @@ use crate::common;
 
 #[wasm_bindgen_test]
 async fn the_overlay_is_absent_at_every_status_but_unresumable() {
-    // Every other variant, listed rather than sampled: the claim is "no
-    // overlay at *any* other status".
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
-    for status in [
-        ConnStatus::Connecting,
-        ConnStatus::Connected,
-        ConnStatus::Reconnecting,
-        ConnStatus::Restarting,
-        ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
-        ConnStatus::VersionMismatch,
-        ConnStatus::SignedOut(vec![]),
-    ] {
+    for status in common::every_status()
+        .into_iter()
+        .filter(|s| *s != ConnStatus::Unresumable)
+    {
         handle.store.update(|s| s.status = status.clone());
         task::tick().await;
 
@@ -69,14 +61,9 @@ async fn an_unresumable_game_says_why_and_offers_a_new_game_outside_the_lockout(
         "the card sits on a scrim over the board"
     );
 
-    let lock = handle
-        .root
-        .query_selector(".board-lock")
-        .expect("query")
-        .expect("the lockout wrapper");
-    assert!(lock.has_attribute("inert"), "the board behind it is locked");
     assert!(
-        button.closest("[inert]").expect("closest").is_none(),
-        "the New game button sits outside the lockout wrapper, so it takes clicks"
+        handle.lock().has_attribute("inert"),
+        "the board behind it is locked"
     );
+    common::assert_live(&button, "the New game button");
 }

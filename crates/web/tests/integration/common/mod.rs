@@ -65,6 +65,60 @@ pub(crate) struct BoardHandle {
     pub(crate) rx: UnboundedReceiver<ClientMessage>,
 }
 
+impl BoardHandle {
+    /// The lockout wrapper this mount rendered: the board and its in-game
+    /// modals sit in it, and it carries `inert` at every status but
+    /// `Connected`.
+    pub(crate) fn lock(&self) -> Element {
+        self.root
+            .query_selector(".board-lock")
+            .expect("query")
+            .expect("the board and its in-game modals sit in a .board-lock wrapper")
+    }
+}
+
+/// Assert `el` has no `inert` ancestor, so it takes clicks while the board is
+/// locked. `what` names it in the failure.
+pub(crate) fn assert_live(el: &Element, what: &str) {
+    assert!(
+        el.closest("[inert]").expect("closest").is_none(),
+        "{what} must sit outside the lockout wrapper, so it takes clicks"
+    );
+}
+
+/// Every connection status, listed rather than sampled, for a test whose claim
+/// is about *every* status, or every status but one. `SignedOut` lists no
+/// sign-in method.
+pub(crate) fn every_status() -> Vec<ConnStatus> {
+    let all = vec![
+        ConnStatus::Connecting,
+        ConnStatus::Connected,
+        ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
+        ConnStatus::Failed,
+        ConnStatus::AwaitingRoster,
+        ConnStatus::VersionMismatch,
+        ConnStatus::SignedOut(vec![]),
+        ConnStatus::Unresumable,
+    ];
+    // Exhaustive, so a variant added later doesn't compile until it is
+    // listed above.
+    for status in &all {
+        match status {
+            ConnStatus::Connecting
+            | ConnStatus::Connected
+            | ConnStatus::Reconnecting
+            | ConnStatus::Restarting
+            | ConnStatus::Failed
+            | ConnStatus::AwaitingRoster
+            | ConnStatus::VersionMismatch
+            | ConnStatus::SignedOut(_)
+            | ConnStatus::Unresumable => {}
+        }
+    }
+    all
+}
+
 /// Mount [`MainColumn`], the composition `App` mounts, rendering `client`
 /// against `registry`, and tick once so render effects have flushed. The board
 /// sits inside the real lockout wrapper, so it is `inert` unless `client` is

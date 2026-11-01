@@ -108,7 +108,9 @@ async fn run(
                 return;
             }
             // The server says it has no game with this id (e.g. a DB reset).
-            // It was discarded above; create a fresh game.
+            // It was discarded above; create a fresh game and connect to it
+            // at once. Nothing is being retried, so there's no backoff and no
+            // `Reconnecting` banner, and the new game starts a fresh count.
             ConnectOutcome::Ended(SocketEnding::StaleId) => {
                 let Some(req) = await_roster(&store, &mut create_rx).await else {
                     return;
@@ -117,6 +119,8 @@ async fn run(
                     Some(id) => game_id = id,
                     None => return,
                 }
+                attempt = 0;
+                continue;
             }
             // Couldn't reach the server, a disconnect, or a server shutting
             // down for a restart — keep the SAME id and just retry.
@@ -229,9 +233,8 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 /// Until the `Hello`, the board still shows the state from before the drop, so
 /// the status stays what it was and the board stays locked. A `Reconnecting`
 /// or `Restarting` status holds through the attempt, so its banner doesn't
-/// flicker away. At the
-/// end of the lifetime the outbound channel is drained unsent, so nothing
-/// clicked while disconnected goes out on the next socket.
+/// flicker away. At the end of the lifetime the outbound channel is drained
+/// unsent, so nothing clicked while disconnected goes out on the next socket.
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
@@ -239,7 +242,7 @@ async fn connect_once(
     attempt: &mut u32,
 ) -> ConnectOutcome {
     store.update(|s| {
-        if !matches!(s.status, ConnStatus::Reconnecting | ConnStatus::Restarting) {
+        if !s.status.is_retrying() {
             s.status = ConnStatus::Connecting;
         }
     });

@@ -15,40 +15,19 @@ use web_sys::Element;
 
 use crate::common::{self, BoardHandle};
 
-/// The lockout wrapper `handle` mounted.
-fn wrapper(handle: &BoardHandle) -> Element {
-    handle
-        .root
-        .query_selector(".board-lock")
-        .expect("query")
-        .expect("the board and its in-game modals sit in a .board-lock wrapper")
-}
-
-/// Every status but `Connected`, listed rather than sampled: the claim is
-/// "locked at *every* other status".
-fn every_status_but_connected() -> [ConnStatus; 8] {
-    [
-        ConnStatus::Connecting,
-        ConnStatus::Reconnecting,
-        ConnStatus::Restarting,
-        ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
-        ConnStatus::VersionMismatch,
-        ConnStatus::SignedOut(vec![]),
-        ConnStatus::Unresumable,
-    ]
-}
-
 #[wasm_bindgen_test]
 async fn the_board_is_inert_at_every_status_but_connected() {
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
-    let lock = wrapper(&handle);
+    let lock = handle.lock();
     assert!(
         lock.query_selector(".board").expect("query").is_some(),
         "the board sits inside the wrapper"
     );
 
-    for status in every_status_but_connected() {
+    for status in common::every_status()
+        .into_iter()
+        .filter(|s| *s != ConnStatus::Connected)
+    {
         handle.store.update(|s| s.status = status.clone());
         task::tick().await;
         assert!(
@@ -73,10 +52,7 @@ fn rendered_and_live(handle: &BoardHandle, sel: &str, status: &ConnStatus) -> El
         .query_selector(sel)
         .expect("query")
         .unwrap_or_else(|| panic!("{status:?} must render {sel}"));
-    assert!(
-        el.closest("[inert]").expect("closest").is_none(),
-        "{sel} must sit outside the lockout wrapper, so it stays clickable at {status:?}"
-    );
+    common::assert_live(&el, &format!("{sel} at {status:?}"));
     el
 }
 
@@ -97,7 +73,7 @@ async fn the_picker_and_the_terminal_screens_stay_clickable_while_the_board_is_l
         task::tick().await;
 
         assert!(
-            wrapper(&handle).has_attribute("inert"),
+            handle.lock().has_attribute("inert"),
             "{status:?} locks the board behind {sel}"
         );
         rendered_and_live(&handle, sel, &status);
@@ -125,7 +101,7 @@ async fn a_server_restart_shows_server_restarting_over_the_locked_board() {
     task::tick().await;
 
     assert!(
-        wrapper(&handle).has_attribute("inert"),
+        handle.lock().has_attribute("inert"),
         "a restart locks the board"
     );
     let banner = rendered_and_live(&handle, ".lock-banner", &ConnStatus::Restarting);
@@ -142,10 +118,9 @@ async fn no_lock_banner_shows_at_any_other_status() {
     // picker and the terminal screens explain themselves, and a first connect
     // has nothing to explain yet.
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
-    for status in every_status_but_connected()
+    for status in common::every_status()
         .into_iter()
-        .filter(|s| !matches!(s, ConnStatus::Reconnecting | ConnStatus::Restarting))
-        .chain([ConnStatus::Connected])
+        .filter(|s| !s.is_retrying())
     {
         handle.store.update(|s| s.status = status.clone());
         task::tick().await;
