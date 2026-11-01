@@ -5,8 +5,8 @@ target = "index.html"
 port = 3000
 addresses = ["127.0.0.1"]
 
-# Proxy the API + WebSocket to the server during dev. Two entries at
-# DISTINCT prefixes so trunk's per-entry axum `.nest()` doesn't collide:
+# Proxy the API + WebSocket to the server during dev. Each entry sits at a
+# DISTINCT prefix so trunk's per-entry axum `.nest()` doesn't collide:
 # `/games` carries the REST (`POST /games`), `/ws` carries the WebSocket
 # upgrade (`/ws/{game_id}` — the reason the WS lives at its own top-level
 # route, not under `/games`). Neither is at the root `/`, which trunk 0.21
@@ -19,3 +19,16 @@ backend = "http://localhost:8000/games"
 [[proxy]]
 backend = "ws://localhost:8000/ws"
 ws = true
+
+# `/auth` carries sign-in: `/auth/me`, sign-out, each provider's
+# `/auth/<provider>/login` and `/auth/<provider>/callback`, and the dev picker
+# (with the server run as `cargo run -p server -- --dev-auth`). `no_redirect`
+# is what makes sign-in work here: trunk's proxy follows redirects unless told
+# not to, so it would follow a login's redirect to the provider, or a
+# callback's or the picker's `303 Location: /`, itself, and hand the browser
+# the final page without the redirect's `Set-Cookie`. The trunk proxy rewrites
+# `Host` to `localhost`, which the dev picker requires, and which is why a
+# provider's callback is built from `ELDRITCH_PUBLIC_ORIGIN` instead.
+[[proxy]]
+backend = "http://localhost:8000/auth"
+no_redirect = true

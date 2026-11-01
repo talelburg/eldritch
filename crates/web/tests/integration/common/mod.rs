@@ -14,7 +14,7 @@ use web::board::BoardView;
 use web::registry;
 use web::store::{self, ClientState};
 use web::transport::OutboundTx;
-use web_sys::Element;
+use web_sys::{Element, HtmlElement};
 
 /// The last element matching `sel`: the browser tests share one page and
 /// nothing unmounts, so a test reads the last match.
@@ -26,6 +26,32 @@ pub(crate) fn last_mounted(sel: &str) -> Element {
         .item(nodes.length() - 1)
         .and_then(|n| n.dyn_into::<Element>().ok())
         .unwrap_or_else(|| panic!("at least one {sel}"))
+}
+
+/// Mount `view` into a container of its own over a fresh store; return the
+/// store and the container. The DOM accumulates across tests in one browser
+/// session, so every assertion is scoped to this container.
+pub(crate) fn mount<V: IntoView + 'static>(
+    view: impl FnOnce() -> V + 'static,
+) -> (RwSignal<ClientState>, HtmlElement) {
+    let container = document()
+        .create_element("div")
+        .expect("create_element")
+        .dyn_into::<HtmlElement>()
+        .expect("HtmlElement");
+    document()
+        .body()
+        .expect("body")
+        .append_child(&container)
+        .expect("append_child");
+
+    let store = RwSignal::new(ClientState::default());
+    mount_to(container.clone(), move || {
+        provide_context(store);
+        view()
+    })
+    .forget();
+    (store, container)
 }
 
 /// A board mounted by [`mount_board`].

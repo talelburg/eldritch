@@ -21,8 +21,9 @@ cargo install --locked trunk --version 0.21.14
 Run the server:
 
 ```sh
-cargo run -p server
-# → Axum on http://localhost:8000
+cargo run -p server -- accounts add --name Me me@example.com   # once: someone to sign in as
+cargo run -p server -- --dev-auth
+# → Axum on http://localhost:8000, signing in through the dev picker
 ```
 
 Run the web dev server (in another terminal):

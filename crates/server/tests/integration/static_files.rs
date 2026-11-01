@@ -12,7 +12,7 @@ use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use tower::ServiceExt as _;
 
-const FIXTURE_DIST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/dist");
+use crate::common::FIXTURE_DIST;
 
 async fn app_with_fixture_dist() -> Router {
     let pool = SqlitePoolOptions::new()

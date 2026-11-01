@@ -4,6 +4,8 @@
 //! The server is authoritative; clients submit [`PlayerAction`]s and render the
 //! state the server broadcasts.
 
+use std::fmt;
+
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -113,6 +115,22 @@ impl From<&str> for GameId {
     }
 }
 
+/// An account's stable id: its allowlist entry's primary key, never reused.
+///
+/// Part of the client/server contract: `GET /auth/me` reports it, and the dev
+/// picker's form posts it. Transparent over `i64`, so it serialises as a bare
+/// JSON number. Lives here rather than in `server` for the same reason as
+/// [`GameId`]: the client reads it too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AccountId(pub i64);
+
+impl fmt::Display for AccountId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Body of `POST /games`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateGameRequest {
@@ -137,6 +155,44 @@ pub struct CreateGameResponse {
     pub game_id: GameId,
 }
 
+/// The close code ending a game's WebSocket whose upgrade had no valid session.
+///
+/// It is from the private range: RFC 6455 §7.4.2, *"Status codes in the
+/// range 4000-4999 are reserved for private use."* The server upgrades and
+/// then closes, rather than refusing the upgrade, because a refused upgrade
+/// reaches script only as close code 1006 (WHATWG `WebSockets`: *"the
+/// WebSocket connection close code would be 1006"*), which a client can't
+/// tell from a game id the server doesn't know.
+pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
+
+/// Body of `GET /auth/me`'s `200`: the account the request's session signs
+/// in as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedIn {
+    /// The account's stable id.
+    pub account_id: AccountId,
+    /// The name the host set for it, shown at the table.
+    pub display_name: String,
+}
+
+/// Body of `GET /auth/me`'s `401`: the ways to sign in that this server
+/// offers. Empty when it offers none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInRequired {
+    /// Each available sign-in method.
+    pub methods: Vec<SignInMethod>,
+}
+
+/// One way to sign in: the label a sign-in screen shows, and the URL it
+/// sends the browser to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInMethod {
+    /// What the sign-in screen calls it.
+    pub label: String,
+    /// Where the browser goes to sign in this way, a same-origin path.
+    pub url: String,
+}
+
 #[cfg(test)]
 mod id_tests {
     use super::*;
@@ -146,6 +202,14 @@ mod id_tests {
         let id = GameId::new("abc");
         assert_eq!(serde_json::to_string(&id).unwrap(), "\"abc\"");
         let back: GameId = serde_json::from_str("\"abc\"").unwrap();
+        assert_eq!(back, id);
+    }
+
+    #[test]
+    fn an_account_id_serializes_as_a_bare_number() {
+        let id = AccountId(7);
+        assert_eq!(serde_json::to_string(&id).unwrap(), "7");
+        let back: AccountId = serde_json::from_str("7").unwrap();
         assert_eq!(back, id);
     }
 }

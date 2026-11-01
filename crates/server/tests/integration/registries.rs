@@ -13,7 +13,6 @@ use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use protocol::CreateGameRequest;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
-use server::AppState;
 use tower::ServiceExt as _;
 
 use crate::common;
@@ -46,7 +45,7 @@ fn the_production_registries_resolve_the_gathering_and_real_cards() {
 #[tokio::test]
 async fn post_games_creates_the_gathering_against_the_production_registries() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool, server::REGISTRIES));
+    let (app, cookie) = common::signed_in_app(pool, server::REGISTRIES).await;
 
     // Seat Roland Banks (01001) — a real investigator from the production
     // card registry.
@@ -54,6 +53,7 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
+        .header("cookie", &cookie)
         .body(Body::from(format!(
             r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
         )))
@@ -68,7 +68,7 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
 #[tokio::test]
 async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool, server::REGISTRIES));
+    let (app, cookie) = common::signed_in_app(pool, server::REGISTRIES).await;
 
     for deck in decks::DEFAULT_DECKS {
         for choice in [WeaknessChoice::Fixed, WeaknessChoice::Random] {
@@ -81,6 +81,7 @@ async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
                 .method("POST")
                 .uri("/games")
                 .header("content-type", "application/json")
+                .header("cookie", &cookie)
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap();
             let response = app.clone().oneshot(request).await.unwrap();

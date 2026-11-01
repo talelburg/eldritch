@@ -5,6 +5,8 @@
 //! logic in a library target lets integration tests in `tests/` drive
 //! it directly.
 
+pub mod accounts;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod fingerprint;
@@ -16,14 +18,19 @@ mod store;
 mod ws;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use axum::http::StatusCode;
 use axum::{routing, Router};
+use axum_extra::extract::cookie::Key;
 use game_core::engine::Registries;
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};
+use url::Url;
 
+use crate::auth::oauth::ConfiguredProvider;
+use crate::auth::provider::IdentityProvider;
 use crate::ws::Rooms;
 
 /// Shared application state handed to every Axum handler.
@@ -39,6 +46,20 @@ pub struct AppState {
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
     /// served as the router fallback.
     dist_dir: PathBuf,
+    /// Whether the dev sign-in picker is routed (`--dev-auth`).
+    dev_auth: bool,
+    /// The identity providers offered at sign-in, in the order the sign-in
+    /// screen lists them.
+    identity_providers: Vec<ConfiguredProvider>,
+    /// The key that encrypts the in-flight sign-in cookie. Random per
+    /// process, so a restart drops only the sign-ins in flight.
+    cookie_key: Key,
+}
+
+impl FromRef<AppState> for Key {
+    fn from_ref(state: &AppState) -> Self {
+        state.cookie_key.clone()
+    }
 }
 
 impl AppState {
@@ -58,6 +79,34 @@ impl AppState {
             registries,
             rooms: ws::rooms(),
             dist_dir,
+            dev_auth: false,
+            identity_providers: Vec::new(),
+            cookie_key: Key::generate(),
+        }
+    }
+
+    /// Route the dev sign-in picker, `/auth/dev`, or not. Off by default. On,
+    /// it answers only requests whose `Host` is loopback.
+    #[must_use]
+    pub fn with_dev_auth(self, dev_auth: bool) -> Self {
+        Self { dev_auth, ..self }
+    }
+
+    /// Offer sign-in through each of `providers`, in order, each calling back
+    /// to `{public_origin}/auth/{slug}/callback`. None by default.
+    #[must_use]
+    pub fn with_identity_providers(
+        self,
+        public_origin: &Url,
+        providers: Vec<Arc<dyn IdentityProvider>>,
+    ) -> Self {
+        let identity_providers = providers
+            .into_iter()
+            .map(|provider| ConfiguredProvider::new(public_origin, provider))
+            .collect();
+        Self {
+            identity_providers,
+            ..self
         }
     }
 }
@@ -75,9 +124,10 @@ pub const REGISTRIES: Registries = Registries {
     scenarios: &scenarios::REGISTRY,
 };
 
-/// Build the application router with all routes and shared state. The
-/// JSON API and WebSocket take precedence; everything else falls back
-/// to the client bundle, with `index.html` as the SPA fallback.
+/// Build the application router with all routes and shared state.
+///
+/// The JSON API, `/auth` and the WebSocket take precedence; everything else
+/// falls back to the client bundle, with `index.html` as the SPA fallback.
 pub fn app(state: AppState) -> Router {
     let index_html = state.dist_dir.join("index.html");
     // `.fallback()` (not `.not_found_service()`) keeps the response at
@@ -89,6 +139,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", routing::get(health))
         .route("/games", routing::post(lifecycle::create_game))
+        .nest("/auth", auth::router(&state))
         .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)
         .with_state(state)
