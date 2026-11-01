@@ -31,11 +31,6 @@ pub(crate) trait Loader: Send + Sync + 'static {
 
     /// Rebuild the room from what [`Loader::read`] fetched. Runs on a blocking
     /// thread, so it may take as long as the replay does.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the error is `GameSession::rebuild`'s, built once per failed \
-                  load; the registry shares it behind an `Arc`"
-    )]
     fn rebuild(&self, stored: Self::Stored) -> Result<Self::Room, SessionError>;
 }
 
@@ -422,7 +417,7 @@ mod tests {
                 Rebuild::Room => Ok(TestRoom(game_id)),
                 Rebuild::Unresumable => Err(SessionError::Unresumable {
                     game_id,
-                    reason: UnresumableReason::Version { found: 0 },
+                    reason: Box::new(UnresumableReason::Version { found: 0 }),
                 }),
             }
         }

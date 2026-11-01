@@ -62,8 +62,9 @@ pub enum SessionError {
     Unresumable {
         /// The game that failed to load.
         game_id: GameId,
-        /// Why it can't be resumed.
-        reason: UnresumableReason,
+        /// Why it can't be resumed. Boxed: the reason is the largest payload
+        /// by far, and every other variant would otherwise carry its size.
+        reason: Box<UnresumableReason>,
     },
 }
 
@@ -373,12 +374,6 @@ impl GameSession {
     ///
     /// As [`GameSession::load`], except [`SessionError::Db`], which only a
     /// read reports.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the error is `load`'s, which every caller already takes by \
-                  value, and it is built once per failed load; the lint only \
-                  skips `load` because it is async"
-    )]
     pub(crate) fn rebuild(
         db: SqlitePool,
         registries: Registries,
@@ -391,7 +386,7 @@ impl GameSession {
         } = stored;
         let unresumable = |reason| SessionError::Unresumable {
             game_id: game_id.clone(),
-            reason,
+            reason: Box::new(reason),
         };
         if row.format_version != FORMAT_VERSION {
             return Err(unresumable(UnresumableReason::Version {

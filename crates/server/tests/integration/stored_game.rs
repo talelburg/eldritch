@@ -333,7 +333,7 @@ async fn expect_unresumable(pool: &SqlitePool, game_id: &str) -> UnresumableReas
             reason,
         }) => {
             assert_eq!(failed.as_str(), game_id, "the failure names its game");
-            reason
+            *reason
         }
         Err(other) => panic!("expected an unresumable game, got {other:?}"),
         Ok(_) => panic!("expected an unresumable game, but it loaded"),
