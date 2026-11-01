@@ -50,8 +50,8 @@ impl Shutdown {
         let _ = triggered.wait_for(|fired| *fired).await;
     }
 
-    /// Resolve once every socket that [`track`](Self::track) handed a
-    /// [`SocketGuard`] to has dropped it.
+    /// Resolve once no game socket is open: at once if none is, else when
+    /// the last open one closes.
     pub async fn sockets_closed(&self) {
         self.sockets.closed().await;
     }
