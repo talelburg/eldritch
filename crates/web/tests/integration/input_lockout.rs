@@ -26,10 +26,11 @@ fn wrapper(handle: &BoardHandle) -> Element {
 
 /// Every status but `Connected`, listed rather than sampled: the claim is
 /// "locked at *every* other status".
-fn every_status_but_connected() -> [ConnStatus; 7] {
+fn every_status_but_connected() -> [ConnStatus; 8] {
     [
         ConnStatus::Connecting,
         ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
         ConnStatus::VersionMismatch,
@@ -118,14 +119,32 @@ async fn a_disconnect_shows_reconnecting_over_the_locked_board() {
 }
 
 #[wasm_bindgen_test]
+async fn a_server_restart_shows_server_restarting_over_the_locked_board() {
+    let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
+    handle.store.update(|s| s.status = ConnStatus::Restarting);
+    task::tick().await;
+
+    assert!(
+        wrapper(&handle).has_attribute("inert"),
+        "a restart locks the board"
+    );
+    let banner = rendered_and_live(&handle, ".lock-banner", &ConnStatus::Restarting);
+    assert_eq!(
+        banner.text_content().as_deref(),
+        Some("Server restarting…"),
+        "the banner says the server is restarting"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn no_lock_banner_shows_at_any_other_status() {
-    // `Reconnecting` is the one status with a banner: the picker and the
-    // terminal screens explain themselves, and a first connect has nothing to
-    // explain yet.
+    // `Reconnecting` and `Restarting` are the statuses with a banner: the
+    // picker and the terminal screens explain themselves, and a first connect
+    // has nothing to explain yet.
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
     for status in every_status_but_connected()
         .into_iter()
-        .filter(|s| *s != ConnStatus::Reconnecting)
+        .filter(|s| !matches!(s, ConnStatus::Reconnecting | ConnStatus::Restarting))
         .chain([ConnStatus::Connected])
     {
         handle.store.update(|s| s.status = status.clone());

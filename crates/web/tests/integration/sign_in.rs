@@ -82,6 +82,7 @@ async fn the_sign_in_screen_is_absent_while_signed_in() {
         ConnStatus::Connecting,
         ConnStatus::Connected,
         ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
         ConnStatus::VersionMismatch,

@@ -21,6 +21,7 @@ async fn the_overlay_is_absent_at_every_status_but_unresumable() {
         ConnStatus::Connecting,
         ConnStatus::Connected,
         ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
         ConnStatus::VersionMismatch,

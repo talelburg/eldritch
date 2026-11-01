@@ -73,10 +73,16 @@ async fn run(
     let mut attempt: u32 = 0;
     loop {
         let outcome = connect_once(&store, &game_id, &mut rx, &mut attempt).await;
-        if let ConnectOutcome::Ended(ending) = outcome {
-            if !ending.keeps_saved_game() {
-                clear_saved_id();
+        // A socket that never opened ended the way a refused connect does. A
+        // version mismatch stops the loop below, so its ending is never used.
+        let ending = match outcome {
+            ConnectOutcome::Ended(ending) => ending,
+            ConnectOutcome::Unreachable | ConnectOutcome::VersionMismatch => {
+                SocketEnding::Disconnected
             }
+        };
+        if !ending.keeps_saved_game() {
+            clear_saved_id();
         }
         match outcome {
             // A wire-format skew: the status is already set to VersionMismatch.
@@ -112,14 +118,16 @@ async fn run(
                     None => return,
                 }
             }
-            // Couldn't reach the server, or a normal disconnect after a
-            // live session — keep the SAME id and just retry. The server
-            // may be restarting; recreating here would abandon the game
-            // (and wipe the saved id) on every transient outage.
-            ConnectOutcome::Unreachable | ConnectOutcome::Ended(SocketEnding::Disconnected) => {}
+            // Couldn't reach the server, a disconnect, or a server shutting
+            // down for a restart — keep the SAME id and just retry.
+            // Recreating here would abandon the game (and wipe the saved id)
+            // on every transient outage. A restart says so until the next
+            // `Hello`, through however many refused connects it takes.
+            ConnectOutcome::Unreachable
+            | ConnectOutcome::Ended(SocketEnding::Disconnected | SocketEnding::Restarting) => {}
         }
 
-        store.update(|s| s.status = ConnStatus::Reconnecting);
+        store.update(|s| s.status = s.status.retrying_after(ending));
         TimeoutFuture::new(millis(socket_ending::backoff(attempt))).await;
         attempt = attempt.saturating_add(1);
     }
@@ -220,7 +228,8 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 ///
 /// Until the `Hello`, the board still shows the state from before the drop, so
 /// the status stays what it was and the board stays locked. A `Reconnecting`
-/// status holds through the attempt, so its banner doesn't flicker away. At the
+/// or `Restarting` status holds through the attempt, so its banner doesn't
+/// flicker away. At the
 /// end of the lifetime the outbound channel is drained unsent, so nothing
 /// clicked while disconnected goes out on the next socket.
 async fn connect_once(
@@ -230,7 +239,7 @@ async fn connect_once(
     attempt: &mut u32,
 ) -> ConnectOutcome {
     store.update(|s| {
-        if s.status != ConnStatus::Reconnecting {
+        if !matches!(s.status, ConnStatus::Reconnecting | ConnStatus::Restarting) {
             s.status = ConnStatus::Connecting;
         }
     });

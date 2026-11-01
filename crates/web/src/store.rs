@@ -6,6 +6,8 @@ use game_core::state::{ChaosToken, GameState, TokenResolution};
 use leptos::prelude::*;
 use protocol::{ServerMessage, SignInMethod, SignedIn};
 
+use crate::socket_ending::SocketEnding;
+
 /// Connection lifecycle, set by the transport (not by `reduce`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnStatus {
@@ -13,6 +15,9 @@ pub enum ConnStatus {
     Connecting,
     Connected,
     Reconnecting,
+    /// The server closed the socket for a restart. Held through the reconnect
+    /// attempts that follow, however they fail, until the next `Hello`.
+    Restarting,
     Failed,
     /// No saved game and no roster chosen yet — render the picker.
     AwaitingRoster,
@@ -43,7 +48,21 @@ impl ConnStatus {
     pub fn lock_banner(&self) -> Option<&'static str> {
         match self {
             ConnStatus::Reconnecting => Some("Reconnecting…"),
+            ConnStatus::Restarting => Some("Server restarting…"),
             _ => None,
+        }
+    }
+
+    /// The status to wait at before the next connect attempt, after a socket
+    /// ended `ending` at this status. A restart says so until the next
+    /// `Hello`: the refused connects while the server is down are plain
+    /// disconnects, and mustn't turn it into `Reconnecting`.
+    #[must_use]
+    pub fn retrying_after(&self, ending: SocketEnding) -> ConnStatus {
+        if ending == SocketEnding::Restarting || *self == ConnStatus::Restarting {
+            ConnStatus::Restarting
+        } else {
+            ConnStatus::Reconnecting
         }
     }
 }
@@ -714,5 +733,43 @@ mod tests {
         );
         assert_eq!(s.log.len(), 1, "only the Setup batch should remain");
         assert_eq!(s.log[0].header, "Setup");
+    }
+
+    #[test]
+    fn a_restart_close_waits_as_restarting() {
+        for current in [ConnStatus::Connected, ConnStatus::Reconnecting] {
+            assert_eq!(
+                current.retrying_after(SocketEnding::Restarting),
+                ConnStatus::Restarting,
+                "from {current:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_drop_while_restarting_stays_restarting() {
+        // While the server is down its connects are refused, which the browser
+        // reports as 1006: a disconnect, which mustn't flicker the banner to
+        // "Reconnecting…".
+        assert_eq!(
+            ConnStatus::Restarting.retrying_after(SocketEnding::Disconnected),
+            ConnStatus::Restarting
+        );
+    }
+
+    #[test]
+    fn a_drop_otherwise_waits_as_reconnecting() {
+        for current in [
+            ConnStatus::Connecting,
+            ConnStatus::Connected,
+            ConnStatus::Reconnecting,
+            ConnStatus::AwaitingRoster,
+        ] {
+            assert_eq!(
+                current.retrying_after(SocketEnding::Disconnected),
+                ConnStatus::Reconnecting,
+                "from {current:?}"
+            );
+        }
     }
 }

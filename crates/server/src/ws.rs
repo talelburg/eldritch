@@ -3,18 +3,19 @@
 //! per-game [`GameSession`] mutex.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
 use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
-use futures_util::stream::SplitSink;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
 use protocol::{
-    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_UNAUTHENTICATED,
-    CLOSE_UNRESUMABLE,
+    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING,
+    CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
@@ -31,6 +32,10 @@ use crate::{auth, AppState};
 /// `Lagged` and resyncs from subsequent frames rather than blocking
 /// the game.
 const BROADCAST_CAPACITY: usize = 256;
+
+/// How long a socket closed for a restart waits for the client's close reply
+/// before it drops. Inside the about 3 s the process takes to exit.
+const CLOSE_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A loaded game's room: its session (behind a mutex so applies serialize across
 /// connections) and the broadcast channel its connections subscribe to.
@@ -120,6 +125,8 @@ async fn close_with(mut socket: WebSocket, code: u16, reason: &'static str) {
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
+    // Counted as open until this task returns, so shutdown waits for it.
+    let _open = state.shutdown.track();
     // The connection lives as long as this socket does, however the socket
     // ends, so the room's idle grace starts only once its last socket has gone.
     let connection = match state.rooms.get_or_load(&game_id).await {
@@ -166,9 +173,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
     // completion before the loop polls again, so it can't pass mid-apply.
     let silence = time::sleep(state.silence_timeout);
     tokio::pin!(silence);
+    // Resolves at once if shutdown fired while this socket was attaching.
+    let shutting_down = state.shutdown.triggered();
+    tokio::pin!(shutting_down);
 
     loop {
         tokio::select! {
+            // Like the deadline, this can't pass mid-apply: a `Submit` being
+            // applied finishes, and persists, before the loop polls again.
+            () = &mut shutting_down => {
+                close_for_restart(&mut sink, &mut stream).await;
+                break;
+            }
             () = &mut silence => {
                 // Best-effort: a client this silent is likely gone, so its
                 // close reply isn't awaited.
@@ -205,6 +221,24 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             }
         }
     }
+}
+
+/// Close a socket with [`CLOSE_SERVER_RESTARTING`], then read it until the
+/// client's closing frame, so the client sees the code. A client that doesn't
+/// reply within [`CLOSE_REPLY_TIMEOUT`] is dropped, so shutdown isn't held up.
+async fn close_for_restart(
+    sink: &mut SplitSink<WebSocket, Message>,
+    stream: &mut SplitStream<WebSocket>,
+) {
+    let frame = CloseFrame {
+        code: CLOSE_SERVER_RESTARTING,
+        reason: "server restarting".into(),
+    };
+    if sink.send(Message::Close(Some(frame))).await.is_err() {
+        return;
+    }
+    let reply = async { while let Some(Ok(_)) = stream.next().await {} };
+    let _ = time::timeout(CLOSE_REPLY_TIMEOUT, reply).await;
 }
 
 /// What to do with `sink` after handling one inbound frame.

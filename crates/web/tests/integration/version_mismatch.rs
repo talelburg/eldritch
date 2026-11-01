@@ -32,6 +32,7 @@ async fn overlay_is_absent_in_every_status_but_the_mismatch() {
         ConnStatus::Connecting,
         ConnStatus::Connected,
         ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
         ConnStatus::SignedOut(vec![]),

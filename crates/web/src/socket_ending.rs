@@ -11,6 +11,11 @@ pub enum SocketEnding {
     /// session is missing or has ended. Show the sign-in screen.
     Unauthenticated,
     /// The server closed it with
+    /// [`CLOSE_SERVER_RESTARTING`](protocol::CLOSE_SERVER_RESTARTING): it is
+    /// shutting down for a restart. Reconnect, saying so until the next
+    /// `Hello`.
+    Restarting,
+    /// The server closed it with
     /// [`CLOSE_UNRESUMABLE`](protocol::CLOSE_UNRESUMABLE): the game exists
     /// but this server's build can't rebuild it. Stop, keeping the saved id.
     Unresumable,
@@ -18,7 +23,8 @@ pub enum SocketEnding {
     /// [`CLOSE_GAME_NOT_FOUND`](protocol::CLOSE_GAME_NOT_FOUND): the server
     /// doesn't know the id. Drop it and open the picker.
     StaleId,
-    /// Any other ending: a network drop or a server going down. Reconnect.
+    /// Any other ending: a network drop, or a server down or going down
+    /// without saying why. Reconnect.
     Disconnected,
 }
 
@@ -34,14 +40,15 @@ impl SocketEnding {
 
 /// Sort a socket's ending from the close code, if the socket reported one.
 ///
-/// Only the server's explicit codes say anything about the game or the
-/// session, and each means the same whether or not `Hello` arrived. Every
-/// other ending is a disconnect: a server that is down or restarting closes
-/// before `Hello` too, and must not cost the player their saved game.
+/// Only the server's explicit codes say anything about the game, the session
+/// or the server, and each means the same whether or not `Hello` arrived.
+/// Every other ending is a disconnect: a server that is down refuses the
+/// connect before `Hello` too, and must not cost the player their saved game.
 #[must_use]
 pub fn sort(close_code: Option<u16>) -> SocketEnding {
     match close_code {
         Some(protocol::CLOSE_UNAUTHENTICATED) => SocketEnding::Unauthenticated,
+        Some(protocol::CLOSE_SERVER_RESTARTING) => SocketEnding::Restarting,
         Some(protocol::CLOSE_UNRESUMABLE) => SocketEnding::Unresumable,
         Some(protocol::CLOSE_GAME_NOT_FOUND) => SocketEnding::StaleId,
         _ => SocketEnding::Disconnected,
@@ -62,7 +69,9 @@ pub fn backoff(attempt: u32) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use protocol::{CLOSE_GAME_NOT_FOUND, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE};
+    use protocol::{
+        CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+    };
 
     use super::*;
 
@@ -77,6 +86,13 @@ mod tests {
     fn unresumable_keeps_the_saved_game() {
         let ending = sort(Some(CLOSE_UNRESUMABLE));
         assert_eq!(ending, SocketEnding::Unresumable);
+        assert!(ending.keeps_saved_game());
+    }
+
+    #[test]
+    fn server_restarting_keeps_the_saved_game() {
+        let ending = sort(Some(CLOSE_SERVER_RESTARTING));
+        assert_eq!(ending, SocketEnding::Restarting);
         assert!(ending.keeps_saved_game());
     }
 

@@ -24,6 +24,7 @@ pub fn StatusBarView() -> impl IntoView {
         ConnStatus::Connecting => "connecting",
         ConnStatus::Connected => "connected",
         ConnStatus::Reconnecting => "reconnecting",
+        ConnStatus::Restarting => "server restarting",
         ConnStatus::Failed => "failed",
         ConnStatus::AwaitingRoster => "awaiting-roster",
         ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",

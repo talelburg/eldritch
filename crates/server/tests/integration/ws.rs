@@ -7,8 +7,11 @@ use std::time::Duration;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
-use protocol::{ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_UNRESUMABLE};
+use protocol::{
+    ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
+};
 use server::session::GameSession;
+use server::shutdown::Shutdown;
 use sqlx::SqlitePool;
 use tokio::time;
 
@@ -243,5 +246,36 @@ async fn a_socket_that_keeps_pinging_stays_open_past_the_timeout() {
         time::sleep(SHORT_SILENCE / 2).await;
         common::send(&mut ws, &ClientMessage::Ping).await;
         assert_pong(&mut ws).await;
+    }
+}
+
+#[tokio::test]
+async fn the_shutdown_trigger_closes_every_open_socket_as_restarting() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-one").await;
+    seed_game(&pool, "g-two").await;
+    let shutdown = Shutdown::new();
+    let trigger = shutdown.clone();
+    let addr = common::spawn_server_with(pool, |state| state.with_shutdown(trigger)).await;
+
+    // Two sockets on one game and one on another, each past its `Hello`.
+    let mut sockets = Vec::new();
+    for game_id in ["g-one", "g-one", "g-two"] {
+        let mut ws = common::connect(addr, game_id).await;
+        let _ = time::timeout(Duration::from_secs(5), common::recv(&mut ws))
+            .await
+            .expect("a Hello within 5 s");
+        sockets.push(ws);
+    }
+
+    shutdown.trigger();
+
+    for ws in &mut sockets {
+        time::timeout(
+            Duration::from_secs(5),
+            common::assert_closed_with(ws, CLOSE_SERVER_RESTARTING),
+        )
+        .await
+        .expect("every socket is closed soon after the trigger");
     }
 }

@@ -193,6 +193,13 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// client stops retrying and keeps the saved id, which a rollback can resume.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
+/// The close code every open WebSocket gets when the server shuts down for a
+/// restart: 1012, the standard "Service Restart" code.
+///
+/// The server is expected back, so a client keeps its saved id and retries
+/// with backoff, saying the server is restarting until the next `Hello`.
+pub const CLOSE_SERVER_RESTARTING: u16 = 1012;
+
 // Liveness. Any frame proves a connection is alive, in both directions: every
 // inbound frame resets the receiving end's silence timer, not only a `Pong` or
 // a `Ping`, so a busy connection is never mistaken for a dead one.
