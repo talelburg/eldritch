@@ -27,6 +27,7 @@ mod enemy_card;
 mod entity_names;
 mod event_log;
 mod in_play_card;
+mod input_lockout;
 mod location_card;
 mod map;
 mod map_node_layout;

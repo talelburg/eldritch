@@ -121,6 +121,18 @@
    row). min-width:0 lets the column shrink within the flex row instead of
    overflowing. */
 .main-column { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+/* The input-lockout wrapper around the board and its in-game modals. It adds no
+   box, so the board stays a flex child of .main-column, and no stacking context,
+   so the modals inside it stack against the screens outside it by z-index. */
+.board-lock { display: contents; }
+/* Why the board is locked. Above the in-game modals (28/29), below the sign-in
+   screen and the version-mismatch card (38-41), which explain themselves. */
+.lock-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 35;
+    background: #444; color: #fff; text-align: center;
+    padding: 0.5rem 1rem; font-weight: bold;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
 .event-log { flex: 0 0 auto; width: 22rem; }
 /* Collapsed: shrink to a thin strip (just the expand toggle) so the log frees
    the left side when hidden, instead of leaving a 22rem empty column. */
