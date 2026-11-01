@@ -175,8 +175,23 @@ pub struct CreateGameResponse {
 /// then closes, rather than refusing the upgrade, because a refused upgrade
 /// reaches script only as close code 1006 (WHATWG `WebSockets`: *"the
 /// WebSocket connection close code would be 1006"*), which a client can't
-/// tell from a game id the server doesn't know.
+/// tell from a network drop.
 pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
+
+/// The close code ending a game's WebSocket when the server has no game with
+/// that id.
+///
+/// This is the only ending that means a stale id: a client forgets its saved
+/// game id on this code and on no other. Every other close, before or after
+/// `Hello`, may be a server restarting or a network drop, and is retried.
+pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
+
+/// The close code ending a game's WebSocket when the game exists but is an
+/// unresumable game: its stored rows can't be rebuilt by this server's build.
+///
+/// It fails the same way on every attempt until the build changes, so a
+/// client stops retrying and keeps the saved id, which a rollback can resume.
+pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
 // Liveness. Any frame proves a connection is alive, in both directions: every
 // inbound frame resets the receiving end's silence timer, not only a `Pong` or

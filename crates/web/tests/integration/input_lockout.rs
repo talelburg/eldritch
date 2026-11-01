@@ -26,7 +26,7 @@ fn wrapper(handle: &BoardHandle) -> Element {
 
 /// Every status but `Connected`, listed rather than sampled: the claim is
 /// "locked at *every* other status".
-fn every_status_but_connected() -> [ConnStatus; 6] {
+fn every_status_but_connected() -> [ConnStatus; 7] {
     [
         ConnStatus::Connecting,
         ConnStatus::Reconnecting,
@@ -34,6 +34,7 @@ fn every_status_but_connected() -> [ConnStatus; 6] {
         ConnStatus::AwaitingRoster,
         ConnStatus::VersionMismatch,
         ConnStatus::SignedOut(vec![]),
+        ConnStatus::Unresumable,
     ]
 }
 
@@ -88,6 +89,7 @@ async fn the_picker_and_the_terminal_screens_stay_clickable_while_the_board_is_l
         (ConnStatus::AwaitingRoster, ".picker-overlay"),
         (ConnStatus::SignedOut(vec![dev]), ".sign-in"),
         (ConnStatus::VersionMismatch, ".version-mismatch"),
+        (ConnStatus::Unresumable, ".unresumable"),
     ] {
         let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
         handle.store.update(|s| s.status = status.clone());

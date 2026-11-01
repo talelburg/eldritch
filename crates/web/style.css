@@ -424,6 +424,23 @@
     padding: 0.4rem 1.4rem; font-weight: bold; cursor: pointer;
 }
 
+/* Unresumable-game overlay: the version-mismatch overlay's scrim-and-card
+   shape, at the sign-in screen's level (38/39); the statuses that show them are
+   exclusive. Terminal: the transport has stopped retrying, so there is nothing
+   to dismiss back to. */
+.ur-backdrop { position: fixed; inset: 0; z-index: 38; background: rgba(0, 0, 0, 0.6); }
+.unresumable {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 39;
+    max-width: 26rem; background: #fff; border: 2px solid #1a1a1a; border-radius: 6px;
+    padding: 1rem 1.5rem; text-align: center;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.unresumable .ur-detail { margin: 0 0 0.75rem; font-weight: bold; }
+.ur-new-game {
+    background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
+    padding: 0.4rem 1.4rem; font-weight: bold; cursor: pointer;
+}
+
 /* Sign-in screen: the version-mismatch overlay's scrim-and-card shape, just
    below it (38/39). Signed out there is nothing the board behind it can do. */
 .sign-in-backdrop { position: fixed; inset: 0; z-index: 38; background: rgba(0, 0, 0, 0.6); }

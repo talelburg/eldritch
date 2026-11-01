@@ -1,6 +1,6 @@
 //! Browser transport (wasm only): check sign-in, bootstrap a game, connect
 //! its WebSocket, fold inbound frames into the store, forward outbound
-//! actions, and reconnect on close.
+//! actions, and reconnect on close with backoff.
 
 use std::time::Duration;
 
@@ -27,8 +27,6 @@ use crate::url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
-/// Fixed reconnect backoff. Plenty for solo play; not exponential.
-const RECONNECT_MS: u32 = 1000;
 /// HTTP 401, which the server answers when the request isn't signed in.
 const UNAUTHORIZED: u16 = 401;
 
@@ -69,8 +67,12 @@ async fn run(
         None => return, // bootstrap set Failed or SignedOut already
     };
 
+    // Reconnect attempts since the last `Hello`, which sets it back to 0. A
+    // socket that opens and fails before `Hello` doesn't reset it, so a
+    // half-working server can't hold the client in a 1 s retry loop.
+    let mut attempt: u32 = 0;
     loop {
-        let outcome = connect_once(&store, &game_id, &mut rx).await;
+        let outcome = connect_once(&store, &game_id, &mut rx, &mut attempt).await;
         if let ConnectOutcome::Ended(ending) = outcome {
             if !ending.keeps_saved_game() {
                 clear_saved_id();
@@ -92,10 +94,15 @@ async fn run(
                 }
                 return;
             }
-            // Opened, but the server closed before any Hello: a valid game
-            // always sends Hello immediately, so the id is unknown to the
-            // server (e.g. a DB reset). It was discarded above; create a
-            // fresh game.
+            // This server's build can't rebuild the game, and every attempt
+            // would fail the same way. Say so and stop, keeping the saved id:
+            // a rollback to an earlier build can still resume it.
+            ConnectOutcome::Ended(SocketEnding::Unresumable) => {
+                store.update(|s| s.status = ConnStatus::Unresumable);
+                return;
+            }
+            // The server says it has no game with this id (e.g. a DB reset).
+            // It was discarded above; create a fresh game.
             ConnectOutcome::Ended(SocketEnding::StaleId) => {
                 let Some(req) = await_roster(&store, &mut create_rx).await else {
                     return;
@@ -113,7 +120,8 @@ async fn run(
         }
 
         store.update(|s| s.status = ConnStatus::Reconnecting);
-        TimeoutFuture::new(RECONNECT_MS).await;
+        TimeoutFuture::new(millis(socket_ending::backoff(attempt))).await;
+        attempt = attempt.saturating_add(1);
     }
 }
 
@@ -206,7 +214,7 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 /// One socket lifetime: open, pump inbound->reduce and outbound->sink,
 /// pinging every [`protocol::PING_INTERVAL`], until close or until the server
 /// is silent for [`protocol::CLIENT_SILENCE_TIMEOUT`], and mark Connected
-/// when the `Hello` arrives. The returned
+/// when the `Hello` arrives, which also sets `attempt` back to 0. The returned
 /// [`ConnectOutcome`] tells the reconnect loop whether the server is
 /// unreachable, the frames were skewed, or how the socket ended.
 ///
@@ -219,6 +227,7 @@ async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
     rx: &mut UnboundedReceiver<ClientMessage>,
+    attempt: &mut u32,
 ) -> ConnectOutcome {
     store.update(|s| {
         if s.status != ConnStatus::Reconnecting {
@@ -231,7 +240,6 @@ async fn connect_once(
 
     let (mut write, read) = ws.split();
     let mut read = read.fuse();
-    let mut saw_hello = false;
     let mut close_code = None;
     let mut version_mismatch = false;
     let mut ping = IntervalStream::new(millis(protocol::PING_INTERVAL)).fuse();
@@ -251,7 +259,9 @@ async fn connect_once(
                     silence = silence_deadline();
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
                         let is_hello = matches!(msg, ServerMessage::Hello { .. });
-                        saw_hello |= is_hello;
+                        if is_hello {
+                            *attempt = 0;
+                        }
                         // One update, so the board unlocks with the fresh
                         // state already in it.
                         store.update(|s| {
@@ -296,7 +306,7 @@ async fn connect_once(
         // `Hello`, and never a reason to forget the saved game.
         ConnectOutcome::Ended(SocketEnding::Disconnected)
     } else {
-        ConnectOutcome::Ended(socket_ending::sort(saw_hello, close_code))
+        ConnectOutcome::Ended(socket_ending::sort(close_code))
     }
 }
 
@@ -365,7 +375,7 @@ pub fn sign_out() {
 /// (no saved id → `await_roster`).
 ///
 /// The server-side game persists; this only drops the local pointer. Pairs with
-/// the "New game" button in `BoardView`.
+/// the "New game" buttons in the status bar and the unresumable-game overlay.
 pub fn start_new_game() {
     clear_saved_id();
     reload();

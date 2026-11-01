@@ -4,15 +4,13 @@
 
 use std::time::Duration;
 
-use futures_util::StreamExt as _;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_UNRESUMABLE};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 use tokio::time;
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
@@ -51,29 +49,47 @@ async fn connect_receives_hello_with_current_state() {
 }
 
 #[tokio::test]
-async fn connect_to_a_missing_game_is_dropped_and_a_real_game_still_attaches() {
+async fn connect_to_a_missing_game_is_closed_as_not_found_and_a_real_game_still_attaches() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-real").await;
     let addr = common::spawn_server(pool).await;
 
     let mut missing = common::connect(addr, "g-missing").await;
-    // The socket ends, however the transport reports it, without a message.
     // The timeout turns a socket left open into a failure, not a hang.
-    time::timeout(Duration::from_secs(5), async {
-        while let Some(Ok(frame)) = missing.next().await {
-            if let Message::Text(text) = frame {
-                panic!("a missing game sends nothing, got {text}");
-            }
-        }
-    })
+    time::timeout(
+        Duration::from_secs(5),
+        common::assert_closed_with(&mut missing, CLOSE_GAME_NOT_FOUND),
+    )
     .await
-    .expect("the missing game's socket ends");
+    .expect("the missing game's socket is closed");
 
     let mut real = common::connect(addr, "g-real").await;
     match common::recv(&mut real).await {
         ServerMessage::Hello { .. } => {}
         other => panic!("expected Hello, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn connect_to_an_unresumable_game_is_closed_as_unresumable() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-unresumable").await;
+    // A stored format version this build doesn't accept.
+    sqlx::query("UPDATE games SET format_version = ? WHERE game_id = ?")
+        .bind(99_i64)
+        .bind("g-unresumable")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let addr = common::spawn_server(pool).await;
+
+    let mut ws = common::connect(addr, "g-unresumable").await;
+    time::timeout(
+        Duration::from_secs(5),
+        common::assert_closed_with(&mut ws, CLOSE_UNRESUMABLE),
+    )
+    .await
+    .expect("the unresumable game's socket is closed");
 }
 
 #[tokio::test]

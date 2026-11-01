@@ -22,6 +22,10 @@ pub enum ConnStatus {
     /// Not signed in: render the sign-in screen, offering these methods. The
     /// saved game id is kept, so signing in returns to the same game.
     SignedOut(Vec<SignInMethod>),
+    /// The server can't rebuild this game on its current build: an
+    /// unresumable game. Terminal: the transport stops retrying and keeps the
+    /// saved id, which a rollback to an earlier build can resume.
+    Unresumable,
 }
 
 impl ConnStatus {

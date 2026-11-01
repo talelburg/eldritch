@@ -85,6 +85,7 @@ async fn the_sign_in_screen_is_absent_while_signed_in() {
         ConnStatus::Failed,
         ConnStatus::AwaitingRoster,
         ConnStatus::VersionMismatch,
+        ConnStatus::Unresumable,
     ] {
         let (store, container) = mount(|| view! { <SignInView/> });
         store.update(|s| s.status = status.clone());

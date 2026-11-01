@@ -24,6 +24,8 @@ use crate::store::{self, StoreSignal};
 use crate::transport;
 use crate::turn_tracker::TurnTrackerView;
 #[cfg(target_arch = "wasm32")]
+use crate::unresumable::UnresumableView;
+#[cfg(target_arch = "wasm32")]
 use crate::version_mismatch::VersionMismatchView;
 
 #[component]
@@ -157,14 +159,15 @@ fn LockBanner() -> impl IntoView {
 }
 
 /// The screens that take input while the board is locked: the pre-game
-/// picker, the sign-in screen and the version-mismatch overlay. Each shows
-/// only at a status other than `Connected`, so all of them sit outside the
-/// lockout wrapper.
+/// picker, the sign-in screen, the unresumable-game overlay and the
+/// version-mismatch overlay. Each shows only at a status other than
+/// `Connected`, so all of them sit outside the lockout wrapper.
 ///
 /// The picker only renders pre-game. The sign-in screen covers the rest, since
-/// nothing behind it answers while signed out. The version-mismatch overlay is
-/// last, and stacks above everything: it is terminal, so nothing it covers can
-/// still be acted on.
+/// nothing behind it answers while signed out. The unresumable overlay is
+/// terminal and covers the board it can't resume. The version-mismatch overlay
+/// is last, and stacks above everything: it is terminal, so nothing it covers
+/// can still be acted on.
 #[component]
 fn Screens() -> impl IntoView {
     view! {
@@ -173,6 +176,7 @@ fn Screens() -> impl IntoView {
             { view! {
                 <PickerView/>
                 <SignInView/>
+                <UnresumableView/>
                 <VersionMismatchView/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]

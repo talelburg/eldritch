@@ -12,7 +12,10 @@ use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
-use protocol::{ClientMessage, GameId, ServerMessage, CLOSE_UNAUTHENTICATED};
+use protocol::{
+    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_UNAUTHENTICATED,
+    CLOSE_UNRESUMABLE,
+};
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
@@ -83,7 +86,10 @@ pub(crate) fn rooms(db: SqlitePool, registries: Registries) -> Rooms {
 /// The session is resolved before the game. Without one, the socket is
 /// upgraded and then closed with [`CLOSE_UNAUTHENTICATED`] before any
 /// message, rather than refused: a refused upgrade reaches script only as
-/// close code 1006, which reads the same as an unknown game.
+/// close code 1006, which reads the same as a network drop.
+///
+/// An unknown game id is closed with [`CLOSE_GAME_NOT_FOUND`] and an
+/// unresumable game with [`CLOSE_UNRESUMABLE`], the same way.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
     Path(game_id): Path<GameId>,
@@ -92,18 +98,20 @@ pub(crate) async fn game_ws(
 ) -> Response {
     match auth::signed_in(&state.db, &jar).await {
         Ok(Some(_)) => ws.on_upgrade(move |socket| handle_socket(socket, state, game_id)),
-        Ok(None) => ws.on_upgrade(close_unauthenticated),
+        Ok(None) => {
+            ws.on_upgrade(|socket| close_with(socket, CLOSE_UNAUTHENTICATED, "not signed in"))
+        }
         Err(error) => auth::internal_error("session lookup", &error).into_response(),
     }
 }
 
-/// Close `socket` as unauthenticated, then read it until the client's
-/// closing frame, so the close handshake completes and the client sees the
-/// code.
-async fn close_unauthenticated(mut socket: WebSocket) {
+/// Close `socket` with `code` before any message, then read it until the
+/// client's closing frame, so the close handshake completes and the client
+/// sees the code.
+async fn close_with(mut socket: WebSocket, code: u16, reason: &'static str) {
     let frame = CloseFrame {
-        code: CLOSE_UNAUTHENTICATED,
-        reason: "not signed in".into(),
+        code,
+        reason: reason.into(),
     };
     if socket.send(Message::Close(Some(frame))).await.is_err() {
         return;
@@ -116,10 +124,25 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
     // ends, so the room's idle grace starts only once its last socket has gone.
     let connection = match state.rooms.get_or_load(&game_id).await {
         Ok(connection) => connection,
-        // No such game — nothing to attach to. Drop the socket.
-        Err(LoadFailure::NotFound) => return,
+        // No such game: the one ending that tells the client its id is stale.
+        Err(LoadFailure::NotFound) => {
+            close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await;
+            return;
+        }
         // A game that can't be rebuilt is never served half-built, nor passed
-        // off as absent.
+        // off as absent. An unresumable one says so: it fails the same way on
+        // every attempt, so the client stops retrying.
+        Err(LoadFailure::Failed(err)) if matches!(*err, SessionError::Unresumable { .. }) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to attach: this game is unresumable",
+            );
+            close_with(socket, CLOSE_UNRESUMABLE, "unresumable game").await;
+            return;
+        }
+        // Any other failure is retried by the next get, so the socket is
+        // dropped bare and the client reconnects.
         Err(LoadFailure::Failed(err)) => {
             tracing::error!(
                 game_id = game_id.as_str(),

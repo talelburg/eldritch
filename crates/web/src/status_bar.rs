@@ -28,6 +28,7 @@ pub fn StatusBarView() -> impl IntoView {
         ConnStatus::AwaitingRoster => "awaiting-roster",
         ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
         ConnStatus::SignedOut(_) => "signed out",
+        ConnStatus::Unresumable => "unresumable game",
     };
     let rejection = move || store.get().last_rejection.unwrap_or_default();
     let waiting = move || {
