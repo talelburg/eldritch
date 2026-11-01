@@ -39,6 +39,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #371 | Location-attachment ownership, PR #984 |
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
 | #570 | Replay integrity; not planned, superseded by #1224's label-matched replay |
+| #580 | Room registry: each game loads once, off the global lock and the async workers, and is evicted after 10 idle minutes, PR #1285; slices #1282, #1283, #1284 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
@@ -52,6 +53,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1234 | Board fixtures beside `Seat`, PR #1259; slices #1251–#1258 |
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
 | #1237 | GitHub and Google sign-in against the allowlist, PR #1277; slices #1275, #1276 |
+| #1238 | Seating refuses a roster naming one investigator twice, PR #1281 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 
 ## Ordering
@@ -66,7 +68,7 @@ tracker, and the tracker's dependency view is authoritative.
   of lane 3 copy #1234's fixtures.
 - **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
-- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580.
+- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580 (✅ PR #1285).
 - **Liveness:** #1140.
 
 **2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.

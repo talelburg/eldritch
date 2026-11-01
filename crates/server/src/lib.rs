@@ -12,6 +12,7 @@ pub mod db;
 pub mod fingerprint;
 mod id;
 pub mod lifecycle;
+mod rooms;
 pub mod session;
 mod store;
 mod ws;
@@ -40,7 +41,8 @@ pub struct AppState {
     /// The card and scenario registries every game is created, played and
     /// replayed against.
     registries: Registries,
-    /// Live games keyed by `game_id`, each with its broadcast group.
+    /// The live games' rooms, each with its broadcast group, loaded once per
+    /// game from its stored game.
     rooms: Rooms,
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
     /// served as the router fallback.
@@ -74,9 +76,9 @@ impl AppState {
     #[must_use]
     pub fn new_with_dist(db: SqlitePool, registries: Registries, dist_dir: PathBuf) -> Self {
         Self {
+            rooms: ws::rooms(db.clone(), registries),
             db,
             registries,
-            rooms: ws::rooms(),
             dist_dir,
             dev_auth: false,
             identity_providers: Vec::new(),

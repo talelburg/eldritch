@@ -2,7 +2,6 @@
 //! events out to every connection while serializing applies through a
 //! per-game [`GameSession`] mutex.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
@@ -12,12 +11,15 @@ use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt as _, StreamExt as _};
+use game_core::engine::Registries;
 use protocol::{ClientMessage, GameId, ServerMessage, CLOSE_UNAUTHENTICATED};
+use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
 
-use crate::session::GameSession;
+use crate::rooms::{LoadFailure, Loader, RoomRegistry};
+use crate::session::{GameSession, SessionError, StoredGame};
 use crate::{auth, AppState};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
@@ -33,43 +35,45 @@ pub(crate) struct GameRoom {
     tx: Sender<ServerMessage>,
 }
 
-/// The server's map of live games, keyed by [`GameId`].
-pub(crate) type Rooms = Arc<Mutex<HashMap<GameId, Arc<GameRoom>>>>;
-
-/// Build an empty rooms map for [`AppState`].
-pub(crate) fn rooms() -> Rooms {
-    Arc::new(Mutex::new(HashMap::new()))
+/// The production [`Loader`]: a game's room is loaded from its stored game,
+/// read from `db` and rebuilt against `registries`.
+pub(crate) struct StoredGames {
+    db: SqlitePool,
+    registries: Registries,
 }
 
-/// Get the room for `game_id`, lazily loading it from the action log on
-/// a cache miss (e.g. first access, or after a server restart). Returns
-/// `None` if no such game exists — and also if it fails to load (an
-/// unresumable game, say), which is logged at `error` first rather than
-/// passed off as absence.
-/// A session that cannot be reconstructed is never served half-built.
-async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<GameRoom>> {
-    let mut rooms = state.rooms.lock().await;
-    if let Some(room) = rooms.get(game_id) {
-        return Some(room.clone());
+impl Loader for StoredGames {
+    type Stored = StoredGame;
+    type Room = GameRoom;
+
+    async fn read(&self, game_id: &GameId) -> Result<Option<StoredGame>, SessionError> {
+        GameSession::read(&self.db, game_id).await
     }
-    let session = match GameSession::load(state.db.clone(), state.registries, game_id).await {
-        Ok(session) => session?,
-        Err(err) => {
-            tracing::error!(
-                game_id = game_id.as_str(),
-                error = %err,
-                "refusing to attach: this game failed to load",
-            );
-            return None;
-        }
-    };
-    let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
-    let room = Arc::new(GameRoom {
-        session: Mutex::new(session),
-        tx,
-    });
-    rooms.insert(game_id.clone(), room.clone());
-    Some(room)
+
+    fn rebuild(&self, stored: StoredGame) -> Result<GameRoom, SessionError> {
+        let session = GameSession::rebuild(self.db.clone(), self.registries, stored)?;
+        let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
+        Ok(GameRoom {
+            session: Mutex::new(session),
+            tx,
+        })
+    }
+
+    /// An unresumable game fails the same way on every load until the build
+    /// changes, which restarts the process. Every other failure is retried
+    /// by the next get.
+    fn is_permanent(&self, error: &SessionError) -> bool {
+        matches!(error, SessionError::Unresumable { .. })
+    }
+}
+
+/// The server's live games' rooms, loaded from their stored games.
+pub(crate) type Rooms = Arc<RoomRegistry<StoredGames>>;
+
+/// Build an empty room registry for [`AppState`], loading from `db` against
+/// `registries`.
+pub(crate) fn rooms(db: SqlitePool, registries: Registries) -> Rooms {
+    Arc::new(RoomRegistry::new(StoredGames { db, registries }))
 }
 
 /// Axum handler: upgrade a `GET /ws/{game_id}` request to a
@@ -107,10 +111,24 @@ async fn close_unauthenticated(mut socket: WebSocket) {
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
-    let Some(room) = get_or_load_room(&state, &game_id).await else {
+    // The connection lives as long as this socket does, however the socket
+    // ends, so the room's idle grace starts only once its last socket has gone.
+    let connection = match state.rooms.get_or_load(&game_id).await {
+        Ok(connection) => connection,
         // No such game — nothing to attach to. Drop the socket.
-        return;
+        Err(LoadFailure::NotFound) => return,
+        // A game that can't be rebuilt is never served half-built, nor passed
+        // off as absent.
+        Err(LoadFailure::Failed(err)) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to attach: this game failed to load",
+            );
+            return;
+        }
     };
+    let room = connection.room();
     let mut rx = room.tx.subscribe();
     let (mut sink, mut stream) = socket.split();
 
@@ -133,7 +151,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             },
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
-                if let Some(direct) = handle_client_message(&room, message).await {
+                if let Some(direct) = handle_client_message(room, message).await {
                     let close = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
                         if send_msg(&mut sink, &msg).await.is_err() {

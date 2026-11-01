@@ -291,13 +291,15 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     assert!(
         matches!(
             &err,
-            SessionError::Unresumable {
-                game_id,
-                reason: UnresumableReason::Replay {
-                    seq: 0,
-                    reason: ReplayFailure::Rejected(_),
-                },
-            } if game_id.as_str() == "stale"
+            SessionError::Unresumable { game_id, reason }
+                if game_id.as_str() == "stale"
+                    && matches!(
+                        **reason,
+                        UnresumableReason::Replay {
+                            seq: 0,
+                            reason: ReplayFailure::Rejected(_),
+                        }
+                    )
         ),
         "the failure must name the game and the offending action, got {err:?}",
     );
