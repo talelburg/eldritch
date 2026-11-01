@@ -129,6 +129,14 @@ struct Opened {
     events: Vec<Event>,
 }
 
+/// A stored game's rows as [`GameSession::read`] fetched them, before any
+/// check: its `games` row and its action rows in `seq` order.
+pub(crate) struct StoredGame {
+    game_id: GameId,
+    row: GameRow,
+    actions: Vec<ActionRow>,
+}
+
 /// Why setup didn't run from a game's creation inputs.
 enum SetupFailure {
     UnknownScenario(ScenarioId),
@@ -300,6 +308,8 @@ impl GameSession {
     /// creation inputs, check what setup decided against the stored setup
     /// fingerprint, and replay its action log, running the replay checks on
     /// each logged answer. Returns `None` if no game with `game_id` exists.
+    /// It is `read` followed by `rebuild`: both reads happen before setup
+    /// runs, and every check runs after them.
     ///
     /// Each replayed answer overwrites `outcome`; with an empty log the
     /// session is at setup's outcome, the mulligan prompt. Setup is re-run,
@@ -320,9 +330,65 @@ impl GameSession {
         registries: Registries,
         game_id: &GameId,
     ) -> Result<Option<Self>, SessionError> {
-        let Some(row) = store::load_game(&db, game_id).await? else {
+        let Some(stored) = Self::read(&db, game_id).await? else {
             return Ok(None);
         };
+        Self::rebuild(db, registries, stored).map(Some)
+    }
+
+    /// The I/O half of [`GameSession::load`]: fetch a stored game's row and
+    /// its action rows, unparsed. Returns `None` if no game with `game_id`
+    /// exists. Runs no check, so every failure but a query's is
+    /// [`GameSession::rebuild`]'s to report.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Db`] if a query fails.
+    pub(crate) async fn read(
+        db: &SqlitePool,
+        game_id: &GameId,
+    ) -> Result<Option<StoredGame>, SessionError> {
+        let Some(row) = store::load_game(db, game_id).await? else {
+            return Ok(None);
+        };
+        let actions = store::load_actions(db, game_id).await?;
+        Ok(Some(StoredGame {
+            game_id: game_id.clone(),
+            row,
+            actions,
+        }))
+    }
+
+    /// The CPU half of [`GameSession::load`]: rebuild the live game from the
+    /// rows [`GameSession::read`] fetched. It does no I/O and never awaits, so
+    /// a caller can run it on a blocking thread; `db` is only kept for the
+    /// session's later writes.
+    ///
+    /// The checks run in this order, and the first to fail is reported:
+    /// format version, the stored fingerprint's deserialization, setup, the
+    /// fingerprint comparison, then each logged answer's deserialization and
+    /// replay.
+    ///
+    /// # Errors
+    ///
+    /// As [`GameSession::load`], except [`SessionError::Db`], which only a
+    /// read reports.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the error is `load`'s, which every caller already takes by \
+                  value, and it is built once per failed load; the lint only \
+                  skips `load` because it is async"
+    )]
+    pub(crate) fn rebuild(
+        db: SqlitePool,
+        registries: Registries,
+        stored: StoredGame,
+    ) -> Result<Self, SessionError> {
+        let StoredGame {
+            game_id,
+            row,
+            actions,
+        } = stored;
         let unresumable = |reason| SessionError::Unresumable {
             game_id: game_id.clone(),
             reason,
@@ -351,7 +417,7 @@ impl GameSession {
         let mut state = opened.state;
         let mut outcome = opened.outcome;
         let mut seq: i64 = 0;
-        for row in store::load_actions(&db, game_id).await? {
+        for row in actions {
             let answer: LoggedAnswer = serde_json::from_str(&row.answer)?;
             let draws = from_sql_integer(row.draws);
             // A failed check means the log does not reproduce the session it
@@ -364,11 +430,11 @@ impl GameSession {
             seq += 1;
         }
 
-        Ok(Some(Self {
-            game_id: game_id.clone(),
+        Ok(Self {
+            game_id,
             live: LiveGame::new(state, outcome, opened.events, seq, registries),
             db,
-        }))
+        })
     }
 }
 
