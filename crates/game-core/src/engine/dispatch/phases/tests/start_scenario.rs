@@ -117,11 +117,12 @@ fn start_scenario_rejects_unresolvable_roster_entry() {
     assert!(result.events.is_empty());
 }
 
-/// Two `TEST_INV` roster entries with empty decks.
+/// Two different investigators, `TEST_INV` and `test_inv(2)`, with empty decks.
 fn two_seat_roster() -> Vec<RosterEntry> {
-    (0..2)
-        .map(|_| RosterEntry {
-            investigator: CardCode::new(TEST_INV),
+    [CardCode::new(TEST_INV), test_support::test_inv(2)]
+        .into_iter()
+        .map(|investigator| RosterEntry {
+            investigator,
             deck: vec![],
             random_basic_weaknesses: 0,
         })
@@ -166,11 +167,10 @@ fn seating_rejects_a_lead_index_past_the_roster() {
         TEST_REGISTRIES,
     );
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "got {:?}",
-        result.outcome
-    );
+    let EngineOutcome::Rejected { reason } = &result.outcome else {
+        panic!("expected a rejection, got {:?}", result.outcome);
+    };
+    assert!(reason.contains("lead"), "rejected for its lead: {reason}");
     assert_eq!(result.state.round, 0, "state unchanged on reject");
     assert_eq!(result.state.lead, None);
     assert!(result.events.is_empty());

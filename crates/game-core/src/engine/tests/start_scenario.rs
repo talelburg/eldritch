@@ -200,13 +200,18 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
     // hand independently. BTreeMap iteration is sorted so shuffle order
     // is deterministic.
     let state = GameStateBuilder::new().with_rng_seed(2026).build();
-    let roster: Vec<RosterEntry> = (0..3)
-        .map(|_| RosterEntry {
-            investigator: CardCode::new(test_support::TEST_INV),
-            deck: make_test_deck(8),
-            random_basic_weaknesses: 0,
-        })
-        .collect();
+    let roster: Vec<RosterEntry> = [
+        CardCode::new(test_support::TEST_INV),
+        test_support::test_inv(2),
+        test_support::test_inv(3),
+    ]
+    .into_iter()
+    .map(|investigator| RosterEntry {
+        investigator,
+        deck: make_test_deck(8),
+        random_basic_weaknesses: 0,
+    })
+    .collect();
     let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(matches!(
         result.outcome,

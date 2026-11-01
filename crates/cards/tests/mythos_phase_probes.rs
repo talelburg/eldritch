@@ -137,9 +137,13 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 /// player order ticks through Investigation → Enemy → Upkeep into Mythos
 /// (round 2), pausing with the encounter-draw cursor on inv1.
 fn at_mythos_draw(seats: usize) -> TestSession {
-    let roster: Vec<RosterEntry> = (0..seats)
-        .map(|_| RosterEntry {
-            investigator: CardCode::new(TEST_INV),
+    // Seating refuses one investigator twice, so the seats after the first
+    // are `test_inv(2)`, `test_inv(3)`, ….
+    let roster: Vec<RosterEntry> = std::iter::once(CardCode::new(TEST_INV))
+        .chain((2..).map(test_support::test_inv))
+        .take(seats)
+        .map(|investigator| RosterEntry {
+            investigator,
             deck: vec![],
             random_basic_weaknesses: 0,
         })
