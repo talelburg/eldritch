@@ -43,6 +43,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
+| #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
 | #1179 | `mount_board` for the web tests, PR #1260 |
 | #1224 | A stored game is its creation inputs plus a checked action log, PR #1264; slices #1262, #1263 |
 | #1225 | Configurable bind, dist path and build id, PR #1261 |
@@ -69,7 +70,7 @@ tracker, and the tracker's dependency view is authoritative.
 - **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
 - **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580 (✅ PR #1285).
-- **Liveness:** #1140.
+- **Liveness:** #1140 (✅ PR #1290).
 
 **2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.
 #458, #581, #583 and #1194 close with it. Until #1239 lands, a dev account
