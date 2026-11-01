@@ -8,7 +8,6 @@ use std::time::Duration;
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
-use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
@@ -33,9 +32,16 @@ use crate::{auth, AppState};
 /// the game.
 const BROADCAST_CAPACITY: usize = 256;
 
-/// How long a socket closed for a restart waits for the client's close reply
-/// before it drops. Inside the about 3 s the process takes to exit.
-const CLOSE_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long a close may take, its frame's send and the wait for the client's
+/// reply together, before the socket is dropped. A peer that stopped reading
+/// can't stall a close past it, and a restart's closes end inside the
+/// binary's `SHUTDOWN_GRACE`.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long one outbound frame may take to send before the socket is dropped.
+/// A peer that stopped reading fills its TCP buffer, and a send to it would
+/// otherwise wait until the OS gives up on the connection, many minutes later.
+const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A loaded game's room: its session (behind a mutex so applies serialize across
 /// connections) and the broadcast channel its connections subscribe to.
@@ -110,18 +116,36 @@ pub(crate) async fn game_ws(
     }
 }
 
-/// Close `socket` with `code` before any message, then read it until the
-/// client's closing frame, so the close handshake completes and the client
-/// sees the code.
-async fn close_with(mut socket: WebSocket, code: u16, reason: &'static str) {
-    let frame = CloseFrame {
-        code,
-        reason: reason.into(),
+/// Close `socket` with `code` before any message, awaiting the client's reply
+/// so it sees the code.
+async fn close_with(socket: WebSocket, code: u16, reason: &'static str) {
+    let (mut sink, mut stream) = socket.split();
+    close(&mut sink, Some(&mut stream), code, reason).await;
+}
+
+/// Send a close frame with `code` and `reason`. With `reply_from`, then read it
+/// until the client's closing frame, so the close handshake completes and the
+/// client sees the code. The whole close is bounded by [`CLOSE_TIMEOUT`]; a
+/// client that hasn't finished it by then is dropped.
+async fn close(
+    sink: &mut SplitSink<WebSocket, Message>,
+    reply_from: Option<&mut SplitStream<WebSocket>>,
+    code: u16,
+    reason: &'static str,
+) {
+    let closing = async {
+        let frame = CloseFrame {
+            code,
+            reason: reason.into(),
+        };
+        if sink.send(Message::Close(Some(frame))).await.is_err() {
+            return;
+        }
+        if let Some(stream) = reply_from {
+            while let Some(Ok(_)) = stream.next().await {}
+        }
     };
-    if socket.send(Message::Close(Some(frame))).await.is_err() {
-        return;
-    }
-    while let Some(Ok(_)) = socket.recv().await {}
+    let _ = time::timeout(CLOSE_TIMEOUT, closing).await;
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
@@ -178,21 +202,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
     tokio::pin!(shutting_down);
 
     loop {
+        // Polled in order, so when several arms are ready at once the first
+        // wins. Shutdown comes first, so a `Submit` that arrives with the
+        // signal isn't applied after it. The deadline comes last, so a frame
+        // that has already arrived counts as the client being alive.
         tokio::select! {
+            biased;
+
             // Like the deadline, this can't pass mid-apply: a `Submit` being
             // applied finishes, and persists, before the loop polls again.
             () = &mut shutting_down => {
-                close_for_restart(&mut sink, &mut stream).await;
-                break;
-            }
-            () = &mut silence => {
-                // Best-effort: a client this silent is likely gone, so its
-                // close reply isn't awaited.
-                let frame = CloseFrame {
-                    code: close_code::AWAY,
-                    reason: "no frame within the silence timeout".into(),
-                };
-                let _ = sink.send(Message::Close(Some(frame))).await;
+                close(&mut sink, Some(&mut stream), CLOSE_SERVER_RESTARTING, "server restarting")
+                    .await;
                 break;
             }
             broadcasted = rx.recv() => match broadcasted {
@@ -208,37 +229,26 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
                 let Some(Ok(message)) = incoming else { break };
                 silence.as_mut().reset(Instant::now() + state.silence_timeout);
                 if let Some(direct) = handle_client_message(room, message).await {
-                    let close = matches!(direct, Disposition::Close);
+                    let ends = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
                         if send_msg(&mut sink, &msg).await.is_err() {
                             break;
                         }
                     }
-                    if close {
+                    if ends {
                         break;
                     }
                 }
             }
+            () = &mut silence => {
+                // Best-effort: a client this silent is likely gone, so its
+                // close reply isn't awaited.
+                close(&mut sink, None, close_code::AWAY, "no frame within the silence timeout")
+                    .await;
+                break;
+            }
         }
     }
-}
-
-/// Close a socket with [`CLOSE_SERVER_RESTARTING`], then read it until the
-/// client's closing frame, so the client sees the code. A client that doesn't
-/// reply within [`CLOSE_REPLY_TIMEOUT`] is dropped, so shutdown isn't held up.
-async fn close_for_restart(
-    sink: &mut SplitSink<WebSocket, Message>,
-    stream: &mut SplitStream<WebSocket>,
-) {
-    let frame = CloseFrame {
-        code: CLOSE_SERVER_RESTARTING,
-        reason: "server restarting".into(),
-    };
-    if sink.send(Message::Close(Some(frame))).await.is_err() {
-        return;
-    }
-    let reply = async { while let Some(Ok(_)) = stream.next().await {} };
-    let _ = time::timeout(CLOSE_REPLY_TIMEOUT, reply).await;
 }
 
 /// What to do with `sink` after handling one inbound frame.
@@ -284,10 +294,18 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
     }
 }
 
+/// A send to the client that failed or didn't complete within
+/// [`SEND_TIMEOUT`]. Either way the socket is dropped.
+struct SendFailed;
+
+/// Send `msg` to the client as JSON text, within [`SEND_TIMEOUT`].
 async fn send_msg(
     sink: &mut SplitSink<WebSocket, Message>,
     msg: &ServerMessage,
-) -> Result<(), Error> {
+) -> Result<(), SendFailed> {
     let json = serde_json::to_string(msg).expect("ServerMessage always serializes");
-    sink.send(Message::Text(json.into())).await
+    match time::timeout(SEND_TIMEOUT, sink.send(Message::Text(json.into()))).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) | Err(_) => Err(SendFailed),
+    }
 }

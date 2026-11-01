@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, fs, future};
 
 use axum::body::{self, Body};
@@ -35,6 +35,7 @@ use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::Message;
@@ -539,25 +540,34 @@ pub(crate) async fn assert_closed_unauthenticated(ws: &mut Client) {
     assert_closed_with(ws, protocol::CLOSE_UNAUTHENTICATED).await;
 }
 
-/// Read `ws` to its end and require it to be closed with `code`, with no
-/// message read on the way.
+/// How long a bounded read waits before it fails the test, so a frame that
+/// never comes fails the test rather than hanging it.
+const READ_BOUND: Duration = Duration::from_secs(5);
+
+/// Read `ws` to its end and require it to be closed with `code` within
+/// [`READ_BOUND`], with no message read on the way.
 pub(crate) async fn assert_closed_with(ws: &mut Client, code: u16) {
-    loop {
-        match ws
-            .next()
-            .await
-            .expect("a close frame")
-            .expect("no ws error")
-        {
-            Message::Close(Some(frame)) => {
-                assert_eq!(frame.code, CloseCode::from(code), "the close code");
-                return;
+    let closed = async {
+        loop {
+            match ws
+                .next()
+                .await
+                .expect("a close frame")
+                .expect("no ws error")
+            {
+                Message::Close(Some(frame)) => {
+                    assert_eq!(frame.code, CloseCode::from(code), "the close code");
+                    return;
+                }
+                Message::Text(text) => panic!("no message before the close: {text}"),
+                Message::Close(None) => panic!("the close carries a code"),
+                _ => {}
             }
-            Message::Text(text) => panic!("no message before the close: {text}"),
-            Message::Close(None) => panic!("the close carries a code"),
-            _ => {}
         }
-    }
+    };
+    time::timeout(READ_BOUND, closed)
+        .await
+        .unwrap_or_else(|_| panic!("closed with {code} within {READ_BOUND:?}"));
 }
 
 /// Send a client message as JSON text.
@@ -577,6 +587,29 @@ pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
             _ => {}
         }
     }
+}
+
+/// [`recv`], failing the test if no message arrives within [`READ_BOUND`].
+pub(crate) async fn recv_within(ws: &mut Client) -> ServerMessage {
+    time::timeout(READ_BOUND, recv(ws))
+        .await
+        .unwrap_or_else(|_| panic!("a message within {READ_BOUND:?}"))
+}
+
+/// Set the stored format version of `game_id`: how a test stores a game this
+/// build can't resume.
+pub(crate) async fn set_format_version(pool: &SqlitePool, game_id: &str, version: i64) {
+    let edited = sqlx::query("UPDATE games SET format_version = ? WHERE game_id = ?")
+        .bind(version)
+        .bind(game_id)
+        .execute(pool)
+        .await
+        .expect("edit the stored format version");
+    assert_eq!(
+        edited.rows_affected(),
+        1,
+        "one game's format version is edited"
+    );
 }
 
 /// Set one JSON field, at `path`, of the answer logged at `seq` for `game_id`:

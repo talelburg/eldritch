@@ -4,11 +4,11 @@
 //! Both read their configuration from the environment and apply the
 //! migrations to the `SQLite` database before doing anything else.
 
-use std::env;
 use std::error::Error;
-use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
+use std::{env, future, io};
 
 use clap::{Parser, Subcommand};
 use server::accounts::{self, Account, Email, EntryRef};
@@ -22,7 +22,7 @@ use server::AppState;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tokio::signal::{self, unix::SignalKind};
-use tokio::time::{self, Duration};
+use tokio::time;
 use tracing_subscriber::EnvFilter;
 
 /// The Eldritch server. With no subcommand, it serves the game.
@@ -163,18 +163,20 @@ async fn serve(dev_auth: bool) -> Result<(), Box<dyn Error>> {
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
 
 /// Trigger `shutdown` on the first SIGINT (Ctrl-C) or SIGTERM (`systemctl
-/// stop`).
+/// stop`). If SIGTERM can't be listened for, SIGINT still is.
 async fn fire_on_signal(shutdown: Shutdown) {
-    let mut terminate = match signal::unix::signal(SignalKind::terminate()) {
-        Ok(terminate) => terminate,
-        Err(error) => {
-            tracing::error!("can't listen for SIGTERM: {error}");
-            return;
+    let mut terminate = signal::unix::signal(SignalKind::terminate())
+        .inspect_err(|error| tracing::error!("can't listen for SIGTERM: {error}"))
+        .ok();
+    let sigterm = async {
+        match &mut terminate {
+            Some(terminate) => terminate.recv().await,
+            None => future::pending().await,
         }
     };
     tokio::select! {
         _ = signal::ctrl_c() => tracing::info!("SIGINT: shutting down"),
-        _ = terminate.recv() => tracing::info!("SIGTERM: shutting down"),
+        _ = sigterm => tracing::info!("SIGTERM: shutting down"),
     }
     shutdown.trigger();
 }
