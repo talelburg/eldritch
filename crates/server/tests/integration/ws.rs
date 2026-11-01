@@ -4,15 +4,17 @@
 
 use std::time::Duration;
 
-use futures_util::StreamExt as _;
+use axum::extract::ws::close_code;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{
+    ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
+};
 use server::session::GameSession;
+use server::shutdown::Shutdown;
 use sqlx::SqlitePool;
 use tokio::time;
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
@@ -51,29 +53,31 @@ async fn connect_receives_hello_with_current_state() {
 }
 
 #[tokio::test]
-async fn connect_to_a_missing_game_is_dropped_and_a_real_game_still_attaches() {
+async fn connect_to_a_missing_game_is_closed_as_not_found_and_a_real_game_still_attaches() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-real").await;
     let addr = common::spawn_server(pool).await;
 
     let mut missing = common::connect(addr, "g-missing").await;
-    // The socket ends, however the transport reports it, without a message.
-    // The timeout turns a socket left open into a failure, not a hang.
-    time::timeout(Duration::from_secs(5), async {
-        while let Some(Ok(frame)) = missing.next().await {
-            if let Message::Text(text) = frame {
-                panic!("a missing game sends nothing, got {text}");
-            }
-        }
-    })
-    .await
-    .expect("the missing game's socket ends");
+    common::assert_closed_with(&mut missing, CLOSE_GAME_NOT_FOUND).await;
 
     let mut real = common::connect(addr, "g-real").await;
     match common::recv(&mut real).await {
         ServerMessage::Hello { .. } => {}
         other => panic!("expected Hello, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn connect_to_an_unresumable_game_is_closed_as_unresumable() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-unresumable").await;
+    // A stored format version this build doesn't accept.
+    common::set_format_version(&pool, "g-unresumable", 99).await;
+    let addr = common::spawn_server(pool).await;
+
+    let mut ws = common::connect(addr, "g-unresumable").await;
+    common::assert_closed_with(&mut ws, CLOSE_UNRESUMABLE).await;
 }
 
 #[tokio::test]
@@ -153,4 +157,91 @@ async fn rejected_action_returns_rejected_to_sender_only() {
         quiet.is_err(),
         "B must receive nothing for a rejected action"
     );
+}
+
+#[tokio::test]
+async fn a_ping_is_answered_with_a_pong_to_that_socket_only() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-ping").await;
+    let addr = common::spawn_server(pool).await;
+
+    let mut a = common::connect(addr, "g-ping").await;
+    let mut b = common::connect(addr, "g-ping").await;
+    let _ = common::recv(&mut a).await;
+    let _ = common::recv(&mut b).await;
+
+    common::send(&mut a, &ClientMessage::Ping).await;
+
+    assert_pong(&mut a).await;
+    let quiet = time::timeout(Duration::from_millis(200), common::recv(&mut b)).await;
+    assert!(quiet.is_err(), "B must receive nothing for A's ping");
+}
+
+/// The silence timeout the liveness tests inject in place of
+/// [`protocol::SERVER_SILENCE_TIMEOUT`].
+const SHORT_SILENCE: Duration = Duration::from_millis(300);
+
+/// Require the next message on `ws` to be a `Pong`, within a bound so a missing
+/// one fails the test rather than hanging it.
+async fn assert_pong(ws: &mut common::Client) {
+    match common::recv_within(ws).await {
+        ServerMessage::Pong => {}
+        other => panic!("expected Pong, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_socket_that_sends_nothing_is_closed_as_going_away() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-silent").await;
+    let addr =
+        common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
+
+    let mut ws = common::connect(addr, "g-silent").await;
+    let _ = common::recv(&mut ws).await;
+
+    common::assert_closed_with(&mut ws, close_code::AWAY).await;
+}
+
+#[tokio::test]
+async fn a_socket_that_keeps_pinging_stays_open_past_the_timeout() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-pinging").await;
+    let addr =
+        common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
+
+    let mut ws = common::connect(addr, "g-pinging").await;
+    let _ = common::recv(&mut ws).await;
+
+    // Four pings half a timeout apart span twice the timeout, and each one is
+    // still answered.
+    for _ in 0..4 {
+        time::sleep(SHORT_SILENCE / 2).await;
+        common::send(&mut ws, &ClientMessage::Ping).await;
+        assert_pong(&mut ws).await;
+    }
+}
+
+#[tokio::test]
+async fn the_shutdown_trigger_closes_every_open_socket_as_restarting() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-one").await;
+    seed_game(&pool, "g-two").await;
+    let shutdown = Shutdown::new();
+    let trigger = shutdown.clone();
+    let addr = common::spawn_server_with(pool, |state| state.with_shutdown(trigger)).await;
+
+    // Two sockets on one game and one on another, each past its `Hello`.
+    let mut sockets = Vec::new();
+    for game_id in ["g-one", "g-one", "g-two"] {
+        let mut ws = common::connect(addr, game_id).await;
+        let _ = common::recv_within(&mut ws).await;
+        sockets.push(ws);
+    }
+
+    shutdown.trigger();
+
+    for ws in &mut sockets {
+        common::assert_closed_with(ws, CLOSE_SERVER_RESTARTING).await;
+    }
 }

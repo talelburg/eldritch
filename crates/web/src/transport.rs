@@ -1,13 +1,17 @@
 //! Browser transport (wasm only): check sign-in, bootstrap a game, connect
 //! its WebSocket, fold inbound frames into the store, forward outbound
-//! actions, and reconnect on close.
+//! actions, and reconnect on close with backoff.
+
+use std::time::Duration;
 
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::{select, SinkExt as _, StreamExt as _};
+use futures::future::Fuse;
+use futures::stream::SplitSink;
+use futures::{select, FutureExt as _, SinkExt as _, StreamExt as _};
 use gloo_net::http::Request;
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::{Message, WebSocketError};
-use gloo_timers::future::TimeoutFuture;
+use gloo_timers::future::{IntervalStream, TimeoutFuture};
 use leptos::prelude::*;
 use protocol::{
     ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage, SignInRequired,
@@ -23,8 +27,6 @@ use crate::url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
-/// Fixed reconnect backoff. Plenty for solo play; not exponential.
-const RECONNECT_MS: u32 = 1000;
 /// HTTP 401, which the server answers when the request isn't signed in.
 const UNAUTHORIZED: u16 = 401;
 
@@ -36,6 +38,16 @@ pub type OutboundTx = UnboundedSender<ClientMessage>;
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
+    // A tab brought back to the front pings at once, rather than waiting on a
+    // ping timer the browser may have throttled while the tab was hidden. A
+    // dead socket then ends through the silence timeout. The listener lasts as
+    // long as the page, so its handle is never used to remove it.
+    let ping_tx = tx.clone();
+    let _ = window_event_listener_untyped("visibilitychange", move |_| {
+        if !document().hidden() {
+            let _ = ping_tx.unbounded_send(ClientMessage::Ping);
+        }
+    });
     provide_context(tx);
     provide_context::<CreateTx>(create_tx);
     spawn_local(run(store, rx, create_rx));
@@ -55,12 +67,22 @@ async fn run(
         None => return, // bootstrap set Failed or SignedOut already
     };
 
+    // Reconnect attempts since the last `Hello`, which sets it back to 0. A
+    // socket that opens and fails before `Hello` doesn't reset it, so a
+    // half-working server can't hold the client in a 1 s retry loop.
+    let mut attempt: u32 = 0;
     loop {
-        let outcome = connect_once(&store, &game_id, &mut rx).await;
-        if let ConnectOutcome::Ended(ending) = outcome {
-            if !ending.keeps_saved_game() {
-                clear_saved_id();
+        let outcome = connect_once(&store, &game_id, &mut rx, &mut attempt).await;
+        // A socket that never opened ended the way a refused connect does. A
+        // version mismatch stops the loop below, so its ending is never used.
+        let ending = match outcome {
+            ConnectOutcome::Ended(ending) => ending,
+            ConnectOutcome::Unreachable | ConnectOutcome::VersionMismatch => {
+                SocketEnding::Disconnected
             }
+        };
+        if !ending.keeps_saved_game() {
+            clear_saved_id();
         }
         match outcome {
             // A wire-format skew: the status is already set to VersionMismatch.
@@ -72,16 +94,23 @@ async fn run(
                 // If `/auth/me` still signs us in, the server refused the
                 // socket a session it accepts over HTTP, which only a server
                 // bug does. Nothing is live, so say so rather than leave the
-                // status at Connected.
+                // status where the socket left it.
                 if check_sign_in(store).await {
                     store.update(|s| s.status = ConnStatus::Failed);
                 }
                 return;
             }
-            // Opened, but the server closed before any Hello: a valid game
-            // always sends Hello immediately, so the id is unknown to the
-            // server (e.g. a DB reset). It was discarded above; create a
-            // fresh game.
+            // This server's build can't rebuild the game, and every attempt
+            // would fail the same way. Say so and stop, keeping the saved id:
+            // a rollback to an earlier build can still resume it.
+            ConnectOutcome::Ended(SocketEnding::Unresumable) => {
+                store.update(|s| s.status = ConnStatus::Unresumable);
+                return;
+            }
+            // The server says it has no game with this id (e.g. a DB reset).
+            // It was discarded above; create a fresh game and connect to it
+            // at once. Nothing is being retried, so there's no backoff and no
+            // `Reconnecting` banner, and the new game starts a fresh count.
             ConnectOutcome::Ended(SocketEnding::StaleId) => {
                 let Some(req) = await_roster(&store, &mut create_rx).await else {
                     return;
@@ -90,16 +119,21 @@ async fn run(
                     Some(id) => game_id = id,
                     None => return,
                 }
+                attempt = 0;
+                continue;
             }
-            // Couldn't reach the server, or a normal disconnect after a
-            // live session — keep the SAME id and just retry. The server
-            // may be restarting; recreating here would abandon the game
-            // (and wipe the saved id) on every transient outage.
-            ConnectOutcome::Unreachable | ConnectOutcome::Ended(SocketEnding::Disconnected) => {}
+            // Couldn't reach the server, a disconnect, or a server shutting
+            // down for a restart — keep the SAME id and just retry.
+            // Recreating here would abandon the game (and wipe the saved id)
+            // on every transient outage. A restart says so until the next
+            // `Hello`, through however many refused connects it takes.
+            ConnectOutcome::Unreachable
+            | ConnectOutcome::Ended(SocketEnding::Disconnected | SocketEnding::Restarting) => {}
         }
 
-        store.update(|s| s.status = ConnStatus::Reconnecting);
-        TimeoutFuture::new(RECONNECT_MS).await;
+        store.update(|s| s.status = s.status.retrying_after(ending));
+        TimeoutFuture::new(millis(socket_ending::backoff(attempt))).await;
+        attempt = attempt.saturating_add(1);
     }
 }
 
@@ -189,34 +223,65 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
     }
 }
 
-/// One socket lifetime: open, mark Connected, pump inbound->reduce and
-/// outbound->sink until close. The returned [`ConnectOutcome`] tells the
-/// reconnect loop whether the server is unreachable, the frames were skewed,
-/// or how the socket ended.
+/// One socket lifetime: open, pump inbound->reduce and outbound->sink,
+/// pinging every [`protocol::PING_INTERVAL`], until close or until the server
+/// is silent for [`protocol::CLIENT_SILENCE_TIMEOUT`], and mark Connected
+/// when the `Hello` arrives, which also sets `attempt` back to 0. The returned
+/// [`ConnectOutcome`] tells the reconnect loop whether the server is
+/// unreachable, the frames were skewed, or how the socket ended.
+///
+/// Until the `Hello`, the board still shows the state from before the drop, so
+/// the status stays what it was and the board stays locked. A `Reconnecting`
+/// or `Restarting` status holds through the attempt, so its banner doesn't
+/// flicker away. At the end of the lifetime the outbound channel is drained
+/// unsent, so nothing clicked while disconnected goes out on the next socket.
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
     rx: &mut UnboundedReceiver<ClientMessage>,
+    attempt: &mut u32,
 ) -> ConnectOutcome {
-    store.update(|s| s.status = ConnStatus::Connecting);
+    store.update(|s| {
+        if !s.status.is_retrying() {
+            s.status = ConnStatus::Connecting;
+        }
+    });
     let Ok(ws) = WebSocket::open(&url::current_ws_url(game_id.as_str())) else {
         return ConnectOutcome::Unreachable;
     };
-    store.update(|s| s.status = ConnStatus::Connected);
 
     let (mut write, read) = ws.split();
     let mut read = read.fuse();
-    let mut saw_hello = false;
     let mut close_code = None;
     let mut version_mismatch = false;
+    let mut ping = IntervalStream::new(millis(protocol::PING_INTERVAL)).fuse();
+    let mut silence = silence_deadline();
+    let mut silent = false;
 
     loop {
         select! {
+            () = silence => {
+                silent = true;
+                break;
+            }
+            _ = ping.next() => send(&mut write, &ClientMessage::Ping).await,
             incoming = read.next() => match incoming {
                 Some(Ok(Message::Text(txt))) => {
+                    // Any server frame proves the connection alive.
+                    silence = silence_deadline();
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
-                        saw_hello |= matches!(msg, ServerMessage::Hello { .. });
-                        store.update(|s| store::reduce(s, msg));
+                        let is_hello = matches!(msg, ServerMessage::Hello { .. });
+                        if is_hello {
+                            *attempt = 0;
+                        }
+                        // One update, so the board unlocks with the fresh
+                        // state already in it.
+                        store.update(|s| {
+                            store::reduce(s, msg);
+                            if is_hello {
+                                s.status = ConnStatus::Connected;
+                            }
+                        });
                     } else {
                         // A frame we can't parse from a server that IS talking
                         // to us is a wire-format skew, not a transient glitch.
@@ -237,19 +302,43 @@ async fn connect_once(
                 None => break,
             },
             outbound = rx.next() => {
-                if let Some(action) = outbound {
-                    if let Ok(json) = serde_json::to_string(&action) {
-                        let _ = write.send(Message::Text(json)).await;
-                    }
+                if let Some(message) = outbound {
+                    send(&mut write, &message).await;
                 }
             }
         }
     }
+    // Whatever was queued is for a socket that's gone, so it's dropped unsent.
+    while rx.try_recv().is_ok() {}
     if version_mismatch {
         ConnectOutcome::VersionMismatch
+    } else if silent {
+        // Dropping the socket's halves closes it. Sorted directly rather than
+        // by close code: a silent server is a disconnect, before or after
+        // `Hello`, and never a reason to forget the saved game.
+        ConnectOutcome::Ended(SocketEnding::Disconnected)
     } else {
-        ConnectOutcome::Ended(socket_ending::sort(saw_hello, close_code))
+        ConnectOutcome::Ended(socket_ending::sort(close_code))
     }
+}
+
+/// Send `message` on the socket, best-effort: a failed send means the socket
+/// is ending, and its close is read on the inbound side.
+async fn send(write: &mut SplitSink<WebSocket, Message>, message: &ClientMessage) {
+    if let Ok(json) = serde_json::to_string(message) {
+        let _ = write.send(Message::Text(json)).await;
+    }
+}
+
+/// A timer that fires once the server has been silent for
+/// [`protocol::CLIENT_SILENCE_TIMEOUT`]. Restarted on every inbound frame.
+fn silence_deadline() -> Fuse<TimeoutFuture> {
+    TimeoutFuture::new(millis(protocol::CLIENT_SILENCE_TIMEOUT)).fuse()
+}
+
+/// `duration` in the whole milliseconds the browser's timers take.
+fn millis(duration: Duration) -> u32 {
+    u32::try_from(duration.as_millis()).expect("a liveness timing fits a browser timer")
 }
 
 fn local_storage() -> Option<Storage> {
@@ -298,7 +387,7 @@ pub fn sign_out() {
 /// (no saved id → `await_roster`).
 ///
 /// The server-side game persists; this only drops the local pointer. Pairs with
-/// the "New game" button in `BoardView`.
+/// the "New game" buttons in the status bar and the unresumable-game overlay.
 pub fn start_new_game() {
     clear_saved_id();
     reload();

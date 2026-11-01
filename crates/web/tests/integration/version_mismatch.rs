@@ -5,16 +5,10 @@
 //! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use std::collections::BTreeSet;
-
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
-use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::app::Overlays;
-use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
-use web::registry::provide_cards;
 use web::store::{ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
 use web_sys::HtmlElement;
@@ -30,18 +24,12 @@ fn mount() -> (RwSignal<ClientState>, HtmlElement) {
 
 #[wasm_bindgen_test]
 async fn overlay_is_absent_in_every_status_but_the_mismatch() {
-    // Every variant but `VersionMismatch`, listed rather than sampled: the
-    // acceptance criterion is "no overlay in *any* other status", and the guard
-    // is one `!=`, so an added variant should be a compile-time decision here
-    // rather than a silent gap.
-    for status in [
-        ConnStatus::Connecting,
-        ConnStatus::Connected,
-        ConnStatus::Reconnecting,
-        ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
-        ConnStatus::SignedOut(vec![]),
-    ] {
+    // The acceptance criterion is "no overlay in *any* other status", and the
+    // guard is one `!=`, so an added variant is covered here too.
+    for status in common::every_status()
+        .into_iter()
+        .filter(|s| *s != ConnStatus::VersionMismatch)
+    {
         let (store, container) = mount();
         store.update(|s| s.status = status.clone());
         task::tick().await;
@@ -96,62 +84,44 @@ async fn version_mismatch_renders_a_scrimmed_card_naming_both_halves_of_the_fix(
     );
 }
 
-/// The overlay is reached through the app's **real** overlay set, and is
-/// declared after the others — the composition half of "above every other
-/// overlay". The stacking itself is CSS (`.vm-backdrop`/`.version-mismatch` at
-/// z-40/41 against the picker's 30 and the modal's 28/29) and `style.css` is not
-/// loaded in this harness, so what is assertable here is that the overlay is in
-/// the set at all and that it comes last in document order. That is the half
-/// that regresses silently — a fourth overlay is easy to forget to compose, and
-/// `Overlays` is the one place the app declares the order.
+/// The overlay is reached through the app's **real** composition, and is
+/// declared after the board's in-game modals — the composition half of "above
+/// every other overlay". The stacking itself is CSS (`.vm-backdrop`/
+/// `.version-mismatch` at z-40/41 against the picker's 30 and the modal's
+/// 28/29) and `style.css` is not loaded in this harness, so what is assertable
+/// here is that the overlay is in the composition at all and that it comes
+/// after the lockout wrapper in document order, outside it. That is the half
+/// that regresses silently — an overlay is easy to forget to compose, and
+/// `MainColumn` is the one place the app declares the order.
 #[wasm_bindgen_test]
-async fn the_real_overlay_set_declares_the_mismatch_card_last() {
-    let store = RwSignal::new(ClientState::default());
-    let container = document()
-        .create_element("div")
-        .expect("create_element")
-        .dyn_into::<HtmlElement>()
-        .expect("HtmlElement");
-    document()
-        .body()
-        .expect("body")
-        .append_child(&container)
-        .expect("append_child");
+async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
+    // A live prompt as well as the mismatch, so the prompt banner, an in-game
+    // modal it has to cover, is actually in the DOM to be ordered against.
+    let client = ClientState {
+        status: ConnStatus::VersionMismatch,
+        outcome: Some(test_support::awaiting_confirm_input("Continue")),
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &test_support::TEST_REGISTRY).await;
+    let root = &handle.root;
 
-    mount_to(container.clone(), move || {
-        // The decision modal among the overlays reads the registry.
-        provide_cards(&test_support::TEST_REGISTRY);
-        provide_context(store);
-        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(PendingOptions(pending));
-        let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
-        provide_context(ConfirmAnchor(anchor));
-        let selected = RwSignal::new(BTreeSet::<u32>::new());
-        let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
-        provide_context(MultiSelect { active, selected });
-        leptos::view! { <Overlays/> }
-    })
-    .forget();
-
-    // A live prompt as well as the mismatch, so the banner — the overlay
-    // declared immediately before it — is actually in the DOM to be ordered
-    // against.
-    store.update(|s| {
-        s.status = ConnStatus::VersionMismatch;
-        s.outcome = Some(test_support::awaiting_confirm_input("Continue"));
-    });
-    task::tick().await;
-
-    let banner = container
+    let lock = handle.lock();
+    let banner = lock
         .query_selector(".prompt-banner")
         .expect("query")
-        .expect("the prompt banner renders for a live prompt");
-    let card = container
+        .expect("the prompt banner renders inside the wrapper for a live prompt");
+    let card = root
         .query_selector(".version-mismatch")
         .expect("query")
-        .expect("the mismatch card renders from the real overlay set");
+        .expect("the mismatch card renders from the real composition");
 
-    // `DOCUMENT_POSITION_FOLLOWING` (4) — `card` comes after `banner`.
+    // `DOCUMENT_POSITION_FOLLOWING` (4) without `CONTAINED_BY` (16): `card`
+    // comes after the wrapper, and not inside it.
+    assert_eq!(
+        lock.compare_document_position(&card) & (4 | 16),
+        4,
+        "the mismatch card must be declared after the wrapper, outside it"
+    );
     assert_eq!(
         banner.compare_document_position(&card) & 4,
         4,

@@ -93,7 +93,7 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
     assert!(
         open.get_untracked().is_none(),

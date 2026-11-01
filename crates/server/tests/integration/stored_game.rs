@@ -151,12 +151,7 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
         session.apply(keep_opening_hand()).await.expect("accepted");
-        sqlx::query("UPDATE games SET format_version = ? WHERE game_id = ?")
-            .bind(version)
-            .bind("versioned")
-            .execute(&pool)
-            .await
-            .unwrap();
+        common::set_format_version(&pool, "versioned", version).await;
 
         let reason = expect_unresumable(&pool, "versioned").await;
 

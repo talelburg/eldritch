@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, fs, future};
 
 use axum::body::{self, Body};
@@ -35,6 +35,7 @@ use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::Message;
@@ -180,7 +181,11 @@ pub(crate) fn dev_auth_app(pool: SqlitePool, registries: Registries, dev_auth: b
 /// Serve [`dev_auth_app`] over `pool` and the mock [`REGISTRIES`] on an
 /// ephemeral loopback port; return its bound address.
 pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAddr {
-    let app = dev_auth_app(pool, REGISTRIES, dev_auth);
+    serve(dev_auth_app(pool, REGISTRIES, dev_auth)).await
+}
+
+/// Serve `app` on an ephemeral loopback port; return its bound address.
+async fn serve(app: Router) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind ephemeral port");
@@ -196,6 +201,18 @@ pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAd
 pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     add_test_account(&pool).await;
     serve_dev_auth(pool, true).await
+}
+
+/// [`spawn_server`], with its [`AppState`] passed through `configure` first:
+/// how a test injects what production takes from a constant, such as a short
+/// silence timeout.
+pub(crate) async fn spawn_server_with(
+    pool: SqlitePool,
+    configure: impl FnOnce(AppState) -> AppState,
+) -> SocketAddr {
+    add_test_account(&pool).await;
+    let state = AppState::new(pool, REGISTRIES).with_dev_auth(true);
+    serve(server::app(configure(state))).await
 }
 
 /// An HTTP client that leaves redirects unfollowed, so a response's
@@ -520,26 +537,37 @@ pub(crate) async fn connect_with(addr: SocketAddr, game_id: &str, cookie: Option
 /// Read `ws` to its end and require it to be closed with
 /// [`protocol::CLOSE_UNAUTHENTICATED`] before any message arrives.
 pub(crate) async fn assert_closed_unauthenticated(ws: &mut Client) {
-    loop {
-        match ws
-            .next()
-            .await
-            .expect("a close frame")
-            .expect("no ws error")
-        {
-            Message::Close(Some(frame)) => {
-                assert_eq!(
-                    frame.code,
-                    CloseCode::from(protocol::CLOSE_UNAUTHENTICATED),
-                    "closed as unauthenticated"
-                );
-                return;
+    assert_closed_with(ws, protocol::CLOSE_UNAUTHENTICATED).await;
+}
+
+/// How long a bounded read waits before it fails the test, so a frame that
+/// never comes fails the test rather than hanging it.
+const READ_BOUND: Duration = Duration::from_secs(5);
+
+/// Read `ws` to its end and require it to be closed with `code` within
+/// [`READ_BOUND`], with no message read on the way.
+pub(crate) async fn assert_closed_with(ws: &mut Client, code: u16) {
+    let closed = async {
+        loop {
+            match ws
+                .next()
+                .await
+                .expect("a close frame")
+                .expect("no ws error")
+            {
+                Message::Close(Some(frame)) => {
+                    assert_eq!(frame.code, CloseCode::from(code), "the close code");
+                    return;
+                }
+                Message::Text(text) => panic!("no message before the close: {text}"),
+                Message::Close(None) => panic!("the close carries a code"),
+                _ => {}
             }
-            Message::Text(text) => panic!("no message before the close: {text}"),
-            Message::Close(None) => panic!("the close carries a code"),
-            _ => {}
         }
-    }
+    };
+    time::timeout(READ_BOUND, closed)
+        .await
+        .unwrap_or_else(|_| panic!("closed with {code} within {READ_BOUND:?}"));
 }
 
 /// Send a client message as JSON text.
@@ -559,6 +587,29 @@ pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
             _ => {}
         }
     }
+}
+
+/// [`recv`], failing the test if no message arrives within [`READ_BOUND`].
+pub(crate) async fn recv_within(ws: &mut Client) -> ServerMessage {
+    time::timeout(READ_BOUND, recv(ws))
+        .await
+        .unwrap_or_else(|_| panic!("a message within {READ_BOUND:?}"))
+}
+
+/// Set the stored format version of `game_id`: how a test stores a game this
+/// build can't resume.
+pub(crate) async fn set_format_version(pool: &SqlitePool, game_id: &str, version: i64) {
+    let edited = sqlx::query("UPDATE games SET format_version = ? WHERE game_id = ?")
+        .bind(version)
+        .bind(game_id)
+        .execute(pool)
+        .await
+        .expect("edit the stored format version");
+    assert_eq!(
+        edited.rows_affected(),
+        1,
+        "one game's format version is edited"
+    );
 }
 
 /// Set one JSON field, at `path`, of the answer logged at `seq` for `game_id`:

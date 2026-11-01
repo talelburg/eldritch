@@ -3,20 +3,24 @@
 //! per-game [`GameSession`] mutex.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
-use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
-use futures_util::stream::SplitSink;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
-use protocol::{ClientMessage, GameId, ServerMessage, CLOSE_UNAUTHENTICATED};
+use protocol::{
+    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING,
+    CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+};
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
+use tokio::time::{self, Instant};
 
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
 use crate::session::{GameSession, SessionError, StoredGame};
@@ -27,6 +31,17 @@ use crate::{auth, AppState};
 /// `Lagged` and resyncs from subsequent frames rather than blocking
 /// the game.
 const BROADCAST_CAPACITY: usize = 256;
+
+/// How long a close may take, its frame's send and the wait for the client's
+/// reply together, before the socket is dropped. A peer that stopped reading
+/// can't stall a close past it, and a restart's closes end inside the
+/// binary's `SHUTDOWN_GRACE`.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long one outbound frame may take to send before the socket is dropped.
+/// A peer that stopped reading fills its TCP buffer, and a send to it would
+/// otherwise wait until the OS gives up on the connection, many minutes later.
+const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A loaded game's room: its session (behind a mutex so applies serialize across
 /// connections) and the broadcast channel its connections subscribe to.
@@ -82,7 +97,10 @@ pub(crate) fn rooms(db: SqlitePool, registries: Registries) -> Rooms {
 /// The session is resolved before the game. Without one, the socket is
 /// upgraded and then closed with [`CLOSE_UNAUTHENTICATED`] before any
 /// message, rather than refused: a refused upgrade reaches script only as
-/// close code 1006, which reads the same as an unknown game.
+/// close code 1006, which reads the same as a network drop.
+///
+/// An unknown game id is closed with [`CLOSE_GAME_NOT_FOUND`] and an
+/// unresumable game with [`CLOSE_UNRESUMABLE`], the same way.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
     Path(game_id): Path<GameId>,
@@ -91,34 +109,71 @@ pub(crate) async fn game_ws(
 ) -> Response {
     match auth::signed_in(&state.db, &jar).await {
         Ok(Some(_)) => ws.on_upgrade(move |socket| handle_socket(socket, state, game_id)),
-        Ok(None) => ws.on_upgrade(close_unauthenticated),
+        Ok(None) => {
+            ws.on_upgrade(|socket| close_with(socket, CLOSE_UNAUTHENTICATED, "not signed in"))
+        }
         Err(error) => auth::internal_error("session lookup", &error).into_response(),
     }
 }
 
-/// Close `socket` as unauthenticated, then read it until the client's
-/// closing frame, so the close handshake completes and the client sees the
-/// code.
-async fn close_unauthenticated(mut socket: WebSocket) {
-    let frame = CloseFrame {
-        code: CLOSE_UNAUTHENTICATED,
-        reason: "not signed in".into(),
+/// Close `socket` with `code` before any message, awaiting the client's reply
+/// so it sees the code.
+async fn close_with(socket: WebSocket, code: u16, reason: &'static str) {
+    let (mut sink, mut stream) = socket.split();
+    close(&mut sink, Some(&mut stream), code, reason).await;
+}
+
+/// Send a close frame with `code` and `reason`. With `reply_from`, then read it
+/// until the client's closing frame, so the close handshake completes and the
+/// client sees the code. The whole close is bounded by [`CLOSE_TIMEOUT`]; a
+/// client that hasn't finished it by then is dropped.
+async fn close(
+    sink: &mut SplitSink<WebSocket, Message>,
+    reply_from: Option<&mut SplitStream<WebSocket>>,
+    code: u16,
+    reason: &'static str,
+) {
+    let closing = async {
+        let frame = CloseFrame {
+            code,
+            reason: reason.into(),
+        };
+        if sink.send(Message::Close(Some(frame))).await.is_err() {
+            return;
+        }
+        if let Some(stream) = reply_from {
+            while let Some(Ok(_)) = stream.next().await {}
+        }
     };
-    if socket.send(Message::Close(Some(frame))).await.is_err() {
-        return;
-    }
-    while let Some(Ok(_)) = socket.recv().await {}
+    let _ = time::timeout(CLOSE_TIMEOUT, closing).await;
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
+    // Counted as open until this task returns, so shutdown waits for it.
+    let _open = state.shutdown.track();
     // The connection lives as long as this socket does, however the socket
     // ends, so the room's idle grace starts only once its last socket has gone.
     let connection = match state.rooms.get_or_load(&game_id).await {
         Ok(connection) => connection,
-        // No such game — nothing to attach to. Drop the socket.
-        Err(LoadFailure::NotFound) => return,
+        // No such game: the one ending that tells the client its id is stale.
+        Err(LoadFailure::NotFound) => {
+            close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await;
+            return;
+        }
         // A game that can't be rebuilt is never served half-built, nor passed
-        // off as absent.
+        // off as absent. An unresumable one says so: it fails the same way on
+        // every attempt, so the client stops retrying.
+        Err(LoadFailure::Failed(err)) if matches!(*err, SessionError::Unresumable { .. }) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to attach: this game is unresumable",
+            );
+            close_with(socket, CLOSE_UNRESUMABLE, "unresumable game").await;
+            return;
+        }
+        // Any other failure is retried by the next get, so the socket is
+        // dropped bare and the client reconnects.
         Err(LoadFailure::Failed(err)) => {
             tracing::error!(
                 game_id = game_id.as_str(),
@@ -138,8 +193,29 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
         return;
     }
 
+    // Every inbound frame pushes the deadline back. A select arm runs to
+    // completion before the loop polls again, so it can't pass mid-apply.
+    let silence = time::sleep(state.silence_timeout);
+    tokio::pin!(silence);
+    // Resolves at once if shutdown fired while this socket was attaching.
+    let shutting_down = state.shutdown.triggered();
+    tokio::pin!(shutting_down);
+
     loop {
+        // Polled in order, so when several arms are ready at once the first
+        // wins. Shutdown comes first, so a `Submit` that arrives with the
+        // signal isn't applied after it. The deadline comes last, so a frame
+        // that has already arrived counts as the client being alive.
         tokio::select! {
+            biased;
+
+            // Like the deadline, this can't pass mid-apply: a `Submit` being
+            // applied finishes, and persists, before the loop polls again.
+            () = &mut shutting_down => {
+                close(&mut sink, Some(&mut stream), CLOSE_SERVER_RESTARTING, "server restarting")
+                    .await;
+                break;
+            }
             broadcasted = rx.recv() => match broadcasted {
                 Ok(msg) => {
                     if send_msg(&mut sink, &msg).await.is_err() {
@@ -151,17 +227,25 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             },
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
+                silence.as_mut().reset(Instant::now() + state.silence_timeout);
                 if let Some(direct) = handle_client_message(room, message).await {
-                    let close = matches!(direct, Disposition::Close);
+                    let ends = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
                         if send_msg(&mut sink, &msg).await.is_err() {
                             break;
                         }
                     }
-                    if close {
+                    if ends {
                         break;
                     }
                 }
+            }
+            () = &mut silence => {
+                // Best-effort: a client this silent is likely gone, so its
+                // close reply isn't awaited.
+                close(&mut sink, None, close_code::AWAY, "no frame within the silence timeout")
+                    .await;
+                break;
             }
         }
     }
@@ -198,20 +282,30 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                     })),
                 }
             }
+            Ok(ClientMessage::Ping) => Some(Disposition::Reply(ServerMessage::Pong)),
             Err(_) => Some(Disposition::Reply(ServerMessage::Rejected {
                 reason: "malformed message".to_string(),
             })),
         },
         Message::Close(_) => Some(Disposition::Close),
-        // Ping/Pong/Binary are not part of the protocol; ignore them.
+        // WebSocket-level ping/pong and binary frames are not part of the
+        // protocol; ignore them. They still reset the silence deadline.
         _ => None,
     }
 }
 
+/// A send to the client that failed or didn't complete within
+/// [`SEND_TIMEOUT`]. Either way the socket is dropped.
+struct SendFailed;
+
+/// Send `msg` to the client as JSON text, within [`SEND_TIMEOUT`].
 async fn send_msg(
     sink: &mut SplitSink<WebSocket, Message>,
     msg: &ServerMessage,
-) -> Result<(), Error> {
+) -> Result<(), SendFailed> {
     let json = serde_json::to_string(msg).expect("ServerMessage always serializes");
-    sink.send(Message::Text(json.into())).await
+    match time::timeout(SEND_TIMEOUT, sink.send(Message::Text(json.into()))).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) | Err(_) => Err(SendFailed),
+    }
 }

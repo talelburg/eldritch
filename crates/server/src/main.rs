@@ -4,11 +4,11 @@
 //! Both read their configuration from the environment and apply the
 //! migrations to the `SQLite` database before doing anything else.
 
-use std::env;
 use std::error::Error;
-use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
+use std::{env, future, io};
 
 use clap::{Parser, Subcommand};
 use server::accounts::{self, Account, Email, EntryRef};
@@ -17,9 +17,12 @@ use server::auth::google::Google;
 use server::auth::provider::IdentityProvider;
 use server::config::{Config, ConfigError};
 use server::db::{self, MIGRATOR};
+use server::shutdown::Shutdown;
 use server::AppState;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
+use tokio::signal::{self, unix::SignalKind};
+use tokio::time;
 use tracing_subscriber::EnvFilter;
 
 /// The Eldritch server. With no subcommand, it serves the game.
@@ -128,8 +131,54 @@ async fn serve(dev_auth: bool) -> Result<(), Box<dyn Error>> {
         Some(origin) => state.with_identity_providers(origin, providers),
         None => state,
     };
-    axum::serve(listener, server::app(state)).await?;
+    let shutdown = Shutdown::new();
+    let state = state.with_shutdown(shutdown.clone());
+    tokio::spawn(fire_on_signal(shutdown.clone()));
+
+    // Once triggered, the server stops accepting connections, and every game
+    // socket closes with 1012 and waits for its reply. Whatever is still open
+    // when the grace period ends is dropped as the process exits.
+    let stop_accepting = shutdown.clone();
+    let serving = axum::serve(listener, server::app(state))
+        .with_graceful_shutdown(async move { stop_accepting.triggered().await });
+    let drained = async {
+        serving.await?;
+        shutdown.sockets_closed().await;
+        Ok::<(), io::Error>(())
+    };
+    let grace = async {
+        shutdown.triggered().await;
+        time::sleep(SHUTDOWN_GRACE).await;
+    };
+    tokio::select! {
+        result = drained => result?,
+        () = grace => tracing::warn!("shutdown grace period over; dropping what's still open"),
+    }
+    tracing::info!("eldritch server stopped");
     Ok(())
+}
+
+/// How long after the shutdown signal the process exits at the latest. Game
+/// sockets wait 2 s for their clients' close replies, inside this.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
+
+/// Trigger `shutdown` on the first SIGINT (Ctrl-C) or SIGTERM (`systemctl
+/// stop`). If SIGTERM can't be listened for, SIGINT still is.
+async fn fire_on_signal(shutdown: Shutdown) {
+    let mut terminate = signal::unix::signal(SignalKind::terminate())
+        .inspect_err(|error| tracing::error!("can't listen for SIGTERM: {error}"))
+        .ok();
+    let sigterm = async {
+        match &mut terminate {
+            Some(terminate) => terminate.recv().await,
+            None => future::pending().await,
+        }
+    };
+    tokio::select! {
+        _ = signal::ctrl_c() => tracing::info!("SIGINT: shutting down"),
+        _ = sigterm => tracing::info!("SIGTERM: shutting down"),
+    }
+    shutdown.trigger();
 }
 
 /// The adapter of each provider `config` turns on, in the order the sign-in

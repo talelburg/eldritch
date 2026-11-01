@@ -7,6 +7,7 @@
 //! I/O-free, so the web crate's tests run the server's exact submit path.
 
 use std::fmt;
+use std::time::Duration;
 
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
@@ -44,6 +45,10 @@ pub enum ClientMessage {
         /// The action to apply.
         action: PlayerAction,
     },
+    /// Ask the server for a [`ServerMessage::Pong`], proving the connection
+    /// is alive. Sent every [`PING_INTERVAL`], and at once when the tab comes
+    /// back to the front.
+    Ping,
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -87,6 +92,9 @@ pub enum ServerMessage {
         /// Human-readable reason.
         reason: String,
     },
+    /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
+    /// broadcast to the room.
+    Pong,
 }
 
 /// Stable identifier for a persisted game.
@@ -167,8 +175,45 @@ pub struct CreateGameResponse {
 /// then closes, rather than refusing the upgrade, because a refused upgrade
 /// reaches script only as close code 1006 (WHATWG `WebSockets`: *"the
 /// WebSocket connection close code would be 1006"*), which a client can't
-/// tell from a game id the server doesn't know.
+/// tell from a network drop.
 pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
+
+/// The close code ending a game's WebSocket when the server has no game with
+/// that id.
+///
+/// This is the only ending that means a stale id: a client forgets its saved
+/// game id on this code and on no other. Every other close, before or after
+/// `Hello`, may be a server restarting or a network drop, and is retried.
+pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
+
+/// The close code ending a game's WebSocket when the game exists but is an
+/// unresumable game: its stored rows can't be rebuilt by this server's build.
+///
+/// It fails the same way on every attempt until the build changes, so a
+/// client stops retrying and keeps the saved id, which a rollback can resume.
+pub const CLOSE_UNRESUMABLE: u16 = 4410;
+
+/// The close code every open WebSocket gets when the server shuts down for a
+/// restart: 1012, the standard "Service Restart" code.
+///
+/// The server is expected back, so a client keeps its saved id and retries
+/// with backoff, saying the server is restarting until the next `Hello`.
+pub const CLOSE_SERVER_RESTARTING: u16 = 1012;
+
+// Liveness. Any frame proves a connection is alive, in both directions: every
+// inbound frame resets the receiving end's silence timer, not only a `Pong` or
+// a `Ping`, so a busy connection is never mistaken for a dead one.
+
+/// How often a client sends [`ClientMessage::Ping`].
+pub const PING_INTERVAL: Duration = Duration::from_secs(10);
+
+/// How long a client waits with no frame from the server before it drops the
+/// socket and reconnects: two missed [`PING_INTERVAL`]s.
+pub const CLIENT_SILENCE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// How long the server waits with no frame from a client before it closes the
+/// socket with 1001 (Going Away): three missed [`PING_INTERVAL`]s.
+pub const SERVER_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Body of `GET /auth/me`'s `200`: the account the request's session signs
 /// in as.

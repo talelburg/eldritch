@@ -335,7 +335,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
 }
 

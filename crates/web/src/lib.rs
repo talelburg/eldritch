@@ -35,3 +35,6 @@ pub mod picker;
 
 #[cfg(target_arch = "wasm32")]
 pub mod version_mismatch;
+
+#[cfg(target_arch = "wasm32")]
+pub mod unresumable;

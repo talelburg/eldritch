@@ -14,11 +14,13 @@ mod id;
 pub mod lifecycle;
 mod rooms;
 pub mod session;
+pub mod shutdown;
 mod store;
 mod ws;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{FromRef, State};
 use axum::http::StatusCode;
@@ -31,6 +33,7 @@ use url::Url;
 
 use crate::auth::oauth::ConfiguredProvider;
 use crate::auth::provider::IdentityProvider;
+use crate::shutdown::Shutdown;
 use crate::ws::Rooms;
 
 /// Shared application state handed to every Axum handler.
@@ -55,6 +58,12 @@ pub struct AppState {
     /// The key that encrypts the in-flight sign-in cookie. Random per
     /// process, so a restart drops only the sign-ins in flight.
     cookie_key: Key,
+    /// How long a game's socket may go without an inbound frame before it is
+    /// closed as gone away.
+    silence_timeout: Duration,
+    /// The trigger that closes every open game socket with
+    /// [`protocol::CLOSE_SERVER_RESTARTING`], and the count of those sockets.
+    shutdown: Shutdown,
 }
 
 impl FromRef<AppState> for Key {
@@ -83,6 +92,26 @@ impl AppState {
             dev_auth: false,
             identity_providers: Vec::new(),
             cookie_key: Key::generate(),
+            silence_timeout: protocol::SERVER_SILENCE_TIMEOUT,
+            shutdown: Shutdown::new(),
+        }
+    }
+
+    /// Close every open game socket when `shutdown` is triggered. A trigger
+    /// nobody holds by default; `main` passes the one its signals fire, and
+    /// tests the one they fire themselves.
+    #[must_use]
+    pub fn with_shutdown(self, shutdown: Shutdown) -> Self {
+        Self { shutdown, ..self }
+    }
+
+    /// Close a game's socket once it has sent nothing for `silence_timeout`.
+    /// [`protocol::SERVER_SILENCE_TIMEOUT`] by default; tests shorten it.
+    #[must_use]
+    pub fn with_silence_timeout(self, silence_timeout: Duration) -> Self {
+        Self {
+            silence_timeout,
+            ..self
         }
     }
 

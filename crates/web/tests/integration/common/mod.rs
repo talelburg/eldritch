@@ -9,10 +9,9 @@ use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
-use web::app::{self, Overlays};
-use web::board::BoardView;
+use web::app::{self, MainColumn};
 use web::registry;
-use web::store::{self, ClientState};
+use web::store::{self, ClientState, ConnStatus};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
@@ -66,8 +65,64 @@ pub(crate) struct BoardHandle {
     pub(crate) rx: UnboundedReceiver<ClientMessage>,
 }
 
-/// Mount `<BoardView/>` and `<Overlays/>` as `App` composes them, rendering
-/// `client` against `registry`, and tick once so render effects have flushed.
+impl BoardHandle {
+    /// The lockout wrapper this mount rendered: the board and its in-game
+    /// modals sit in it, and it carries `inert` at every status but
+    /// `Connected`.
+    pub(crate) fn lock(&self) -> Element {
+        self.root
+            .query_selector(".board-lock")
+            .expect("query")
+            .expect("the board and its in-game modals sit in a .board-lock wrapper")
+    }
+}
+
+/// Assert `el` has no `inert` ancestor, so it takes clicks while the board is
+/// locked. `what` names it in the failure.
+pub(crate) fn assert_live(el: &Element, what: &str) {
+    assert!(
+        el.closest("[inert]").expect("closest").is_none(),
+        "{what} must sit outside the lockout wrapper, so it takes clicks"
+    );
+}
+
+/// Every connection status, listed rather than sampled, for a test whose claim
+/// is about *every* status, or every status but one. `SignedOut` lists no
+/// sign-in method.
+pub(crate) fn every_status() -> Vec<ConnStatus> {
+    let all = vec![
+        ConnStatus::Connecting,
+        ConnStatus::Connected,
+        ConnStatus::Reconnecting,
+        ConnStatus::Restarting,
+        ConnStatus::Failed,
+        ConnStatus::AwaitingRoster,
+        ConnStatus::VersionMismatch,
+        ConnStatus::SignedOut(vec![]),
+        ConnStatus::Unresumable,
+    ];
+    // Exhaustive, so a variant added later doesn't compile until it is
+    // listed above.
+    for status in &all {
+        match status {
+            ConnStatus::Connecting
+            | ConnStatus::Connected
+            | ConnStatus::Reconnecting
+            | ConnStatus::Restarting
+            | ConnStatus::Failed
+            | ConnStatus::AwaitingRoster
+            | ConnStatus::VersionMismatch
+            | ConnStatus::SignedOut(_)
+            | ConnStatus::Unresumable => {}
+        }
+    }
+    all
+}
+
+/// Mount [`MainColumn`], the composition `App` mounts, rendering `client`
+/// against `registry`, and tick once so render effects have flushed. The board
+/// sits inside the real lockout wrapper, so it is `inert` unless `client` is
+/// `Connected`.
 ///
 /// The contexts come from `App`'s own [`app::provide_board_contexts`], so a board
 /// test can't miss one the app provides.
@@ -83,7 +138,7 @@ pub(crate) async fn mount_board(
         provide_context(store);
         app::provide_board_contexts(store);
         provide_context::<OutboundTx>(tx.clone());
-        view! { <div class="board-root" node_ref=root><BoardView/><Overlays/></div> }
+        view! { <div class="board-root" node_ref=root><MainColumn/></div> }
     });
     task::tick().await;
     BoardHandle {
@@ -94,9 +149,13 @@ pub(crate) async fn mount_board(
 }
 
 /// The client state a `Hello` carrying `state` and `outcome` leaves behind,
-/// folded through the transport's own reducer.
+/// folded through the transport's own reducer. The status is `Connected`, as
+/// the transport sets it when the `Hello` arrives, so the board takes input.
 pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
-    let mut client = ClientState::default();
+    let mut client = ClientState {
+        status: ConnStatus::Connected,
+        ..ClientState::default()
+    };
     store::reduce(
         &mut client,
         ServerMessage::Hello {

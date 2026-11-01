@@ -92,7 +92,7 @@ async fn confirm_submits_the_selected_options() {
                 selected: vec![OptionId(0), OptionId(2)]
             }
         ),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickMultiple, got {other:?}"),
+        other => panic!("expected PickMultiple, got {other:?}"),
     }
 }
 
@@ -106,7 +106,7 @@ async fn confirm_with_no_selection_submits_empty() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickMultiple { selected: vec![] }),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickMultiple, got {other:?}"),
+        other => panic!("expected PickMultiple, got {other:?}"),
     }
 }
 
@@ -124,7 +124,7 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Skip),
-        other @ ClientMessage::Submit { .. } => panic!("expected Skip, got {other:?}"),
+        other => panic!("expected Skip, got {other:?}"),
     }
 }
 
@@ -174,7 +174,7 @@ async fn confirm_holds_until_the_selection_is_the_count_asked() {
                 selected: vec![OptionId(1)]
             }
         ),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickMultiple, got {other:?}"),
+        other => panic!("expected PickMultiple, got {other:?}"),
     }
 }
 
@@ -215,7 +215,7 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Confirm),
-        other @ ClientMessage::Submit { .. } => panic!("expected Confirm, got {other:?}"),
+        other => panic!("expected Confirm, got {other:?}"),
     }
 }
 
@@ -256,7 +256,7 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Skip),
-        other @ ClientMessage::Submit { .. } => panic!("expected Skip, got {other:?}"),
+        other => panic!("expected Skip, got {other:?}"),
     }
 }
 
@@ -319,7 +319,7 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+        other => panic!("expected PickSingle, got {other:?}"),
     }
 }
 
@@ -348,7 +348,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+        other => panic!("expected PickSingle, got {other:?}"),
     }
 }
 
@@ -375,7 +375,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+        other => panic!("expected PickSingle, got {other:?}"),
     }
 }
 
@@ -410,6 +410,6 @@ async fn banner_renders_only_unanchored_options() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
-        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+        other => panic!("expected PickSingle, got {other:?}"),
     }
 }

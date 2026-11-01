@@ -267,7 +267,7 @@ async fn its_confirm_submits_the_acknowledge() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Confirm),
-        other @ ClientMessage::Submit { .. } => panic!("expected Confirm, got {other:?}"),
+        other => panic!("expected Confirm, got {other:?}"),
     }
 }
 
@@ -345,7 +345,7 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Confirm),
-        other @ ClientMessage::Submit { .. } => panic!("expected Confirm, got {other:?}"),
+        other => panic!("expected Confirm, got {other:?}"),
     }
 }
 

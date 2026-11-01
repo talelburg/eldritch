@@ -14,7 +14,7 @@ use web::status_bar::StatusBarView;
 use web::store::ConnStatus;
 use web_sys::Element;
 
-use crate::common::mount;
+use crate::common::{self, mount};
 
 fn dev_picker() -> SignInMethod {
     SignInMethod {
@@ -78,14 +78,10 @@ async fn signed_out_with_no_method_the_screen_says_none_is_available() {
 
 #[wasm_bindgen_test]
 async fn the_sign_in_screen_is_absent_while_signed_in() {
-    for status in [
-        ConnStatus::Connecting,
-        ConnStatus::Connected,
-        ConnStatus::Reconnecting,
-        ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
-        ConnStatus::VersionMismatch,
-    ] {
+    for status in common::every_status()
+        .into_iter()
+        .filter(|s| !matches!(s, ConnStatus::SignedOut(_)))
+    {
         let (store, container) = mount(|| view! { <SignInView/> });
         store.update(|s| s.status = status.clone());
         task::tick().await;

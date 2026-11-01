@@ -6,6 +6,8 @@ use game_core::state::{ChaosToken, GameState, TokenResolution};
 use leptos::prelude::*;
 use protocol::{ServerMessage, SignInMethod, SignedIn};
 
+use crate::socket_ending::SocketEnding;
+
 /// Connection lifecycle, set by the transport (not by `reduce`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnStatus {
@@ -13,6 +15,9 @@ pub enum ConnStatus {
     Connecting,
     Connected,
     Reconnecting,
+    /// The server closed the socket for a restart. Held through the reconnect
+    /// attempts that follow, however they fail, until the next `Hello`.
+    Restarting,
     Failed,
     /// No saved game and no roster chosen yet — render the picker.
     AwaitingRoster,
@@ -22,6 +27,54 @@ pub enum ConnStatus {
     /// Not signed in: render the sign-in screen, offering these methods. The
     /// saved game id is kept, so signing in returns to the same game.
     SignedOut(Vec<SignInMethod>),
+    /// The server can't rebuild this game on its current build: an
+    /// unresumable game. Terminal: the transport stops retrying and keeps the
+    /// saved id, which a rollback to an earlier build can resume.
+    Unresumable,
+}
+
+impl ConnStatus {
+    /// Whether the board and its in-game modals refuse input: at every status
+    /// but `Connected`, so a status added later is locked unless it says
+    /// otherwise. Between a socket opening and its `Hello` the status isn't
+    /// `Connected` yet, so a board still showing pre-drop state stays locked.
+    #[must_use]
+    pub fn locks_board(&self) -> bool {
+        *self != ConnStatus::Connected
+    }
+
+    /// Whether the transport is between attempts to get a lost connection
+    /// back: the statuses a connect attempt keeps rather than overwriting with
+    /// `Connecting`.
+    #[must_use]
+    pub fn is_retrying(&self) -> bool {
+        matches!(self, ConnStatus::Reconnecting | ConnStatus::Restarting)
+    }
+
+    /// The banner that says why the board is locked, at the statuses that have
+    /// one. The picker and the terminal screens cover the board and explain
+    /// themselves, and the first connect has nothing to explain yet.
+    #[must_use]
+    pub fn lock_banner(&self) -> Option<&'static str> {
+        match self {
+            ConnStatus::Reconnecting => Some("Reconnecting…"),
+            ConnStatus::Restarting => Some("Server restarting…"),
+            _ => None,
+        }
+    }
+
+    /// The status to wait at before the next connect attempt, after a socket
+    /// ended `ending` at this status. A restart says so until the next
+    /// `Hello`: the refused connects while the server is down are plain
+    /// disconnects, and mustn't turn it into `Reconnecting`.
+    #[must_use]
+    pub fn retrying_after(&self, ending: SocketEnding) -> ConnStatus {
+        if ending == SocketEnding::Restarting || *self == ConnStatus::Restarting {
+            ConnStatus::Restarting
+        } else {
+            ConnStatus::Reconnecting
+        }
+    }
 }
 
 /// One applied submit's worth of events, for the event-log view.
@@ -192,6 +245,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_rejection = Some(reason);
             state.pending_label = None;
         }
+        // Proof of life only, which the transport counts before reducing.
+        ServerMessage::Pong => {}
     }
 }
 
@@ -688,5 +743,43 @@ mod tests {
         );
         assert_eq!(s.log.len(), 1, "only the Setup batch should remain");
         assert_eq!(s.log[0].header, "Setup");
+    }
+
+    #[test]
+    fn a_restart_close_waits_as_restarting() {
+        for current in [ConnStatus::Connected, ConnStatus::Reconnecting] {
+            assert_eq!(
+                current.retrying_after(SocketEnding::Restarting),
+                ConnStatus::Restarting,
+                "from {current:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_drop_while_restarting_stays_restarting() {
+        // While the server is down its connects are refused, which the browser
+        // reports as 1006: a disconnect, which mustn't flicker the banner to
+        // "Reconnecting…".
+        assert_eq!(
+            ConnStatus::Restarting.retrying_after(SocketEnding::Disconnected),
+            ConnStatus::Restarting
+        );
+    }
+
+    #[test]
+    fn a_drop_otherwise_waits_as_reconnecting() {
+        for current in [
+            ConnStatus::Connecting,
+            ConnStatus::Connected,
+            ConnStatus::Reconnecting,
+            ConnStatus::AwaitingRoster,
+        ] {
+            assert_eq!(
+                current.retrying_after(SocketEnding::Disconnected),
+                ConnStatus::Reconnecting,
+                "from {current:?}"
+            );
+        }
     }
 }
