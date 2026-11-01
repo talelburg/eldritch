@@ -192,6 +192,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_rejection = Some(reason);
             state.pending_label = None;
         }
+        // Proof of life only, which the transport counts before reducing.
+        ServerMessage::Pong => {}
     }
 }
 

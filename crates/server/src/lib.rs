@@ -19,6 +19,7 @@ mod ws;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{FromRef, State};
 use axum::http::StatusCode;
@@ -55,6 +56,9 @@ pub struct AppState {
     /// The key that encrypts the in-flight sign-in cookie. Random per
     /// process, so a restart drops only the sign-ins in flight.
     cookie_key: Key,
+    /// How long a game's socket may go without an inbound frame before it is
+    /// closed as gone away.
+    silence_timeout: Duration,
 }
 
 impl FromRef<AppState> for Key {
@@ -83,6 +87,17 @@ impl AppState {
             dev_auth: false,
             identity_providers: Vec::new(),
             cookie_key: Key::generate(),
+            silence_timeout: protocol::SERVER_SILENCE_TIMEOUT,
+        }
+    }
+
+    /// Close a game's socket once it has sent nothing for `silence_timeout`.
+    /// [`protocol::SERVER_SILENCE_TIMEOUT`] by default; tests shorten it.
+    #[must_use]
+    pub fn with_silence_timeout(self, silence_timeout: Duration) -> Self {
+        Self {
+            silence_timeout,
+            ..self
         }
     }
 

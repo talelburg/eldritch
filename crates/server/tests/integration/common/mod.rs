@@ -180,7 +180,11 @@ pub(crate) fn dev_auth_app(pool: SqlitePool, registries: Registries, dev_auth: b
 /// Serve [`dev_auth_app`] over `pool` and the mock [`REGISTRIES`] on an
 /// ephemeral loopback port; return its bound address.
 pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAddr {
-    let app = dev_auth_app(pool, REGISTRIES, dev_auth);
+    serve(dev_auth_app(pool, REGISTRIES, dev_auth)).await
+}
+
+/// Serve `app` on an ephemeral loopback port; return its bound address.
+async fn serve(app: Router) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind ephemeral port");
@@ -196,6 +200,18 @@ pub(crate) async fn serve_dev_auth(pool: SqlitePool, dev_auth: bool) -> SocketAd
 pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     add_test_account(&pool).await;
     serve_dev_auth(pool, true).await
+}
+
+/// [`spawn_server`], with its [`AppState`] passed through `configure` first:
+/// how a test injects what production takes from a constant, such as a short
+/// silence timeout.
+pub(crate) async fn spawn_server_with(
+    pool: SqlitePool,
+    configure: impl FnOnce(AppState) -> AppState,
+) -> SocketAddr {
+    add_test_account(&pool).await;
+    let state = AppState::new(pool, REGISTRIES).with_dev_auth(true);
+    serve(server::app(configure(state))).await
 }
 
 /// An HTTP client that leaves redirects unfollowed, so a response's
@@ -520,6 +536,12 @@ pub(crate) async fn connect_with(addr: SocketAddr, game_id: &str, cookie: Option
 /// Read `ws` to its end and require it to be closed with
 /// [`protocol::CLOSE_UNAUTHENTICATED`] before any message arrives.
 pub(crate) async fn assert_closed_unauthenticated(ws: &mut Client) {
+    assert_closed_with(ws, protocol::CLOSE_UNAUTHENTICATED).await;
+}
+
+/// Read `ws` to its end and require it to be closed with `code`, with no
+/// message read on the way.
+pub(crate) async fn assert_closed_with(ws: &mut Client, code: u16) {
     loop {
         match ws
             .next()
@@ -528,11 +550,7 @@ pub(crate) async fn assert_closed_unauthenticated(ws: &mut Client) {
             .expect("no ws error")
         {
             Message::Close(Some(frame)) => {
-                assert_eq!(
-                    frame.code,
-                    CloseCode::from(protocol::CLOSE_UNAUTHENTICATED),
-                    "closed as unauthenticated"
-                );
+                assert_eq!(frame.code, CloseCode::from(code), "the close code");
                 return;
             }
             Message::Text(text) => panic!("no message before the close: {text}"),

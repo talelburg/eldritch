@@ -131,7 +131,7 @@ async fn act_card_glows_and_advances_via_menu() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
 }
 
@@ -190,7 +190,7 @@ async fn agenda_card_glows_and_resolves_via_menu() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
 }
 

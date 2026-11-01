@@ -135,6 +135,6 @@ async fn draw_glows_and_submits_confirm_for_the_mythos_draw() {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => assert_eq!(response, InputResponse::Confirm),
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
 }

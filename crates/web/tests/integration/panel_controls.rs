@@ -84,7 +84,7 @@ fn submitted(rx: &mut UnboundedReceiver<ClientMessage>) -> InputResponse {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
         } => response,
-        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+        other => panic!("expected ResolveInput, got {other:?}"),
     }
 }
 

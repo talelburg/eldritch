@@ -154,3 +154,76 @@ async fn rejected_action_returns_rejected_to_sender_only() {
         "B must receive nothing for a rejected action"
     );
 }
+
+#[tokio::test]
+async fn a_ping_is_answered_with_a_pong_to_that_socket_only() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-ping").await;
+    let addr = common::spawn_server(pool).await;
+
+    let mut a = common::connect(addr, "g-ping").await;
+    let mut b = common::connect(addr, "g-ping").await;
+    let _ = common::recv(&mut a).await;
+    let _ = common::recv(&mut b).await;
+
+    common::send(&mut a, &ClientMessage::Ping).await;
+
+    assert_pong(&mut a).await;
+    let quiet = time::timeout(Duration::from_millis(200), common::recv(&mut b)).await;
+    assert!(quiet.is_err(), "B must receive nothing for A's ping");
+}
+
+/// The silence timeout the liveness tests inject in place of
+/// [`protocol::SERVER_SILENCE_TIMEOUT`].
+const SHORT_SILENCE: Duration = Duration::from_millis(300);
+
+/// RFC 6455 §7.4.1's 1001, *"an endpoint is \"going away\""*: the code a
+/// socket silent for too long is closed with.
+const GOING_AWAY: u16 = 1001;
+
+/// Require the next message on `ws` to be a `Pong`, within a bound so a missing
+/// one fails the test rather than hanging it.
+async fn assert_pong(ws: &mut common::Client) {
+    match time::timeout(Duration::from_secs(5), common::recv(ws)).await {
+        Ok(ServerMessage::Pong) => {}
+        Ok(other) => panic!("expected Pong, got {other:?}"),
+        Err(_) => panic!("no Pong within 5 s"),
+    }
+}
+
+#[tokio::test]
+async fn a_socket_that_sends_nothing_is_closed_as_going_away() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-silent").await;
+    let addr =
+        common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
+
+    let mut ws = common::connect(addr, "g-silent").await;
+    let _ = common::recv(&mut ws).await;
+
+    time::timeout(
+        SHORT_SILENCE * 4,
+        common::assert_closed_with(&mut ws, GOING_AWAY),
+    )
+    .await
+    .expect("the silent socket is closed soon after its timeout");
+}
+
+#[tokio::test]
+async fn a_socket_that_keeps_pinging_stays_open_past_the_timeout() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-pinging").await;
+    let addr =
+        common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
+
+    let mut ws = common::connect(addr, "g-pinging").await;
+    let _ = common::recv(&mut ws).await;
+
+    // Four pings half a timeout apart span twice the timeout, and each one is
+    // still answered.
+    for _ in 0..4 {
+        time::sleep(SHORT_SILENCE / 2).await;
+        common::send(&mut ws, &ClientMessage::Ping).await;
+        assert_pong(&mut ws).await;
+    }
+}

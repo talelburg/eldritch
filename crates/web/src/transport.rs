@@ -2,12 +2,16 @@
 //! its WebSocket, fold inbound frames into the store, forward outbound
 //! actions, and reconnect on close.
 
+use std::time::Duration;
+
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::{select, SinkExt as _, StreamExt as _};
+use futures::future::Fuse;
+use futures::stream::SplitSink;
+use futures::{select, FutureExt as _, SinkExt as _, StreamExt as _};
 use gloo_net::http::Request;
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::{Message, WebSocketError};
-use gloo_timers::future::TimeoutFuture;
+use gloo_timers::future::{IntervalStream, TimeoutFuture};
 use leptos::prelude::*;
 use protocol::{
     ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage, SignInRequired,
@@ -36,6 +40,16 @@ pub type OutboundTx = UnboundedSender<ClientMessage>;
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
+    // A tab brought back to the front pings at once, rather than waiting on a
+    // ping timer the browser may have throttled while the tab was hidden. A
+    // dead socket then ends through the silence timeout. The listener lasts as
+    // long as the page, so its handle is never used to remove it.
+    let ping_tx = tx.clone();
+    let _ = window_event_listener_untyped("visibilitychange", move |_| {
+        if !document().hidden() {
+            let _ = ping_tx.unbounded_send(ClientMessage::Ping);
+        }
+    });
     provide_context(tx);
     provide_context::<CreateTx>(create_tx);
     spawn_local(run(store, rx, create_rx));
@@ -190,7 +204,9 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 }
 
 /// One socket lifetime: open, mark Connected, pump inbound->reduce and
-/// outbound->sink until close. The returned [`ConnectOutcome`] tells the
+/// outbound->sink, pinging every [`protocol::PING_INTERVAL`], until close or
+/// until the server is silent for [`protocol::CLIENT_SILENCE_TIMEOUT`]. The
+/// returned [`ConnectOutcome`] tells the
 /// reconnect loop whether the server is unreachable, the frames were skewed,
 /// or how the socket ended.
 async fn connect_once(
@@ -209,11 +225,21 @@ async fn connect_once(
     let mut saw_hello = false;
     let mut close_code = None;
     let mut version_mismatch = false;
+    let mut ping = IntervalStream::new(millis(protocol::PING_INTERVAL)).fuse();
+    let mut silence = silence_deadline();
+    let mut silent = false;
 
     loop {
         select! {
+            () = silence => {
+                silent = true;
+                break;
+            }
+            _ = ping.next() => send(&mut write, &ClientMessage::Ping).await,
             incoming = read.next() => match incoming {
                 Some(Ok(Message::Text(txt))) => {
+                    // Any server frame proves the connection alive.
+                    silence = silence_deadline();
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
                         saw_hello |= matches!(msg, ServerMessage::Hello { .. });
                         store.update(|s| store::reduce(s, msg));
@@ -237,19 +263,41 @@ async fn connect_once(
                 None => break,
             },
             outbound = rx.next() => {
-                if let Some(action) = outbound {
-                    if let Ok(json) = serde_json::to_string(&action) {
-                        let _ = write.send(Message::Text(json)).await;
-                    }
+                if let Some(message) = outbound {
+                    send(&mut write, &message).await;
                 }
             }
         }
     }
     if version_mismatch {
         ConnectOutcome::VersionMismatch
+    } else if silent {
+        // Dropping the socket's halves closes it. Sorted directly rather than
+        // by close code: a silent server is a disconnect, before or after
+        // `Hello`, and never a reason to forget the saved game.
+        ConnectOutcome::Ended(SocketEnding::Disconnected)
     } else {
         ConnectOutcome::Ended(socket_ending::sort(saw_hello, close_code))
     }
+}
+
+/// Send `message` on the socket, best-effort: a failed send means the socket
+/// is ending, and its close is read on the inbound side.
+async fn send(write: &mut SplitSink<WebSocket, Message>, message: &ClientMessage) {
+    if let Ok(json) = serde_json::to_string(message) {
+        let _ = write.send(Message::Text(json)).await;
+    }
+}
+
+/// A timer that fires once the server has been silent for
+/// [`protocol::CLIENT_SILENCE_TIMEOUT`]. Restarted on every inbound frame.
+fn silence_deadline() -> Fuse<TimeoutFuture> {
+    TimeoutFuture::new(millis(protocol::CLIENT_SILENCE_TIMEOUT)).fuse()
+}
+
+/// `duration` in the whole milliseconds the browser's timers take.
+fn millis(duration: Duration) -> u32 {
+    u32::try_from(duration.as_millis()).expect("a liveness timing fits a browser timer")
 }
 
 fn local_storage() -> Option<Storage> {

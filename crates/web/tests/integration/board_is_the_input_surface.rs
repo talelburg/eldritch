@@ -68,7 +68,10 @@ impl Harness {
             .rx
             .try_recv()
             .expect("the click submitted a frame")
-            .clone();
+            .clone()
+        else {
+            panic!("the click submitted a frame other than a Submit");
+        };
         let accepted = self.live.submit(action).unwrap_or_else(|refusal| {
             panic!("the board offered something the server refuses: {refusal}")
         });

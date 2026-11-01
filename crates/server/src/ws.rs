@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
 use axum::Error;
@@ -17,6 +17,7 @@ use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
+use tokio::time::{self, Instant};
 
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
 use crate::session::{GameSession, SessionError, StoredGame};
@@ -138,8 +139,23 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
         return;
     }
 
+    // Every inbound frame pushes the deadline back. A select arm runs to
+    // completion before the loop polls again, so it can't pass mid-apply.
+    let silence = time::sleep(state.silence_timeout);
+    tokio::pin!(silence);
+
     loop {
         tokio::select! {
+            () = &mut silence => {
+                // Best-effort: a client this silent is likely gone, so its
+                // close reply isn't awaited.
+                let frame = CloseFrame {
+                    code: close_code::AWAY,
+                    reason: "no frame within the silence timeout".into(),
+                };
+                let _ = sink.send(Message::Close(Some(frame))).await;
+                break;
+            }
             broadcasted = rx.recv() => match broadcasted {
                 Ok(msg) => {
                     if send_msg(&mut sink, &msg).await.is_err() {
@@ -151,6 +167,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             },
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
+                silence.as_mut().reset(Instant::now() + state.silence_timeout);
                 if let Some(direct) = handle_client_message(room, message).await {
                     let close = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
@@ -198,12 +215,14 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                     })),
                 }
             }
+            Ok(ClientMessage::Ping) => Some(Disposition::Reply(ServerMessage::Pong)),
             Err(_) => Some(Disposition::Reply(ServerMessage::Rejected {
                 reason: "malformed message".to_string(),
             })),
         },
         Message::Close(_) => Some(Disposition::Close),
-        // Ping/Pong/Binary are not part of the protocol; ignore them.
+        // WebSocket-level ping/pong and binary frames are not part of the
+        // protocol; ignore them. They still reset the silence deadline.
         _ => None,
     }
 }
