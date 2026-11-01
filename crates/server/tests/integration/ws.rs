@@ -184,10 +184,12 @@ const GOING_AWAY: u16 = 1001;
 /// Require the next message on `ws` to be a `Pong`, within a bound so a missing
 /// one fails the test rather than hanging it.
 async fn assert_pong(ws: &mut common::Client) {
-    match time::timeout(Duration::from_secs(5), common::recv(ws)).await {
-        Ok(ServerMessage::Pong) => {}
-        Ok(other) => panic!("expected Pong, got {other:?}"),
-        Err(_) => panic!("no Pong within 5 s"),
+    let reply = time::timeout(Duration::from_secs(5), common::recv(ws))
+        .await
+        .expect("a Pong within 5 s");
+    match reply {
+        ServerMessage::Pong => {}
+        other => panic!("expected Pong, got {other:?}"),
     }
 }
 
