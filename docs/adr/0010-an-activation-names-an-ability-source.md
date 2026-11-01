@@ -72,4 +72,4 @@ The one thing outside the shared vocabulary is the one thing that is not an abil
 
 **Two lapse *attributions* change, and no resolution does.** The `SourceGone` probe is board-wide and code-comparing where the old per-kind arms were controller-scoped and code-blind, so two candidates that used to be labelled `LapseReason::SourceGone` are now labelled by whichever gate actually withdrew them: an attacking enemy's own ability (its code matched neither board card, so the old arm always said "gone"), and a candidate minted from a location's or an enemy's **attachment** — Barricade 01038's `LeftLocation` self-discard is one — which no investigator's collections hold. `LapseReason` is *"best-effort attribution … for the client log"* and a mislabel there is cosmetic; **which candidates survive a re-scan is decided by `withdraw_lapsed_candidates`, not by this probe**, and that is untouched. The forced and reaction paths resolve exactly as before, which the corpus integration tests assert unchanged.
 
-*Folded: #708, #709, #735, #772, #956, #966, #975, #981, #983, #1263.*
+*Folded: #708, #709, #735, #772, #956, #966, #975, #981, #983, #1263, #580.*

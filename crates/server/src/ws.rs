@@ -58,6 +58,13 @@ impl Loader for StoredGames {
             tx,
         })
     }
+
+    /// An unresumable game fails the same way on every load until the build
+    /// changes, which restarts the process. Every other failure is retried
+    /// by the next get.
+    fn is_permanent(&self, error: &SessionError) -> bool {
+        matches!(error, SessionError::Unresumable { .. })
+    }
 }
 
 /// The server's live games' rooms, loaded from their stored games.

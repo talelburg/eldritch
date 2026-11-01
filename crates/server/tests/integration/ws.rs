@@ -58,11 +58,16 @@ async fn connect_to_a_missing_game_is_dropped_and_a_real_game_still_attaches() {
 
     let mut missing = common::connect(addr, "g-missing").await;
     // The socket ends, however the transport reports it, without a message.
-    while let Some(Ok(frame)) = missing.next().await {
-        if let Message::Text(text) = frame {
-            panic!("a missing game sends nothing, got {text}");
+    // The timeout turns a socket left open into a failure, not a hang.
+    time::timeout(Duration::from_secs(5), async {
+        while let Some(Ok(frame)) = missing.next().await {
+            if let Message::Text(text) = frame {
+                panic!("a missing game sends nothing, got {text}");
+            }
         }
-    }
+    })
+    .await
+    .expect("the missing game's socket ends");
 
     let mut real = common::connect(addr, "g-real").await;
     match common::recv(&mut real).await {
