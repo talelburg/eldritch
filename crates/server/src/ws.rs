@@ -104,8 +104,10 @@ async fn close_unauthenticated(mut socket: WebSocket) {
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
-    let room = match state.rooms.get_or_load(&game_id).await {
-        Ok(room) => room,
+    // The connection lives as long as this socket does, however the socket
+    // ends, so the room's idle grace starts only once its last socket has gone.
+    let connection = match state.rooms.get_or_load(&game_id).await {
+        Ok(connection) => connection,
         // No such game — nothing to attach to. Drop the socket.
         Err(LoadFailure::NotFound) => return,
         // A game that can't be rebuilt is never served half-built, nor passed
@@ -119,6 +121,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             return;
         }
     };
+    let room = connection.room();
     let mut rx = room.tx.subscribe();
     let (mut sink, mut stream) = socket.split();
 
@@ -141,7 +144,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             },
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
-                if let Some(direct) = handle_client_message(&room, message).await {
+                if let Some(direct) = handle_client_message(room, message).await {
                     let close = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
                         if send_msg(&mut sink, &msg).await.is_err() {

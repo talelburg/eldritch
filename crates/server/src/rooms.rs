@@ -1,14 +1,16 @@
 //! The room registry: the server's map of live games' rooms, each loaded once
-//! per game id through a [`Loader`].
+//! per game id through a [`Loader`] and evicted once idle for [`IDLE_GRACE`].
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::panic;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use protocol::GameId;
+use tokio::runtime::Handle;
 use tokio::sync::OnceCell;
-use tokio::task;
+use tokio::{task, time};
 
 use crate::session::SessionError;
 
@@ -46,6 +48,11 @@ pub(crate) enum LoadFailure {
     Failed(Arc<SessionError>),
 }
 
+/// How long a room stays loaded after its last connection leaves, so a
+/// connection that drops and reconnects inside it finds the room without
+/// loading it again.
+pub(crate) const IDLE_GRACE: Duration = Duration::from_mins(10);
+
 /// What one game's load came to: its room, or why there is none.
 type Loaded<R> = Result<Arc<R>, LoadFailure>;
 
@@ -55,21 +62,67 @@ struct Entry<R> {
     loaded: OnceCell<Loaded<R>>,
 }
 
+impl<R> Entry<R> {
+    /// Whether the load failed. Only an unresumable failure stays in the map,
+    /// and it is never evicted.
+    fn failed(&self) -> bool {
+        matches!(self.loaded.get(), Some(Err(_)))
+    }
+}
+
+/// One game's place in the map: its entry and the connections counted on it.
+struct Slot<R> {
+    entry: Arc<Entry<R>>,
+    /// The connections registered and not yet left.
+    connections: usize,
+    /// How many connections have ever registered here. An idle timer evicts
+    /// only if none registered since it started.
+    registered: u64,
+}
+
+/// The map from each game to its slot, shared by the registry, its
+/// connections and their idle timers.
+type Map<R> = Arc<Mutex<HashMap<GameId, Slot<R>>>>;
+
+/// `map`, locked. A panic while it was held left no half-made change, since
+/// every change is one insert, remove or count, so a poisoned lock is taken as
+/// it stands.
+fn lock<R>(map: &Map<R>) -> MutexGuard<'_, HashMap<GameId, Slot<R>>> {
+    map.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The slot for `game_id` if its entry is still `entry`, and not one a later
+/// get has put in its place.
+fn slot_of<'m, R>(
+    rooms: &'m mut HashMap<GameId, Slot<R>>,
+    game_id: &GameId,
+    entry: &Arc<Entry<R>>,
+) -> Option<&'m mut Slot<R>> {
+    rooms
+        .get_mut(game_id)
+        .filter(|slot| Arc::ptr_eq(&slot.entry, entry))
+}
+
 /// The live games' rooms, keyed by [`GameId`]. It is the only code that
 /// touches the map.
 ///
-/// The map's lock is held only to look an entry up, insert one or remove one,
-/// never across an await, so a load holds up only the gets of its own game.
-/// What stays in the map after a load:
+/// The map's lock is held only to look an entry up, insert, remove or count
+/// one, never across an await, so a load holds up only the gets of its own
+/// game. What stays in the map:
 ///
-/// - a loaded room;
+/// - a room, loaded or loading, until it has had no connection for
+///   [`IDLE_GRACE`];
 /// - an [`SessionError::Unresumable`] failure, until the process restarts, so
 ///   a later get returns it without reading or rebuilding again;
 /// - nothing for a missing game or any other failure, so the next get loads
 ///   again.
+///
+/// A get registers its connection under the same lock an idle timer evicts
+/// under, so a get racing the timer either registers first, which keeps the
+/// room, or finds the game gone and loads it afresh.
 pub(crate) struct RoomRegistry<L: Loader> {
     loader: Arc<L>,
-    rooms: Mutex<HashMap<GameId, Arc<Entry<L::Room>>>>,
+    rooms: Map<L::Room>,
 }
 
 impl<L: Loader> RoomRegistry<L> {
@@ -77,24 +130,29 @@ impl<L: Loader> RoomRegistry<L> {
     pub(crate) fn new(loader: L) -> Self {
         Self {
             loader: Arc::new(loader),
-            rooms: Mutex::new(HashMap::new()),
+            rooms: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// The room for `game_id`, loading it if no get has yet. Gets of one id
-    /// that arrive while it loads wait for that load and share its result.
+    /// A connection to the room for `game_id`, loading it if no get has yet.
+    /// Gets of one id that arrive while it loads wait for that load and share
+    /// its result.
+    ///
+    /// The connection is counted from this call, while the load is still in
+    /// flight, until the returned [`Connection`] drops, or until this future
+    /// does or the load fails.
     ///
     /// # Errors
     ///
     /// [`LoadFailure::NotFound`] if no such game exists, or
     /// [`LoadFailure::Failed`] with the error the load failed with.
-    pub(crate) async fn get_or_load(&self, game_id: &GameId) -> Loaded<L::Room> {
-        let entry = Arc::clone(self.map().entry(game_id.clone()).or_insert_with(|| {
-            Arc::new(Entry {
-                loaded: OnceCell::new(),
-            })
-        }));
-        entry
+    pub(crate) async fn get_or_load(
+        &self,
+        game_id: &GameId,
+    ) -> Result<Connection<L::Room>, LoadFailure> {
+        let registration = self.register(game_id);
+        let entry = &registration.entry;
+        let room = entry
             .loaded
             .get_or_init(|| async {
                 let loaded = self.load(game_id).await;
@@ -106,12 +164,36 @@ impl<L: Loader> RoomRegistry<L> {
                     }
                 };
                 if !cached {
-                    self.remove(game_id, &entry);
+                    self.remove(game_id, entry);
                 }
                 loaded
             })
             .await
-            .clone()
+            .clone()?;
+        Ok(Connection {
+            room,
+            _registration: registration,
+        })
+    }
+
+    /// Count a connection on `game_id`'s entry, putting one in the map if
+    /// there is none.
+    fn register(&self, game_id: &GameId) -> Registration<L::Room> {
+        let mut rooms = lock(&self.rooms);
+        let slot = rooms.entry(game_id.clone()).or_insert_with(|| Slot {
+            entry: Arc::new(Entry {
+                loaded: OnceCell::new(),
+            }),
+            connections: 0,
+            registered: 0,
+        });
+        slot.connections += 1;
+        slot.registered += 1;
+        Registration {
+            rooms: Arc::clone(&self.rooms),
+            game_id: game_id.clone(),
+            entry: Arc::clone(&slot.entry),
+        }
     }
 
     /// Read `game_id`, then rebuild its room on a blocking thread.
@@ -138,20 +220,75 @@ impl<L: Loader> RoomRegistry<L> {
     /// Remove `game_id`'s entry if it is still `entry`, and not one a later
     /// get has put in its place.
     fn remove(&self, game_id: &GameId, entry: &Arc<Entry<L::Room>>) {
-        let mut rooms = self.map();
-        if rooms
-            .get(game_id)
-            .is_some_and(|current| Arc::ptr_eq(current, entry))
-        {
+        let mut rooms = lock(&self.rooms);
+        if slot_of(&mut rooms, game_id, entry).is_some() {
             rooms.remove(game_id);
         }
     }
+}
 
-    /// The map, locked. A panic while it was held left no half-made change,
-    /// since every change is one insert or remove, so a poisoned lock is
-    /// taken as it stands.
-    fn map(&self) -> MutexGuard<'_, HashMap<GameId, Arc<Entry<L::Room>>>> {
-        self.rooms.lock().unwrap_or_else(PoisonError::into_inner)
+/// A connection to a loaded room. The room stays in the registry while any
+/// connection to it lives; dropping the last one starts the room's
+/// [`IDLE_GRACE`].
+pub(crate) struct Connection<R: Send + Sync + 'static> {
+    room: Arc<R>,
+    _registration: Registration<R>,
+}
+
+impl<R: Send + Sync + 'static> Connection<R> {
+    /// The room this connection is attached to.
+    pub(crate) fn room(&self) -> &Arc<R> {
+        &self.room
+    }
+}
+
+/// One connection counted on a game's entry, from its get until it drops.
+struct Registration<R: Send + Sync + 'static> {
+    rooms: Map<R>,
+    game_id: GameId,
+    entry: Arc<Entry<R>>,
+}
+
+impl<R: Send + Sync + 'static> Drop for Registration<R> {
+    /// Leave: uncount this connection, and if it was the entry's last, start
+    /// its idle timer. An entry already removed, by a failed load, is left
+    /// alone, as is a cached failure, which is never evicted.
+    fn drop(&mut self) {
+        let mut rooms = lock(&self.rooms);
+        let Some(slot) = slot_of(&mut rooms, &self.game_id, &self.entry) else {
+            return;
+        };
+        slot.connections -= 1;
+        if slot.connections > 0 || slot.entry.failed() {
+            return;
+        }
+        let registered = slot.registered;
+        drop(rooms);
+        // A registration drops outside a runtime only as the runtime itself
+        // shuts down, and the map goes with it.
+        let Ok(runtime) = Handle::try_current() else {
+            return;
+        };
+        let (rooms, game_id, entry) = (
+            Arc::clone(&self.rooms),
+            self.game_id.clone(),
+            Arc::clone(&self.entry),
+        );
+        runtime.spawn(async move {
+            time::sleep(IDLE_GRACE).await;
+            evict_if_idle(&rooms, &game_id, &entry, registered);
+        });
+    }
+}
+
+/// Remove `game_id`'s entry if it is still `entry` and no connection has
+/// registered on it since its idle timer started, when it had `registered`.
+fn evict_if_idle<R>(rooms: &Map<R>, game_id: &GameId, entry: &Arc<Entry<R>>, registered: u64) {
+    let mut rooms = lock(rooms);
+    if slot_of(&mut rooms, game_id, entry)
+        .is_some_and(|slot| slot.registered == registered && !slot.entry.failed())
+    {
+        rooms.remove(game_id);
     }
 }
 
@@ -335,13 +472,16 @@ mod tests {
         );
 
         let (first, second) = (first.expect("a room"), second.expect("a room"));
-        assert!(Arc::ptr_eq(&first, &second), "both gets got the one room");
-        assert_eq!(first.0, id);
+        assert!(
+            Arc::ptr_eq(first.room(), second.room()),
+            "both gets got the one room"
+        );
+        assert_eq!(first.room().0, id);
         assert_eq!(runs(&game), (1, 1));
     }
 
     /// Whether `loaded` is the failure an unresumable game loads with.
-    fn is_unresumable(loaded: &Loaded<TestRoom>) -> bool {
+    fn is_unresumable(loaded: &Result<Connection<TestRoom>, LoadFailure>) -> bool {
         matches!(loaded, Err(LoadFailure::Failed(err)) if matches!(**err, SessionError::Unresumable { .. }))
     }
 
@@ -387,11 +527,11 @@ mod tests {
 
         let (a_room, ()) = tokio::join!(registry.get_or_load(&a_id), async {
             let b_room = registry.get_or_load(&b_id).await;
-            assert_eq!(b_room.expect("b's room").0, b_id);
+            assert_eq!(b_room.expect("b's room").room().0, b_id);
             release_a.send(()).expect("a's rebuild is still held open");
         });
 
-        assert_eq!(a_room.expect("a's room").0, a_id);
+        assert_eq!(a_room.expect("a's room").room().0, a_id);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -413,6 +553,130 @@ mod tests {
         release.send(()).expect("the rebuild is waiting");
 
         let room = get.await.expect("the get ran").expect("a room");
-        assert_eq!(room.0, GameId::new("g"));
+        assert_eq!(room.room().0, GameId::new("g"));
+    }
+
+    /// Nine minutes 59 seconds: a second short of [`IDLE_GRACE`].
+    const JUST_UNDER_THE_GRACE: Duration = Duration::from_secs(9 * 60 + 59);
+
+    #[tokio::test(start_paused = true)]
+    async fn a_room_whose_last_connection_left_survives_just_under_the_grace() {
+        let game = Arc::new(TestGame::loads());
+        let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+        let id = GameId::new("g");
+
+        let first = registry.get_or_load(&id).await.expect("a room");
+        let room = Arc::clone(first.room());
+        drop(first);
+        time::sleep(JUST_UNDER_THE_GRACE).await;
+
+        let again = registry.get_or_load(&id).await.expect("a room");
+        assert!(Arc::ptr_eq(again.room(), &room), "the same room came back");
+        assert_eq!(runs(&game), (1, 1), "the second get didn't load");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_room_idle_for_the_grace_is_evicted() {
+        let game = Arc::new(TestGame::loads());
+        let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+        let id = GameId::new("g");
+
+        let first = registry.get_or_load(&id).await.expect("a room");
+        let room = Arc::clone(first.room());
+        drop(first);
+        time::sleep(IDLE_GRACE).await;
+        // The timer wakes at the same instant as this test; let it run.
+        task::yield_now().await;
+
+        let again = registry.get_or_load(&id).await.expect("a room");
+        assert!(!Arc::ptr_eq(again.room(), &room), "a fresh room came back");
+        assert_eq!(runs(&game), (2, 2), "the second get loaded again");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_connection_inside_the_grace_cancels_the_eviction() {
+        let game = Arc::new(TestGame::loads());
+        let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+        let id = GameId::new("g");
+
+        drop(registry.get_or_load(&id).await.expect("a room"));
+        time::sleep(IDLE_GRACE / 2).await;
+        let returned = registry.get_or_load(&id).await.expect("a room");
+        // Past the first leave's grace, with the returned connection held.
+        time::sleep(IDLE_GRACE).await;
+        drop(returned);
+        // Past where the first leave's timer would have run again, short of
+        // the second leave's grace.
+        time::sleep(JUST_UNDER_THE_GRACE).await;
+
+        drop(registry.get_or_load(&id).await.expect("a room"));
+        assert_eq!(runs(&game), (1, 1), "no get loaded again");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_get_racing_the_eviction_gets_a_room_still_in_the_registry() {
+        // Each run lets the timer's task a different number of polls before
+        // the get, so the get lands before, at or after the eviction.
+        for yields in 0..4 {
+            let game = Arc::new(TestGame::loads());
+            let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+            let id = GameId::new("g");
+
+            drop(registry.get_or_load(&id).await.expect("a room"));
+            time::sleep(IDLE_GRACE).await;
+            for _ in 0..yields {
+                task::yield_now().await;
+            }
+            let raced = registry.get_or_load(&id).await.expect("a room");
+
+            // A room taken out of the map would make this get load another.
+            let after = registry.get_or_load(&id).await.expect("a room");
+            assert!(
+                Arc::ptr_eq(raced.room(), after.room()),
+                "the raced get's room is the registry's ({yields} yields)"
+            );
+            let (reads, rebuilds) = runs(&game);
+            assert!(reads == rebuilds && (1..=2).contains(&reads));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_connection_waiting_on_the_load_keeps_the_room() {
+        let (game, open_read) = TestGame::loads().read_held();
+        let game = Arc::new(game);
+        let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+        let id = GameId::new("g");
+
+        let (first, waiting, ()) = tokio::join!(
+            registry.get_or_load(&id),
+            registry.get_or_load(&id),
+            async {
+                open_read.send_replace(true);
+            },
+        );
+        drop(first.expect("a room"));
+        let waiting = waiting.expect("a room");
+        time::sleep(IDLE_GRACE * 2).await;
+
+        let again = registry.get_or_load(&id).await.expect("a room");
+        assert!(Arc::ptr_eq(again.room(), waiting.room()));
+        assert_eq!(runs(&game), (1, 1), "the room was never evicted");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cached_unresumable_result_outlives_the_grace() {
+        let game = Arc::new(TestGame::new(Read::Found, Rebuild::Unresumable));
+        let registry = RoomRegistry::new(TestLoader::default().with("g", &game));
+        let id = GameId::new("g");
+
+        assert!(is_unresumable(&registry.get_or_load(&id).await));
+        time::sleep(IDLE_GRACE * 2).await;
+
+        assert!(is_unresumable(&registry.get_or_load(&id).await));
+        assert_eq!(
+            runs(&game),
+            (1, 1),
+            "the second get neither read nor rebuilt"
+        );
     }
 }

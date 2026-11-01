@@ -51,6 +51,8 @@ getrandom = "0.4"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tokio-tungstenite = "0.29"
+# The room registry's eviction tests run on tokio's paused clock.
+tokio = { version = "1", features = ["test-util"] }
 # Signs the socket tests in through the dev picker over real HTTP. Redirects
 # stay unfollowed, so the picker's `Set-Cookie` is read off its own 303.
 reqwest = { version = "0.13", default-features = false, features = ["form"] }
