@@ -7,10 +7,14 @@
 //! production `cards::REGISTRY` instead, since `TEST_REGISTRIES` accepts every
 //! code.
 
+use std::sync::LazyLock;
+
 use cards::{REGISTRIES, TEST_REGISTRIES};
 use game_core::action::RosterEntry;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
+use game_core::test_support::{test_investigator_card, MockRegistry};
 
 #[test]
 fn seats_roland_with_corpus_stats_and_payload_deck() {
@@ -202,4 +206,94 @@ fn rejects_unknown_code() {
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());
+}
+
+/// Seat `codes` (empty decks, lead 0) under `registries` and return the
+/// refusal's reason, asserting the state and events are untouched.
+fn refused_roster(codes: &[&str], registries: Registries) -> String {
+    let roster: Vec<RosterEntry> = codes
+        .iter()
+        .map(|code| RosterEntry {
+            investigator: CardCode::new(*code),
+            deck: vec![],
+            random_basic_weaknesses: 0,
+        })
+        .collect();
+    let state = GameStateBuilder::new().with_registries(registries).build();
+    let result = engine::seat_and_open(state, &roster, 0, registries);
+    let EngineOutcome::Rejected { reason } = result.outcome else {
+        panic!("expected the roster refused, got {:?}", result.outcome);
+    };
+    assert_eq!(result.state.round, 0, "state unchanged on reject");
+    assert!(
+        result.state.investigators.is_empty(),
+        "nobody seated on reject"
+    );
+    assert!(result.events.is_empty(), "no events on reject");
+    reason.to_string()
+}
+
+/// Appendix III step 1: *"Each player chooses a different investigator"*.
+/// Roland Banks 01001 named twice is one investigator chosen twice.
+#[test]
+fn rejects_the_same_investigator_code_twice() {
+    let reason = refused_roster(&["01001", "01001"], TEST_REGISTRIES);
+    assert!(reason.contains("01001"), "reason names the code: {reason}");
+}
+
+/// Two synthetic printings of one investigator: distinct codes, one name.
+const PRINTING_A: &str = "_TEST_TWIN_A";
+const PRINTING_B: &str = "_TEST_TWIN_B";
+
+/// The binary's one mock: [`PRINTING_A`] and [`PRINTING_B`], both named
+/// "Twin Investigator". The corpus has no two investigator codes sharing a
+/// name, so the case needs synthetic cards.
+fn twin_printings() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| {
+        let printing = |code| {
+            let mut card = test_investigator_card(code);
+            card.name = "Twin Investigator".to_owned();
+            card
+        };
+        Registries {
+            cards: MockRegistry::new()
+                .with_card(printing(PRINTING_A))
+                .with_card(printing(PRINTING_B))
+                .build(),
+            scenarios: &ScenarioRegistry::EMPTY,
+        }
+    });
+    *REGISTRIES
+}
+
+/// Two printings of one investigator are one investigator to the players:
+/// picking both is choosing the same investigator twice.
+#[test]
+fn rejects_two_printings_of_the_same_investigator() {
+    let reason = refused_roster(&[PRINTING_A, PRINTING_B], twin_printings());
+    assert!(
+        reason.contains(PRINTING_A) && reason.contains(PRINTING_B),
+        "reason names both codes: {reason}"
+    );
+}
+
+/// A roster with a repeated investigator *and* an unimplemented card reports
+/// the repeat: an identity fault comes before the roster's implementation gaps.
+#[test]
+fn reports_a_repeated_investigator_before_an_unimplemented_card() {
+    assert!(!cards::is_playable(SHOTGUN), "{SHOTGUN} is implemented now");
+    let roster = [vec![CardCode::new(SHOTGUN)], vec![]].map(|deck| RosterEntry {
+        investigator: CardCode::new("01001"),
+        deck,
+        random_basic_weaknesses: 0,
+    });
+    let state = GameStateBuilder::new().with_registries(REGISTRIES).build();
+    let result = engine::seat_and_open(state, &roster, 0, REGISTRIES);
+    let EngineOutcome::Rejected { reason } = result.outcome else {
+        panic!("expected the roster refused, got {:?}", result.outcome);
+    };
+    assert!(
+        reason.contains("01001") && !reason.contains(SHOTGUN),
+        "reason names the repeat, not the card: {reason}"
+    );
 }

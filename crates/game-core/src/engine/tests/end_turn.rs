@@ -82,14 +82,15 @@ fn end_turn_outside_investigation_phase_is_rejected() {
 fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
-    let roster = vec![
-        RosterEntry {
-            investigator: CardCode::new(test_support::TEST_INV),
-            deck: vec![],
-            random_basic_weaknesses: 0,
-        };
-        2
-    ];
+    let roster = [
+        CardCode::new(test_support::TEST_INV),
+        test_support::test_inv(2),
+    ]
+    .map(|investigator| RosterEntry {
+        investigator,
+        deck: vec![],
+        random_basic_weaknesses: 0,
+    });
 
     // seat_and_open: round 0 → 1, phase Investigation (mulligan window
     // open). The Investigation phase does NOT begin until the last

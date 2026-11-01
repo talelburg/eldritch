@@ -46,9 +46,40 @@ pub const TEST_INV: &str = "TEST_INV";
 
 fn test_inv_metadata() -> &'static CardMetadata {
     static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| CardMetadata {
-        code: TEST_INV.to_owned(),
-        name: "Test Investigator".to_owned(),
+    M.get_or_init(|| test_inv_card(TEST_INV, "Test Investigator".to_owned()))
+}
+
+/// Printed-code prefix for the numbered synthetic investigators, [`test_inv`].
+pub const TEST_INV_PREFIX: &str = "_TEST_INV_";
+
+/// Synthetic investigator number `n`, e.g. `test_inv(2)` → `_TEST_INV_2`,
+/// named "Test Investigator 2".
+///
+/// Seating refuses a roster that names one investigator twice (Appendix III
+/// step 1: *"Each player chooses a different investigator"*), by name. A
+/// fixture that seats N investigators through seating seats [`TEST_INV`]
+/// first and `test_inv(2)`, `test_inv(3)`, … after it: each has
+/// [`TEST_INV`]'s printed stats and a name of its own. Served by
+/// [`metadata_for_test_inv`], so [`TEST_REGISTRY`] and every
+/// [`MockRegistry`] resolve it.
+#[must_use]
+pub fn test_inv(n: u8) -> CardCode {
+    CardCode::new(format!("{TEST_INV_PREFIX}{n}"))
+}
+
+/// Metadata for [`test_inv`]`(n)`, built once per `n`.
+fn numbered_test_inv_metadata(n: u8) -> &'static CardMetadata {
+    static M: [OnceLock<CardMetadata>; 256] = [const { OnceLock::new() }; 256];
+    M[usize::from(n)]
+        .get_or_init(|| test_inv_card(test_inv(n).as_str(), format!("Test Investigator {n}")))
+}
+
+/// The synthetic investigator printing shared by [`TEST_INV`] and
+/// [`test_inv`]: Neutral, 3 in every skill, 8 health / 8 sanity.
+fn test_inv_card(code: &str, name: String) -> CardMetadata {
+    CardMetadata {
+        code: code.to_owned(),
+        name,
         traits: vec![],
         text: None,
         back_name: None,
@@ -66,7 +97,7 @@ fn test_inv_metadata() -> &'static CardMetadata {
             health: 8,
             sanity: 8,
         },
-    })
+    }
 }
 
 /// Synthetic **player-cardtype** card code for unit tests: an asset, with one
@@ -216,7 +247,8 @@ pub fn abilities_for_terminal(code: &CardCode) -> Option<Vec<Ability>> {
     ])
 }
 
-/// Metadata lookup for the synthetic `TEST_INV` investigator code.
+/// Metadata lookup for the synthetic `TEST_INV` investigator code and the
+/// numbered [`test_inv`] family.
 ///
 /// Integration tests in `crates/game-core/tests/` build their own
 /// mock `CardRegistry` rather than naming [`TEST_REGISTRY`].
@@ -234,7 +266,12 @@ pub fn abilities_for_terminal(code: &CardCode) -> Option<Vec<Ability>> {
 /// }
 /// ```
 pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
-    (code.as_str() == TEST_INV).then(test_inv_metadata)
+    if code.as_str() == TEST_INV {
+        return Some(test_inv_metadata());
+    }
+    let n: u8 = code.as_str().strip_prefix(TEST_INV_PREFIX)?.parse().ok()?;
+    // `_TEST_INV_02` parses to 2 but is not `test_inv(2)`'s code.
+    (test_inv(n) == *code).then(|| numbered_test_inv_metadata(n))
 }
 
 /// game-core's test registry: it knows `TEST_INV`, the synthetic cardtype cards

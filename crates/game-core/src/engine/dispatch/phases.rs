@@ -96,6 +96,28 @@ fn draw_random_basic_weaknesses(cx: &mut Cx, roster: &[RosterEntry]) -> Vec<Vec<
         .collect()
 }
 
+/// Why a roster names one investigator more than once, or `None` when every
+/// pick is a different investigator.
+///
+/// Appendix III step 1: *"Each player chooses a different investigator"*.
+/// `picks` is each roster entry's resolved `(name, code)`, in roster order.
+///
+/// **"The same investigator" is the same card name, not the same code**, so a
+/// core and a parallel printing of one investigator count as one pick. No
+/// vendored source rules on whether two printings are "different
+/// investigators"; this follows the nearest analogue, `Limits and Maximums`,
+/// which counts copies of a card *"(by title)"*. An analogy, not a ruling.
+fn duplicate_investigator<'a>(picks: &[(&'a str, &'a CardCode)]) -> Option<String> {
+    picks.iter().find_map(|&(name, _)| {
+        let codes: Vec<&str> = picks
+            .iter()
+            .filter(|&&(other, _)| other == name)
+            .map(|&(_, code)| code.as_str())
+            .collect();
+        (codes.len() > 1).then(|| format!("{name} is chosen more than once ({})", codes.join(", ")))
+    })
+}
+
 /// Why a roster of `seats` cannot be seated with the lead at roster index
 /// `lead`, or `None` when it can.
 ///
@@ -152,6 +174,18 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -
             entry.deck.clone(),
             entry.investigator.clone(),
         ));
+    }
+
+    // A repeated investigator is an identity fault, like an unknown code: it
+    // is reported ahead of the roster's implementation gaps.
+    let picks: Vec<(&str, &CardCode)> = resolved
+        .iter()
+        .map(|(_, name, _, code)| (name.as_str(), code))
+        .collect();
+    if let Some(reason) = duplicate_investigator(&picks) {
+        return EngineOutcome::Rejected {
+            reason: reason.into(),
+        };
     }
 
     if let Some(reason) =
