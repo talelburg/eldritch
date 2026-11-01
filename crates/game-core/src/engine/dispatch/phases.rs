@@ -182,21 +182,11 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -
         .iter()
         .map(|(_, name, _, code)| (name.as_str(), code))
         .collect();
-    if let Some(reason) = duplicate_investigator(&picks) {
-        return EngineOutcome::Rejected {
-            reason: reason.into(),
-        };
-    }
-
-    if let Some(reason) =
-        unplayable_roster_cards(reg, roster).or_else(|| weakness_pool_shortfall(reg, roster))
+    if let Some(reason) = duplicate_investigator(&picks)
+        .or_else(|| unplayable_roster_cards(reg, roster))
+        .or_else(|| weakness_pool_shortfall(reg, roster))
+        .or_else(|| unseatable_lead(roster.len(), lead))
     {
-        return EngineOutcome::Rejected {
-            reason: reason.into(),
-        };
-    }
-
-    if let Some(reason) = unseatable_lead(roster.len(), lead) {
         return EngineOutcome::Rejected {
             reason: reason.into(),
         };

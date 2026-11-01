@@ -44,7 +44,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, test_inv, MockRegistry, TestSession, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_sequence};
 use std::sync::LazyLock;
 
@@ -140,7 +140,7 @@ fn at_mythos_draw(seats: usize) -> TestSession {
     // Seating refuses one investigator twice, so the seats after the first
     // are `test_inv(2)`, `test_inv(3)`, ….
     let roster: Vec<RosterEntry> = std::iter::once(CardCode::new(TEST_INV))
-        .chain((2..).map(test_inv))
+        .chain((2..).map(test_support::test_inv))
         .take(seats)
         .map(|investigator| RosterEntry {
             investigator,

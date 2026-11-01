@@ -9,12 +9,13 @@
 
 use std::sync::LazyLock;
 
+use card_dsl::card_data::CardMetadata;
 use cards::{REGISTRIES, TEST_REGISTRIES};
 use game_core::action::RosterEntry;
 use game_core::engine::{self, EngineOutcome, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
-use game_core::test_support::{test_investigator_card, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 #[test]
 fn seats_roland_with_corpus_stats_and_payload_deck() {
@@ -208,19 +209,24 @@ fn rejects_unknown_code() {
     assert!(result.events.is_empty());
 }
 
-/// Seat `codes` (empty decks, lead 0) under `registries` and return the
-/// refusal's reason, asserting the state and events are untouched.
-fn refused_roster(codes: &[&str], registries: Registries) -> String {
-    let roster: Vec<RosterEntry> = codes
+/// One roster entry per `(investigator, deck)` pick, with no random basic
+/// weaknesses.
+fn roster_of(picks: &[(&str, &[&str])]) -> Vec<RosterEntry> {
+    picks
         .iter()
-        .map(|code| RosterEntry {
-            investigator: CardCode::new(*code),
-            deck: vec![],
+        .map(|&(investigator, deck)| RosterEntry {
+            investigator: CardCode::new(investigator),
+            deck: deck.iter().map(|&code| CardCode::new(code)).collect(),
             random_basic_weaknesses: 0,
         })
-        .collect();
+        .collect()
+}
+
+/// Seat `roster` (lead 0) under `registries` and return the refusal's
+/// reason, asserting the state and events are untouched.
+fn refused_roster(roster: &[RosterEntry], registries: Registries) -> String {
     let state = GameStateBuilder::new().with_registries(registries).build();
-    let result = engine::seat_and_open(state, &roster, 0, registries);
+    let result = engine::seat_and_open(state, roster, 0, registries);
     let EngineOutcome::Rejected { reason } = result.outcome else {
         panic!("expected the roster refused, got {:?}", result.outcome);
     };
@@ -234,11 +240,12 @@ fn refused_roster(codes: &[&str], registries: Registries) -> String {
 }
 
 /// Appendix III step 1: *"Each player chooses a different investigator"*.
-/// Roland Banks 01001 named twice is one investigator chosen twice.
+/// One code named twice is one investigator chosen twice.
 #[test]
 fn rejects_the_same_investigator_code_twice() {
-    let reason = refused_roster(&["01001", "01001"], TEST_REGISTRIES);
-    assert!(reason.contains("01001"), "reason names the code: {reason}");
+    let roster = roster_of(&[(TEST_INV, &[]), (TEST_INV, &[])]);
+    let reason = refused_roster(&roster, TEST_REGISTRIES);
+    assert!(reason.contains(TEST_INV), "reason names the code: {reason}");
 }
 
 /// Two synthetic printings of one investigator: distinct codes, one name.
@@ -250,10 +257,9 @@ const PRINTING_B: &str = "_TEST_TWIN_B";
 /// name, so the case needs synthetic cards.
 fn twin_printings() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| {
-        let printing = |code| {
-            let mut card = test_investigator_card(code);
-            card.name = "Twin Investigator".to_owned();
-            card
+        let printing = |code| CardMetadata {
+            name: "Twin Investigator".to_owned(),
+            ..test_support::test_investigator_card(code)
         };
         Registries {
             cards: MockRegistry::new()
@@ -270,7 +276,8 @@ fn twin_printings() -> Registries {
 /// picking both is choosing the same investigator twice.
 #[test]
 fn rejects_two_printings_of_the_same_investigator() {
-    let reason = refused_roster(&[PRINTING_A, PRINTING_B], twin_printings());
+    let roster = roster_of(&[(PRINTING_A, &[]), (PRINTING_B, &[])]);
+    let reason = refused_roster(&roster, twin_printings());
     assert!(
         reason.contains(PRINTING_A) && reason.contains(PRINTING_B),
         "reason names both codes: {reason}"
@@ -279,19 +286,14 @@ fn rejects_two_printings_of_the_same_investigator() {
 
 /// A roster with a repeated investigator *and* an unimplemented card reports
 /// the repeat: an identity fault comes before the roster's implementation gaps.
+///
+/// Under the production [`REGISTRIES`], which gates playability, so the
+/// investigator is a printed one: Roland Banks 01001.
 #[test]
 fn reports_a_repeated_investigator_before_an_unimplemented_card() {
     assert!(!cards::is_playable(SHOTGUN), "{SHOTGUN} is implemented now");
-    let roster = [vec![CardCode::new(SHOTGUN)], vec![]].map(|deck| RosterEntry {
-        investigator: CardCode::new("01001"),
-        deck,
-        random_basic_weaknesses: 0,
-    });
-    let state = GameStateBuilder::new().with_registries(REGISTRIES).build();
-    let result = engine::seat_and_open(state, &roster, 0, REGISTRIES);
-    let EngineOutcome::Rejected { reason } = result.outcome else {
-        panic!("expected the roster refused, got {:?}", result.outcome);
-    };
+    let roster = roster_of(&[("01001", &[SHOTGUN]), ("01001", &[])]);
+    let reason = refused_roster(&roster, REGISTRIES);
     assert!(
         reason.contains("01001") && !reason.contains(SHOTGUN),
         "reason names the repeat, not the card: {reason}"

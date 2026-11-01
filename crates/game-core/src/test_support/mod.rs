@@ -17,7 +17,7 @@
 
 use std::sync::OnceLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::card_registry::CardRegistry;
@@ -50,7 +50,7 @@ fn test_inv_metadata() -> &'static CardMetadata {
 }
 
 /// Printed-code prefix for the numbered synthetic investigators, [`test_inv`].
-pub const TEST_INV_PREFIX: &str = "_TEST_INV_";
+const TEST_INV_PREFIX: &str = "_TEST_INV_";
 
 /// Synthetic investigator number `n`, e.g. `test_inv(2)` → `_TEST_INV_2`,
 /// named "Test Investigator 2".
@@ -74,29 +74,13 @@ fn numbered_test_inv_metadata(n: u8) -> &'static CardMetadata {
         .get_or_init(|| test_inv_card(test_inv(n).as_str(), format!("Test Investigator {n}")))
 }
 
-/// The synthetic investigator printing shared by [`TEST_INV`] and
-/// [`test_inv`]: Neutral, 3 in every skill, 8 health / 8 sanity.
+/// The stock investigator printing ([`test_investigator_card`]) under `name`,
+/// shared by [`TEST_INV`] and [`test_inv`].
 fn test_inv_card(code: &str, name: String) -> CardMetadata {
     CardMetadata {
-        code: code.to_owned(),
         name,
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: None,
-        kind: CardKind::Investigator {
-            class: Class::Neutral,
-            skills: Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 3,
-                agility: 3,
-            },
-            health: 8,
-            sanity: 8,
-        },
+        ..test_investigator_card(code)
     }
 }
 
