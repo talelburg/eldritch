@@ -2,9 +2,10 @@
 //! from the board alone, with **no** flat input bar behind it to catch what falls
 //! through.
 //!
-//! A miniature server runs the real engine in-process: every `ClientMessage` the
-//! UI submits is applied with `game_core::engine::apply` and folded back into the store as
-//! an `Applied`, exactly as the transport would. So the assertions are about what
+//! A miniature server runs the server's own submit path in-process: every
+//! `ClientMessage` the UI submits goes to a `protocol::live::LiveGame`, which is
+//! committed and whose `Applied` is folded back into the store, exactly as the
+//! transport would. So the assertions are about what
 //! a player can see and click, and the prompts are the ones the engine actually
 //! emits — including the two option-less `Confirm`s that are byte-identical but
 //! for their anchor, which is the collision the retired bar hid (ADR 0011).
@@ -13,9 +14,8 @@
 //! real corpus, `cards::TEST_REGISTRY`.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::action::Action;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::EngineOutcome;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner as CardOwner, Phase, UseKind,
@@ -23,7 +23,8 @@ use game_core::state::{
 use game_core::test_support::{self, location, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::live::LiveGame;
+use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store;
@@ -35,11 +36,11 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ROLAND: &str = "01001";
 const ROTTING_REMAINS: &str = "01163";
 
-/// The in-process server: holds the authoritative `GameState`, applies whatever
-/// the UI submits, and folds the result back into the store.
+/// The in-process server: holds the authoritative live game, submits whatever
+/// the UI sends to it, and folds the result back into the store.
 struct Harness {
     board: BoardHandle,
-    state: Option<GameState>,
+    live: LiveGame,
 }
 
 impl Harness {
@@ -48,16 +49,19 @@ impl Harness {
     async fn mount(state: GameState, outcome: EngineOutcome) -> Self {
         // The real corpus, not the synthetic registry: this flow draws a real
         // encounter card and renders a real investigator card.
-        let board =
-            common::mount_board(common::hello(state.clone(), outcome), &cards::TEST_REGISTRY).await;
+        let board = common::mount_board(
+            common::hello(state.clone(), outcome.clone()),
+            &cards::TEST_REGISTRY,
+        )
+        .await;
         Self {
             board,
-            state: Some(state),
+            live: LiveGame::new(state, outcome, Vec::new(), 0, cards::TEST_REGISTRIES),
         }
     }
 
-    /// Drain one submitted frame, apply it to the authoritative state, and fold
-    /// the `Applied` back in — the transport's round trip, in-process.
+    /// Drain one submitted frame, submit it to the live game and commit it, and
+    /// fold the `Applied` back in — the transport's round trip, in-process.
     async fn pump(&mut self) {
         let ClientMessage::Submit { action } = self
             .board
@@ -65,33 +69,17 @@ impl Harness {
             .try_recv()
             .expect("the click submitted a frame")
             .clone();
-        let result = engine::apply(
-            self.state.take().expect("a state to apply against"),
-            Action::Player(action),
-            cards::TEST_REGISTRIES,
-        );
-        assert!(
-            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "the board offered something the engine rejected: {:?}",
-            result.outcome
-        );
-        let store = self.board.store;
-        self.state = Some(result.state.clone());
-        store.update(|s| {
-            store::reduce(
-                s,
-                ServerMessage::Applied {
-                    state: Box::new(result.state),
-                    events: result.events,
-                    outcome: result.outcome,
-                },
-            );
+        let accepted = self.live.submit(action).unwrap_or_else(|refusal| {
+            panic!("the board offered something the server refuses: {refusal}")
         });
+        let applied = self.live.commit(accepted);
+        let store = self.board.store;
+        store.update(|s| store::reduce(s, applied));
         task::tick().await;
     }
 
     fn state(&self) -> &GameState {
-        self.state.as_ref().expect("a state")
+        self.live.state()
     }
 
     fn find(&self, sel: &str) -> HtmlElement {

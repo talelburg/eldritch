@@ -46,6 +46,8 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1224 | A stored game is its creation inputs plus a checked action log, PR #1264; slices #1262, #1263 |
 | #1225 | Configurable bind, dist path and build id, PR #1261 |
 | #1226 | Release artifact and deploy script, PR #1267 |
+| #1227 | Nightly backups to R2, PR #1268 |
+| #1229 | The live game, one pure core behind the server and the web harnesses, PR #1280 |
 | #1233 | One integration-test binary per crate, PR #1249; slices #1246, #1247, #1248 |
 | #1234 | Board fixtures beside `Seat`, PR #1259; slices #1251–#1258 |
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
@@ -62,9 +64,9 @@ tracker, and the tracker's dependency view is authoritative.
 - **Glossary:** Account, Lobby, Creator, Member and viewer, landed with this plan.
 - **Tests:** #1233 (✅ PR #1249) → #1234 (✅ PR #1259). #1179 (✅ PR #1260) follows #1233. The two-investigator engine tests
   of lane 3 copy #1234's fixtures.
-- **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227.
+- **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
-- **Engine and server:** #1229 (the session core, a refactor), #1238, #580.
+- **Engine and server:** #1229 (✅ PR #1280), #1238, #580.
 - **Liveness:** #1140.
 
 **2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.

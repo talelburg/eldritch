@@ -12,14 +12,14 @@ Thursday's game is half-played. On Friday a PR adds a field to `GameState`. On S
 
 ## The replay checks
 
-Each log entry is a server-owned type that records what it answered: the response, each picked option's `id`, `label`, `target` and `investigator`, the answered prompt's `kind`, `target` and `responder` (not its text, since a copy-edit would break every saved game), and `RngState.draws` after the action applied. A `target` (`OptionTarget`), the `responder` (`Responder`) and the `kind` (`InputKind`) keep their engine serde form, like the roster, so renaming a variant fails a load as a deserialization error. Replay checks each entry in order:
+Each log entry is a host-owned type, not an engine one, that records what it answered: the response, each picked option's `id`, `label`, `target` and `investigator`, the answered prompt's `kind`, `target` and `responder` (not its text, since a copy-edit would break every saved game), and `RngState.draws` after the action applied. A `target` (`OptionTarget`), the `responder` (`Responder`) and the `kind` (`InputKind`) keep their engine serde form, like the roster, so renaming a variant fails a load as a deserialization error. Replay checks each entry in order:
 
 1. **The prompt is the one it answered.** The current prompt's identity must equal the recorded one. This is what catches an inserted prompt absorbing an old `Skip`. #1230's `prompt: seq` doesn't replace it: it guards a live submit from a stale tab, but during replay entry N always answers whatever sits at position N.
 2. **Each pick finds its option by (label, target, investigator)**, and replay answers with the id the option has now. Zero matches or several fails the load. Additions and reorderings survive, which matters because every new card adds options; a removed or renamed option fails. The investigator is in the key because a several-answerer window can offer two investigators the same label on the same anchor ([ADR 0019](0019-every-prompt-names-who-answers-it.md); `ChoiceOption::investigator`: *"Two options on one anchor offered to two investigators differ here."*).
 3. **The engine accepts it.** A rejection fails the load.
 4. **The RNG checkpoint matches.** `draws` must equal the recorded value, so the first action whose randomness differs fails rather than every later pull drifting silently.
 
-Recording and checks 1 and 2 are one pure, I/O-free module, `server::logged_answer`, so the session core can lift it unchanged; `answered_options` is the one lookup from a response to the options it picked. An `actions` row holds the logged answer as JSON in `answer` and the checkpoint in its own `draws` column. An action the engine accepts but the log can't record is refused at `apply` like a rejection, so a game never holds a move it couldn't replay.
+Recording and checks 1 and 2 are one pure, I/O-free module, `protocol::logged_answer`, beside the live game that records with it; `answered_options` is the one lookup from a response to the options it picked. An `actions` row holds the logged answer as JSON in `answer` and the checkpoint in its own `draws` column. An action the engine accepts but the log can't record is refused at submit like a rejection, so a game never holds a move it couldn't replay.
 
 ## An unresumable game is kept
 

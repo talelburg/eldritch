@@ -1,18 +1,17 @@
-//! `GameSession`: the host wrapper pairing the pure engine with the
-//! `SQLite` action log.
+//! `GameSession`: the host wrapper pairing a [`LiveGame`] with the `SQLite`
+//! action log.
 //!
 //! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
 //! the `interactive_acknowledge` flag) plus an ordered log of its answers
-//! (ADR 0022). No engine state is stored. The live session keeps the derived
-//! state in memory and appends each accepted answer to the log as a
-//! [`LoggedAnswer`] with the RNG checkpoint after it; [`GameSession::load`]
+//! (ADR 0022). No engine state is stored. The session keeps the live game in
+//! memory and appends each answer it accepts to the log as a [`LoggedAnswer`]
+//! with the RNG checkpoint after it, before committing it; [`GameSession::load`]
 //! re-runs setup from the inputs, checks it against the stored
 //! [`SetupFingerprint`], and replays the log, checking each answer, reproducing
 //! state bit-for-bit. A stored game that fails a check is an **unresumable
 //! game**: the load fails with [`SessionError::Unresumable`] and its rows are
 //! kept.
 
-use std::borrow::Cow;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{Action, PlayerAction, RosterEntry};
@@ -21,12 +20,13 @@ use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
-use protocol::GameId;
+use protocol::live::{LiveGame, Refusal};
+use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
+use protocol::{GameId, ServerMessage};
 use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
 use crate::id;
-use crate::logged_answer::{self, LoggedAnswer, ReplayFailure, Unrecordable};
 use crate::store::{self, ActionRow, GameRow};
 
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
@@ -67,6 +67,20 @@ pub enum SessionError {
     },
 }
 
+/// Why [`GameSession::apply`] didn't apply an action. Its `Display` is the
+/// reason the submitting client is sent.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ApplyError {
+    /// The live game refused it. Nothing was stored.
+    #[error(transparent)]
+    Refused(#[from] Refusal),
+    /// The live game accepted it, but storing it failed. Nothing was
+    /// committed.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+}
+
 /// Why a stored game is unresumable.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -97,27 +111,14 @@ pub enum UnresumableReason {
     },
 }
 
-/// A live game: derived state plus its connection to the action log.
+/// A loaded game: its live game and its connection to the action log.
 pub struct GameSession {
     /// Stable identifier for this game (primary key in `games`).
     pub game_id: GameId,
-    /// Current derived state.
-    pub state: GameState,
-    /// Outcome of the most recent apply, or — for a game with no actions yet —
-    /// setup's outcome (the setup mulligan prompt, i.e. `AwaitingInput`).
-    pub outcome: EngineOutcome,
-    /// Events emitted during `seat_and_open`, surfaced to newly-connecting
-    /// clients via `ServerMessage::Hello` so the event log can show opening
-    /// draws, shuffles, and the weakness set-aside. [`load`](Self::load)
-    /// re-runs setup, so a session reloaded from the DB carries the same list.
-    pub setup_events: Vec<Event>,
-    /// Next sequence number to assign to a persisted action — equal to
-    /// the number of actions already in the log.
-    seq: i64,
+    /// The game as it is being played.
+    live: LiveGame,
     /// Connection pool for persistence.
     db: SqlitePool,
-    /// The registries every apply runs against.
-    registries: Registries,
 }
 
 /// What a game's creation inputs set up: the seated, mulligan-pending state,
@@ -253,77 +254,46 @@ impl GameSession {
 
         Ok(Self {
             game_id,
-            state: opened.state,
-            outcome: opened.outcome,
-            setup_events: opened.events,
-            seq: 0,
+            live: LiveGame::new(opened.state, opened.outcome, opened.events, 0, registries),
             db,
-            registries,
         })
     }
 
-    /// Apply a player action: validate via the engine, log the answer it gives
-    /// on acceptance, and advance the in-memory state.
+    /// The game as it is being played.
+    #[must_use]
+    pub fn live(&self) -> &LiveGame {
+        &self.live
+    }
+
+    /// Submit a player action to the live game, store the answer it accepts,
+    /// then commit it. Returns the [`ServerMessage::Applied`] to send every
+    /// connection.
     ///
-    /// A rejected action persists nothing and leaves the state
-    /// unchanged (the engine guarantees this); the returned
-    /// [`EngineOutcome`] carries the rejection reason. An action the engine
-    /// accepts but the log can't record ([`logged_answer::record`]) is
-    /// rejected the same way, since a game must never hold a move its log
-    /// can't replay.
+    /// A refused action stores nothing and leaves the game unchanged, and so
+    /// does a failed write: the live game is committed only once the row is
+    /// stored.
     ///
     /// # Errors
     ///
-    /// [`SessionError::Serde`] if the answer fails to serialize, or
-    /// [`SessionError::Db`] if persisting it fails. An engine *rejection* is
-    /// not an error — it is returned in the `EngineOutcome`.
-    pub async fn apply(
-        &mut self,
-        action: PlayerAction,
-    ) -> Result<(Vec<Event>, EngineOutcome), SessionError> {
-        let result = engine::apply(
-            self.state.clone(),
-            Action::Player(action.clone()),
-            self.registries,
-        );
-        if matches!(result.outcome, EngineOutcome::Rejected { .. }) {
-            return Ok((result.events, result.outcome));
-        }
-        let answer = match self.record(&action) {
-            Ok(answer) => answer,
-            Err(unrecordable) => {
-                return Ok((
-                    Vec::new(),
-                    EngineOutcome::Rejected {
-                        reason: Cow::Owned(format!(
-                            "the action log can't record this: {unrecordable}"
-                        )),
-                    },
-                ));
-            }
-        };
-
+    /// [`ApplyError::Refused`] if the live game refuses the action, or
+    /// [`ApplyError::Session`] wrapping [`SessionError::Serde`] if the answer
+    /// fails to serialize or [`SessionError::Db`] if persisting it fails.
+    pub async fn apply(&mut self, action: PlayerAction) -> Result<ServerMessage, ApplyError> {
+        let accepted = self.live.submit(action)?;
         let row = ActionRow {
-            answer: serde_json::to_string(&answer)?,
-            draws: to_sql_integer(result.state.rng.draws),
+            answer: serde_json::to_string(accepted.answer()).map_err(SessionError::from)?,
+            draws: to_sql_integer(accepted.draws()),
         };
-        store::insert_action(&self.db, &self.game_id, self.seq, &row, unix_millis()).await?;
-        self.seq += 1;
-        self.state = result.state;
-        self.outcome = result.outcome.clone();
-
-        Ok((result.events, result.outcome))
-    }
-
-    /// Log `action` as the answer to the prompt the session awaits.
-    fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, Unrecordable> {
-        let PlayerAction::ResolveInput { response } = action else {
-            return Err(Unrecordable::NotAnAnswer(action.clone()));
-        };
-        let EngineOutcome::AwaitingInput { request, .. } = &self.outcome else {
-            return Err(Unrecordable::NoPrompt);
-        };
-        logged_answer::record(request, response)
+        store::insert_action(
+            &self.db,
+            &self.game_id,
+            self.live.seq(),
+            &row,
+            unix_millis(),
+        )
+        .await
+        .map_err(SessionError::from)?;
+        Ok(self.live.commit(accepted))
     }
 
     /// Rebuild a stored game against `registries`: re-run setup from its
@@ -332,7 +302,9 @@ impl GameSession {
     /// each logged answer. Returns `None` if no game with `game_id` exists.
     ///
     /// Each replayed answer overwrites `outcome`; with an empty log the
-    /// session is at setup's outcome, the mulligan prompt.
+    /// session is at setup's outcome, the mulligan prompt. Setup is re-run,
+    /// so a reloaded session carries the same setup events as when it was
+    /// created.
     ///
     /// # Errors
     ///
@@ -394,12 +366,8 @@ impl GameSession {
 
         Ok(Some(Self {
             game_id: game_id.clone(),
-            state,
-            outcome,
-            setup_events: opened.events,
-            seq,
+            live: LiveGame::new(state, outcome, opened.events, seq, registries),
             db,
-            registries,
         }))
     }
 }
