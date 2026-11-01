@@ -39,8 +39,10 @@ pub struct LiveGame {
 pub struct Accepted {
     answer: LoggedAnswer,
     draws: u64,
-    applied: ServerMessage,
+    /// The game after the answer applied, which the commit installs and
+    /// sends.
     state: GameState,
+    events: Vec<Event>,
     outcome: EngineOutcome,
 }
 
@@ -56,13 +58,6 @@ impl Accepted {
     #[must_use]
     pub fn draws(&self) -> u64 {
         self.draws
-    }
-
-    /// The [`ServerMessage::Applied`] every connection is sent once the answer
-    /// is committed.
-    #[must_use]
-    pub fn applied(&self) -> &ServerMessage {
-        &self.applied
     }
 }
 
@@ -153,28 +148,29 @@ impl LiveGame {
         Ok(Accepted {
             answer,
             draws: result.state.rng.draws,
-            applied: ServerMessage::Applied {
-                state: Box::new(result.state.clone()),
-                events: result.events,
-                outcome: result.outcome.clone(),
-            },
             state: result.state,
+            events: result.events,
             outcome: result.outcome,
         })
     }
 
     /// Advance the game by an answer [`submit`](Self::submit) accepted, and
-    /// hand back its [`ServerMessage::Applied`]. A host that persists the log
-    /// commits only once the answer is stored.
+    /// hand back the [`ServerMessage::Applied`] every connection is sent. A
+    /// host that persists the log commits only once the answer is stored.
     ///
     /// `accepted` must come from `submit` on this game in its current state:
     /// the type can't tie the two together, so committing a stale answer
     /// installs that answer's state.
     pub fn commit(&mut self, accepted: Accepted) -> ServerMessage {
+        let applied = ServerMessage::Applied {
+            state: Box::new(accepted.state.clone()),
+            events: accepted.events,
+            outcome: accepted.outcome.clone(),
+        };
         self.state = accepted.state;
         self.outcome = accepted.outcome;
         self.seq += 1;
-        accepted.applied
+        applied
     }
 
     /// Log `action` as the answer to the prompt the game awaits.

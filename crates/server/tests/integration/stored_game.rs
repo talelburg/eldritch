@@ -30,11 +30,7 @@ fn keep_opening_hand() -> PlayerAction {
 async fn a_played_game_resumes_at_the_same_state_and_outcome() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "played").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
 
     let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("played"))
         .await
@@ -50,11 +46,7 @@ async fn a_played_game_resumes_at_the_same_state_and_outcome() {
 async fn no_stored_column_holds_serialized_engine_state() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "inputs-only").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
 
     for (table, select) in [
         ("games", "SELECT * FROM games"),
@@ -84,11 +76,7 @@ async fn each_logged_action_records_when_it_was_applied() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "timed").await;
     let before = unix_millis();
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     let after = unix_millis();
 
     let (at,): (i64,) = sqlx::query_as("SELECT at FROM actions WHERE game_id = ? AND seq = 0")
@@ -106,11 +94,7 @@ async fn each_logged_action_records_when_it_was_applied() {
 async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redealt").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     // The mock roster's deck is empty; record a card in it, as if setup had
     // dealt one when the game was created.
     sqlx::query(
@@ -143,11 +127,7 @@ async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
 async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "unregistered").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     // As if a PR had removed the game's scenario from the registry.
     sqlx::query("UPDATE games SET scenario_id = 'no-such-scenario' WHERE game_id = ?")
         .bind("unregistered")
@@ -170,11 +150,7 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
     for version in [0_i64, 1, 99] {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
-        session
-            .apply(keep_opening_hand())
-            .await
-            .unwrap()
-            .expect("accepted");
+        session.apply(keep_opening_hand()).await.expect("accepted");
         sqlx::query("UPDATE games SET format_version = ? WHERE game_id = ?")
             .bind(version)
             .bind("versioned")
@@ -193,14 +169,10 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
 async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reordered").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     let gain = turn_option(&session, "Gain resource");
     let end_turn = turn_option(&session, "End turn");
-    session.apply(pick(gain)).await.unwrap().expect("accepted");
+    session.apply(pick(gain)).await.expect("accepted");
     // As if a PR had reordered the turn menu: the logged pick now carries the
     // id that is End turn's, but still names Gain resource.
     common::set_logged(
@@ -225,15 +197,10 @@ async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
 async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "renamed").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     session
         .apply(pick(turn_option(&session, "Gain resource")))
         .await
-        .unwrap()
         .expect("accepted");
     // As if a PR had renamed the option.
     common::set_logged(
@@ -264,15 +231,10 @@ async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
 async fn an_answer_to_a_changed_prompt_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reprompted").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     session
         .apply(pick(turn_option(&session, "Gain resource")))
         .await
-        .unwrap()
         .expect("accepted");
     // As if the turn menu had been asked of someone else when it was logged.
     common::set_logged(
@@ -304,15 +266,10 @@ async fn an_answer_to_a_changed_prompt_is_unresumable() {
 async fn an_action_that_now_draws_differently_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redrawn").await;
-    session
-        .apply(keep_opening_hand())
-        .await
-        .unwrap()
-        .expect("accepted");
+    session.apply(keep_opening_hand()).await.expect("accepted");
     session
         .apply(pick(turn_option(&session, "Gain resource")))
         .await
-        .unwrap()
         .expect("accepted");
     let draws = session.live().state().rng.draws;
     // As if the action had drawn once more when it was logged.

@@ -67,6 +67,20 @@ pub enum SessionError {
     },
 }
 
+/// Why [`GameSession::apply`] didn't apply an action. Its `Display` is the
+/// reason the submitting client is sent.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ApplyError {
+    /// The live game refused it. Nothing was stored.
+    #[error(transparent)]
+    Refused(#[from] Refusal),
+    /// The live game accepted it, but storing it failed. Nothing was
+    /// committed.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+}
+
 /// Why a stored game is unresumable.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -253,7 +267,7 @@ impl GameSession {
 
     /// Submit a player action to the live game, store the answer it accepts,
     /// then commit it. Returns the [`ServerMessage::Applied`] to send every
-    /// connection, or the [`Refusal`] to reply with.
+    /// connection.
     ///
     /// A refused action stores nothing and leaves the game unchanged, and so
     /// does a failed write: the live game is committed only once the row is
@@ -261,18 +275,13 @@ impl GameSession {
     ///
     /// # Errors
     ///
-    /// [`SessionError::Serde`] if the answer fails to serialize, or
-    /// [`SessionError::Db`] if persisting it fails. A refusal is not an error.
-    pub async fn apply(
-        &mut self,
-        action: PlayerAction,
-    ) -> Result<Result<ServerMessage, Refusal>, SessionError> {
-        let accepted = match self.live.submit(action) {
-            Ok(accepted) => accepted,
-            Err(refusal) => return Ok(Err(refusal)),
-        };
+    /// [`ApplyError::Refused`] if the live game refuses the action, or
+    /// [`ApplyError::Session`] wrapping [`SessionError::Serde`] if the answer
+    /// fails to serialize or [`SessionError::Db`] if persisting it fails.
+    pub async fn apply(&mut self, action: PlayerAction) -> Result<ServerMessage, ApplyError> {
+        let accepted = self.live.submit(action)?;
         let row = ActionRow {
-            answer: serde_json::to_string(accepted.answer())?,
+            answer: serde_json::to_string(accepted.answer()).map_err(SessionError::from)?,
             draws: to_sql_integer(accepted.draws()),
         };
         store::insert_action(
@@ -282,8 +291,9 @@ impl GameSession {
             &row,
             unix_millis(),
         )
-        .await?;
-        Ok(Ok(self.live.commit(accepted)))
+        .await
+        .map_err(SessionError::from)?;
+        Ok(self.live.commit(accepted))
     }
 
     /// Rebuild a stored game against `registries`: re-run setup from its

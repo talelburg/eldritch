@@ -167,7 +167,7 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
             Ok(ClientMessage::Submit { action }) => {
                 let mut session = room.session.lock().await;
                 match session.apply(action).await {
-                    Ok(Ok(applied)) => {
+                    Ok(applied) => {
                         // A broadcast send fails only when no receiver exists.
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
@@ -175,9 +175,6 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         let _ = room.tx.send(applied);
                         None
                     }
-                    Ok(Err(refusal)) => Some(Disposition::Reply(ServerMessage::Rejected {
-                        reason: refusal.to_string(),
-                    })),
                     Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {
                         reason: e.to_string(),
                     })),

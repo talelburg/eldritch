@@ -52,7 +52,7 @@ fn resources(state: &GameState) -> u8 {
 
 #[test]
 fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
-    let live = at_turn_menu();
+    let mut live = at_turn_menu();
     let action = take_a_resource(live.state());
     let PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(picked),
@@ -70,11 +70,16 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
         option.id, picked,
         "the logged answer names the option picked"
     );
-    let ServerMessage::Applied { state, .. } = accepted.applied() else {
-        panic!("expected Applied, got {:?}", accepted.applied());
+    let draws = accepted.draws();
+    let applied = live.commit(accepted);
+    let ServerMessage::Applied { state, .. } = applied else {
+        panic!("expected Applied, got {applied:?}");
     };
-    assert_eq!(resources(state), 4, "the Applied holds the next state");
-    assert_eq!(accepted.draws(), state.rng.draws);
+    assert_eq!(resources(&state), 4, "the Applied holds the next state");
+    assert_eq!(
+        draws, state.rng.draws,
+        "the draws checkpoint is the next state's"
+    );
 }
 
 #[test]
