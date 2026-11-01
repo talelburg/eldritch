@@ -12,7 +12,8 @@
 # the database up to backups/pre-<sha>.db → `previous` takes the old
 # `current`, `current` takes the new release → start the server → keep the
 # last 5 releases and their backups. On an empty box, each step that needs a
-# current release or a database is skipped.
+# current release or a database is skipped. Before any of that, a deploy warns
+# (and goes on) when the nightly backup hasn't reached R2 in 36 hours.
 #
 # A rollback points `current` back at `previous` and clears `previous`, so a
 # second rollback refuses. When the database holds a migration the previous
@@ -50,6 +51,9 @@ DB="$ROOT/data/eldritch.db"
 PORT=8000
 KEEP=5
 GUARD_MINUTES=30
+# deploy/eldritch-backup.sh touches this after each successful upload.
+UPLOAD_STAMP="$ROOT/backups/last-upload"
+STALE_HOURS=36
 # Every file on the box belongs to the service user.
 AS="sudo -n -u eldritch"
 
@@ -236,7 +240,25 @@ fetch() {
   [ -f "$WORK/eldritch-$1.tar.gz" ] || die "artifact eldritch-$1 holds no eldritch-$1.tar.gz"
 }
 
+# Warns when the nightly backup hasn't reached R2 lately. The job fails
+# silently on the box (an expired token, a full disk), and a deploy is the
+# routine that runs before each session. Never refuses: a box with no timer
+# yet still deploys.
+check_backups() {
+  local stamp
+  stamp=$(inspect "$AS stat -c %Y $UPLOAD_STAMP 2>/dev/null || true")
+  if [ -z "$stamp" ]; then
+    say "deploy: warning: no backup uploaded yet ($UPLOAD_STAMP is missing); see Backups in docs/deploy.md"
+    return 0
+  fi
+  local hours=$((($(date +%s) - stamp) / 3600))
+  if [ "$hours" -ge "$STALE_HOURS" ]; then
+    say "deploy: warning: the last backup upload was $hours hours ago; see: ssh -t $HOST sudo journalctl -u eldritch-backup -n 50"
+  fi
+}
+
 deploy() {
+  check_backups
   local sha cur
   sha=$(gh api "repos/{owner}/{repo}/commits/${REF:-main}" --jq .sha) \
     || die "GitHub doesn't know ${REF:-main}"

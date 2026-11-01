@@ -1,6 +1,6 @@
 # Deploying the server
 
-How a release gets from CI onto the box, and how the box is brought up once. Decided in [#1223](https://github.com/talelburg/eldritch/issues/1223); built in [#1226](https://github.com/talelburg/eldritch/issues/1226).
+How a release gets from CI onto the box, and how the box is brought up once. Decided in [#1223](https://github.com/talelburg/eldritch/issues/1223); built in [#1226](https://github.com/talelburg/eldritch/issues/1226). Nightly backups to R2 are in [Backups](#backups).
 
 **A normal week:** you merge, CI goes green on `main`, and its `release` job uploads `eldritch-<sha>`: the release `server` binary, the release client bundle, and the server's migrations, all stamped with the sha. Some time before the session, from WSL in this checkout:
 
@@ -24,6 +24,8 @@ If the session goes wrong, `scripts/deploy.sh --rollback` puts the previous rele
 releases/<sha>/   server, dist/, migrations/   (the last 5 are kept)
 data/eldritch.db  the database
 backups/pre-<sha>.db   the backup taken just before <sha> went on
+backups/nightly-<date>.db   the nightly backups (the last 7 are kept)
+backups/last-upload    touched after each successful upload to R2
 current -> releases/<sha>    what the service runs
 previous -> releases/<sha>   what --rollback goes back to
 ```
@@ -34,7 +36,7 @@ The service runs as `eldritch`, listens on `127.0.0.1:8000`, and Caddy serves it
 
 ### 1. Buy the domain
 
-A domain from Cloudflare Registrar, with no "Arkham Horror" in the name (`docs/product-decisions.md`). The R2 backups in #1227 use the same Cloudflare account. Any ending works for the setup. Before picking a cheaper ending, check its renewal price: Cloudflare sells at cost and renews at the price it shows. Don't add DNS records yet.
+A domain from Cloudflare Registrar, with no "Arkham Horror" in the name (`docs/product-decisions.md`). The R2 [backups](#backups) use the same Cloudflare account. Any ending works for the setup. Before picking a cheaper ending, check its renewal price: Cloudflare sells at cost and renews at the price it shows. Don't add DNS records yet.
 
 ### 2. Create the box
 
@@ -44,7 +46,7 @@ A Hetzner CX23 in Falkenstein or Nuremberg, the nearest CX locations to the grou
 - SSH key: your WSL key, `~/.ssh/id_ed25519.pub`. With a key, Hetzner sets no root password.
 - Networking: keep both IPv4 and IPv6.
 - Firewall: inbound TCP 22, 80 and 443. UDP 443 is optional and lets Caddy serve HTTP/3.
-- Volumes, backups, placement groups, labels and cloud config: none. Backups come from `deploy.sh`'s pre-deploy backups and #1227, not Hetzner's.
+- Volumes, backups, placement groups, labels and cloud config: none. Backups come from `deploy.sh` and the nightly job (see [Backups](#backups)), not Hetzner's.
 
 ### 3. Your login user, and ssh locked down
 
@@ -235,6 +237,141 @@ accounts remove sam@gmail.com                        # or the entry's id
 - **`remove` disables the entry and ends its sessions.** The entry stays in `list`, marked disabled, so the games that refer to it stay intact. Its holder's next request or connect finds them signed out. A game socket already open stays open until it next reconnects.
 - **Google has a second list.** The Google consent screen stays in *Testing* (see [Sign-in providers](#11-sign-in-providers)), so a friend who signs in with Google needs their Google address added under *Google Auth Platform* → *Audience* → *Test users* as well as here. GitHub has no such list.
 - **It runs the migrations first,** as the server does at startup, so run it through `current`, never an older release.
+
+## Backups
+
+Every night at 04:00 Israel time, the `eldritch-backup` timer copies the live database to `backups/nightly-<YYYY-MM-DD>.db` (the UTC date), checks it, and uploads it with the `pre-<sha>.db` files to the Cloudflare R2 bucket `eldritch-backups`. The server keeps running. The copy is SQLite's `VACUUM INTO`, which holds a read lock for the few milliseconds it takes. On a successful upload, the job touches `backups/last-upload`. It then keeps the newest 7 nightlies on the box. The `pre-<sha>.db` files are pruned with their releases, as before.
+
+- **Nothing in R2 is deleted by the box.** The upload is `rclone copy`, never `sync`, and it skips any name already in the bucket. R2 expires objects after 90 days (lifecycle rule `expire-90d`). A bucket lock (`keep-30d`) refuses every delete *and every overwrite* in an object's first 30 days, so a re-made file whose name was already uploaded keeps its first upload.
+- **A missed night fires at the next boot** (`Persistent=true`).
+- **If the job stops working,** `deploy.sh` warns when `backups/last-upload` is more than 36 hours old, or missing. It still deploys. The job's own log: `sudo journalctl -u eldritch-backup -n 50`.
+- **The R2 token** is in `/etc/eldritch/rclone.conf`, mode 600, owned by `eldritch`. It is an Account API token with Object Read & Write on `eldritch-backups` only. Cloudflare shows the secret once, so a lost box means minting a new token, not recovering this one.
+
+### Setting up R2
+
+In the Cloudflare dashboard, under R2:
+
+1. Create the bucket `eldritch-backups`: automatic location, no jurisdiction, Standard storage class (the free tier covers Standard only).
+2. In the bucket's settings, add the object lifecycle rule `expire-90d`: the whole bucket, delete objects after 90 days.
+3. Under *Manage API tokens*, create an **Account API token** with **Object Read & Write**, scoped to `eldritch-backups`, with no expiry. Keep the Access Key ID, the Secret Access Key and the Account ID until the next step.
+
+The bucket lock comes later, in step 4 below, because the smoke test deletes its test object.
+
+### Setting up the box
+
+1. Install rclone and check the version. Cloudflare needs 1.59 or later; older ones get `HTTP 401`.
+
+   ```sh
+   sudo apt install rclone
+   rclone version
+   ```
+
+2. Write the rclone config without the secret touching the shell or its history:
+
+   ```sh
+   sudo install -m 600 -o eldritch -g eldritch /dev/null /etc/eldritch/rclone.conf
+   sudoedit /etc/eldritch/rclone.conf
+   ```
+
+   ```ini
+   [r2]
+   type = s3
+   provider = Cloudflare
+   access_key_id = <ACCESS_KEY_ID>
+   secret_access_key = <SECRET_ACCESS_KEY>
+   endpoint = https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+   acl = private
+   no_check_bucket = true
+   no_head = true
+   ```
+
+   A token scoped to one bucket can't check that the bucket exists, hence `no_check_bucket`. `no_head` stops rclone checking each upload with `HEAD …?versionId=…`, which R2 answers with `501 NotImplemented`. Without it, each new upload logs an error, then passes on rclone's retry. The upload is still verified: R2 checks the `PUT`'s `Content-Md5` before storing it.
+
+3. Smoke-test the token as `eldritch`. All three must succeed, with no `ERROR` lines:
+
+   ```sh
+   RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
+   echo ok > /tmp/smoke.txt
+   $RCLONE copyto /tmp/smoke.txt r2:eldritch-backups/smoke.txt
+   $RCLONE ls r2:eldritch-backups
+   $RCLONE deletefile r2:eldritch-backups/smoke.txt
+   ```
+
+4. **Only now**, in the dashboard: open the bucket, then Settings → Bucket lock rules → Add rule. Name `keep-30d`, no prefix, 30 days.
+
+5. Optionally, check the lock. The delete must fail with `ObjectLockedByBucketPolicy`; the file then expires under `expire-90d`:
+
+   ```sh
+   $RCLONE copyto /tmp/smoke.txt r2:eldritch-backups/lock-test.txt
+   $RCLONE deletefile r2:eldritch-backups/lock-test.txt
+   ```
+
+6. Copy `deploy/` to the box (`scp deploy/* eldritch:`), then on the box:
+
+   ```sh
+   sudo install -m 755 eldritch-backup.sh /usr/local/bin/eldritch-backup
+   sudo install -m 644 eldritch-backup.service eldritch-backup.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now eldritch-backup.timer
+   systemctl list-timers eldritch-backup   # next run: 04:00 Israel time
+   ```
+
+7. Run it once, and check the upload:
+
+   ```sh
+   sudo systemctl start eldritch-backup
+   sudo journalctl -u eldritch-backup -n 20
+   $RCLONE ls r2:eldritch-backups        # nightly-<today>.db and the pre-*.db files
+   sudo -u eldritch ls -l /srv/eldritch/backups/   # last-upload, the nightly, no .tmp
+   ```
+
+### Restoring
+
+From *the box is gone*. Restoring onto a box that still exists skips to step 4.
+
+1. Bring a new box up through steps 2–8 of the one-time setup, and step 1 of *Setting up the box* above.
+2. In the dashboard, create a new token as in *Setting up R2* step 3. The old secret can't be shown again. Delete the old token.
+3. Write `/etc/eldritch/rclone.conf` with it, as in *Setting up the box* step 2.
+4. Fetch the backup you want, newest first:
+
+   ```sh
+   RCLONE="sudo -u eldritch rclone --config /etc/eldritch/rclone.conf"
+   $RCLONE ls r2:eldritch-backups
+   $RCLONE copyto r2:eldritch-backups/nightly-<date>.db /srv/eldritch/backups/restore.db
+   sudo -u eldritch sqlite3 /srv/eldritch/backups/restore.db "PRAGMA integrity_check"   # ok
+   ```
+
+5. Put it in place with the server stopped. A leftover `-journal` belongs to the database being replaced, and SQLite would apply it to the restored one:
+
+   ```sh
+   sudo systemctl stop eldritch
+   sudo -u eldritch rm -f /srv/eldritch/data/eldritch.db-journal
+   sudo -u eldritch mv -T /srv/eldritch/backups/restore.db /srv/eldritch/data/eldritch.db
+   ```
+
+   On a new box, deploy a release (step 10 of the setup, or `scripts/deploy.sh`), which starts the server, then set the sign-in values in `eldritch.env` as in step 11's *On the box*. The client ids and secrets are also in the checkout's `.env`; if that is gone too, generate new secrets on the provider apps. The allowlist is in the database, so the restore brings it back. On the old box, `sudo systemctl start eldritch`. A backup holds each game's creation inputs and action log, so any release at or past the backup's migrations resumes it. Alternatively, leave the file where it is and point `DATABASE_URL` in `/etc/eldritch/eldritch.env` at it.
+
+### The restore drill
+
+Run on setup day, and as the acceptance of #1227. It starts a second server on port 8001 against a copy from R2, and leaves the live one alone:
+
+- [ ] As `eldritch`, fetch last night's backup into a scratch path:
+
+  ```sh
+  sudo -u eldritch rclone --config /etc/eldritch/rclone.conf copyto r2:eldritch-backups/nightly-<date>.db /srv/eldritch/backups/drill.db
+  ```
+
+- [ ] Start the drill server:
+
+  ```sh
+  sudo -u eldritch env ELDRITCH_BIND=127.0.0.1:8001 ELDRITCH_DIST=/srv/eldritch/current/dist \
+    DATABASE_URL=sqlite:///srv/eldritch/backups/drill.db /srv/eldritch/current/server
+  ```
+
+- [ ] From WSL, `ssh -L 8001:127.0.0.1:8001 eldritch`, open `http://localhost:8001`, and resume a game that existed before the backup. The client resumes the game whose id its browser saved, and `localhost:8001` is a different origin from the domain, so it opens on the picker. Take an id from `sudo -u eldritch sqlite3 /srv/eldritch/backups/drill.db "SELECT game_id FROM games"`, then in the browser console run `localStorage.setItem("eldritch_game_id", "<game_id>"); location.reload()`. After a real restore at the domain, players' browsers still hold their ids.
+- [ ] Stop the drill server (Ctrl-C) and `sudo -u eldritch sh -c 'rm -f /srv/eldritch/backups/drill.db*'` (the glob has to expand as `eldritch`, which alone can list `backups/`).
+- [ ] The next morning, check that the timer fired on its own: `systemctl list-timers eldritch-backup`, `sudo journalctl -u eldritch-backup`, and a new nightly in R2.
+
 
 ## Drills
 

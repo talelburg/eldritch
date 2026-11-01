@@ -1,0 +1,14 @@
+# Starts eldritch-backup.service nightly. Installed to /etc/systemd/system/
+# by hand (docs/deploy.md, "Backups"). The box stays on UTC; the time zone is
+# in the calendar expression.
+
+[Unit]
+Description=Nightly Eldritch database backup
+
+[Timer]
+OnCalendar=*-*-* 04:00 Asia/Jerusalem
+# A night the box was off fires at the next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
