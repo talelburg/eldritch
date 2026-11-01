@@ -1,8 +1,10 @@
-//! Websocket wire protocol: the JSON messages exchanged between a client and
-//! the server.
+//! The client/server contract: the JSON messages exchanged between a client
+//! and the server, and the pure live game both sides drive.
 //!
 //! The server is authoritative; clients submit [`PlayerAction`]s and render the
-//! state the server broadcasts.
+//! state the server broadcasts. [`live::LiveGame`] decides each submission,
+//! and [`logged_answer`] is the form the action log records it in. Both are
+//! I/O-free, so the web crate's tests run the server's exact submit path.
 
 use std::fmt;
 
@@ -12,6 +14,9 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use serde::{Deserialize, Serialize};
+
+pub mod live;
+pub mod logged_answer;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.

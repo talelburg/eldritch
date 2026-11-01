@@ -12,7 +12,6 @@ pub mod db;
 pub mod fingerprint;
 mod id;
 pub mod lifecycle;
-pub mod logged_answer;
 pub mod session;
 mod store;
 mod ws;

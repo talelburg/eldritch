@@ -10,8 +10,9 @@ use game_core::action::{InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
+use protocol::live::Refusal;
+use protocol::logged_answer::ReplayFailure;
 use protocol::GameId;
-use server::logged_answer::ReplayFailure;
 use server::session::{GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
@@ -34,23 +35,28 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
     .expect("create");
     // create seats at creation → mulligan-pending, no actions logged yet.
     assert!(matches!(
-        session.outcome,
+        session.live().outcome(),
         EngineOutcome::AwaitingInput { .. }
     ));
-    assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
+    assert!(session
+        .live()
+        .state()
+        .investigators
+        .contains_key(&InvestigatorId(1)));
 
     let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("fresh"))
         .await
         .unwrap()
         .expect("exists");
     assert_eq!(
-        loaded.state, session.state,
+        loaded.live().state(),
+        session.live().state(),
         "load reproduces the state setup left"
     );
     assert!(
-        matches!(loaded.outcome, EngineOutcome::AwaitingInput { .. }),
+        matches!(loaded.live().outcome(), EngineOutcome::AwaitingInput { .. }),
         "load must restore setup's AwaitingInput outcome from an empty log, got {:?}",
-        loaded.outcome
+        loaded.live().outcome()
     );
 }
 
@@ -70,8 +76,12 @@ async fn create_persists_seed_and_exposes_setup_state() {
     .expect("create session");
 
     // create seats the roster: the investigator is present and round is 1.
-    assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
-    assert_eq!(session.state.round, 1);
+    assert!(session
+        .live()
+        .state()
+        .investigators
+        .contains_key(&InvestigatorId(1)));
+    assert_eq!(session.live().state().round, 1);
     assert_eq!(session.game_id.as_str(), "game-1");
 
     // A games row was persisted.
@@ -152,18 +162,18 @@ async fn apply_persists_accepted_action_and_advances_state() {
 
     // create lands at round-1 mulligan-pending; resolve the mulligan (keep
     // the whole hand — empty redraw).
-    let (_events, outcome) = session
+    let applied = session
         .apply(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await
         .unwrap();
 
-    assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
+    assert!(applied.is_ok(), "the mulligan is accepted, got {applied:?}");
     // After the mulligan resolves the mulligan queue must be empty (solo
     // game: only one investigator to resolve).
     assert!(
-        session.state.current_mulligan().is_none(),
+        session.live().state().current_mulligan().is_none(),
         "mulligan queue must be empty after the single investigator resolves"
     );
 
@@ -192,7 +202,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
     // Post-create the mulligan is pending. Selecting a non-existent hand
     // index (OptionId(999_999)) is rejected by the mulligan handler since
     // the deck is empty (hand size 0, so any index ≥ 0 is out of bounds).
-    let (events, outcome) = session
+    let refused = session
         .apply(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
                 selected: vec![OptionId(999_999)],
@@ -202,14 +212,14 @@ async fn apply_rejects_invalid_action_without_persisting() {
         .unwrap();
 
     assert!(
-        matches!(outcome, EngineOutcome::Rejected { .. }),
-        "selecting a non-existent card must be rejected, got {outcome:?}"
+        matches!(refused, Err(Refusal::Engine(_))),
+        "selecting a non-existent card must be rejected, got {refused:?}"
     );
-    assert!(events.is_empty());
     // State must be unchanged: round is still 1 and investigator still in
     // the mulligan queue.
     assert_eq!(
-        session.state.round, 1,
+        session.live().state().round,
+        1,
         "state must be unchanged on rejection"
     );
 
@@ -240,14 +250,15 @@ async fn load_replays_log_to_reproduce_live_state() {
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await
-        .unwrap();
+        .unwrap()
+        .expect("the mulligan is accepted");
 
     let loaded = GameSession::load(pool.clone(), common::REGISTRIES, &GameId::new("g4"))
         .await
         .unwrap()
         .expect("game exists");
 
-    assert_eq!(loaded.state, session.state);
+    assert_eq!(loaded.live().state(), session.live().state());
     assert_eq!(loaded.game_id, session.game_id);
 
     // An unknown game id loads as None.
@@ -274,7 +285,8 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await
-        .unwrap();
+        .unwrap()
+        .expect("the mulligan is accepted");
     common::set_logged(&pool, "stale", 0, "$.response", "Confirm").await;
 
     let Err(err) = GameSession::load(pool.clone(), common::REGISTRIES, &GameId::new("stale")).await
@@ -330,7 +342,8 @@ async fn create_randomizes_the_setup_seed_per_game() {
     .await
     .expect("create g2");
     assert_ne!(
-        one.state.rng.seed, two.state.rng.seed,
+        one.live().state().rng.seed,
+        two.live().state().rng.seed,
         "each created game must get a distinct random setup seed"
     );
 }
@@ -349,7 +362,7 @@ async fn create_enables_interactive_acknowledge() {
     .await
     .expect("create");
     assert!(
-        session.state.interactive_acknowledge,
+        session.live().state().interactive_acknowledge,
         "human-play sessions pause to acknowledge skill-test results (#478)"
     );
 }

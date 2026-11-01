@@ -2,10 +2,10 @@
 //! the result and the acknowledge pause.
 //!
 //! **Native, not wasm** — every other file in this directory drives the DOM in a
-//! headless browser; this one drives the *engine*. It mirrors the server exactly:
-//! one `game_core::engine::apply` call is one `ServerMessage::Applied` frame
-//! (`crates/server/src/session.rs`), so applying one at a time and folding each
-//! result through the real `store::reduce` reproduces the batch boundaries the
+//! headless browser; this one drives the *engine*. It runs the server's own
+//! submit path: each answer is submitted to a `protocol::live::LiveGame` and
+//! committed, and each commit is one `ServerMessage::Applied` frame, so folding
+//! each one through the real `store::reduce` reproduces the batch boundaries the
 //! client actually sees. The hazard lives in those boundaries and nowhere else —
 //! a unit test over hand-built batches would miss it, because nobody hand-builds
 //! the empty batch that carries the acknowledge pause.
@@ -43,17 +43,18 @@
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
-use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::action::{InputResponse, PlayerAction};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, InputKind, OptionId, Registries};
+use game_core::engine::{EngineOutcome, InputKind, OptionId, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind,
 };
-use game_core::test_support::{enemy, location, seat};
+use game_core::test_support::{self, enemy, location, seat, TestSession};
+use protocol::live::LiveGame;
 use protocol::ServerMessage;
 use web::skill_test_result;
 use web::store::{self, ClientState};
@@ -199,30 +200,34 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         .iter()
         .position(|a| a == action)
         .expect("the action is legal on this board");
-    let mut result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
+    let seeded = TestSession::new(state, PROBE_REGISTRIES);
+    let mut live = LiveGame::new(
+        seeded.state().clone(),
+        test_support::awaiting_request(seeded.prompt().clone()),
+        Vec::new(),
+        0,
         PROBE_REGISTRIES,
     );
+    let mut response =
+        InputResponse::PickSingle(OptionId(u32::try_from(idx).expect("action index fits u32")));
 
     let mut client = ClientState::default();
     let mut pauses = Vec::new();
     // Generous bound: the longest path here is four applies. A runaway loop is a
     // failure, not a hang.
     for _ in 0..16 {
-        store::reduce(
-            &mut client,
-            ServerMessage::Applied {
-                state: Box::new(result.state.clone()),
-                events: result.events.clone(),
-                outcome: result.outcome.clone(),
-            },
-        );
-        let EngineOutcome::AwaitingInput { request, .. } = result.outcome.clone() else {
+        let accepted = live
+            .submit(PlayerAction::ResolveInput { response })
+            .unwrap_or_else(|refusal| panic!("the answer is refused: {refusal}"));
+        let applied = live.commit(accepted);
+        let ServerMessage::Applied { events, .. } = &applied else {
+            unreachable!("a commit hands back an Applied");
+        };
+        let test_ended = events
+            .iter()
+            .any(|e| matches!(e, Event::SkillTestEnded { .. }));
+        store::reduce(&mut client, applied);
+        let EngineOutcome::AwaitingInput { request, .. } = live.outcome() else {
             break;
         };
         pauses.push(Pause {
@@ -231,14 +236,10 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         });
         // The test is over once ST.8 has torn it down; past that is turn
         // plumbing, which drives into the next action menu.
-        if result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestEnded { .. }))
-        {
+        if test_ended {
             break;
         }
-        let response = match request.kind {
+        response = match request.kind {
             InputKind::Confirm => InputResponse::Confirm,
             // The commit window: commit nothing.
             InputKind::PickMultiple(_) => InputResponse::PickMultiple { selected: vec![] },
@@ -246,11 +247,6 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
             InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
             other => panic!("unexpected prompt kind {other:?}"),
         };
-        result = engine::apply(
-            result.state.clone(),
-            Action::Player(PlayerAction::ResolveInput { response }),
-            PROBE_REGISTRIES,
-        );
     }
     pauses
 }

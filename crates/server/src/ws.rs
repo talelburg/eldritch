@@ -12,7 +12,6 @@ use axum::Error;
 use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt as _, StreamExt as _};
-use game_core::engine::EngineOutcome;
 use protocol::{ClientMessage, GameId, ServerMessage, CLOSE_UNAUTHENTICATED};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
@@ -27,7 +26,7 @@ use crate::{auth, AppState};
 /// the game.
 const BROADCAST_CAPACITY: usize = 256;
 
-/// A live game: its session (behind a mutex so applies serialize across
+/// A loaded game's room: its session (behind a mutex so applies serialize across
 /// connections) and the broadcast channel its connections subscribe to.
 pub(crate) struct GameRoom {
     session: Mutex<GameSession>,
@@ -116,14 +115,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
     let (mut sink, mut stream) = socket.split();
 
     // Send the render baseline before streaming events.
-    let hello = {
-        let session = room.session.lock().await;
-        ServerMessage::Hello {
-            state: Box::new(session.state.clone()),
-            outcome: session.outcome.clone(),
-            events: session.setup_events.clone(),
-        }
-    };
+    let hello = room.session.lock().await.live().hello();
     if send_msg(&mut sink, &hello).await.is_err() {
         return;
     }
@@ -175,24 +167,17 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
             Ok(ClientMessage::Submit { action }) => {
                 let mut session = room.session.lock().await;
                 match session.apply(action).await {
-                    Ok((events, EngineOutcome::Rejected { reason })) => {
-                        debug_assert!(events.is_empty());
-                        Some(Disposition::Reply(ServerMessage::Rejected {
-                            reason: reason.into_owned(),
-                        }))
-                    }
-                    Ok((events, outcome)) => {
+                    Ok(Ok(applied)) => {
                         // A broadcast send fails only when no receiver exists.
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
                         // `apply` has already persisted the action either way.
-                        let _ = room.tx.send(ServerMessage::Applied {
-                            state: Box::new(session.state.clone()),
-                            events,
-                            outcome,
-                        });
+                        let _ = room.tx.send(applied);
                         None
                     }
+                    Ok(Err(refusal)) => Some(Disposition::Reply(ServerMessage::Rejected {
+                        reason: refusal.to_string(),
+                    })),
                     Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {
                         reason: e.to_string(),
                     })),
