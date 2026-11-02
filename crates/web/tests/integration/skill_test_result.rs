@@ -227,11 +227,13 @@ fn mount_modal() -> (RwSignal<ClientState>, UnboundedReceiver<ClientMessage>) {
 /// with `outcome` live in the final batch.
 async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
     store.update(|s| {
+        // Answers the prompt the store holds, so a second call follows the first.
+        let answered = s.prompt;
         store::reduce(
             s,
             ServerMessage::Applied(Applied {
-                answered: LogPosition(0),
-                prompt: LogPosition(1),
+                answered,
+                prompt: answered.next(),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
@@ -244,8 +246,8 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
         store::reduce(
             s,
             ServerMessage::Applied(Applied {
-                answered: LogPosition(1),
-                prompt: LogPosition(2),
+                answered: answered.next(),
+                prompt: answered.next().next(),
                 state: Box::new(base_game()),
                 events: vec![
                     Event::ChaosTokenRevealed {
