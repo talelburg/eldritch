@@ -85,6 +85,11 @@ pub struct GameStateBuilder {
     hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<Continuation>,
     phase_anchor: Option<Continuation>,
+    /// Who has taken a turn this Investigation phase
+    /// ([`turns_taken`](Self::turns_taken)). Kept apart from `phase_anchor`
+    /// and written onto it in `build`, so it composes with
+    /// [`open_turn`](Self::open_turn), which replaces the anchor.
+    turns_taken: Vec<InvestigatorId>,
     investigator_turn: Option<InvestigatorId>,
     engagements: Vec<(EnemyId, InvestigatorId)>,
     /// Frames staged on top of everything else, bottom first
@@ -129,6 +134,7 @@ impl GameStateBuilder {
             hand_size_discard_pending: None,
             open_windows: Vec::new(),
             phase_anchor: None,
+            turns_taken: Vec::new(),
             investigator_turn: None,
             engagements: Vec::new(),
             frames: Vec::new(),
@@ -418,19 +424,53 @@ impl GameStateBuilder {
     /// Investigation phase anchor at turn-begins and the open turn above it.
     /// A seating already set is kept; with none set, it defaults to
     /// `[investigator]`.
+    ///
+    /// It records nothing about whether anyone has taken a turn this phase,
+    /// `investigator` included: stage that with
+    /// [`turns_taken`](Self::turns_taken). With nobody recorded, ending this
+    /// turn hands the next one to the first investigator in player order, so a
+    /// test that opens a later seat's turn and expects the phase to end stages
+    /// the seats that went before.
     pub fn open_turn(mut self, investigator: InvestigatorId) -> Self {
         if self.seating.is_empty() {
             self.seating = vec![investigator];
         }
         self.phase = Phase::Investigation;
         self.active_investigator = Some(investigator);
-        self.phase_anchor = Some(
-            InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            }
-            .into(),
-        );
+        self.phase_anchor =
+            Some(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins).into());
         self.with_investigator_turn(investigator)
+    }
+
+    /// Record `investigators` as having taken a turn this Investigation phase:
+    /// the record Appendix II 2.2.2 reads, *"If an investigator has not yet
+    /// taken a turn this phase, return to 2.2. If each investigator has taken a
+    /// turn this phase, proceed to 2.3."* Defaults to empty.
+    ///
+    /// Composes with [`open_turn`](Self::open_turn) in either order; `build`
+    /// writes it onto the staged Investigation phase anchor.
+    ///
+    /// # Panics
+    ///
+    /// `build` panics if the record is non-empty and no Investigation phase
+    /// anchor is staged.
+    pub fn turns_taken(mut self, investigators: impl IntoIterator<Item = InvestigatorId>) -> Self {
+        self.turns_taken = investigators.into_iter().collect();
+        self
+    }
+
+    /// Begin the Investigation phase: the moment after step 2.1's
+    /// `PhaseStarted { Investigation }` forced abilities have resolved.
+    ///
+    /// Sets the Investigation phase and stages its anchor at
+    /// [`AfterPhaseStartForced`](InvestigationResume::AfterPhaseStartForced),
+    /// with nobody recorded as having taken a turn, so the engine's next drive
+    /// opens the post-2.1 player window and, once it closes, runs step 2.2.
+    pub fn beginning_investigation_phase(mut self) -> Self {
+        self.phase = Phase::Investigation;
+        self.phase_anchor =
+            Some(InvestigationPhaseFrame::at(InvestigationResume::AfterPhaseStartForced).into());
+        self
     }
 
     /// End the Enemy phase: the moment after the last investigator's attacks,
@@ -626,7 +666,7 @@ impl GameStateBuilder {
         // A staged `*Phase` anchor sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
         let mut continuations = ContinuationStack::new();
-        if let Some(anchor) = self.phase_anchor {
+        if let Some(anchor) = with_turns_taken(self.phase_anchor, self.turns_taken) {
             continuations.push(anchor);
         }
         // A staged open turn sits directly above the anchor;
@@ -693,6 +733,33 @@ impl GameStateBuilder {
             removed_from_game: Vec::new(),
             interactive_acknowledge: false,
         }
+    }
+}
+
+/// The staged phase anchor with the staged record of who has taken a turn
+/// written onto it ([`GameStateBuilder::turns_taken`]).
+///
+/// # Panics
+///
+/// Panics if `turns_taken` is non-empty and the anchor is not the
+/// Investigation phase's.
+fn with_turns_taken(
+    anchor: Option<Continuation>,
+    turns_taken: Vec<InvestigatorId>,
+) -> Option<Continuation> {
+    if turns_taken.is_empty() {
+        return anchor;
+    }
+    match anchor {
+        Some(Continuation::InvestigationPhase(mut frame)) => {
+            for investigator in turns_taken {
+                frame.record_turn(investigator);
+            }
+            Some(frame.into())
+        }
+        other => panic!(
+            "turns_taken({turns_taken:?}) needs a staged Investigation phase anchor (open_turn), got {other:?}"
+        ),
     }
 }
 

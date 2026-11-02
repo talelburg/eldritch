@@ -4,10 +4,12 @@ use crate::state::GameStateBuilder;
 #[test]
 fn awaits_input_gates_suspensions_but_not_anchors() {
     // Phase anchors are inert: they wake only when a child frame pops.
-    assert!(!Continuation::InvestigationPhase(InvestigationPhaseFrame {
-        resume: InvestigationResume::TurnBegins,
-    })
-    .awaits_input());
+    assert!(
+        !Continuation::InvestigationPhase(InvestigationPhaseFrame::at(
+            InvestigationResume::TurnBegins
+        ))
+        .awaits_input()
+    );
     assert!(!Continuation::MythosPhase(MythosPhaseFrame {
         resume: MythosResume::Entry,
     })
@@ -72,9 +74,9 @@ fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
         Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         }),
-        Continuation::InvestigationPhase(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        }),
+        Continuation::InvestigationPhase(InvestigationPhaseFrame::at(
+            InvestigationResume::TurnBegins,
+        )),
         Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(InvestigatorId(3)),
         }),

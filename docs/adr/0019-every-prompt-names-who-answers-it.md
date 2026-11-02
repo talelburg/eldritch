@@ -13,7 +13,7 @@ Each prompt kind names one of three responders, read from its frame:
 | Responder | Prompt kinds |
 |---|---|
 | **One named investigator** | the open turn; a substitution; a slot make-room discard; an additional-action choice; a damage distribution; an attack-order pick; a hand-discard cost; an effect's choice (its controller); a forced acknowledge (its candidate's controller); the skill test's commit window and result pause (the tester); the head of the mulligan, hand-size and encounter-draw queues |
-| **The lead** | hunter-move ties; spawn-engage ties; the advance acknowledge; the order of a 2+ forced run |
+| **The lead** | hunter-move ties; spawn-engage ties; the turn choice; the advance acknowledge; the order of a 2+ forced run |
 | **Several answerers** | reaction windows and framework Fast windows. Each option names the investigator it is offered to. |
 
 **The engine checks every answer against its responder.** An answer names the investigator answering. One named investigator or the lead accepts only that investigator, several answerers accept an investigator holding an offered option, and a pick may name only options offered to the investigator answering or to no one in particular. Anything else is rejected before the frame resumes, on replay as live. Which account may answer for an investigator is the live game's check, not the engine's.
@@ -32,7 +32,9 @@ It also closes the `PickMultiple` hand-index convention, under which the request
 
 **The lead is a creation input, defaulting to the first seat.** Appendix III step 3: *"Choose one of those investigators to be the lead investigator for this game."* It is not a setup prompt, because the players have made the choice before the game exists, and it is not random. `glossary/Lead_Investigator.md`'s fallback, *"If they cannot agree on a choice, a lead investigator is chosen at random"*, never arises: the creation input is the choice the players agreed on.
 
-**Player order is the seating rotated to start at the lead**, Active investigators only. `glossary/In_Player_Order.md`: *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order."* Mythos 1.4's draws, Enemy 3.3's attacks, the Upkeep draws and resources, mulligan, hand size, an "each investigator" effect and the Prey tie's candidate list all walk it. **Investigation 2.2's turn choice walks it too, as a stand-in.** The rule is a group choice, Appendix II 2.2: *"The investigators choose among themselves who (among the investigators) will take this turn"*. Turn choice is #1185.
+**Player order is the seating rotated to start at the lead**, Active investigators only. `glossary/In_Player_Order.md`: *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order."* Mythos 1.4's draws, Enemy 3.3's attacks, the Upkeep draws and resources, mulligan, hand size, an "each investigator" effect and the Prey tie's candidate list all walk it.
+
+**Investigation 2.2's turns are the lead's choice, not a walk.** Appendix II 2.2: *"The investigators may take their turns in any order. The investigators choose among themselves who (among the investigators) will take this turn, and making this choice begins that investigator's turn."* That is a group decision, so the lead answers it. While two or more Active investigators have not yet taken a turn this phase, the lead picks among them, listed in player order. One left waiting takes their turn unasked, so a solo game never sees the choice. A stored two-seat game whose log has no answer to the choice fails replay with `PromptChanged`, and [ADR 0022](0022-a-stored-game-is-its-inputs-and-a-checked-log.md) keeps it as `Unresumable`.
 
 **The stored lead never changes after creation, and "the lead" is derived from it**: the first Active investigator in player order, so an eliminated lead is replaced by the next investigator after them. That is a flagged stand-in for `glossary/Lead_Investigator.md`'s *"If the lead investigator is eliminated, the remaining players (if any) choose a new lead investigator."* At two seats there is nobody else to choose, so the stand-in is exact there. Revisit it when three or more seats exist.
 
@@ -59,3 +61,5 @@ This is [ADR 0014](0014-a-granted-ability-is-a-constant-effect-swept-off-the-boa
 **A declarative `offered_to` field on the ability** for The Barrier's group. It has one consumer, which falls under `standards.md`'s threshold, and a card-local eligibility already expresses it.
 
 **Collapse the lead into a plain named investigator on the wire.** Equally cheap, but the host could no longer show that the lead is deciding, which is the one thing that tells a player why a prompt arrived at their seat.
+
+*Folded: #1185.*

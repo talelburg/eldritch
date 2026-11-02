@@ -23,7 +23,8 @@ const DAISY: InvestigatorId = InvestigatorId(2);
 const HALLWAY: &str = "01112";
 
 /// The Gathering seated with Roland (01001) and Daisy (01002), both keeping
-/// their (empty) opening hands: Roland's turn menu, under Act 1.
+/// their (empty) opening hands, and the lead choosing Roland to go first:
+/// Roland's turn menu, under Act 1.
 fn seated_pair() -> GameState {
     let roster: Vec<_> = ["01001", "01002"]
         .into_iter()
@@ -42,6 +43,7 @@ fn seated_pair() -> GameState {
     TestSession::new(opened.state, scenarios::TEST_REGISTRIES)
         .choose_from_hand(&[])
         .choose_from_hand(&[])
+        .choose_turn(ROLAND)
         .finish()
         .state
 }

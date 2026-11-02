@@ -236,7 +236,7 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 ///   boundary by returning `Done`.
 ///
 /// The pass also returns `Done` at terminal (empty stack) and when an anchor's
-/// advance makes no progress (a parked phase, e.g. Investigation with no active
+/// advance makes no progress (a parked phase, e.g. Investigation with no Active
 /// investigator).
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
     loop {
@@ -260,7 +260,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::UpkeepPhase(_) => {
                 let outcome = phases::anchor_on_child_pop(cx);
                 // No-progress guard: a parked phase (e.g. Investigation with
-                // no active investigator) leaves the same anchor on top —
+                // no Active investigator) leaves the same anchor on top —
                 // break rather than spin.
                 if matches!(outcome, EngineOutcome::Done)
                     && cx.state.continuations.top() == Some(&top)
@@ -309,6 +309,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
+            | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_)
                 if top.awaits_input() =>
@@ -424,6 +425,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
+            | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_) => {
                 unreachable!(
@@ -710,6 +712,7 @@ pub(crate) fn resolve_input(
         Continuation::Effect(_) => choice::resume_effect_choice(cx, response),
         Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
         Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
+        Continuation::TurnChoice(_) => phases::resume_turn_choice(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
         Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),
         Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),

@@ -147,6 +147,12 @@ fn table(
             encounter::spawn_engage_request(state, cards, pending),
             lead(state),
         )),
+        // Who takes the next Investigation turn is a group decision, so the
+        // lead's (`glossary/Lead_Investigator.md`).
+        Continuation::TurnChoice(choice) => Some((
+            phases::turn_choice_request(state, cards, choice),
+            lead(state),
+        )),
         Continuation::HandSizeDiscard(queue) => queue.remaining.first().map(|&head| {
             (
                 phases::hand_size_discard_request(state, cards, head),

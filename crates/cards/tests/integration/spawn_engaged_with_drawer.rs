@@ -47,9 +47,11 @@ fn a_drawn_enemy_without_a_spawn_instruction_engages_its_drawer_whatever_its_pre
         .with_encounter_deck([RAVENOUS_GHOUL])
         .build();
 
-    let session = TestSession::new(state, TEST_REGISTRIES).confirm();
-
-    // No prompt for the lead: play runs on out of the Mythos phase.
+    // No engagement prompt for the lead: play runs on out of the Mythos phase
+    // to the Investigation phase's choice of who goes first.
+    let session = TestSession::new(state, TEST_REGISTRIES)
+        .confirm()
+        .choose_turn(LEAD);
     session.assert_at_turn_menu(LEAD);
     let ghoul = session
         .state()

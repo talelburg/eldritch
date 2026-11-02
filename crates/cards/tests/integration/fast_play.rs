@@ -101,9 +101,7 @@ fn a_turn_begins_window(b: Seat) -> TestSession {
         .with_seating([A, B])
         .with_phase(Phase::Investigation)
         .with_active_investigator(A)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
+        .with_phase_anchor(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins))
         .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
         .session()
 }

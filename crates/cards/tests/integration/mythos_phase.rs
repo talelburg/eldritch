@@ -119,7 +119,9 @@ fn board(encounter: &[&str]) -> (GameState, LocationId) {
 }
 
 /// Seat `roster` on `state` through `seat_and_open`, and keep every opening
-/// hand at the mulligan, which leaves the session at the lead's turn menu.
+/// hand at the mulligan, which leaves the session at step 2.2: the sole
+/// investigator's turn menu, or with more seated the lead's choice of who goes
+/// first.
 fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
     let roster: Vec<RosterEntry> = investigators
         .iter()
@@ -155,7 +157,8 @@ fn setup_at_mythos_draw(state: GameState) -> TestSession {
 /// through the phases into Mythos with the cursor on inv1.
 fn setup_two_investigators_at_mythos_draw(state: GameState) -> TestSession {
     seat_keeping_hands(state, &[ROLAND, test_support::TEST_INV])
-        // inv1 ends turn → rotates to inv2.
+        .choose_turn(INV1)
+        // inv1 ends turn → inv2, the only one still waiting, goes next.
         .take(&TurnAction::EndTurn)
         // inv2 is the last in player order → ticks through phases into Mythos.
         .take(&TurnAction::EndTurn)
@@ -364,7 +367,7 @@ fn mythos_phase_multi_investigator_player_order() {
     assert_eq!(second.state().current_encounter_drawer(), Some(INV2));
 
     // inv2 draws their card → completes the phase.
-    let done = second.confirm();
+    let done = second.confirm().choose_turn(INV1);
     done.assert_at_turn_menu(INV1);
     assert_eq!(done.state().current_encounter_drawer(), None);
     assert_eq!(done.state().phase, Phase::Investigation);

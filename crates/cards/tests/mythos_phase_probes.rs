@@ -133,9 +133,10 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 }
 
 /// Seat `seats` test investigators through `seat_and_open`, keep every opening
-/// hand at the mulligan, and end every turn — the last `EndTurn` in
-/// player order ticks through Investigation → Enemy → Upkeep into Mythos
-/// (round 2), pausing with the encounter-draw cursor on inv1.
+/// hand at the mulligan, and end every turn, the lead choosing them in seat
+/// order while two or more are waiting. The last `EndTurn` ticks through
+/// Investigation → Enemy → Upkeep into Mythos (round 2), pausing with the
+/// encounter-draw cursor on inv1.
 fn at_mythos_draw(seats: usize) -> TestSession {
     // Seating refuses one investigator twice, so the seats after the first
     // are `test_inv(2)`, `test_inv(3)`, ….
@@ -153,7 +154,18 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         registries(),
     );
     let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));
-    (0..seats).fold(session, |s, _| s.take(&TurnAction::EndTurn))
+    let in_seat_order = (1..).map(InvestigatorId).take(seats);
+    in_seat_order
+        .enumerate()
+        .fold(session, |s, (turns_taken, investigator)| {
+            let waiting = seats - turns_taken;
+            let s = if waiting >= 2 {
+                s.choose_turn(investigator)
+            } else {
+                s
+            };
+            s.take(&TurnAction::EndTurn)
+        })
 }
 
 /// [`at_mythos_draw`] with the encounter deck then seeded to `codes`, *after*
@@ -313,7 +325,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     );
 
     // inv2 draws: one plain treachery, no surge.
-    let done = second.confirm();
+    let done = second.confirm().choose_turn(INV1);
     done.assert_at_turn_menu(INV1);
     assert_eq!(done.state().phase, Phase::Investigation);
     assert_eq!(done.state().current_encounter_drawer(), None);
@@ -324,7 +336,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
         "all three cards in discard after both investigators draw"
     );
     assert_event!(
-        done.finish().events,
+        done.events(),
         Event::CardRevealed { investigator, code, .. }
             if *investigator == INV2
                 && *code == CardCode::new(PROBE_TREACHERY)

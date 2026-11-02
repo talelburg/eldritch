@@ -10,8 +10,8 @@ use crate::engine::{
 };
 use crate::event::Event;
 use crate::state::{
-    DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep, GameState,
-    GameStateBuilder, InvestigatorId, SkillKind,
+    Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
+    GameState, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
     self, card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
@@ -550,6 +550,29 @@ impl TestSession {
     pub fn pick(self, target: OptionTarget) -> Self {
         let id = self.sole_option_at(&target, "pick");
         self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: answer the lead's choice of who takes the next Investigation turn
+    /// by naming `investigator`, then drain. Picks the option on their
+    /// investigator card, so the lead answers, as [`pick`](Self::pick) does.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the session rests at a turn choice
+    /// ([`TurnChoice`](crate::state::Continuation::TurnChoice) on top), or if
+    /// `investigator` is not offered.
+    #[track_caller]
+    pub fn choose_turn(self, investigator: InvestigatorId) -> Self {
+        assert!(
+            matches!(
+                self.state.continuations.top(),
+                Some(Continuation::TurnChoice(_))
+            ),
+            "TestSession::choose_turn: the session rests at {:?}, not a turn choice",
+            self.rest,
+        );
+        let anchor = self.state.investigators[&investigator].card_anchor();
+        self.pick(anchor)
     }
 
     /// The id of the one option of the current prompt whose anchor is

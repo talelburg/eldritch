@@ -99,7 +99,9 @@ fn playing_dark_memory_can_advance_the_agenda() {
 
 #[test]
 fn holding_dark_memory_at_the_end_of_your_turn_deals_two_horror() {
-    let session = turn_holding(&[DARK_MEMORY]).take(&TurnAction::EndTurn);
+    let session = turn_holding(&[DARK_MEMORY])
+        .take(&TurnAction::EndTurn)
+        .choose_turn(INV2);
 
     session.assert_at_turn_menu(INV2);
     let inv = &session.state().investigators[&INV];
@@ -121,6 +123,7 @@ fn dark_memory_does_not_fire_at_the_end_of_another_investigators_turn() {
     // nobody's hand but investigator 2's.
     let session = turn_holding(&[DARK_MEMORY])
         .take(&TurnAction::EndTurn)
+        .choose_turn(INV2)
         .take(&TurnAction::EndTurn);
 
     session.assert_at_turn_menu(INV3);

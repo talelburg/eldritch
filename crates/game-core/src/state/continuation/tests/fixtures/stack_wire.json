@@ -266,6 +266,14 @@
     }
   },
   {
+    "TurnChoice": {
+      "candidates": [
+        2,
+        1
+      ]
+    }
+  },
+  {
     "HandSizeDiscard": {
       "remaining": [
         1

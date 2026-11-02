@@ -53,8 +53,8 @@ fn is_active(state: &GameState, id: InvestigatorId) -> bool {
 /// Every *"in player order"* step walks it: Mythos 1.4's draws, Enemy 3.3's
 /// attacks, Upkeep 4.2's action reset and 4.4's draws and resources, the
 /// setup mulligan, hand size, and an "each investigator" `Effect::ForEach`.
-/// Investigation 2.2's turns walk it as a stand-in for the investigators'
-/// choice. TODO(#1185): let the investigators choose who takes each turn.
+/// Investigation 2.2's turns are the lead's choice instead, which lists its
+/// candidates in this order.
 #[must_use]
 pub fn player_order(state: &GameState) -> Vec<InvestigatorId> {
     seating_from_lead(state)
@@ -78,8 +78,9 @@ pub fn the_lead(state: &GameState) -> Option<InvestigatorId> {
 /// when no Active investigator follows them before the rotation ends, or when
 /// `current` is not seated.
 ///
-/// Advances a per-investigator loop's cursor: the Investigation turns, Enemy
-/// 3.3's attacks, Upkeep 4.4's draws. `current` may itself have been
+/// Advances a per-investigator loop's cursor: Enemy 3.3's attacks, Upkeep
+/// 4.4's draws. (The Investigation turns read the phase anchor's record of who
+/// has taken a turn instead.) `current` may itself have been
 /// eliminated mid-loop (defeated by an attack in Enemy 3.3); indexing the
 /// whole seating rather than the Active list finds their successor anyway. The
 /// rotation is taken at the *stored* lead, which never changes, so eliminating

@@ -374,7 +374,8 @@ fn multi_investigator_mulligan_advances_in_player_order() {
     let after_first = session.choose_from_hand(&[]);
     assert_eq!(after_first.state().current_mulligan(), Some(inv2));
 
-    let after_second = after_first.choose_from_hand(&[]);
+    // The loop drains, and the Investigation phase asks who goes first.
+    let after_second = after_first.choose_from_hand(&[]).choose_turn(INV);
     after_second.assert_at_turn_menu(INV);
     assert_eq!(after_second.state().current_mulligan(), None);
 }
@@ -445,7 +446,7 @@ fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
     // inv2 keeps hand (empty redraw). The loop drains.
     let original_inv2_hand = after_inv1.state().investigators[&inv2].hand.clone();
     let original_inv2_deck = after_inv1.state().investigators[&inv2].deck.clone();
-    let after_inv2 = after_inv1.choose_from_hand(&[]);
+    let after_inv2 = after_inv1.choose_from_hand(&[]).choose_turn(INV);
     after_inv2.assert_at_turn_menu(INV);
     assert_eq!(after_inv2.state().current_mulligan(), None);
     assert_event!(

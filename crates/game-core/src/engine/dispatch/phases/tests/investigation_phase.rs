@@ -1,10 +1,10 @@
 use super::*;
-use crate::assert_event;
 use crate::engine::dispatch;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
-use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+use crate::state::{GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, TEST_REGISTRIES};
+use crate::{assert_event, assert_no_event};
 
 #[test]
 fn investigator_turn_defaults_to_not_ending() {
@@ -57,7 +57,8 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     assert!(state.continuations.iter().any(|c| matches!(
         c,
         Continuation::InvestigationPhase(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins
+            resume: InvestigationResume::TurnBegins,
+            ..
         })
     )));
 }
@@ -125,12 +126,12 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
 }
 
 #[test]
-fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
+fn investigation_phase_emits_phase_started_and_asks_who_goes_first() {
     // Two investigators; investigation_phase should emit
     // PhaseStarted(Investigation), open the post-2.1 InvestigationBegins
     // window (which auto-skips in tests — the test registry serves no ability),
-    // and then rotate to the first investigator in player order
-    // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
+    // and then, at step 2.2, ask the lead who takes the first turn, with both
+    // investigators waiting in player order and nobody active yet.
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -145,10 +146,13 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     drive_phase(&mut cx, outcome);
 
     assert_eq!(
-        state.active_investigator,
-        Some(InvestigatorId(1)),
-        "investigation_phase must rotate to the lead (first in player order)"
+        state.continuations.top(),
+        Some(&Continuation::TurnChoice(TurnChoiceFrame::new(vec![
+            InvestigatorId(1),
+            InvestigatorId(2)
+        ]))),
     );
+    assert_eq!(state.active_investigator, None);
     assert!(
         events.iter().any(|e| matches!(
             e,
@@ -373,4 +377,67 @@ fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
             phase: Phase::Investigation
         }
     )));
+}
+
+#[test]
+fn the_next_turn_goes_to_the_first_investigator_who_has_not_taken_one() {
+    // Appendix II 2.2.2: "If an investigator has not yet taken a turn this
+    // phase, return to 2.2." Seat 2 is the lead, so player order is seat 2,
+    // then seat 1, and seat 1's turn is open with nobody recorded. Nobody
+    // follows seat 1 in player order, but seat 2 has not yet taken a turn, so
+    // the turn goes to seat 2 rather than the phase ending.
+    let (first_seat, lead) = (InvestigatorId(1), InvestigatorId(2));
+    let session = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_two_seats_led_by_the_second(test_support::seat(1), test_support::seat(2))
+        .open_turn(first_seat)
+        .session()
+        .take(&TurnAction::EndTurn);
+
+    session.assert_at_turn_menu(lead);
+    assert_no_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Investigation
+        }
+    );
+}
+
+#[test]
+fn an_investigator_eliminated_on_their_turn_is_not_offered_another() {
+    // Seat 2's turn is open, one damage from defeat and engaged with an enemy.
+    // Drawing a card provokes the attack of opportunity that defeats them,
+    // which ends their turn at 2.2.2. Seat 1 has not yet taken a turn, so it
+    // goes to seat 1; when seat 1's turn ends, nobody is left waiting, so the
+    // phase proceeds to 2.3 without offering seat 2 a turn.
+    const HERE: LocationId = LocationId(10);
+    let (first_seat, dying) = (InvestigatorId(1), InvestigatorId(2));
+    let session = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::location(HERE))
+        .with_seat(test_support::seat(1).at(HERE))
+        // 7 + 1 = 8, the stock health.
+        .with_seat(test_support::seat(2).at(HERE).harm(7, 0))
+        .with_seating([first_seat, dying])
+        .with_enemy(test_support::enemy(1).attack_damage(1).engaged_with(dying))
+        .open_turn(dying)
+        .session()
+        .take(&TurnAction::Draw {
+            investigator: dying,
+        });
+
+    assert_eq!(
+        session.state().investigators[&dying].status,
+        Status::Defeated
+    );
+    session.assert_at_turn_menu(first_seat);
+
+    let session = session.take(&TurnAction::EndTurn);
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Investigation
+        }
+    );
+    assert_ne!(session.state().active_investigator, Some(dying));
 }

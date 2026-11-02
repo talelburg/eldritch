@@ -546,7 +546,7 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
 
     // Second copy revealed at the same location: limit 1 → discarded, not
     // attached.
-    let done = second.confirm();
+    let done = second.confirm().choose_turn(INV);
     done.assert_at_turn_menu(INV);
     assert_eq!(
         done.state().locations[&HERE].attachments.len(),
@@ -562,7 +562,7 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
     // An encounter card's discard names the encounter pile, not a stand-in
     // investigator.
     assert_event!(
-        done.finish().events,
+        done.events(),
         Event::CardDiscarded {
             code,
             from: Zone::LocationAttachment,

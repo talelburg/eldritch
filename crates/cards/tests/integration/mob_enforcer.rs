@@ -191,7 +191,9 @@ fn the_parley_is_offered_with_4_resources() {
 
 /// The line `A - B - C - D`, Mob Enforcer at `enforcer_at` (unengaged and
 /// ready, owned by its bearer — what a draw mints), its bearer at `bearer_at`
-/// and the other investigator at `other_at`, on `turn`'s turn.
+/// and the other investigator at `other_at`, on `turn`'s turn — the round's
+/// last, the other seat having taken theirs, so ending it runs on to the Enemy
+/// phase.
 fn two_seats(
     enforcer_at: LocationId,
     bearer_at: LocationId,
@@ -213,6 +215,7 @@ fn two_seats(
                 .owner(Owner::Investigator(BEARER))
                 .at(enforcer_at),
         )
+        .turns_taken([BEARER, OTHER].into_iter().filter(|id| *id != turn))
         .open_turn(turn)
         .session()
 }
