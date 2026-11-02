@@ -14,7 +14,8 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
-use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::{GameState, GameStateBuilder};
 use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::*;
 use leptos::task;
@@ -32,22 +33,13 @@ use crate::common;
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
 async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {
-    mount_in(None, outcome, preselected).await
+    mount_with(None, outcome, preselected, None).await
 }
 
 /// [`mount`], with the store also holding `game`, so the banner can name
-/// investigators.
-async fn mount_in(
-    game: Option<GameState>,
-    outcome: EngineOutcome,
-    preselected: &[u32],
-) -> UnboundedReceiver<ClientMessage> {
-    mount_holding(game, outcome, preselected, None).await
-}
-
-/// [`mount_in`], signed in as an account holding only `held` when it is
+/// investigators, and signed in as an account holding only `held` when it is
 /// `Some`, or every investigator when it is `None`.
-async fn mount_holding(
+async fn mount_with(
     game: Option<GameState>,
     outcome: EngineOutcome,
     preselected: &[u32],
@@ -536,7 +528,7 @@ async fn a_window_two_answer_shows_a_labelled_pass_for_each() {
         game.name_of(InvestigatorId(2)),
         game.name_of(InvestigatorId(3)),
     ];
-    let mut rx = mount_in(Some(game), offered_to_two_and_three(), &[]).await;
+    let mut rx = mount_with(Some(game), offered_to_two_and_three(), &[], None).await;
     let passes = pass_buttons();
     let labels: Vec<String> = passes
         .iter()
@@ -563,7 +555,7 @@ async fn a_window_one_still_answers_shows_one_plain_pass() {
         .skippable()
         .answered_by(Responder::Several),
     );
-    let mut rx = mount_in(Some(two_and_three_seated()), outcome, &[]).await;
+    let mut rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
     let labels: Vec<String> = pass_buttons()
         .iter()
         .map(|b| b.text_content().unwrap_or_default())
@@ -574,11 +566,11 @@ async fn a_window_one_still_answers_shows_one_plain_pass() {
     assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
 }
 
-/// Sam's account holds nobody in the window investigators 2 and 3 answer: the
-/// banner offers him no option and no Pass, and says nothing.
+/// A viewer's account holds nobody in the window investigators 2 and 3
+/// answer: the banner offers it no option and no Pass, and says nothing.
 #[wasm_bindgen_test]
 async fn a_viewer_is_offered_no_option_and_no_pass() {
-    let _rx = mount_holding(
+    let _rx = mount_with(
         Some(two_and_three_seated()),
         offered_to_two_and_three(),
         &[],
@@ -599,7 +591,7 @@ async fn a_viewer_is_offered_no_option_and_no_pass() {
 /// only 3's option and a single plain Pass, which passes for 3.
 #[wasm_bindgen_test]
 async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_them() {
-    let mut rx = mount_holding(
+    let mut rx = mount_with(
         Some(two_and_three_seated()),
         offered_to_two_and_three(),
         &[],

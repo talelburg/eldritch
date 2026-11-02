@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use game_core::engine::{EngineOutcome, Responder};
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::store::{self, ClientState, ConnStatus};
@@ -89,10 +89,11 @@ fn sign_out() {
 /// investigator a window several answer offers an option to. `None` with no
 /// prompt live, or no game to name anyone from.
 fn waiting_on(state: &ClientState) -> Option<String> {
-    let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
+    let (Some(EngineOutcome::AwaitingInput { request, .. }), Some(_)) =
+        (&state.outcome, &state.game)
+    else {
         return None;
     };
-    state.game.as_ref()?;
     let name = |id| state.investigator_name(id);
     match request.responder {
         Responder::Investigator(id) => Some(name(id)),

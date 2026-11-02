@@ -6,7 +6,8 @@
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
-use game_core::state::{InvestigatorId, LocationId};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::LocationId;
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;

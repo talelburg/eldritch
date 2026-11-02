@@ -3,7 +3,7 @@
 //! that renders a chosen entity's options.
 //!
 //! The routing fns are pure and native-tested; `ContextMenu` is wasm-only (it
-//! submits via the wasm-only `OutboundTx`).
+//! submits through the wasm-only `controls::submit`).
 
 use std::collections::BTreeSet;
 
@@ -15,17 +15,13 @@ use game_core::state::{CardCode, InvestigatorId};
 use leptos::prelude::*;
 use leptos::prelude::{RwSignal, Signal};
 #[cfg(target_arch = "wasm32")]
-use protocol::ClientMessage;
-#[cfg(target_arch = "wasm32")]
 use web_sys::MouseEvent;
 
 #[cfg(target_arch = "wasm32")]
+use crate::controls;
+#[cfg(target_arch = "wasm32")]
 use crate::decision;
-#[cfg(target_arch = "wasm32")]
-use crate::store;
 use crate::store::ClientState;
-#[cfg(target_arch = "wasm32")]
-use crate::transport::OutboundTx;
 
 /// The live prompt's options this account may pick. Pure.
 ///
@@ -148,50 +144,30 @@ pub fn is_multi_select(state: &ClientState) -> bool {
 /// `Some((x, y))`, renders a full-screen transparent `.menu-backdrop` (click →
 /// close) and a `.context-menu` positioned `fixed` at viewport coords `(x, y)`
 /// (so it escapes any `overflow`/positioning ancestor); a click submits
-/// `ResolveInput(PickSingle(id))` and closes. wasm-only — submits via the
-/// wasm-only `OutboundTx`.
+/// `ResolveInput(PickSingle(id))` and closes. wasm-only — submits through the
+/// wasm-only `controls::submit`.
 #[cfg(target_arch = "wasm32")]
 #[leptos::component]
 pub fn ContextMenu(
     options: Vec<ChoiceOption>,
     open: RwSignal<Option<(i32, i32)>>,
 ) -> impl IntoView {
-    let store = store::use_store();
-    let tx = use_context::<OutboundTx>();
-
     view! {
         {move || {
             let Some((x, y)) = open.get() else {
                 return ().into_any();
             };
-            let tx = tx.clone();
             let buttons: Vec<_> = options
                 .iter()
                 .cloned()
                 .map(|opt| {
                     let ChoiceOption { id, label, .. } = opt;
-                    let tx = tx.clone();
                     view! {
                         <button
                             class="menu-item"
                             on:click=move |ev| {
                                 ev.stop_propagation();
-                                if let Some(tx) = tx.clone() {
-                                    let answer = store.with_untracked(|s| {
-                                        s.answer(InputResponse::PickSingle(id))
-                                            .map(|action| (s.prompt, action))
-                                    });
-                                    if let Some((prompt, action)) = answer {
-                                        let _ = tx.unbounded_send(ClientMessage::Submit {
-                                            prompt,
-                                            action,
-                                        });
-                                    } else {
-                                        leptos::logging::error!(
-                                            "context menu: no live prompt names who answers it"
-                                        );
-                                    }
-                                }
+                                controls::submit(InputResponse::PickSingle(id));
                                 open.set(None);
                             }
                         >

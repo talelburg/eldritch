@@ -3,7 +3,8 @@
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::event::Event;
-use game_core::state::{ChaosToken, GameState, InvestigatorId, TokenResolution};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::{ChaosToken, GameState, TokenResolution};
 use leptos::prelude::*;
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
@@ -191,7 +192,7 @@ impl ClientState {
             return None;
         };
         let investigator = match request.responder {
-            Responder::Several => match picked_investigator(request, &response) {
+            Responder::Several => match request.picked_investigator(&response) {
                 Some(investigator) => investigator,
                 None => request
                     .holders()
@@ -231,7 +232,7 @@ impl ClientState {
         self.game
             .as_ref()
             .and_then(|game| game.investigators.get(&id))
-            .map_or_else(|| format!("investigator {}", id.0), |inv| inv.name.clone())
+            .map_or_else(|| format!("Investigator {}", id.0), |inv| inv.name.clone())
     }
 }
 
@@ -262,21 +263,6 @@ impl ClientState {
         self.assigned = Assignment::all_to(Self::TEST_ACCOUNT, investigators);
         self
     }
-}
-
-/// The investigator the first option `response` picks is offered to, if it
-/// picks one offered to someone in particular.
-fn picked_investigator(request: &InputRequest, response: &InputResponse) -> Option<InvestigatorId> {
-    let first = match response {
-        InputResponse::PickSingle(id) => *id,
-        InputResponse::PickMultiple { selected } => *selected.first()?,
-        _ => return None,
-    };
-    request
-        .options
-        .iter()
-        .find(|option| option.id == first)
-        .and_then(|option| option.investigator)
 }
 
 /// What [`receive`] made of one server frame, for the transport to act on.
@@ -378,10 +364,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         }) => {
             // The prompt still held here is the one this answers: an earlier
             // position was dropped above, and the server answers in order.
-            let header = batch_header(&s, state.outcome.as_ref(), by, &response);
+            let answered = state.outcome.replace(outcome);
             state.game = Some(*s);
-            state.outcome = Some(outcome);
             state.prompt = prompt;
+            let header = batch_header(state, answered.as_ref(), by, &response);
             // Walk the batch in order, latching what the result panel renders
             // from. Order matters within a batch as much as across batches:
             // `SkillTestStarted` clears the *previous* test's token and result,
@@ -470,13 +456,14 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
 
 /// The event-log header for an answer `by` gave with `response`, to the prompt
 /// `answered` (the outcome the client held before the answer applied), named
-/// from `game`: who answered, then what they answered.
+/// from `state`'s game, the one the answer produced: who answered, then what
+/// they answered.
 ///
 /// A pick names its option. A `Confirm` carries nothing, so it is named by the
 /// prompt it confirmed: the Mythos draw is the `Confirm` anchored to the
 /// encounter deck (ADR 0011).
 fn batch_header(
-    game: &GameState,
+    state: &ClientState,
     answered: Option<&EngineOutcome>,
     by: InvestigatorId,
     response: &LoggedResponse,
@@ -494,11 +481,7 @@ fn batch_header(
             _ => "Confirm".into(),
         },
     };
-    let who = game
-        .investigators
-        .get(&by)
-        .map_or_else(|| format!("Investigator {}", by.0), |i| i.name.clone());
-    format!("{who}: {what}")
+    format!("{}: {what}", state.investigator_name(by))
 }
 
 /// The single reactive store handed through Leptos context.
@@ -560,15 +543,11 @@ mod tests {
         })
     }
 
-    /// Seat 1 is Roland Banks, seat 2 is Agnes Baker.
+    /// Two stock seats, named "Test Investigator 1" and "Test Investigator 2".
     fn two_seats() -> GameState {
-        let mut roland = test_support::test_investigator(1);
-        roland.name = "Roland Banks".into();
-        let mut agnes = test_support::test_investigator(2);
-        agnes.name = "Agnes Baker".into();
         GameStateBuilder::new()
-            .with_investigator(roland)
-            .with_investigator(agnes)
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
             .build()
     }
 
@@ -582,10 +561,10 @@ mod tests {
         }
     }
 
-    /// The account Tal signs in as.
-    const TAL: AccountId = AccountId(7);
-    /// The account Sam signs in as.
-    const SAM: AccountId = AccountId(8);
+    /// The account holding seat 1.
+    const ACCOUNT_1: AccountId = AccountId(7);
+    /// The account holding seat 2.
+    const ACCOUNT_2: AccountId = AccountId(8);
 
     /// The client's state with `outcome` as the prompt it holds.
     fn holding(outcome: EngineOutcome) -> ClientState {
@@ -596,26 +575,29 @@ mod tests {
         }
     }
 
-    /// [`holding`] `outcome`, signed in as `you`, with Roland (seat 1) held
-    /// by Tal and Agnes (seat 2) by Sam.
+    /// [`holding`] `outcome`, signed in as `you`, with seat 1 held by
+    /// [`ACCOUNT_1`] and seat 2 by [`ACCOUNT_2`].
     fn signed_in_holding(you: AccountId, outcome: EngineOutcome) -> ClientState {
         ClientState {
             you: Some(you),
-            assigned: Assignment::from_iter([(InvestigatorId(1), TAL), (InvestigatorId(2), SAM)]),
+            assigned: Assignment::from_iter([
+                (InvestigatorId(1), ACCOUNT_1),
+                (InvestigatorId(2), ACCOUNT_2),
+            ]),
             ..holding(outcome)
         }
     }
 
-    /// A window several answer offering Roland and Agnes one reaction each,
-    /// and a third option offered to no one in particular.
-    fn offered_to_roland_and_agnes() -> EngineOutcome {
+    /// A window several answer offering each seat one reaction, and a third
+    /// option offered to no one in particular.
+    fn offered_to_both_seats() -> EngineOutcome {
         test_support::awaiting_request(
             InputRequest::pick_single(
                 "You may trigger",
                 vec![
-                    ChoiceOption::new(OptionId(0), "Roland's reaction")
+                    ChoiceOption::new(OptionId(0), "Seat 1's reaction")
                         .offered_to(InvestigatorId(1)),
-                    ChoiceOption::new(OptionId(1), "Agnes's reaction")
+                    ChoiceOption::new(OptionId(1), "Seat 2's reaction")
                         .offered_to(InvestigatorId(2)),
                     ChoiceOption::new(OptionId(2), "Anyone's"),
                 ],
@@ -636,8 +618,8 @@ mod tests {
     fn hello_names_this_account_and_who_holds_each_investigator() {
         let mut s = ClientState::default();
         reduce(&mut s, hello_at(0, Vec::new()));
-        assert_eq!(s.you, Some(TAL));
-        assert_eq!(s.assigned.holder(InvestigatorId(1)), Some(TAL));
+        assert_eq!(s.you, Some(ACCOUNT_1));
+        assert_eq!(s.assigned.holder(InvestigatorId(1)), Some(ACCOUNT_1));
         assert!(s.holds(InvestigatorId(1)));
     }
 
@@ -651,22 +633,22 @@ mod tests {
         );
     }
 
-    /// Roland's skill test asks Roland: Tal answers it, and Sam is offered
-    /// nothing.
+    /// Seat 1's skill test asks seat 1: the account holding it answers, and
+    /// the other account is offered nothing.
     #[test]
     fn only_the_account_holding_the_responder_answers_its_prompt() {
         let outcome = test_support::awaiting_confirm_input("Acknowledge");
 
-        let tal = signed_in_holding(TAL, outcome.clone());
+        let holds_seat_1 = signed_in_holding(ACCOUNT_1, outcome.clone());
         assert_eq!(
-            answering_as(tal.answer(InputResponse::Confirm)),
+            answering_as(holds_seat_1.answer(InputResponse::Confirm)),
             Some(InvestigatorId(1))
         );
-        assert!(tal.answerable_request().is_some());
+        assert!(holds_seat_1.answerable_request().is_some());
 
-        let sam = signed_in_holding(SAM, outcome);
-        assert_eq!(sam.answer(InputResponse::Confirm), None);
-        assert_eq!(sam.answerable_request(), None);
+        let holds_seat_2 = signed_in_holding(ACCOUNT_2, outcome);
+        assert_eq!(holds_seat_2.answer(InputResponse::Confirm), None);
+        assert_eq!(holds_seat_2.answerable_request(), None);
     }
 
     #[test]
@@ -676,29 +658,33 @@ mod tests {
         assert_eq!(s.answerable_request(), None);
     }
 
-    /// In a window Roland and Agnes both answer, Sam is offered Agnes's
-    /// reaction and the option offered to no one, and his pass is Agnes's.
+    /// In a window both seats answer, the account holding seat 2 is offered
+    /// seat 2's reaction and the option offered to no one, and its pass is
+    /// seat 2's.
     #[test]
     fn in_a_window_several_answer_an_account_is_offered_only_its_own_options() {
-        let sam = signed_in_holding(SAM, offered_to_roland_and_agnes());
+        let holds_seat_2 = signed_in_holding(ACCOUNT_2, offered_to_both_seats());
 
-        let offered: Vec<OptionId> = sam
+        let offered: Vec<OptionId> = holds_seat_2
             .answerable_request()
-            .expect("Sam holds an answerer")
+            .expect("the account holds an answerer")
             .options
             .iter()
             .map(|option| option.id)
             .collect();
         assert_eq!(offered, [OptionId(1), OptionId(2)]);
         assert_eq!(
-            answering_as(sam.answer(InputResponse::Skip)),
+            answering_as(holds_seat_2.answer(InputResponse::Skip)),
             Some(InvestigatorId(2))
         );
         assert_eq!(
-            answering_as(sam.answer(InputResponse::PickSingle(OptionId(2)))),
+            answering_as(holds_seat_2.answer(InputResponse::PickSingle(OptionId(2)))),
             Some(InvestigatorId(2))
         );
-        assert_eq!(sam.answer(InputResponse::PickSingle(OptionId(0))), None);
+        assert_eq!(
+            holds_seat_2.answer(InputResponse::PickSingle(OptionId(0))),
+            None
+        );
     }
 
     /// The header of the one batch an `Applied` logged.
@@ -712,8 +698,8 @@ mod tests {
     fn hello_at(prompt: i64, events: Vec<Event>) -> ServerMessage {
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
-            you: TAL,
-            assigned: Assignment::all_to(TAL, [InvestigatorId(1)]),
+            you: ACCOUNT_1,
+            assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(prompt),
             state: Box::new(sample_state()),
             outcome: EngineOutcome::Done,
@@ -760,8 +746,8 @@ mod tests {
     fn hello_frame(build: &str, events: Vec<Event>) -> String {
         serde_json::to_string(&ServerMessage::Hello {
             build: build.to_string(),
-            you: TAL,
-            assigned: Assignment::all_to(TAL, [InvestigatorId(1)]),
+            you: ACCOUNT_1,
+            assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(0),
             state: Box::new(sample_state()),
             outcome: EngineOutcome::Done,
@@ -1160,8 +1146,9 @@ mod tests {
         assert_eq!(s, before, "the Applied for position 2 is dropped");
     }
 
-    /// Sam plays Agnes and picks "Fight: Ghoul Priest". Tal's tab, whose own
-    /// last click was something else, heads the batch with Agnes's pick.
+    /// The account holding seat 2 picks "Fight: Ghoul Priest". Another
+    /// account's tab, whose own last click was something else, heads the batch
+    /// with seat 2's pick.
     #[test]
     fn another_investigators_pick_is_logged_under_their_name_and_label() {
         let mut s = holding(test_support::awaiting_pick_single_input("Choose"));
@@ -1174,7 +1161,7 @@ mod tests {
                 },
             ),
         );
-        assert_eq!(only_header(&s), "Agnes Baker: Fight: Ghoul Priest");
+        assert_eq!(only_header(&s), "Test Investigator 2: Fight: Ghoul Priest");
     }
 
     #[test]
@@ -1189,21 +1176,21 @@ mod tests {
                 },
             ),
         );
-        assert_eq!(only_header(&s), "Roland Banks: Commit 2 card(s)");
+        assert_eq!(only_header(&s), "Test Investigator 1: Commit 2 card(s)");
     }
 
     #[test]
     fn a_pass_is_logged() {
         let mut s = holding(test_support::awaiting_skippable_pick_single_input("React?"));
         reduce(&mut s, applied_by(2, LoggedResponse::Skip));
-        assert_eq!(only_header(&s), "Agnes Baker: Pass");
+        assert_eq!(only_header(&s), "Test Investigator 2: Pass");
     }
 
     #[test]
     fn a_confirm_is_logged() {
         let mut s = holding(test_support::awaiting_confirm_input("Acknowledge"));
         reduce(&mut s, applied_by(1, LoggedResponse::Confirm));
-        assert_eq!(only_header(&s), "Roland Banks: Confirm");
+        assert_eq!(only_header(&s), "Test Investigator 1: Confirm");
     }
 
     /// The Mythos draw is an option-less `Confirm`: only the prompt the client
@@ -1216,7 +1203,7 @@ mod tests {
         }
         let mut s = holding(outcome);
         reduce(&mut s, applied_by(1, LoggedResponse::Confirm));
-        assert_eq!(only_header(&s), "Roland Banks: Draw encounter card");
+        assert_eq!(only_header(&s), "Test Investigator 1: Draw encounter card");
     }
 
     #[test]
