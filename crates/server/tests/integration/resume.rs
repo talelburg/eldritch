@@ -19,10 +19,12 @@ use sqlx::SqlitePool;
 use crate::common::{self, TEST_SCENARIO_ID};
 
 async fn seed(pool: &SqlitePool, game_id: &str) {
+    let creator = common::test_account(pool).await;
     GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         game_id,
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,

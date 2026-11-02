@@ -3,7 +3,9 @@
 //!
 //! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
 //! the `interactive_acknowledge` flag) plus an ordered log of its answers
-//! (ADR 0022). No engine state is stored. The session keeps the live game in
+//! (ADR 0022), and the account that created it, which holds every
+//! investigator until the lobby (#1239) stores an assignment. No engine state
+//! is stored. The session keeps the live game in
 //! memory and appends each answer it accepts to the log as a [`LoggedAnswer`]
 //! with the RNG checkpoint after it, before committing it; [`GameSession::load`]
 //! re-runs setup from the inputs, checks it against the stored
@@ -20,9 +22,9 @@ use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
-use protocol::live::{LiveGame, Refused};
+use protocol::live::{Committed, LiveGame, Refused};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{Applied, GameId, LogPosition};
+use protocol::{AccountId, Assignment, GameId, LogPosition};
 use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -156,9 +158,13 @@ struct CreationInputs {
 }
 
 impl CreationInputs {
-    /// The `games` row that stores these inputs, with what setup decided from
-    /// them.
-    fn to_row(&self, setup_fingerprint: &SetupFingerprint) -> Result<GameRow, serde_json::Error> {
+    /// The `games` row that stores these inputs for a game `creator` created,
+    /// with what setup decided from them.
+    fn to_row(
+        &self,
+        creator: AccountId,
+        setup_fingerprint: &SetupFingerprint,
+    ) -> Result<GameRow, serde_json::Error> {
         // Seating accepted `lead`, so it indexes the roster and fits.
         let lead = i64::try_from(self.lead).map_err(|_| {
             <serde_json::Error as serde::ser::Error>::custom(format!(
@@ -168,6 +174,7 @@ impl CreationInputs {
         })?;
         Ok(GameRow {
             format_version: FORMAT_VERSION,
+            creator: creator.0,
             scenario_id: self.scenario_id.as_str().to_owned(),
             roster: serde_json::to_string(&self.roster)?,
             lead,
@@ -196,6 +203,13 @@ impl CreationInputs {
     }
 }
 
+/// The interim assignment: `creator` holds every investigator seated in
+/// `state`. The lobby (#1239) replaces where an assignment comes from, not its
+/// shape.
+fn creator_holds_everyone(creator: AccountId, state: &GameState) -> Assignment {
+    Assignment::all_to(creator, state.investigators.keys().copied())
+}
+
 /// Run scenario setup from a game's creation inputs. `create` and `load` both
 /// set a game up through here, so a reload re-runs exactly what creation ran.
 fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, SetupFailure> {
@@ -219,9 +233,10 @@ fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, Setup
 }
 
 impl GameSession {
-    /// Create a new game: seats the roster into the scenario's `setup()`
-    /// state, stores the game's creation inputs and its setup fingerprint,
-    /// and returns a live session at the mulligan prompt.
+    /// Create a new game for `creator`: seats the roster into the scenario's
+    /// `setup()` state, stores the game's creation inputs, its setup
+    /// fingerprint and its creator, and returns a live session at the
+    /// mulligan prompt in which the creator holds every investigator.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
@@ -239,6 +254,7 @@ impl GameSession {
         db: SqlitePool,
         registries: Registries,
         game_id: impl Into<GameId>,
+        creator: AccountId,
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
         lead: usize,
@@ -257,13 +273,21 @@ impl GameSession {
             SetupFailure::UnknownScenario(id) => SessionError::UnknownScenario(id),
             SetupFailure::Seating(reason) => SessionError::Seating(reason),
         })?;
-        let row = inputs.to_row(&SetupFingerprint::of(&opened.state))?;
+        let row = inputs.to_row(creator, &SetupFingerprint::of(&opened.state))?;
         let game_id = game_id.into();
         store::insert_game(&db, &game_id, &row, protocol::build_id(), unix_millis()).await?;
 
+        let assignment = creator_holds_everyone(creator, &opened.state);
         Ok(Self {
             game_id,
-            live: LiveGame::new(opened.state, opened.outcome, opened.events, 0, registries),
+            live: LiveGame::new(
+                opened.state,
+                opened.outcome,
+                opened.events,
+                0,
+                assignment,
+                registries,
+            ),
             db,
         })
     }
@@ -274,9 +298,10 @@ impl GameSession {
         &self.live
     }
 
-    /// Submit a player action, the answer to the prompt at `prompt`, to the
-    /// live game, store the answer it accepts, then commit it. Returns the
-    /// [`Applied`] to send every connection.
+    /// Submit a player action, `account`'s answer to the prompt at `prompt`,
+    /// to the live game, store the answer it accepts, then commit it. Returns
+    /// the [`Committed`] answer, from which each connection is sent the
+    /// `Applied` for its own account.
     ///
     /// A refused action stores nothing and leaves the game unchanged, and so
     /// does a failed write: the live game is committed only once the row is
@@ -289,10 +314,11 @@ impl GameSession {
     /// fails to serialize or [`SessionError::Db`] if persisting it fails.
     pub async fn apply(
         &mut self,
+        account: AccountId,
         prompt: LogPosition,
         action: PlayerAction,
-    ) -> Result<Applied, ApplyError> {
-        let accepted = self.live.submit(prompt, action)?;
+    ) -> Result<Committed, ApplyError> {
+        let accepted = self.live.submit(account, prompt, action)?;
         let row = ActionRow {
             answer: serde_json::to_string(accepted.answer()).map_err(SessionError::from)?,
             draws: to_sql_integer(accepted.draws()),
@@ -398,6 +424,7 @@ impl GameSession {
             }));
         }
         let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
+        let creator = AccountId(row.creator);
         let inputs = CreationInputs::from_row(row)?;
         let opened = open(registries, &inputs).map_err(|failure| {
             unresumable(UnresumableReason::Setup(match failure {
@@ -413,6 +440,7 @@ impl GameSession {
             return Err(unresumable(UnresumableReason::Fingerprint(mismatch)));
         }
 
+        let assignment = creator_holds_everyone(creator, &opened.state);
         let mut state = opened.state;
         let mut outcome = opened.outcome;
         let mut seq: i64 = 0;
@@ -431,7 +459,7 @@ impl GameSession {
 
         Ok(Self {
             game_id,
-            live: LiveGame::new(state, outcome, opened.events, seq, registries),
+            live: LiveGame::new(state, outcome, opened.events, seq, assignment, registries),
             db,
         })
     }

@@ -20,7 +20,7 @@ use game_core::event::Event;
 use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{AccountId, ClientMessage, ServerMessage};
 use reqwest::redirect::Policy;
 use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
@@ -85,12 +85,14 @@ pub(crate) fn roster() -> Vec<RosterEntry> {
 }
 
 /// Create a game of the mock scenario with [`roster`], led by its one
-/// investigator, and return the live session at the mulligan prompt.
+/// investigator and created by the [`TEST_ACCOUNT`], and return the live
+/// session at the mulligan prompt.
 pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
     GameSession::create(
         pool.clone(),
         REGISTRIES,
         game_id,
+        test_account(pool).await,
         ScenarioId::new(TEST_SCENARIO_ID),
         roster(),
         0,
@@ -170,6 +172,20 @@ pub(crate) async fn add_test_account(pool: &SqlitePool) {
         Ok(_) | Err(AccountsError::EmailTaken { .. }) => {}
         Err(error) => panic!("add the test account: {error}"),
     }
+}
+
+/// The id of the [`TEST_ACCOUNT`] in `pool`, adding it first if it isn't
+/// there: the creator a test's game is stored with, which a stored game's
+/// `creator` column requires to exist.
+pub(crate) async fn test_account(pool: &SqlitePool) -> AccountId {
+    add_test_account(pool).await;
+    accounts::list(pool)
+        .await
+        .expect("list the accounts")
+        .into_iter()
+        .find(|account| account.display_name == TEST_ACCOUNT)
+        .expect("the test account was added")
+        .id
 }
 
 /// The server's router over `pool` and `registries`, with the dev sign-in

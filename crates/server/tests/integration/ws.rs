@@ -8,6 +8,7 @@ use axum::extract::ws::close_code;
 use futures_util::SinkExt as _;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
+use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::InvestigatorId;
 use protocol::{
@@ -23,10 +24,12 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::common::{self, TEST_SCENARIO_ID};
 
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
+    let creator = common::test_account(pool).await;
     GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         game_id,
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -248,6 +251,82 @@ async fn a_stale_answer_from_another_account_is_refused_as_stale() {
 
     assert_stale(&mut sam).await;
     assert_eq!(common::stored_rows(&pool, "g-stale-other").await, (1, 1));
+}
+
+#[tokio::test]
+async fn another_accounts_answer_is_refused_as_not_yours_and_nothing_is_stored() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-not-yours").await;
+    common::add_account(&pool, "Sam").await;
+    let addr = common::spawn_server(pool.clone()).await;
+
+    // The creator holds the one investigator, so Sam is a viewer.
+    let mut sam = common::connect_as(addr, "g-not-yours", "Sam").await;
+    let prompt = hello_prompt(common::recv(&mut sam).await);
+    common::send(&mut sam, &keep_opening_hand(prompt)).await;
+
+    match common::recv_within(&mut sam).await {
+        ServerMessage::Rejected(Refusal::NotYours) => {}
+        other => panic!("expected a NotYours refusal, got {other:?}"),
+    }
+    assert_eq!(common::stored_rows(&pool, "g-not-yours").await, (1, 0));
+}
+
+#[tokio::test]
+async fn hello_names_each_account_and_the_creator_holds_every_investigator() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-assigned").await;
+    let creator = common::test_account(&pool).await;
+    let sam = common::add_account(&pool, "Sam").await.id;
+    let addr = common::spawn_server(pool).await;
+
+    let mut tester_ws = common::connect(addr, "g-assigned").await;
+    let mut sam_ws = common::connect_as(addr, "g-assigned", "Sam").await;
+
+    for (ws, account) in [(&mut tester_ws, creator), (&mut sam_ws, sam)] {
+        let ServerMessage::Hello {
+            you,
+            assigned,
+            state,
+            ..
+        } = common::recv(ws).await
+        else {
+            panic!("expected Hello");
+        };
+        assert_eq!(you, account, "Hello names the connecting account");
+        assert!(!state.investigators.is_empty());
+        for investigator in state.investigators.keys() {
+            assert_eq!(
+                assigned.holder(*investigator),
+                Some(creator),
+                "the creator holds {investigator:?}"
+            );
+        }
+        assert_eq!(state.rng, RngState::new(0), "Hello carries no RNG state");
+    }
+}
+
+#[tokio::test]
+async fn every_account_is_sent_the_answer_with_no_rng_state() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-per-account").await;
+    common::add_account(&pool, "Sam").await;
+    let addr = common::spawn_server(pool).await;
+
+    let mut tester = common::connect(addr, "g-per-account").await;
+    let mut sam = common::connect_as(addr, "g-per-account", "Sam").await;
+    let prompt = hello_prompt(common::recv(&mut tester).await);
+    let _ = common::recv(&mut sam).await;
+    common::send(&mut tester, &keep_opening_hand(prompt)).await;
+
+    for ws in [&mut tester, &mut sam] {
+        let ServerMessage::Applied(Applied { by, state, .. }) = common::recv_within(ws).await
+        else {
+            panic!("expected Applied");
+        };
+        assert_eq!(by, InvestigatorId(1), "the Applied names who answered");
+        assert_eq!(state.rng, RngState::new(0), "Applied carries no RNG state");
+    }
 }
 
 #[tokio::test]

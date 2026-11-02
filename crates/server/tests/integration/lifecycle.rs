@@ -47,6 +47,45 @@ async fn post_games_creates_game_and_returns_id() {
 }
 
 #[tokio::test]
+async fn a_created_game_records_its_creator_who_holds_every_investigator() {
+    let pool = common::memory_pool().await;
+    let (app, cookie) = common::signed_in_app(pool.clone(), common::REGISTRIES).await;
+    let creator = common::test_account(&pool).await;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/games")
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .body(Body::from(format!(
+            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
+        )))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap();
+    let game_id = json["game_id"].as_str().expect("game_id is a string");
+
+    // Loaded back from its stored rows, so the creator came from the store.
+    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new(game_id))
+        .await
+        .unwrap()
+        .expect("the created game loads");
+    let live = loaded.live();
+    assert!(!live.state().investigators.is_empty());
+    for investigator in live.state().investigators.keys() {
+        assert_eq!(
+            live.assignment().holder(*investigator),
+            Some(creator),
+            "the signed-in creator holds {investigator:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn post_games_unknown_scenario_is_bad_request() {
     let pool = common::memory_pool().await;
     let (app, cookie) = common::signed_in_app(pool, common::REGISTRIES).await;

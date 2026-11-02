@@ -6,12 +6,14 @@ use protocol::GameId;
 use sqlx::{Error, SqlitePool};
 
 /// What a `games` row holds to rebuild its game: the creation inputs, in their
-/// column form, and the record of what setup decided. No serialized engine
-/// state (ADR 0022). The row's diagnostic columns, `created_build` and
+/// column form, the record of what setup decided, and the account that created
+/// it. No serialized engine state (ADR 0022). The row's diagnostic columns, `created_build` and
 /// `created_at`, are written beside it and never read back.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
+    /// The creating account's id, which holds every investigator.
+    pub(crate) creator: i64,
     pub(crate) scenario_id: String,
     /// JSON array of the roster entries the game was seated with.
     pub(crate) roster: String,
@@ -33,13 +35,14 @@ pub(crate) async fn insert_game(
     created_at: i64,
 ) -> Result<(), Error> {
     sqlx::query(
-        "INSERT INTO games (game_id, format_version, created_build, scenario_id, roster, lead, \
-         rng_seed, interactive_acknowledge, setup_fingerprint, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO games (game_id, format_version, created_build, creator, scenario_id, roster, \
+         lead, rng_seed, interactive_acknowledge, setup_fingerprint, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(game_id.as_str())
     .bind(row.format_version)
     .bind(created_build)
+    .bind(row.creator)
     .bind(&row.scenario_id)
     .bind(&row.roster)
     .bind(row.lead)
@@ -81,11 +84,14 @@ pub(crate) async fn insert_action(
     Ok(())
 }
 
+/// The columns [`load_game`] selects, in order.
+type GameColumns = (i64, i64, String, String, i64, i64, bool, String);
+
 /// Fetch a game's row, or `None`.
 pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Option<GameRow>, Error> {
-    let row: Option<(i64, String, String, i64, i64, bool, String)> = sqlx::query_as(
-        "SELECT format_version, scenario_id, roster, lead, rng_seed, interactive_acknowledge, \
-         setup_fingerprint FROM games WHERE game_id = ?",
+    let row: Option<GameColumns> = sqlx::query_as(
+        "SELECT format_version, creator, scenario_id, roster, lead, rng_seed, \
+         interactive_acknowledge, setup_fingerprint FROM games WHERE game_id = ?",
     )
     .bind(game_id.as_str())
     .fetch_optional(db)
@@ -93,6 +99,7 @@ pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Optio
     Ok(row.map(
         |(
             format_version,
+            creator,
             scenario_id,
             roster,
             lead,
@@ -101,6 +108,7 @@ pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Optio
             setup_fingerprint,
         )| GameRow {
             format_version,
+            creator,
             scenario_id,
             roster,
             lead,

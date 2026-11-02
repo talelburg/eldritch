@@ -23,10 +23,12 @@ use crate::common::{self, TEST_SCENARIO_ID};
 #[tokio::test]
 async fn load_restores_awaiting_input_seed_with_empty_log() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "fresh",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -64,10 +66,12 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
 async fn create_persists_seed_and_exposes_setup_state() {
     let pool = common::memory_pool().await;
 
+    let creator = common::test_account(&pool).await;
     let session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "game-1",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -97,10 +101,12 @@ async fn create_persists_seed_and_exposes_setup_state() {
 async fn create_rejects_unknown_scenario() {
     let pool = common::memory_pool().await;
 
+    let creator = common::test_account(&pool).await;
     let result = GameSession::create(
         pool,
         common::REGISTRIES,
         "game-x",
+        creator,
         ScenarioId::new("no-such-scenario"),
         vec![],
         0,
@@ -122,10 +128,12 @@ async fn create_rejects_bad_roster() {
         random_basic_weaknesses: 0,
     }];
 
+    let creator = common::test_account(&pool).await;
     let result = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "bad",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         bad_roster,
         0,
@@ -149,10 +157,12 @@ async fn create_rejects_bad_roster() {
 #[tokio::test]
 async fn apply_persists_accepted_action_and_advances_state() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let mut session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "g2",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -164,6 +174,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
     // the whole hand — empty redraw).
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
@@ -190,10 +201,12 @@ async fn apply_persists_accepted_action_and_advances_state() {
 #[tokio::test]
 async fn apply_rejects_invalid_action_without_persisting() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let mut session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "g3",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -206,6 +219,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
     // the deck is empty (hand size 0, so any index ≥ 0 is out of bounds).
     let refused = session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
@@ -239,10 +253,12 @@ async fn apply_rejects_invalid_action_without_persisting() {
 #[tokio::test]
 async fn load_replays_log_to_reproduce_live_state() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let mut session = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "g4",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -252,6 +268,7 @@ async fn load_replays_log_to_reproduce_live_state() {
     // Resolve the mulligan so the log has one action.
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
@@ -290,6 +307,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let mut session = common::create_game(&pool, "stale").await;
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
@@ -334,20 +352,24 @@ async fn create_randomizes_the_setup_seed_per_game() {
     // builder seed (42); create() must override it with host entropy, so two
     // games created from the same module hold distinct seeds.
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let one = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "g1",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
     )
     .await
     .expect("create g1");
+    let creator = common::test_account(&pool).await;
     let two = GameSession::create(
         pool,
         common::REGISTRIES,
         "g2",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -364,10 +386,12 @@ async fn create_randomizes_the_setup_seed_per_game() {
 #[tokio::test]
 async fn create_enables_interactive_acknowledge() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     let session = GameSession::create(
         pool,
         common::REGISTRIES,
         "ack",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,

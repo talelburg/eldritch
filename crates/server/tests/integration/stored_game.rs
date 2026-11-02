@@ -32,7 +32,11 @@ async fn a_played_game_resumes_at_the_same_state_and_outcome() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "played").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
 
@@ -51,7 +55,11 @@ async fn no_stored_column_holds_serialized_engine_state() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "inputs-only").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
 
@@ -84,7 +92,11 @@ async fn each_logged_action_records_when_it_was_applied() {
     let mut session = common::create_game(&pool, "timed").await;
     let before = unix_millis();
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     let after = unix_millis();
@@ -105,7 +117,11 @@ async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redealt").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     // The mock roster's deck is empty; record a card in it, as if setup had
@@ -141,7 +157,11 @@ async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "unregistered").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     // As if a PR had removed the game's scenario from the registry.
@@ -168,7 +188,11 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
         session
-            .apply(session.live().prompt(), keep_opening_hand())
+            .apply(
+                common::test_account(&pool).await,
+                session.live().prompt(),
+                keep_opening_hand(),
+            )
             .await
             .expect("accepted");
         common::set_format_version(&pool, "versioned", version).await;
@@ -185,13 +209,21 @@ async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reordered").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     let gain = turn_option(&session, "Gain resource");
     let end_turn = turn_option(&session, "End turn");
     session
-        .apply(session.live().prompt(), pick(gain))
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(gain),
+        )
         .await
         .expect("accepted");
     // As if a PR had reordered the turn menu: the logged pick now carries the
@@ -219,11 +251,16 @@ async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "renamed").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             pick(turn_option(&session, "Gain resource")),
         )
@@ -259,11 +296,16 @@ async fn an_answer_to_a_changed_prompt_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reprompted").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             pick(turn_option(&session, "Gain resource")),
         )
@@ -300,11 +342,16 @@ async fn an_answer_logged_for_an_investigator_the_prompt_doesnt_ask_is_unresumab
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "misattributed").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             pick(turn_option(&session, "Gain resource")),
         )
@@ -340,11 +387,16 @@ async fn an_action_that_now_draws_differently_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redrawn").await;
     session
-        .apply(session.live().prompt(), keep_opening_hand())
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
         .await
         .expect("accepted");
     session
         .apply(
+            common::test_account(&pool).await,
             session.live().prompt(),
             pick(turn_option(&session, "Gain resource")),
         )
