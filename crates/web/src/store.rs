@@ -3,7 +3,7 @@
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{ChaosToken, GameState, TokenResolution};
+use game_core::state::{ChaosToken, GameState, InvestigatorId, TokenResolution};
 use leptos::prelude::*;
 use protocol::{ServerMessage, SignInMethod, SignedIn};
 
@@ -163,6 +163,16 @@ impl ClientState {
             investigator,
             response,
         })
+    }
+
+    /// An investigator's name, or their seat's id if no game holding them is
+    /// loaded.
+    #[must_use]
+    pub fn investigator_name(&self, id: InvestigatorId) -> String {
+        self.game
+            .as_ref()
+            .and_then(|game| game.investigators.get(&id))
+            .map_or_else(|| format!("investigator {}", id.0), |inv| inv.name.clone())
     }
 }
 
