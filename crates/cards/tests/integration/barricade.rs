@@ -404,17 +404,17 @@ fn hunter_at(at: LocationId) -> StagedEnemy<Printed> {
 }
 
 /// Assemble a board out of locations (each an id and its connections) /
-/// seated investigators / one hunter, on the first investigator's turn,
+/// seated investigators / one enemy, on the first investigator's turn,
 /// attaching a Barricade at each of `barricaded`.
 fn board(
     locations: &[(LocationId, &[LocationId])],
     investigators: Vec<Seat>,
-    hunter: StagedEnemy<Printed>,
+    enemy: StagedEnemy<Printed>,
     barricaded: &[LocationId],
 ) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_enemy(hunter);
+        .with_enemy(enemy);
     let mut next_barricade = ATT_INST.0;
     for &(id, connections) in locations {
         let loc = linked(id, connections);
@@ -641,4 +641,69 @@ fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it()
         Event::CardDiscarded { code, from: Zone::LocationAttachment, to: DiscardPile::Investigator(INV) }
             if code.as_str() == BARRICADE
     );
+}
+
+// ---------------------------------------------------------------------------
+// A stranded enemy runs the engagement rule against whoever stayed.
+//
+// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
+// same location as an investigator, it engages that investigator, and is placed
+// in that investigator's threat area."* The Barricade disengage leaves the
+// enemy ready and unengaged at the origin, so an investigator still there is
+// engaged at once — never the one who just left.
+// ---------------------------------------------------------------------------
+
+/// [`engaged_map_with_barricade_at_b`] with a second investigator also at A;
+/// investigator 1's turn.
+fn two_at_a_with_barricade_at_b(enemy: StagedEnemy<Printed>) -> TestSession {
+    board(
+        &[(A, &[B]), (B, &[A])],
+        vec![seat(1).at(A), seat(2).at(A)],
+        enemy,
+        &[B],
+    )
+}
+
+/// Regression for #662: an engaged non-Elite enemy left behind by a move into
+/// a Barricaded location engages the investigator still at the origin, after
+/// the move lands.
+#[test]
+fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
+    let session = two_at_a_with_barricade_at_b(engaged_ghoul(GHOUL_MINION));
+    let r = take(session, &MOVE_TO_B).finish();
+    let enemy = &r.state.enemies[&GHOUL];
+    assert_eq!(enemy.current_location, Some(A), "enemy stayed behind");
+    assert_eq!(
+        enemy.engaged_with,
+        Some(INV2),
+        "the ready, unengaged enemy engages the investigator still beside it",
+    );
+    assert_event_sequence!(
+        r.events,
+        Event::EnemyDisengaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV,
+        Event::InvestigatorMoved { investigator, .. } if *investigator == INV,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV2,
+    );
+}
+
+/// With nobody left at the origin the stranded enemy stays unengaged: it never
+/// re-engages the investigator who just moved away.
+#[test]
+fn a_stranded_enemy_with_nobody_left_at_the_origin_stays_unengaged() {
+    let r = take(engaged_map_with_barricade_at_b(GHOUL_MINION), &MOVE_TO_B).finish();
+    assert_eq!(r.state.enemies[&GHOUL].engaged_with, None);
+    assert_no_event!(r.events, Event::EnemyEngaged { .. });
+}
+
+/// *"An exhausted unengaged enemy does not engage"*
+/// (`glossary/Enemy_Engagement.md`), so an exhausted stranded enemy stays
+/// unengaged beside the investigator who stayed.
+#[test]
+fn an_exhausted_stranded_enemy_does_not_engage_the_investigator_who_stayed() {
+    let session = two_at_a_with_barricade_at_b(engaged_ghoul(GHOUL_MINION).exhausted());
+    let r = take(session, &MOVE_TO_B).finish();
+    let enemy = &r.state.enemies[&GHOUL];
+    assert_eq!(enemy.current_location, Some(A), "enemy stayed behind");
+    assert_eq!(enemy.engaged_with, None, "exhausted, so it engages no one");
+    assert_no_event!(r.events, Event::EnemyEngaged { .. });
 }

@@ -148,7 +148,8 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
 /// interactive choice.
 ///
 /// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
-/// relocation, and [`engage_ready_enemies`].
+/// relocation, a move's departure (for an enemy stranded by a block on the
+/// destination), and [`engage_ready_enemies`].
 ///
 /// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
 /// would be re-targeted through [`engage`], which is not what any of the rule's
