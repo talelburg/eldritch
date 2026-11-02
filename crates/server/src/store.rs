@@ -2,7 +2,7 @@
 //! tables. JSON (de)serialization lives in [`crate::session`]; this
 //! layer only moves strings and integers in and out of `SQLite`.
 
-use protocol::GameId;
+use protocol::{AccountId, GameId};
 use sqlx::{Error, SqlitePool};
 
 /// What a `games` row holds to rebuild its game: the creation inputs, in their
@@ -12,8 +12,9 @@ use sqlx::{Error, SqlitePool};
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
-    /// The creating account's id, which holds every investigator.
-    pub(crate) creator: i64,
+    /// The creating account, which holds every investigator. Every row this
+    /// build stores has one; a row stored before the column existed has none.
+    pub(crate) creator: Option<AccountId>,
     pub(crate) scenario_id: String,
     /// JSON array of the roster entries the game was seated with.
     pub(crate) roster: String,
@@ -42,7 +43,7 @@ pub(crate) async fn insert_game(
     .bind(game_id.as_str())
     .bind(row.format_version)
     .bind(created_build)
-    .bind(row.creator)
+    .bind(row.creator.map(|creator| creator.0))
     .bind(&row.scenario_id)
     .bind(&row.roster)
     .bind(row.lead)
@@ -85,7 +86,7 @@ pub(crate) async fn insert_action(
 }
 
 /// The columns [`load_game`] selects, in order.
-type GameColumns = (i64, i64, String, String, i64, i64, bool, String);
+type GameColumns = (i64, Option<i64>, String, String, i64, i64, bool, String);
 
 /// Fetch a game's row, or `None`.
 pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Option<GameRow>, Error> {
@@ -108,7 +109,7 @@ pub(crate) async fn load_game(db: &SqlitePool, game_id: &GameId) -> Result<Optio
             setup_fingerprint,
         )| GameRow {
             format_version,
-            creator,
+            creator: creator.map(AccountId),
             scenario_id,
             roster,
             lead,

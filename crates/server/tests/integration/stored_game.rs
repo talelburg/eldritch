@@ -14,8 +14,10 @@ use game_core::state::game_state::GameState;
 use game_core::state::investigator::InvestigatorId;
 use protocol::logged_answer::ReplayFailure;
 use protocol::GameId;
+use server::db::MIGRATOR;
 use server::fingerprint::{FingerprintMismatch, Zone};
 use server::session::{GameSession, SessionError, UnresumableReason};
+use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row as _, SqlitePool};
 
 use crate::common;
@@ -202,6 +204,49 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
         assert_eq!(reason, UnresumableReason::Version { found: version });
         assert_eq!(common::stored_rows(&pool, "versioned").await, (1, 1));
     }
+}
+
+#[tokio::test]
+async fn a_game_stored_before_games_recorded_a_creator_is_still_a_version_error() {
+    // A database at migration 7, before the `creator` column, holding a game
+    // stored in format version 2.
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("open in-memory sqlite");
+    MIGRATOR.run_to(7, &pool).await.expect("migrate to 7");
+    sqlx::query(
+        "INSERT INTO games (game_id, format_version, created_build, scenario_id, roster, lead, \
+         rng_seed, interactive_acknowledge, setup_fingerprint, created_at) \
+         VALUES ('stored-before', 2, 'an older build', ?, '[]', 0, 0, 0, '{}', 0)",
+    )
+    .bind(common::TEST_SCENARIO_ID)
+    .execute(&pool)
+    .await
+    .expect("store a version 2 game");
+
+    MIGRATOR.run(&pool).await.expect("migrate to the current schema");
+    let reason = expect_unresumable(&pool, "stored-before").await;
+
+    assert_eq!(reason, UnresumableReason::Version { found: 2 });
+    assert_eq!(common::stored_rows(&pool, "stored-before").await, (1, 0));
+}
+
+#[tokio::test]
+async fn a_current_game_with_no_creator_is_unresumable() {
+    let pool = common::memory_pool().await;
+    common::create_game(&pool, "no-creator").await;
+    sqlx::query("UPDATE games SET creator = NULL WHERE game_id = ?")
+        .bind("no-creator")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reason = expect_unresumable(&pool, "no-creator").await;
+
+    assert_eq!(reason, UnresumableReason::NoCreator);
+    assert_eq!(common::stored_rows(&pool, "no-creator").await, (1, 0));
 }
 
 #[tokio::test]

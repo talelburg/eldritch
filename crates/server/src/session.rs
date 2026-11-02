@@ -96,6 +96,11 @@ pub enum UnresumableReason {
         /// The version the game was stored in.
         found: i64,
     },
+    /// The game records no creator, so nobody holds its investigators. A row
+    /// stored before games recorded one has none, but the format version
+    /// refuses those first, so only a row edited by hand reaches this.
+    #[error("the game records no creator")]
+    NoCreator,
     /// Setup no longer runs from the stored inputs: the scenario is no longer
     /// registered, or the engine now rejects the roster.
     #[error("setup no longer runs from the stored inputs: {0}")]
@@ -174,7 +179,7 @@ impl CreationInputs {
         })?;
         Ok(GameRow {
             format_version: FORMAT_VERSION,
-            creator: creator.0,
+            creator: Some(creator),
             scenario_id: self.scenario_id.as_str().to_owned(),
             roster: serde_json::to_string(&self.roster)?,
             lead,
@@ -396,9 +401,9 @@ impl GameSession {
     /// session's later writes.
     ///
     /// The checks run in this order, and the first to fail is reported:
-    /// format version, the stored fingerprint's deserialization, setup, the
-    /// fingerprint comparison, then each logged answer's deserialization and
-    /// replay.
+    /// format version, the creator, the stored fingerprint's deserialization,
+    /// setup, the fingerprint comparison, then each logged answer's
+    /// deserialization and replay.
     ///
     /// # Errors
     ///
@@ -423,8 +428,10 @@ impl GameSession {
                 found: row.format_version,
             }));
         }
+        let Some(creator) = row.creator else {
+            return Err(unresumable(UnresumableReason::NoCreator));
+        };
         let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
-        let creator = AccountId(row.creator);
         let inputs = CreationInputs::from_row(row)?;
         let opened = open(registries, &inputs).map_err(|failure| {
             unresumable(UnresumableReason::Setup(match failure {
