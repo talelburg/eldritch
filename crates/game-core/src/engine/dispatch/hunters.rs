@@ -165,13 +165,18 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 /// blocked the set empties and the enemy does not move.
 ///
 /// The filter runs over the union across prey-tied investigators, so a blocked
-/// step toward one tied investigator can still leave an unblocked step toward
-/// another. Under a stricter reading the lead investigator's choice is over
-/// *investigators* first — pick the blocked one and the hunter stays put — but
-/// this engine's tie-break prompt offers destinations rather than investigators,
-/// so that reading
-/// has nowhere to live. TODO(#795): offer the tied investigators instead, so
-/// a blocked step means "no move".
+/// step toward one tied investigator leaves the unblocked steps toward the
+/// others, and the lead is never offered a direction the hunter cannot move
+/// in. `Hunter.md` read alone would let the lead pick the barricaded
+/// investigator and leave the hunter in place. FFG's Game Rules Specialist
+/// ruled that out for a non-Elite hunter one connection from two prey-tied
+/// investigators, one of them behind a Barricade
+/// (<https://boardgamegeek.com/thread/3073397/exhausted-enemies-whunter-movement>):
+/// *"because the hunter enemy is able to move, it must move. And because it
+/// cannot move any closer to the investigator at the location with the
+/// Barricade, it will have to move toward the other investigator."* The ruling
+/// settles the tie only. Who is nearest is still measured through the block,
+/// so a lone nearest investigator behind one still leaves the hunter in place.
 fn hunter_destinations(
     state: &GameState,
     cards: &CardRegistry,
