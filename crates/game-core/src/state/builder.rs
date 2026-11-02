@@ -652,19 +652,7 @@ impl GameStateBuilder {
         // A staged `*Phase` anchor sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
         let mut continuations = ContinuationStack::new();
-        let mut phase_anchor = self.phase_anchor;
-        if !self.turns_taken.is_empty() {
-            match &mut phase_anchor {
-                Some(Continuation::InvestigationPhase(anchor)) => {
-                    anchor.turns_taken = self.turns_taken;
-                }
-                other => panic!(
-                    "turns_taken({:?}) needs a staged Investigation phase anchor (open_turn), got {other:?}",
-                    self.turns_taken,
-                ),
-            }
-        }
-        if let Some(anchor) = phase_anchor {
+        if let Some(anchor) = with_turns_taken(self.phase_anchor, self.turns_taken) {
             continuations.push(anchor);
         }
         // A staged open turn sits directly above the anchor;
@@ -731,6 +719,31 @@ impl GameStateBuilder {
             removed_from_game: Vec::new(),
             interactive_acknowledge: false,
         }
+    }
+}
+
+/// The staged phase anchor with the staged record of who has taken a turn
+/// written onto it ([`GameStateBuilder::turns_taken`]).
+///
+/// # Panics
+///
+/// Panics if `turns_taken` is non-empty and the anchor is not the
+/// Investigation phase's.
+fn with_turns_taken(
+    anchor: Option<Continuation>,
+    turns_taken: Vec<InvestigatorId>,
+) -> Option<Continuation> {
+    if turns_taken.is_empty() {
+        return anchor;
+    }
+    match anchor {
+        Some(Continuation::InvestigationPhase(mut frame)) => {
+            frame.turns_taken = turns_taken;
+            Some(frame.into())
+        }
+        other => panic!(
+            "turns_taken({turns_taken:?}) needs a staged Investigation phase anchor (open_turn), got {other:?}"
+        ),
     }
 }
 
