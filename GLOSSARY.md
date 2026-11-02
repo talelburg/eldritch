@@ -218,7 +218,7 @@ _Avoid_: "Table", which is the in-game board each account sees. "Session" too, w
 
 **Creator**:
 The account that created a game. Only the creator orders the seating, picks the lead investigator, presses Start, removes a member from the lobby, and deletes the game. The players still choose the lead at the table (Appendix III step 3); the creator enters what they agreed.
-_Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator owns no investigator by virtue of creating.
+_Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator holds an investigator only by assignment, never by virtue of creating. Until the lobby stores an assignment (#1239), the creator is assigned every investigator; that interim assignment goes when the lobby lands.
 
 **Member**:
 An account that has opened a game's link; the link is the invitation, and the allowlist is the only gate. Membership is recorded separately from assignment, so "your games" lists every game you're a member of. A member holding no investigator is a read-only **viewer**.
