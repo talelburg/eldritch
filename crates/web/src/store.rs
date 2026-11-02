@@ -22,8 +22,9 @@ pub enum ConnStatus {
     Failed,
     /// No saved game and no roster chosen yet — render the picker.
     AwaitingRoster,
-    /// A server frame failed to deserialize — the client and server binaries
-    /// disagree on the wire format. Terminal: restart the server and reload.
+    /// The server's `Hello` named another build, or a server frame failed to
+    /// deserialize: the client and server binaries disagree on the wire
+    /// format. Terminal: nothing more is sent, and the player reloads.
     VersionMismatch,
     /// Not signed in: render the sign-in screen, offering these methods. The
     /// saved game id is kept, so signing in returns to the same game.
@@ -107,7 +108,8 @@ pub struct RevealedToken {
 }
 
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come
-/// from `reduce`; `status` is driven by the transport.
+/// from `reduce`; `status` is driven by the transport, and by [`receive`] as a
+/// frame arrives.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ClientState {
     pub game: Option<GameState>,
@@ -178,12 +180,66 @@ impl ClientState {
     }
 }
 
+/// What [`receive`] made of one server frame, for the transport to act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Received {
+    /// A `Hello` from this client's build: the board is `Connected`.
+    Hello,
+    /// Any other frame, reduced in.
+    Message,
+    /// A `Hello` from another build, or a frame that didn't parse: the status
+    /// is `VersionMismatch`, nothing was reduced, and the transport stops.
+    VersionMismatch,
+}
+
+/// The one field of a `{"hello": {...}}` frame read before the rest: every
+/// other field is skipped unparsed, so it reads a `Hello` of any shape.
+#[derive(serde::Deserialize)]
+struct HelloBuild {
+    hello: BuildOnly,
+}
+
+#[derive(serde::Deserialize)]
+struct BuildOnly {
+    build: String,
+}
+
+/// Take one text frame from the server: the transport's whole decode.
+///
+/// A `Hello` is checked for its build before anything else is parsed, since
+/// the rest of a `Hello` from another build may not deserialize here; a
+/// mismatch sets [`ConnStatus::VersionMismatch`] and reduces nothing. Any
+/// other frame, or a `Hello` from this build, is parsed in full and
+/// [`reduce`]d, and a `Hello` also sets the status `Connected`, in the same
+/// update as its state. A frame that doesn't parse is a wire-format skew too.
+pub fn receive(state: &mut ClientState, frame: &str) -> Received {
+    if let Ok(HelloBuild { hello }) = serde_json::from_str::<HelloBuild>(frame) {
+        if hello.build != protocol::build_id() {
+            state.status = ConnStatus::VersionMismatch;
+            return Received::VersionMismatch;
+        }
+    }
+    let Ok(msg) = serde_json::from_str::<ServerMessage>(frame) else {
+        state.status = ConnStatus::VersionMismatch;
+        return Received::VersionMismatch;
+    };
+    let is_hello = matches!(msg, ServerMessage::Hello { .. });
+    reduce(state, msg);
+    if is_hello {
+        state.status = ConnStatus::Connected;
+        Received::Hello
+    } else {
+        Received::Message
+    }
+}
+
 /// Fold one server message into the client state. Data only — never
 /// touches `status`. Mirrors the server: a `Rejected` leaves
 /// `game`/`outcome` unchanged (the rejection was sender-only).
 pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
     match msg {
         ServerMessage::Hello {
+            build: _,
             prompt,
             state: s,
             outcome,
@@ -350,6 +406,7 @@ mod tests {
     /// `events`.
     fn hello_at(prompt: i64, events: Vec<Event>) -> ServerMessage {
         ServerMessage::Hello {
+            build: protocol::build_id().to_string(),
             prompt: LogPosition(prompt),
             state: Box::new(sample_state()),
             outcome: EngineOutcome::Done,
@@ -389,6 +446,88 @@ mod tests {
         assert!(s.game.is_some());
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
         assert_eq!(s.last_rejection, None);
+    }
+
+    /// The JSON frame of a `Hello` from build `build`, carrying setup's
+    /// `events`.
+    fn hello_frame(build: &str, events: Vec<Event>) -> String {
+        serde_json::to_string(&ServerMessage::Hello {
+            build: build.to_string(),
+            prompt: LogPosition(0),
+            state: Box::new(sample_state()),
+            outcome: EngineOutcome::Done,
+            events,
+        })
+        .expect("a Hello serializes")
+    }
+
+    /// A build id that is not this client's.
+    fn another_build() -> String {
+        format!("not-{}", protocol::build_id())
+    }
+
+    #[test]
+    fn a_hello_from_this_build_connects_with_its_state() {
+        let mut s = ClientState::default();
+        let received = receive(
+            &mut s,
+            &hello_frame(protocol::build_id(), vec![Event::ScenarioStarted]),
+        );
+        assert_eq!(received, Received::Hello);
+        assert_eq!(s.status, ConnStatus::Connected);
+        assert!(s.game.is_some(), "the Hello's state is reduced in");
+        assert_eq!(s.log.len(), 1, "setup's events are logged");
+    }
+
+    #[test]
+    fn a_hello_from_another_build_is_a_version_mismatch_that_reduces_nothing() {
+        let mut s = ClientState::default();
+        let received = receive(
+            &mut s,
+            &hello_frame(&another_build(), vec![Event::ScenarioStarted]),
+        );
+        assert_eq!(received, Received::VersionMismatch);
+        assert_eq!(s.status, ConnStatus::VersionMismatch);
+        assert_eq!(s.game, None, "a mismatched Hello's state is not taken");
+        assert!(
+            s.log.is_empty(),
+            "a mismatched Hello's events are not logged"
+        );
+    }
+
+    #[test]
+    fn a_hello_from_another_build_is_a_version_mismatch_even_when_the_rest_does_not_parse() {
+        // Another build's `state` may be any shape; only `build` is read.
+        let frame = format!(
+            r#"{{"hello":{{"build":"{}","prompt":"seven","state":[1,2],"novel":{{}}}}}}"#,
+            another_build()
+        );
+        let mut s = ClientState::default();
+        assert_eq!(receive(&mut s, &frame), Received::VersionMismatch);
+        assert_eq!(s.status, ConnStatus::VersionMismatch);
+    }
+
+    #[test]
+    fn a_frame_that_does_not_parse_is_a_version_mismatch() {
+        let mut s = ClientState::default();
+        assert_eq!(
+            receive(&mut s, r#"{"novel":{}}"#),
+            Received::VersionMismatch
+        );
+        assert_eq!(s.status, ConnStatus::VersionMismatch);
+    }
+
+    #[test]
+    fn an_applied_frame_is_reduced_without_touching_the_status() {
+        let mut s = ClientState {
+            status: ConnStatus::Connected,
+            ..ClientState::default()
+        };
+        let frame = serde_json::to_string(&applied_at(0, vec![Event::ScenarioStarted]))
+            .expect("an Applied serializes");
+        assert_eq!(receive(&mut s, &frame), Received::Message);
+        assert_eq!(s.status, ConnStatus::Connected);
+        assert_eq!(s.log.len(), 1, "the Applied's batch is logged");
     }
 
     #[test]

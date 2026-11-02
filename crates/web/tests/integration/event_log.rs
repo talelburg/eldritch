@@ -5,14 +5,19 @@
 //! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
+use game_core::state::GameStateBuilder;
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::event_log::EventLogView;
-use web::store::{ClientState, LogBatch};
+use web::store::{self, ClientState, LogBatch};
 use web_sys::{Element, HtmlElement};
+
+use crate::common;
 
 #[wasm_bindgen_test]
 async fn renders_batches_with_headers_and_event_debug() {
@@ -92,4 +97,39 @@ async fn log_collapses_and_expands() {
         "panel should carry the collapsed class: {}",
         panel.class_name()
     );
+}
+
+/// The event log's text after a socket hands the store a `Hello` from
+/// `build` carrying setup's events.
+async fn log_after_a_hello_from(build: &str) -> String {
+    let (store, container) = common::mount(|| leptos::view! { <EventLogView/> });
+    let frame = common::hello_frame(
+        build,
+        GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .build(),
+        EngineOutcome::Done,
+        vec![Event::ScenarioStarted],
+    );
+    store.update(|s| {
+        store::receive(s, &frame);
+    });
+    task::tick().await;
+    container.text_content().unwrap_or_default()
+}
+
+#[wasm_bindgen_test]
+async fn a_hello_from_another_build_logs_none_of_its_setup() {
+    let text = log_after_a_hello_from(&common::another_build()).await;
+    assert!(
+        !text.contains("ScenarioStarted"),
+        "a mismatched Hello reaches the overlay, not the log: {text}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn a_hello_from_this_build_logs_its_setup() {
+    let text = log_after_a_hello_from(protocol::build_id()).await;
+    assert!(text.contains("Setup"), "setup batch header: {text}");
+    assert!(text.contains("ScenarioStarted"), "setup event: {text}");
 }

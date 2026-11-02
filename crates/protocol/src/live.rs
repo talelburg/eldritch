@@ -149,6 +149,7 @@ impl LiveGame {
     #[must_use]
     pub fn hello(&self) -> ServerMessage {
         ServerMessage::Hello {
+            build: crate::build_id().to_string(),
             prompt: self.prompt(),
             state: Box::new(self.state.clone()),
             outcome: self.outcome.clone(),

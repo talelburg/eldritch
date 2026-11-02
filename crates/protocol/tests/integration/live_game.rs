@@ -190,10 +190,11 @@ fn an_in_range_option_from_a_second_tab_on_the_old_prompt_is_refused() {
 }
 
 #[test]
-fn hello_carries_the_current_position_state_outcome_and_setup_events() {
+fn hello_carries_the_build_current_position_state_outcome_and_setup_events() {
     let live = at_turn_menu();
 
     let ServerMessage::Hello {
+        build,
         prompt,
         state,
         outcome,
@@ -203,6 +204,7 @@ fn hello_carries_the_current_position_state_outcome_and_setup_events() {
         panic!("expected Hello");
     };
 
+    assert_eq!(build, protocol::build_id());
     assert_eq!(prompt, TURN_MENU);
     assert_eq!(*state, *live.state());
     assert_eq!(outcome, *live.outcome());

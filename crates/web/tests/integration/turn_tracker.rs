@@ -28,6 +28,7 @@ async fn mount_at(phase: Phase, round: u32) {
         store::reduce(
             s,
             ServerMessage::Hello {
+                build: protocol::build_id().to_string(),
                 prompt: LogPosition(0),
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,

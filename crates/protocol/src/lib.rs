@@ -64,6 +64,12 @@ pub enum ServerMessage {
     /// current state and the outcome of the most recent apply (including
     /// any pending [`AwaitingInput`](EngineOutcome::AwaitingInput)).
     Hello {
+        /// The server's [`build_id`]. A client compiled from another build
+        /// reads this field alone, before parsing anything else, and shows the
+        /// version-mismatch overlay instead: the rest of the frame may not
+        /// deserialize for it. So the `"hello"` tag and this `"build"` key
+        /// keep their names in every build.
+        build: String,
         /// The log position of the prompt the game awaits: what a submit
         /// answering it sends back.
         prompt: LogPosition,
@@ -340,6 +346,7 @@ mod tests {
             .build();
         let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
+            build: "a1b2c3".to_string(),
             prompt: LogPosition(0),
             state: Box::new(state.clone()),
             outcome: EngineOutcome::Done,
@@ -351,10 +358,12 @@ mod tests {
 
         match back {
             ServerMessage::Hello {
+                build,
                 state: s,
                 events: e,
                 ..
             } => {
+                assert_eq!(build, "a1b2c3");
                 assert_eq!(*s, state);
                 assert_eq!(e, events, "events round-trip through JSON");
             }

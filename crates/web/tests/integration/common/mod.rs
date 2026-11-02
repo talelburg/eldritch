@@ -3,6 +3,7 @@
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::state::GameState;
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -159,6 +160,7 @@ pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
     store::reduce(
         &mut client,
         ServerMessage::Hello {
+            build: protocol::build_id().to_string(),
             prompt: LogPosition(0),
             state: Box::new(state),
             outcome,
@@ -166,4 +168,28 @@ pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
         },
     );
     client
+}
+
+/// The text frame of a `Hello` from build `build`, carrying `state`,
+/// `outcome` and setup's `events`: what the transport hands
+/// [`store::receive`].
+pub(crate) fn hello_frame(
+    build: &str,
+    state: GameState,
+    outcome: EngineOutcome,
+    events: Vec<Event>,
+) -> String {
+    serde_json::to_string(&ServerMessage::Hello {
+        build: build.to_string(),
+        prompt: LogPosition(0),
+        state: Box::new(state),
+        outcome,
+        events,
+    })
+    .expect("a Hello serializes")
+}
+
+/// A build id that is not this client's.
+pub(crate) fn another_build() -> String {
+    format!("not-{}", protocol::build_id())
 }

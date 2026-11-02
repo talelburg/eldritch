@@ -38,6 +38,7 @@ async fn hello_renders_state_present() {
         store::reduce(
             s,
             ServerMessage::Hello {
+                build: protocol::build_id().to_string(),
                 prompt: LogPosition(0),
                 state: Box::new(game),
                 outcome: EngineOutcome::Done,
