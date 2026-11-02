@@ -188,23 +188,17 @@ pub fn DecisionView() -> impl IntoView {
                 .into_iter()
                 .map(|opt| {
                     let ChoiceOption { id, label, .. } = opt;
-                    let header = label.clone();
                     view! {
                         <button
                             class="decision-branch"
                             on:click={
                                 #[cfg(target_arch = "wasm32")]
                                 {
-                                    move |_| {
-                                        controls::submit(
-                                            InputResponse::PickSingle(id),
-                                            header.clone(),
-                                        );
-                                    }
+                                    move |_| controls::submit(InputResponse::PickSingle(id))
                                 }
                                 #[cfg(not(target_arch = "wasm32"))]
                                 {
-                                    let _ = (id, header);
+                                    let _ = id;
                                     |_| ()
                                 }
                             }

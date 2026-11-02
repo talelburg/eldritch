@@ -93,10 +93,7 @@ pub fn PromptBanner() -> impl IntoView {
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;
-                    let header = label.clone();
-                    let pick = move |_| {
-                        controls::submit(InputResponse::PickSingle(id), header.clone());
-                    };
+                    let pick = move |_| controls::submit(InputResponse::PickSingle(id));
                     view! { <button class="banner-option" on:click=pick>{label}</button> }
                 })
                 .collect();
@@ -118,14 +115,13 @@ pub fn PromptBanner() -> impl IntoView {
                 && request.target.is_none()
                 && !skill_test_result::modal_is_live(&state))
             .then(|| {
-                let confirm =
-                    move |_| controls::submit(InputResponse::Confirm, "Confirm");
+                let confirm = move |_| controls::submit(InputResponse::Confirm);
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
 
             // Pass — whenever the request is skippable.
             let pass_btn = request.skippable.then(|| {
-                let pass = move |_| controls::submit(InputResponse::Skip, "Skip");
+                let pass = move |_| controls::submit(InputResponse::Skip);
                 view! { <button class="pass" on:click=pass>"Pass"</button> }
             });
 
@@ -163,8 +159,7 @@ pub fn PromptBanner() -> impl IntoView {
 fn multi_select_confirm(count: PickCount, selected: RwSignal<BTreeSet<u32>>) -> impl IntoView {
     let confirm = move |_| {
         let sel: Vec<OptionId> = selected.get_untracked().into_iter().map(OptionId).collect();
-        let label = format!("Commit {} card(s)", sel.len());
-        controls::submit(InputResponse::PickMultiple { selected: sel }, label);
+        controls::submit(InputResponse::PickMultiple { selected: sel });
         selected.set(BTreeSet::new());
     };
     let out_of_range = move || !count.admits(selected.with(BTreeSet::len));

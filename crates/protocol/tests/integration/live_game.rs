@@ -3,13 +3,13 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::OptionId;
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat, TEST_REGISTRIES};
 use protocol::live::{LiveGame, Refused};
 use protocol::logged_answer::LoggedResponse;
-use protocol::{Applied, LogPosition, ServerMessage};
+use protocol::{LogPosition, ServerMessage};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -55,14 +55,6 @@ fn resources(state: &GameState) -> u8 {
     state.investigators[&INV].resources
 }
 
-/// The payload of the `Applied` a commit hands back.
-fn applied(message: ServerMessage) -> Applied {
-    let ServerMessage::Applied(applied) = message else {
-        panic!("expected Applied, got {message:?}");
-    };
-    applied
-}
-
 #[test]
 fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
     let mut live = at_turn_menu();
@@ -87,7 +79,7 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
         "the logged answer names the option picked"
     );
     let draws = accepted.draws();
-    let applied = applied(live.commit(accepted));
+    let applied = live.commit(accepted);
     assert_eq!(
         resources(&applied.state),
         4,
@@ -121,7 +113,7 @@ fn commit_advances_to_the_applied_state() {
         .submit(TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = applied(live.commit(accepted));
+    let applied = live.commit(accepted);
 
     assert_eq!(live.prompt(), LogPosition(4));
     assert_eq!(*live.state(), *applied.state);
@@ -136,10 +128,27 @@ fn an_applied_names_the_position_it_answered_and_the_next_prompt() {
         .submit(TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = applied(live.commit(accepted));
+    let applied = live.commit(accepted);
 
     assert_eq!(applied.answered, LogPosition(3));
     assert_eq!(applied.prompt, LogPosition(4));
+}
+
+#[test]
+fn an_applied_says_who_answered_and_what_they_picked() {
+    let mut live = at_turn_menu();
+    let accepted = live
+        .submit(TURN_MENU, take_a_resource(live.state()))
+        .expect("the engine accepts it");
+
+    let applied = live.commit(accepted);
+
+    assert_eq!(applied.by, INV);
+    let LoggedResponse::PickSingle { option } = &applied.response else {
+        panic!("answered with {:?}", applied.response);
+    };
+    assert_eq!(option.label, "Gain resource");
+    assert_eq!(option.target, Some(OptionTarget::ResourcePool(INV)));
 }
 
 #[test]

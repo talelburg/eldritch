@@ -281,7 +281,7 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
                         // `apply` has already persisted the action either way.
-                        let _ = room.tx.send(applied);
+                        let _ = room.tx.send(ServerMessage::Applied(applied));
                         None
                     }
                     Err(e) => Some(Disposition::Reply(ServerMessage::Rejected(refusal(e)))),
