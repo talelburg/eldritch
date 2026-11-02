@@ -14,14 +14,15 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
+use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use server::session::GameSession;
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
-fn submit(action: PlayerAction) -> ClientMessage {
-    ClientMessage::Submit { action }
+fn submit(prompt: LogPosition, action: PlayerAction) -> ClientMessage {
+    ClientMessage::Submit { prompt, action }
 }
 
 fn hello_state(msg: ServerMessage) -> GameState {
@@ -40,7 +41,7 @@ fn hello_outcome(msg: ServerMessage) -> EngineOutcome {
 
 fn applied_events(msg: ServerMessage) -> Vec<Event> {
     match msg {
-        ServerMessage::Applied { events, .. } => events,
+        ServerMessage::Applied(Applied { events, .. }) => events,
         other => panic!("expected Applied, got {other:?}"),
     }
 }
@@ -48,10 +49,12 @@ fn applied_events(msg: ServerMessage) -> Vec<Event> {
 #[tokio::test]
 async fn phase_5_closing_demo() {
     let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
     GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "demo",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
@@ -75,9 +78,13 @@ async fn phase_5_closing_demo() {
     // The spectator, who sends nothing, observes the identical event stream.
     common::send(
         &mut actor,
-        &submit(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
+        &submit(
+            LogPosition(0),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        ),
     )
     .await;
     let actor_resolved = applied_events(common::recv(&mut actor).await);

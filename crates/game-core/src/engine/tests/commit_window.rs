@@ -133,6 +133,7 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
 fn commit_window_rejects_out_of_bounds_index() {
     let paused = paused_at_commit_window(commit_board(&["A"]));
     let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickMultiple {
             selected: vec![OptionId(5)],
         },
@@ -151,6 +152,7 @@ fn commit_window_rejects_out_of_bounds_index() {
 fn commit_window_rejects_duplicate_indices() {
     let paused = paused_at_commit_window(commit_board(&["A", "B"]));
     let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickMultiple {
             selected: vec![OptionId(0), OptionId(0)],
         },
@@ -172,6 +174,7 @@ fn commit_window_rejects_duplicate_indices() {
 fn resolve_input_with_wrong_response_variant_rejects() {
     let paused = paused_at_commit_window(commit_board(&[]));
     let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::Confirm,
     }));
     bad.expect_rejected();
@@ -188,6 +191,7 @@ fn resolve_input_without_any_outstanding_prompt_rejects() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
         TEST_REGISTRIES,

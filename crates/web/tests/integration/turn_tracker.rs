@@ -6,12 +6,14 @@ use game_core::state::{GameStateBuilder, Phase};
 use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
-use protocol::ServerMessage;
+use protocol::{LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
 use web::turn_tracker::TurnTrackerView;
 use web_sys::Element;
+
+use crate::common;
 
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
@@ -28,6 +30,10 @@ async fn mount_at(phase: Phase, round: u32) {
         store::reduce(
             s,
             ServerMessage::Hello {
+                build: protocol::build_id().to_string(),
+                you: common::YOU,
+                assigned: common::you_hold(Some(&state), None),
+                prompt: LogPosition(0),
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,
                 events: Vec::new(),

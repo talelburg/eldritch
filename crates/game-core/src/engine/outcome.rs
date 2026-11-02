@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
+use crate::action::InputResponse;
 use crate::engine::ability_source;
 use crate::state::{
     AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId,
@@ -38,9 +39,6 @@ pub enum EngineOutcome {
     AwaitingInput {
         /// Description of the prompt to show the player.
         request: InputRequest,
-        /// Opaque token the engine uses to resume from this point when
-        /// the response arrives.
-        resume_token: ResumeToken,
     },
     /// Action was illegal; nothing changed.
     Rejected {
@@ -327,8 +325,10 @@ impl PickCount {
 /// Who answers a prompt (ADR 0019), read off the frame that asks it.
 ///
 /// A host shows who the game is waiting on from this, without matching over
-/// engine frames. TODO(#581): a seat check compares the answering seat against
-/// it.
+/// engine frames. The engine also checks every answer against it: an answer
+/// from an investigator it doesn't ask is rejected before dispatch. Which
+/// *account* may answer for that investigator is the live game's check
+/// (`protocol::live`), not the engine's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Responder {
@@ -506,18 +506,116 @@ impl InputRequest {
         self.responder = responder;
         self
     }
+
+    /// Each investigator the prompt offers an option to, once, in the order
+    /// their first option appears. In a window [several
+    /// answer](Responder::Several), these are the investigators who may still
+    /// pick or pass (ADR 0019): one who has passed holds nothing until an
+    /// option resolves there.
+    #[must_use]
+    pub fn holders(&self) -> Vec<InvestigatorId> {
+        let mut holders = Vec::new();
+        for investigator in self.options.iter().filter_map(|option| option.investigator) {
+            if !holders.contains(&investigator) {
+                holders.push(investigator);
+            }
+        }
+        holders
+    }
+
+    /// Who answers this prompt with `response`: the
+    /// [`responder`](Self::responder)'s investigator, or in a prompt
+    /// [answered by several](Responder::Several), the investigator the picked
+    /// option is offered to. A pass there, or a pick of an option offered to no
+    /// one in particular, is the first investigator holding an option.
+    ///
+    /// `None` when the prompt names nobody: a several-answerer prompt with no
+    /// option offered to an investigator, which the engine never asks.
+    #[must_use]
+    pub fn answerer(&self, response: &InputResponse) -> Option<InvestigatorId> {
+        match self.responder {
+            Responder::Investigator(investigator) | Responder::Lead(investigator) => {
+                Some(investigator)
+            }
+            Responder::Several => self
+                .picked_investigator(response)
+                .or_else(|| self.options.iter().find_map(|option| option.investigator)),
+        }
+    }
+
+    /// The investigator the first option `response` picks is offered to.
+    /// `None` for a confirm or a pass, a pick of an option offered to no one
+    /// in particular, or an id the prompt doesn't offer.
+    #[must_use]
+    pub fn picked_investigator(&self, response: &InputResponse) -> Option<InvestigatorId> {
+        picked(response)
+            .first()
+            .and_then(|id| self.option(*id))
+            .and_then(|option| option.investigator)
+    }
+
+    /// Why `investigator` may not answer this prompt with `response`, or
+    /// `None` when they may (ADR 0019):
+    ///
+    /// - an [`Investigator`](Responder::Investigator) or
+    ///   [`Lead`](Responder::Lead) responder accepts only the investigator it
+    ///   names;
+    /// - a [`Several`](Responder::Several) responder accepts an investigator
+    ///   who holds at least one offered option;
+    /// - a pick names only options offered to that investigator, or offered to
+    ///   no one in particular.
+    ///
+    /// A picked id the prompt doesn't offer is left to the frame's own resume,
+    /// which rejects it.
+    pub(crate) fn refuses(
+        &self,
+        investigator: InvestigatorId,
+        response: &InputResponse,
+    ) -> Option<String> {
+        match self.responder {
+            Responder::Investigator(asked) | Responder::Lead(asked) if asked != investigator => {
+                return Some(format!(
+                    "ResolveInput: this prompt is answered by {asked:?}, not {investigator:?}"
+                ));
+            }
+            Responder::Several
+                if !self
+                    .options
+                    .iter()
+                    .any(|option| option.investigator == Some(investigator)) =>
+            {
+                return Some(format!(
+                    "ResolveInput: this window offers {investigator:?} nothing to answer"
+                ));
+            }
+            _ => {}
+        }
+        picked(response)
+            .iter()
+            .filter_map(|id| self.option(*id))
+            .find_map(|option| match option.investigator {
+                Some(offered) if offered != investigator => Some(format!(
+                    "ResolveInput: option {:?} ({:?}) is offered to {offered:?}, not \
+                     {investigator:?}",
+                    option.id, option.label
+                )),
+                _ => None,
+            })
+    }
+
+    fn option(&self, id: OptionId) -> Option<&ChoiceOption> {
+        self.options.iter().find(|option| option.id == id)
+    }
 }
 
-/// Opaque continuation token returned alongside [`AwaitingInput`].
-///
-/// The engine uses this to identify which choice point a
-/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) is answering.
-/// The inner field is `pub(crate)` so external crates cannot fabricate
-/// tokens; they receive them from the engine and pass them back.
-///
-/// [`AwaitingInput`]: EngineOutcome::AwaitingInput
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ResumeToken(pub(crate) u64);
+/// The option ids `response` picks: none for a confirm or a pass.
+fn picked(response: &InputResponse) -> &[OptionId] {
+    match response {
+        InputResponse::PickSingle(id) => std::slice::from_ref(id),
+        InputResponse::PickMultiple { selected } => selected,
+        InputResponse::Confirm | InputResponse::Skip => &[],
+    }
+}
 
 // The prompt types and their `OptionId`s are these tests' subject, so they
 // build options by hand rather than reading them off a session.
@@ -731,7 +829,6 @@ mod tests {
                         .at(OptionTarget::Enemy(EnemyId(7))),
                 ],
             ),
-            resume_token: ResumeToken(0),
         };
         let json = serde_json::to_string(&outcome).expect("serialize");
         let back: EngineOutcome = serde_json::from_str(&json).expect("deserialize");

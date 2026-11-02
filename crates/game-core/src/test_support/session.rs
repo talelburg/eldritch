@@ -14,7 +14,7 @@ use crate::state::{
     GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
-    card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
+    self, card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
     resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 
@@ -694,12 +694,72 @@ impl TestSession {
 
     /// Step: answer the current prompt with [`InputResponse::Skip`], then drain.
     ///
+    /// In a window [several answer](Responder::Several), each investigator
+    /// passes separately (ADR 0019), so this passes for every investigator
+    /// holding an option, in turn, and the window closes. The passes are
+    /// applied back to back and drained once, after the last: the window
+    /// re-asks between them, and the reply policy must not answer that re-ask
+    /// with a reply queued for a later prompt. To pass for one investigator,
+    /// use [`skip_for`](Self::skip_for).
+    ///
     /// # Panics
     ///
     /// Panics at the turn menu (take a turn action with [`take`](Self::take)).
     pub fn skip(self) -> Self {
         self.assert_off_turn_menu("skip");
-        self.respond(InputResponse::Skip)
+        let request = self.prompt();
+        if request.responder != Responder::Several {
+            return self.respond(InputResponse::Skip);
+        }
+        let holders = request.holders();
+        let registries = self.registries;
+        self.advance(|mut state| {
+            let mut events = Vec::new();
+            let mut outcome = EngineOutcome::Done;
+            for investigator in holders {
+                let result = engine::apply(
+                    state,
+                    Action::Player(PlayerAction::ResolveInput {
+                        investigator,
+                        response: InputResponse::Skip,
+                    }),
+                    registries,
+                );
+                state = result.state;
+                events.extend(result.events);
+                outcome = result.outcome;
+                if !matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    break;
+                }
+            }
+            ApplyResult {
+                state,
+                events,
+                outcome,
+            }
+        })
+    }
+
+    /// Step: pass for `investigator` alone, then drain. In a window several
+    /// answer, the others keep their options; elsewhere it is a pass named for
+    /// `investigator`.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu (take a turn action with [`take`](Self::take)).
+    pub fn skip_for(self, investigator: InvestigatorId) -> Self {
+        self.assert_off_turn_menu("skip_for");
+        self.answer_as(investigator, InputResponse::Skip)
+    }
+
+    /// Step: answer the current prompt with `response`, naming `investigator`
+    /// as the one answering, then drain. For a test of who may answer (ADR
+    /// 0019); every other step names the investigator the prompt asks.
+    pub fn answer_as(self, investigator: InvestigatorId, response: InputResponse) -> Self {
+        self.apply(Action::Player(PlayerAction::ResolveInput {
+            investigator,
+            response,
+        }))
     }
 
     /// The prompt the session rests at.
@@ -768,6 +828,20 @@ impl TestSession {
     /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
     pub fn offered_at(&self, target: &OptionTarget) -> usize {
         options_at(self.prompt(), target).count()
+    }
+
+    /// The investigator each of the current prompt's options is offered to, in
+    /// option order: who may still pick something in a window several answer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_to(&self) -> Vec<Option<InvestigatorId>> {
+        self.prompt()
+            .options
+            .iter()
+            .map(|option| option.investigator)
+            .collect()
     }
 
     /// Assert the session rests at `investigator`'s turn menu: the prompt
@@ -870,8 +944,11 @@ impl TestSession {
         matches!(&self.rest, EngineOutcome::AwaitingInput { request, .. } if is_turn_menu(request))
     }
 
+    /// Answer the current prompt with `response`, named for the investigator
+    /// the prompt says answers it (`resolver::answer`), then drain.
     fn respond(self, response: InputResponse) -> Self {
-        self.apply(Action::Player(PlayerAction::ResolveInput { response }))
+        let action = resolver::answer(self.prompt(), response);
+        self.apply(action)
     }
 }
 

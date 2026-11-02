@@ -218,7 +218,7 @@ _Avoid_: "Table", which is the in-game board each account sees. "Session" too, w
 
 **Creator**:
 The account that created a game. Only the creator orders the seating, picks the lead investigator, presses Start, removes a member from the lobby, and deletes the game. The players still choose the lead at the table (Appendix III step 3); the creator enters what they agreed.
-_Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator owns no investigator by virtue of creating.
+_Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator holds an investigator only by assignment, never by virtue of creating. Until the lobby stores an assignment (#1239), the creator is assigned every investigator; that interim assignment goes when the lobby lands.
 
 **Member**:
 An account that has opened a game's link; the link is the invitation, and the allowlist is the only gate. Membership is recorded separately from assignment, so "your games" lists every game you're a member of. A member holding no investigator is a read-only **viewer**.
@@ -229,8 +229,12 @@ What the server keeps of a game: its creation inputs (scenario, roster, lead, RN
 _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored game isn't, and **Snapshot** already names the vendored card data.
 
 **Live game**:
-A game as it is being played: its current state, its place in the log, and who may answer. It decides whether a submitted answer is accepted, and what each member is then told. It persists nothing and sends nothing. A stored game is what remains of it on disk, and loading one rebuilds the live game. Until the wire break (#1230) it holds no seats: it accepts an answer from any member and tells every member the same thing.
+A game as it is being played: its current state, its place in the log, and which account each investigator is assigned to. It decides whether a submitted answer is accepted, and refuses one from an account that doesn't hold the investigator it answers for. It builds what each account is then told, from one view of the state per account; today that view only clears the RNG state, so every account is told the same thing. It persists nothing and sends nothing. A stored game is what remains of it on disk, and loading one rebuilds the live game. Until the lobby (#1239) the creator holds every investigator, and any other account that opens the game is a viewer.
 _Avoid_: "Session" or "session core". "Session" already names the sign-in session.
+
+**Log position**:
+The place in a game's action log that the next answer will occupy. It names the prompt the game is waiting on, so a submitted answer says which prompt it answers, and an answer naming any other position is refused as stale. It also names each answer that was applied.
+_Avoid_: "Resume token" (the engine kept a placeholder by that name that nothing read). Also avoid "prompt id", which reads as something the engine assigns. And avoid "turn", which is a game concept.
 
 **Setup fingerprint**:
 The record, made when a game is created, of what setup decided: every hand, every deck's order, the encounter deck's order and the chaos bag, as card codes. A load whose re-run setup decides differently fails.

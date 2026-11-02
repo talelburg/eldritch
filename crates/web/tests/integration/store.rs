@@ -9,7 +9,7 @@ use game_core::state::GameStateBuilder;
 use game_core::test_support;
 use leptos::prelude::Update;
 use leptos::task;
-use protocol::ServerMessage;
+use protocol::{LogPosition, ServerMessage};
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
 
@@ -38,6 +38,10 @@ async fn hello_renders_state_present() {
         store::reduce(
             s,
             ServerMessage::Hello {
+                build: protocol::build_id().to_string(),
+                you: common::YOU,
+                assigned: common::you_hold(Some(&game), None),
+                prompt: LogPosition(0),
                 state: Box::new(game),
                 outcome: EngineOutcome::Done,
                 events: Vec::new(),

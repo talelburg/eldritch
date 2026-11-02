@@ -17,7 +17,8 @@ use game_core::state::{
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::logged_answer::LoggedResponse;
+use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::skill_test_result::SkillTestResultView;
@@ -65,7 +66,11 @@ async fn renders_token_total_and_outcome_after_resolution() {
     store.update(|s| {
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(1),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
@@ -73,7 +78,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
                     difficulty: 3,
                 }],
                 outcome: EngineOutcome::Done,
-            },
+            }),
         );
     });
     task::tick().await;
@@ -82,7 +87,11 @@ async fn renders_token_total_and_outcome_after_resolution() {
     store.update(|s| {
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(2),
                 state: Box::new(base_game()),
                 events: vec![
                     Event::ChaosTokenRevealed {
@@ -96,7 +105,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
                     },
                 ],
                 outcome: acknowledge_pause(),
-            },
+            }),
         );
     });
     task::tick().await;
@@ -121,7 +130,11 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
         // Batch 1: the test starts at difficulty 3.
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(1),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
@@ -129,25 +142,33 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                     difficulty: 3,
                 }],
                 outcome: EngineOutcome::Done,
-            },
+            }),
         );
         // Batch 2: the Tablet is revealed and its ST.4 damage suspends for the
         // soak prompt — no outcome yet.
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(2),
                 state: Box::new(base_game()),
                 events: vec![Event::ChaosTokenRevealed {
                     token: ChaosToken::Tablet,
                     resolution: TokenResolution::Modifier(-2),
                 }],
                 outcome: test_support::awaiting_confirm_input("Assign the damage."),
-            },
+            }),
         );
         // Batch 3: the resumed test resolves. No reveal in this batch.
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(2),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(3),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestFailed {
                     investigator: InvestigatorId(1),
@@ -156,7 +177,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                     by: 2,
                 }],
                 outcome: acknowledge_pause(),
-            },
+            }),
         );
     });
     task::tick().await;
@@ -217,9 +238,15 @@ fn mount_modal() -> (RwSignal<ClientState>, UnboundedReceiver<ClientMessage>) {
 /// with `outcome` live in the final batch.
 async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
     store.update(|s| {
+        // Answers the prompt the store holds, so a second call follows the first.
+        let answered = s.prompt;
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered,
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: answered.next(),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
@@ -227,11 +254,15 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
                     difficulty: 3,
                 }],
                 outcome: EngineOutcome::Done,
-            },
+            }),
         );
         store::reduce(
             s,
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
+                answered: answered.next(),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: answered.next().next(),
                 state: Box::new(base_game()),
                 events: vec![
                     Event::ChaosTokenRevealed {
@@ -245,8 +276,9 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
                     },
                 ],
                 outcome,
-            },
+            }),
         );
+        common::you_hold_every_investigator(s);
     });
     task::tick().await;
 }
@@ -265,7 +297,8 @@ async fn its_confirm_submits_the_acknowledge() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }
@@ -343,7 +376,8 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }

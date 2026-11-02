@@ -85,6 +85,7 @@ fn activate(session: TestSession, code: &str) -> TestSession {
 /// board anchor a session step can name (see `old_book_of_lore.rs`).
 fn take_first_searched(session: TestSession) -> TestSession {
     session.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(0)),
     }))
 }

@@ -15,6 +15,7 @@ use card_dsl::dsl::{
     self, Ability, AttackerScope, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind,
     TargetScope, TestOutcome, TestedLocationScope,
 };
+use game_core::action::InputResponse;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, Registries, Responder, TimingEvent};
@@ -631,16 +632,22 @@ fn react_with(state: GameState, event: TimingEvent, target: OptionTarget) -> Gam
     window(state, event).pick(target).state().clone()
 }
 
-#[test]
-fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
-    let state = board(
+/// Both investigators at the Study, whose printed reaction each may fire after
+/// a defeat, at ONE's open turn.
+fn both_at_a_reacting_study() -> GameState {
+    board(
         seat(ONE.0),
         seat(TWO.0),
         location(STUDY).code(REACT_ON_DEFEAT),
         location(HALLWAY),
     )
     .open_turn(ONE)
-    .build();
+    .build()
+}
+
+#[test]
+fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
+    let state = both_at_a_reacting_study();
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![
@@ -653,13 +660,7 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
     // investigator it is offered to, so each is picked by its investigator.
     let session = window(state.clone(), defeat(None));
     assert_eq!(session.prompt().responder, Responder::Several);
-    let offered_to: Vec<_> = session
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.investigator)
-        .collect();
-    assert_eq!(offered_to, [Some(ONE), Some(TWO)]);
+    assert_eq!(session.offered_to(), [Some(ONE), Some(TWO)]);
     let react_for = |investigator| {
         window(state.clone(), defeat(None))
             .pick_for(investigator, OptionTarget::Location(STUDY))
@@ -670,6 +671,88 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
     assert_eq!((horror(&one, ONE), horror(&one, TWO)), (1, 0));
     let two = react_for(TWO);
     assert_eq!((horror(&two, ONE), horror(&two, TWO)), (0, 1));
+}
+
+/// In a window offering each investigator their own reaction, an investigator
+/// may pick only their own: ONE naming TWO's option is rejected and the state
+/// is left as it was (ADR 0019).
+#[test]
+fn a_reaction_offered_to_another_investigator_cannot_be_picked() {
+    let session = window(both_at_a_reacting_study(), defeat(None));
+    let twos = session
+        .prompt()
+        .options
+        .iter()
+        .find(|o| o.investigator == Some(TWO))
+        .expect("the window offers TWO a reaction")
+        .id;
+
+    session.assert_rejects(|s| s.answer_as(ONE, InputResponse::PickSingle(twos)));
+}
+
+/// In a window offering each investigator their own reaction, each passes
+/// separately (ADR 0019): ONE's pass leaves TWO's reaction open, and the window
+/// closes once TWO passes too.
+#[test]
+fn each_investigator_passes_a_reaction_window_separately() {
+    let session = window(both_at_a_reacting_study(), defeat(None)).skip_for(ONE);
+    assert_eq!(
+        session.offered_to(),
+        [Some(TWO)],
+        "ONE has passed; TWO has not"
+    );
+    assert_eq!(session.prompt().responder, Responder::Several);
+
+    let session = session.skip_for(TWO);
+    session.assert_at_turn_menu(ONE);
+    assert_eq!(
+        (horror(session.state(), ONE), horror(session.state(), TWO)),
+        (0, 0)
+    );
+}
+
+/// A reaction resolved in the window clears every pass made in it, since the
+/// board the pass was made on has changed: ONE passes, TWO fires their
+/// reaction, and ONE is offered theirs again.
+#[test]
+fn a_resolved_reaction_clears_an_earlier_pass_in_the_window() {
+    let session = window(both_at_a_reacting_study(), defeat(None)).skip_for(ONE);
+    assert_eq!(session.offered_to(), [Some(TWO)], "ONE has passed");
+
+    let session = session.pick_for(TWO, OptionTarget::Location(STUDY));
+
+    assert_eq!(horror(session.state(), TWO), 1, "TWO's reaction resolved");
+    assert_eq!(
+        session.offered_to(),
+        [Some(ONE)],
+        "TWO's reaction cleared ONE's pass, so ONE's reaction is offered again"
+    );
+}
+
+/// A passed investigator's option leaves the prompt but keeps its id, and
+/// picking it by that id is refused: TWO cannot fire ONE's reaction after ONE
+/// has passed, and the state is left as it was.
+#[test]
+fn a_passed_investigators_option_cannot_be_picked_by_its_old_id() {
+    let session = window(both_at_a_reacting_study(), defeat(None));
+    let ones = session
+        .prompt()
+        .options
+        .iter()
+        .find(|o| o.investigator == Some(ONE))
+        .expect("the window offers ONE a reaction")
+        .id;
+    let session = session.skip_for(ONE);
+
+    session.assert_rejects(|s| s.answer_as(TWO, InputResponse::PickSingle(ones)));
+}
+
+/// [`TestSession::skip`] passes for every investigator holding an option, so
+/// it closes a window two answer in one step.
+#[test]
+fn skip_closes_a_reaction_window_two_answer() {
+    let session = window(both_at_a_reacting_study(), defeat(None)).skip();
+    session.assert_at_turn_menu(ONE);
 }
 
 #[test]
@@ -707,6 +790,21 @@ fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller()
     );
     let after = react_with(state, defeat(None), asset);
     assert_eq!((horror(&after, ONE), horror(&after, TWO)), (0, 1));
+}
+
+/// A window answered by several is answered only by an investigator it offers
+/// something to: ONE holds no option in it, so ONE's pass is rejected.
+#[test]
+fn a_pass_from_an_investigator_offered_nothing_is_rejected() {
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0).in_play([REACT_ON_DEFEAT]),
+        location(STUDY),
+        location(HALLWAY),
+    )
+    .open_turn(ONE)
+    .build();
+    window(state, defeat(None)).assert_rejects(|s| s.answer_as(ONE, InputResponse::Skip));
 }
 
 #[test]

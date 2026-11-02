@@ -1,6 +1,8 @@
-//! Websocket hub: one broadcast group per game, fanning accepted-action
-//! events out to every connection while serializing applies through a
-//! per-game [`GameSession`] mutex.
+//! Websocket hub: one broadcast group per game, fanning each committed answer
+//! out to every connection while serializing applies through a per-game
+//! [`GameSession`] mutex. Each connection keeps the account it signed in as:
+//! it submits as that account, and is sent the `Hello` and the `Applied`
+//! built for it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,9 +14,10 @@ use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
+use protocol::live::Committed;
 use protocol::{
-    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING,
-    CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
+    CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
@@ -23,7 +26,7 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::time::{self, Instant};
 
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
-use crate::session::{GameSession, SessionError, StoredGame};
+use crate::session::{ApplyError, GameSession, SessionError, StoredGame};
 use crate::{auth, AppState};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
@@ -44,10 +47,12 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A loaded game's room: its session (behind a mutex so applies serialize across
-/// connections) and the broadcast channel its connections subscribe to.
+/// connections) and the broadcast channel its connections subscribe to. The
+/// channel carries each committed answer once, shared: every connection builds
+/// the `Applied` for its own account from it.
 pub(crate) struct GameRoom {
     session: Mutex<GameSession>,
-    tx: Sender<ServerMessage>,
+    tx: Sender<Arc<Committed>>,
 }
 
 /// The production [`Loader`]: a game's room is loaded from its stored game,
@@ -108,7 +113,9 @@ pub(crate) async fn game_ws(
     ws: WebSocketUpgrade,
 ) -> Response {
     match auth::signed_in(&state.db, &jar).await {
-        Ok(Some(_)) => ws.on_upgrade(move |socket| handle_socket(socket, state, game_id)),
+        Ok(Some(account)) => {
+            ws.on_upgrade(move |socket| handle_socket(socket, state, game_id, account.id))
+        }
         Ok(None) => {
             ws.on_upgrade(|socket| close_with(socket, CLOSE_UNAUTHENTICATED, "not signed in"))
         }
@@ -148,7 +155,8 @@ async fn close(
     let _ = time::timeout(CLOSE_TIMEOUT, closing).await;
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
+/// Serve one connection, signed in as `account`, to the game `game_id`.
+async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId, account: AccountId) {
     // Counted as open until this task returns, so shutdown waits for it.
     let _open = state.shutdown.track();
     // The connection lives as long as this socket does, however the socket
@@ -184,11 +192,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
         }
     };
     let room = connection.room();
-    let mut rx = room.tx.subscribe();
+    // Subscribe and take the render baseline under the session lock. A submit
+    // broadcasts its commit under that same lock, so every commit this socket
+    // receives is one its `Hello` doesn't already include.
+    let (mut rx, hello) = {
+        let session = room.session.lock().await;
+        (room.tx.subscribe(), session.live().hello_for(account))
+    };
     let (mut sink, mut stream) = socket.split();
 
     // Send the render baseline before streaming events.
-    let hello = room.session.lock().await.live().hello();
     if send_msg(&mut sink, &hello).await.is_err() {
         return;
     }
@@ -217,8 +230,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
                 break;
             }
             broadcasted = rx.recv() => match broadcasted {
-                Ok(msg) => {
-                    if send_msg(&mut sink, &msg).await.is_err() {
+                Ok(committed) => {
+                    let applied = ServerMessage::Applied(committed.applied_for(account));
+                    if send_msg(&mut sink, &applied).await.is_err() {
                         break;
                     }
                 }
@@ -228,7 +242,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
                 silence.as_mut().reset(Instant::now() + state.silence_timeout);
-                if let Some(direct) = handle_client_message(room, message).await {
+                if let Some(direct) = handle_client_message(room, account, message).await {
                     let ends = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
                         if send_msg(&mut sink, &msg).await.is_err() {
@@ -253,44 +267,62 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
 
 /// What to do with `sink` after handling one inbound frame.
 enum Disposition {
-    /// Send this message directly to the submitting client only.
-    Reply(ServerMessage),
+    /// Send this message directly to the submitting client only. Boxed because
+    /// a `ServerMessage` is as large as its `Applied`, though a reply is only
+    /// ever a refusal or a pong.
+    Reply(Box<ServerMessage>),
     /// Close the connection.
     Close,
 }
 
-/// Apply one inbound frame. Accepted actions broadcast `Applied` to the
-/// whole room (returning `None` here — the sender receives it via its
-/// own subscription); rejections and malformed frames reply to the
-/// sender only.
-async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disposition> {
+/// Apply one inbound frame from a connection signed in as `account`. An
+/// accepted action's commit is broadcast to the whole room (returning `None`
+/// here — the sender receives its `Applied` via its own subscription);
+/// rejections and malformed frames reply to the sender only.
+async fn handle_client_message(
+    room: &GameRoom,
+    account: AccountId,
+    message: Message,
+) -> Option<Disposition> {
     match message {
         Message::Text(text) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
-            Ok(ClientMessage::Submit { action }) => {
+            Ok(ClientMessage::Submit { prompt, action }) => {
                 let mut session = room.session.lock().await;
-                match session.apply(action).await {
-                    Ok(applied) => {
+                match session.apply(account, prompt, action).await {
+                    Ok(committed) => {
+                        // Sent under the session lock, which a socket attaching
+                        // also holds while it subscribes and takes its `Hello`.
                         // A broadcast send fails only when no receiver exists.
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
                         // `apply` has already persisted the action either way.
-                        let _ = room.tx.send(applied);
+                        let _ = room.tx.send(Arc::new(committed));
                         None
                     }
-                    Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {
-                        reason: e.to_string(),
-                    })),
+                    Err(e) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
+                        refusal(e),
+                    )))),
                 }
             }
-            Ok(ClientMessage::Ping) => Some(Disposition::Reply(ServerMessage::Pong)),
-            Err(_) => Some(Disposition::Reply(ServerMessage::Rejected {
-                reason: "malformed message".to_string(),
-            })),
+            Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
+            Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
+                Refusal::Malformed,
+            )))),
         },
         Message::Close(_) => Some(Disposition::Close),
         // WebSocket-level ping/pong and binary frames are not part of the
         // protocol; ignore them. They still reset the silence deadline.
         _ => None,
+    }
+}
+
+/// The refusal a client is sent for an answer [`GameSession::apply`] didn't
+/// apply. One the live game accepted but the store couldn't save is
+/// [`Refusal::Failed`], as is one the action log can't record.
+fn refusal(error: ApplyError) -> Refusal {
+    match error {
+        ApplyError::Refused(refused) => refused.into(),
+        ApplyError::Session(error) => Refusal::Failed(error.to_string()),
     }
 }
 

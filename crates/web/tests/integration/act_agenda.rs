@@ -23,6 +23,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
+use crate::common;
+
 fn section_text() -> String {
     let nodes = document()
         .query_selector_all(".act-agenda")
@@ -88,7 +90,10 @@ fn act_card() -> Element {
 async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let state = barrier_and_getting_out();
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+    });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {
@@ -129,7 +134,8 @@ async fn act_card_glows_and_advances_via_menu() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }
@@ -188,7 +194,8 @@ async fn agenda_card_glows_and_resolves_via_menu() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

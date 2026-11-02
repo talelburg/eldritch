@@ -27,7 +27,7 @@ use crate::engine::dispatch::{
 };
 use crate::engine::enumerate;
 use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, Responder, ResumeToken,
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, Responder,
 };
 use crate::state::{
     AttackLoopFrame, AttackLoopStage, Continuation, DealDamageFrame, DealDamageStep, EffectFrame,
@@ -104,7 +104,7 @@ fn table(
         // each option belongs to the investigator it is offered to.
         Continuation::FastWindow(FastWindowFrame { candidates, .. }) => Some((
             if candidates.is_empty() {
-                reaction_windows::fast_window_request(state, cards)
+                reaction_windows::fast_window_request(state, cards, frame)
             } else {
                 reaction_windows::resolution_request(state, cards, frame, candidates)
             },
@@ -262,12 +262,7 @@ pub(crate) fn suspend(state: &GameState, cards: &CardRegistry) -> EngineOutcome 
         .expect("prompt::suspend: the continuation stack is empty");
     let request = request(top, state, cards)
         .unwrap_or_else(|| panic!("prompt::suspend: the top frame asks nothing: {top:?}"));
-    EngineOutcome::AwaitingInput {
-        request,
-        // TODO(#458): deterministic resume tokens; 0 is the placeholder every
-        // `AwaitingInput` carries.
-        resume_token: ResumeToken(0),
-    }
+    EngineOutcome::AwaitingInput { request }
 }
 
 /// The open-turn action menu: the legal-action enumeration as a `PickSingle`.

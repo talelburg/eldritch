@@ -103,7 +103,7 @@ async fn signed_in_the_status_bar_offers_sign_out() {
         s.status = ConnStatus::Connected;
         s.account = Some(SignedIn {
             account_id: AccountId(1),
-            display_name: "Sam".to_string(),
+            display_name: "User1".to_string(),
         });
     });
     task::tick().await;
@@ -119,7 +119,7 @@ async fn signed_in_the_status_bar_offers_sign_out() {
         .query_selector(".status-bar .account")
         .expect("query")
         .expect("the signed-in account is named");
-    assert!(account.text_content().unwrap_or_default().contains("Sam"));
+    assert!(account.text_content().unwrap_or_default().contains("User1"));
 }
 
 #[wasm_bindgen_test]

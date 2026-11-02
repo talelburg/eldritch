@@ -76,6 +76,7 @@ fn investigate(session: TestSession, commit: &[&str]) -> TestSession {
 /// name one, so the pick is positional.
 fn pick(index: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(index)),
     })
 }

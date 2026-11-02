@@ -50,7 +50,17 @@ pub enum PlayerAction {
     /// active prompt — the open-turn action menu and every framework suspension
     /// (mulligan, encounter draw, skill-test commit, reaction/Fast windows,
     /// choices, soak distribution) all round-trip through this one channel.
+    ///
+    /// `investigator` names who answers. The engine rejects an answer from an
+    /// investigator the prompt isn't asking, before the response is
+    /// dispatched (ADR 0019): one the prompt's
+    /// [`Responder`](crate::engine::Responder) doesn't name, or a pick of an
+    /// option offered to someone else.
+    /// [`InputRequest::answerer`](crate::engine::InputRequest::answerer) says
+    /// who a response is from.
     ResolveInput {
+        /// The investigator answering the prompt.
+        investigator: InvestigatorId,
         /// The chosen response payload.
         response: InputResponse,
     },

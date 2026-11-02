@@ -5,15 +5,16 @@
 //! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::state::GameStateBuilder;
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use wasm_bindgen_test::*;
-use web::store::{ClientState, ConnStatus};
+use web::store::{self, ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
 use web_sys::HtmlElement;
 
-use crate::common;
+use crate::common::{self, BoardHandle};
 
 /// Mount `VersionMismatchView` with [`common::mount`]. Scoping every
 /// assertion to its container, rather than the shared document, is what lets
@@ -84,6 +85,99 @@ async fn version_mismatch_renders_a_scrimmed_card_naming_both_halves_of_the_fix(
     );
 }
 
+/// A board, connected and showing a live prompt, that a socket then hands
+/// `frame`, the way the transport does.
+async fn a_live_board_receiving(frame: &str) -> BoardHandle {
+    let client = common::hello(
+        GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .build(),
+        test_support::awaiting_confirm_input("Continue"),
+    );
+    let handle = common::mount_board(client, &test_support::TEST_REGISTRY).await;
+    handle.store.update(|s| {
+        store::receive(s, frame);
+    });
+    task::tick().await;
+    handle
+}
+
+#[wasm_bindgen_test]
+async fn a_hello_from_another_build_shows_the_overlay_over_an_inert_board() {
+    // After a deploy the reconnect's `Hello` names the new build, and carries
+    // a prompt of its own that this client must not offer.
+    let frame = common::hello_frame(
+        &common::another_build(),
+        GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .build(),
+        test_support::awaiting_confirm_input("From the new build"),
+        Vec::new(),
+    );
+    let handle = a_live_board_receiving(&frame).await;
+
+    assert!(
+        handle
+            .root
+            .query_selector(".version-mismatch")
+            .expect("query")
+            .is_some(),
+        "another build's Hello must reach the version-mismatch overlay"
+    );
+    assert!(
+        handle.lock().has_attribute("inert"),
+        "the board behind the overlay must take no input, so nothing is submitted"
+    );
+    assert!(
+        !handle.root.inner_html().contains("From the new build"),
+        "nothing of the mismatched Hello is rendered"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn a_hello_from_another_build_reaches_the_overlay_though_its_state_does_not_parse() {
+    let frame = format!(
+        r#"{{"hello":{{"build":"{}","state":"a shape this client never knew"}}}}"#,
+        common::another_build()
+    );
+    let handle = a_live_board_receiving(&frame).await;
+
+    assert!(
+        handle
+            .root
+            .query_selector(".version-mismatch")
+            .expect("query")
+            .is_some(),
+        "the build is read before the rest, so the overlay still shows"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn a_hello_from_this_build_connects_as_before() {
+    let frame = common::hello_frame(
+        protocol::build_id(),
+        GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .build(),
+        test_support::awaiting_confirm_input("Continue"),
+        Vec::new(),
+    );
+    let handle = a_live_board_receiving(&frame).await;
+
+    assert!(
+        handle
+            .root
+            .query_selector(".version-mismatch")
+            .expect("query")
+            .is_none(),
+        "a matching build shows no overlay"
+    );
+    assert!(
+        !handle.lock().has_attribute("inert"),
+        "a matching build's Hello leaves the board live"
+    );
+}
+
 /// The overlay is reached through the app's **real** composition, and is
 /// declared after the board's in-game modals — the composition half of "above
 /// every other overlay". The stacking itself is CSS (`.vm-backdrop`/
@@ -97,11 +191,12 @@ async fn version_mismatch_renders_a_scrimmed_card_naming_both_halves_of_the_fix(
 async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
     // A live prompt as well as the mismatch, so the prompt banner, an in-game
     // modal it has to cover, is actually in the DOM to be ordered against.
-    let client = ClientState {
+    let mut client = ClientState {
         status: ConnStatus::VersionMismatch,
         outcome: Some(test_support::awaiting_confirm_input("Continue")),
         ..ClientState::default()
     };
+    common::you_hold_every_investigator(&mut client);
     let handle = common::mount_board(client, &test_support::TEST_REGISTRY).await;
     let root = &handle.root;
 

@@ -14,14 +14,17 @@ use game_core::state::game_state::GameState;
 use game_core::state::investigator::InvestigatorId;
 use protocol::logged_answer::ReplayFailure;
 use protocol::GameId;
+use server::db::MIGRATOR;
 use server::fingerprint::{FingerprintMismatch, Zone};
 use server::session::{GameSession, SessionError, UnresumableReason};
+use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row as _, SqlitePool};
 
 use crate::common;
 
 fn keep_opening_hand() -> PlayerAction {
     PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickMultiple { selected: vec![] },
     }
 }
@@ -30,7 +33,14 @@ fn keep_opening_hand() -> PlayerAction {
 async fn a_played_game_resumes_at_the_same_state_and_outcome() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "played").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
 
     let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new("played"))
         .await
@@ -46,7 +56,14 @@ async fn a_played_game_resumes_at_the_same_state_and_outcome() {
 async fn no_stored_column_holds_serialized_engine_state() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "inputs-only").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
 
     for (table, select) in [
         ("games", "SELECT * FROM games"),
@@ -76,7 +93,14 @@ async fn each_logged_action_records_when_it_was_applied() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "timed").await;
     let before = unix_millis();
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
     let after = unix_millis();
 
     let (at,): (i64,) = sqlx::query_as("SELECT at FROM actions WHERE game_id = ? AND seq = 0")
@@ -94,7 +118,14 @@ async fn each_logged_action_records_when_it_was_applied() {
 async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redealt").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
     // The mock roster's deck is empty; record a card in it, as if setup had
     // dealt one when the game was created.
     sqlx::query(
@@ -127,7 +158,14 @@ async fn a_setup_that_now_deals_differently_is_unresumable_naming_the_zone() {
 async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "unregistered").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
     // As if a PR had removed the game's scenario from the registry.
     sqlx::query("UPDATE games SET scenario_id = 'no-such-scenario' WHERE game_id = ?")
         .bind("unregistered")
@@ -146,11 +184,19 @@ async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
 
 #[tokio::test]
 async fn a_game_stored_in_another_format_version_is_a_version_error() {
-    // 1 is the format before a logged answer named what it answered.
-    for version in [0_i64, 1, 99] {
+    // 1 is the format before a logged answer named what it answered, and 2
+    // the format before it named the investigator answering.
+    for version in [0_i64, 1, 2, 99] {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
-        session.apply(keep_opening_hand()).await.expect("accepted");
+        session
+            .apply(
+                common::test_account(&pool).await,
+                session.live().prompt(),
+                keep_opening_hand(),
+            )
+            .await
+            .expect("accepted");
         common::set_format_version(&pool, "versioned", version).await;
 
         let reason = expect_unresumable(&pool, "versioned").await;
@@ -161,13 +207,73 @@ async fn a_game_stored_in_another_format_version_is_a_version_error() {
 }
 
 #[tokio::test]
+async fn a_game_stored_before_games_recorded_a_creator_is_still_a_version_error() {
+    // A database at migration 7, before the `creator` column, holding a game
+    // stored in format version 2.
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("open in-memory sqlite");
+    MIGRATOR.run_to(7, &pool).await.expect("migrate to 7");
+    sqlx::query(
+        "INSERT INTO games (game_id, format_version, created_build, scenario_id, roster, lead, \
+         rng_seed, interactive_acknowledge, setup_fingerprint, created_at) \
+         VALUES ('stored-before', 2, 'an older build', ?, '[]', 0, 0, 0, '{}', 0)",
+    )
+    .bind(common::TEST_SCENARIO_ID)
+    .execute(&pool)
+    .await
+    .expect("store a version 2 game");
+
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("migrate to the current schema");
+    let reason = expect_unresumable(&pool, "stored-before").await;
+
+    assert_eq!(reason, UnresumableReason::Version { found: 2 });
+    assert_eq!(common::stored_rows(&pool, "stored-before").await, (1, 0));
+}
+
+#[tokio::test]
+async fn a_current_game_with_no_creator_is_unresumable() {
+    let pool = common::memory_pool().await;
+    common::create_game(&pool, "no-creator").await;
+    sqlx::query("UPDATE games SET creator = NULL WHERE game_id = ?")
+        .bind("no-creator")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reason = expect_unresumable(&pool, "no-creator").await;
+
+    assert_eq!(reason, UnresumableReason::NoCreator);
+    assert_eq!(common::stored_rows(&pool, "no-creator").await, (1, 0));
+}
+
+#[tokio::test]
 async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reordered").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
     let gain = turn_option(&session, "Gain resource");
     let end_turn = turn_option(&session, "End turn");
-    session.apply(pick(gain)).await.expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(gain),
+        )
+        .await
+        .expect("accepted");
     // As if a PR had reordered the turn menu: the logged pick now carries the
     // id that is End turn's, but still names Gain resource.
     common::set_logged(
@@ -192,9 +298,20 @@ async fn a_logged_pick_finds_its_option_by_label_not_by_id() {
 async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "renamed").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
     session
-        .apply(pick(turn_option(&session, "Gain resource")))
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(turn_option(&session, "Gain resource")),
+        )
         .await
         .expect("accepted");
     // As if a PR had renamed the option.
@@ -226,9 +343,20 @@ async fn a_logged_pick_the_prompt_no_longer_offers_is_unresumable() {
 async fn an_answer_to_a_changed_prompt_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "reprompted").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
     session
-        .apply(pick(turn_option(&session, "Gain resource")))
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(turn_option(&session, "Gain resource")),
+        )
         .await
         .expect("accepted");
     // As if the turn menu had been asked of someone else when it was logged.
@@ -258,12 +386,68 @@ async fn an_answer_to_a_changed_prompt_is_unresumable() {
 }
 
 #[tokio::test]
+async fn an_answer_logged_for_an_investigator_the_prompt_doesnt_ask_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "misattributed").await;
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(turn_option(&session, "Gain resource")),
+        )
+        .await
+        .expect("accepted");
+    // As if the answer had been logged for someone whose turn it isn't.
+    common::set_logged(
+        &pool,
+        "misattributed",
+        1,
+        "$.investigator",
+        InvestigatorId(99),
+    )
+    .await;
+
+    let reason = expect_unresumable(&pool, "misattributed").await;
+
+    assert!(
+        matches!(
+            &reason,
+            UnresumableReason::Replay {
+                seq: 1,
+                reason: ReplayFailure::Rejected(_),
+            }
+        ),
+        "the engine rejects the answer at seq 1, got {reason:?}",
+    );
+    assert_eq!(common::stored_rows(&pool, "misattributed").await, (1, 2));
+}
+
+#[tokio::test]
 async fn an_action_that_now_draws_differently_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redrawn").await;
-    session.apply(keep_opening_hand()).await.expect("accepted");
     session
-        .apply(pick(turn_option(&session, "Gain resource")))
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            keep_opening_hand(),
+        )
+        .await
+        .expect("accepted");
+    session
+        .apply(
+            common::test_account(&pool).await,
+            session.live().prompt(),
+            pick(turn_option(&session, "Gain resource")),
+        )
         .await
         .expect("accepted");
     let draws = session.live().state().rng.draws;
@@ -302,6 +486,7 @@ async fn an_unknown_game_is_absent_not_unresumable() {
 
 fn pick(option: OptionId) -> PlayerAction {
     PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickSingle(option),
     }
 }

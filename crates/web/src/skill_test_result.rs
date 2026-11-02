@@ -11,7 +11,6 @@
 //! a centred modal carrying **its own** Confirm — the acknowledge pause's only
 //! one.
 
-#[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;
 use game_core::engine::{EngineOutcome, InputKind};
 use game_core::event::{Event, FailureReason};
@@ -177,6 +176,25 @@ pub fn SkillTestResultView() -> impl IntoView {
             let Some(s) = summarize(&st) else {
                 return ().into_any();
             };
+            // Everyone sees the result; only the account answering the pause
+            // gets its Confirm.
+            let confirm = st.answer(InputResponse::Confirm).is_some().then(|| {
+                view! {
+                    <button
+                        class="str-confirm"
+                        on:click={
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                move |_| controls::submit(InputResponse::Confirm)
+                            }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            { |_| () }
+                        }
+                    >
+                        "Confirm"
+                    </button>
+                }
+            });
             view! {
                 // No `on:click` on the backdrop: dismissal is engine input.
                 <div class="str-backdrop" style=move || drag.scrim_style()></div>
@@ -192,24 +210,7 @@ pub fn SkillTestResultView() -> impl IntoView {
                         "Total " {s.total} " vs difficulty " {s.difficulty}
                     </p>
                     <p class="str-outcome">{s.outcome}</p>
-                    <button
-                        class="str-confirm"
-                        on:click={
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                move |_| {
-                                    controls::submit(
-                                        InputResponse::Confirm,
-                                        "Confirm",
-                                    );
-                                }
-                            }
-                            #[cfg(not(target_arch = "wasm32"))]
-                            { |_| () }
-                        }
-                    >
-                        "Confirm"
-                    </button>
+                    {confirm}
                 </section>
             }
             .into_any()

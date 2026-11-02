@@ -70,6 +70,7 @@ fn state_with_window_of(
             AbilityAddress::Printed(0),
             CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(1))),
         )],
+        passed: Vec::new(),
     });
     state
 }

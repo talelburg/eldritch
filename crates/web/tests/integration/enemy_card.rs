@@ -19,6 +19,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
+use crate::common;
+
 fn last_card() -> Element {
     let cards = document()
         .query_selector_all(".card")
@@ -115,7 +117,10 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
     // Set the prompt before mount: EnemyCard reads `pending` once at setup (in the
     // app it is re-created inside BoardView's reactive scope on each store change),
     // so the outcome must be live when the card mounts.
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+    });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {
@@ -161,7 +166,8 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

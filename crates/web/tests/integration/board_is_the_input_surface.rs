@@ -24,7 +24,7 @@ use game_core::test_support::{self, location, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
-use protocol::ClientMessage;
+use protocol::{ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store;
@@ -56,14 +56,21 @@ impl Harness {
         .await;
         Self {
             board,
-            live: LiveGame::new(state, outcome, Vec::new(), 0, cards::TEST_REGISTRIES),
+            live: LiveGame::new(
+                state.clone(),
+                outcome.clone(),
+                Vec::new(),
+                LogPosition::default(),
+                common::you_hold(Some(&state), Some(&outcome)),
+                cards::TEST_REGISTRIES,
+            ),
         }
     }
 
     /// Drain one submitted frame, submit it to the live game and commit it, and
     /// fold the `Applied` back in — the transport's round trip, in-process.
     async fn pump(&mut self) {
-        let ClientMessage::Submit { action } = self
+        let ClientMessage::Submit { prompt, action } = self
             .board
             .rx
             .try_recv()
@@ -72,12 +79,15 @@ impl Harness {
         else {
             panic!("the click submitted a frame other than a Submit");
         };
-        let accepted = self.live.submit(action).unwrap_or_else(|refusal| {
-            panic!("the board offered something the server refuses: {refusal}")
-        });
-        let applied = self.live.commit(accepted);
+        let accepted = self
+            .live
+            .submit(common::YOU, prompt, action)
+            .unwrap_or_else(|refusal| {
+                panic!("the board offered something the server refuses: {refusal}")
+            });
+        let applied = self.live.commit(accepted).applied_for(common::YOU);
         let store = self.board.store;
-        store.update(|s| store::reduce(s, applied));
+        store.update(|s| store::reduce(s, ServerMessage::Applied(applied)));
         task::tick().await;
     }
 

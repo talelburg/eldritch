@@ -65,6 +65,7 @@ fn activate_book(book: CardInstanceId) -> TurnAction {
 /// name one, so the pick is positional.
 fn take_searched(position: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(position)),
     })
 }

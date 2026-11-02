@@ -367,6 +367,7 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
     // The subject is a malformed response, so it is sent raw: an option id the
     // prompt never offered.
     let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(99)),
     }));
     let reason = bad.expect_rejected();

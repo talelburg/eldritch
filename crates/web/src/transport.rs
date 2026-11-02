@@ -14,15 +14,14 @@ use gloo_net::websocket::{Message, WebSocketError};
 use gloo_timers::future::{IntervalStream, TimeoutFuture};
 use leptos::prelude::*;
 use protocol::{
-    ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage, SignInRequired,
-    SignedIn,
+    ClientMessage, CreateGameRequest, CreateGameResponse, GameId, SignInRequired, SignedIn,
 };
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Storage;
 
 use crate::picker::CreateTx;
 use crate::socket_ending::{self, SocketEnding};
-use crate::store::{self, ConnStatus, StoreSignal};
+use crate::store::{self, ConnStatus, Received, StoreSignal};
 use crate::url;
 
 /// localStorage key holding the active game id across reloads.
@@ -145,7 +144,8 @@ enum ConnectOutcome {
     Unreachable,
     /// Opened, then closed, sorted by [`socket_ending::sort`].
     Ended(SocketEnding),
-    /// A server frame failed to deserialize — the client and server binaries
+    /// The `Hello` named another build, or a server frame failed to
+    /// deserialize ([`store::receive`]) — the client and server binaries
     /// disagree on the wire format. Terminal: do not retry (a retry hits the
     /// same stale server). The status is set to `VersionMismatch` before this
     /// is returned.
@@ -269,25 +269,20 @@ async fn connect_once(
                 Some(Ok(Message::Text(txt))) => {
                     // Any server frame proves the connection alive.
                     silence = silence_deadline();
-                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
-                        let is_hello = matches!(msg, ServerMessage::Hello { .. });
-                        if is_hello {
-                            *attempt = 0;
+                    // One update, so the board unlocks with the fresh state
+                    // already in it.
+                    let mut received = Received::Message;
+                    store.update(|s| received = store::receive(s, &txt));
+                    match received {
+                        Received::Hello => *attempt = 0,
+                        Received::Message => {}
+                        // Another build's server, or a frame we can't parse
+                        // from a server that IS talking to us: a wire-format
+                        // skew, not a transient glitch. Nothing more is sent.
+                        Received::VersionMismatch => {
+                            version_mismatch = true;
+                            break;
                         }
-                        // One update, so the board unlocks with the fresh
-                        // state already in it.
-                        store.update(|s| {
-                            store::reduce(s, msg);
-                            if is_hello {
-                                s.status = ConnStatus::Connected;
-                            }
-                        });
-                    } else {
-                        // A frame we can't parse from a server that IS talking
-                        // to us is a wire-format skew, not a transient glitch.
-                        store.update(|s| s.status = ConnStatus::VersionMismatch);
-                        version_mismatch = true;
-                        break;
                     }
                 }
                 // The close event carries the code the ending is sorted by.

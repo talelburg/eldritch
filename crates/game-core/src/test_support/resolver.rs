@@ -31,6 +31,7 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
+//! use game_core::state::investigator::InvestigatorId;
 //! use game_core::state::GameStateBuilder;
 //! use game_core::test_support::TEST_REGISTRIES;
 //!
@@ -41,6 +42,7 @@
 //!     .with_registries(TEST_REGISTRIES)
 //!     .session()
 //!     .apply(Action::Player(PlayerAction::ResolveInput {
+//!         investigator: InvestigatorId(1),
 //!         response: InputResponse::Skip,
 //!     }));
 //! assert!(!session.expect_rejected().is_empty());
@@ -403,13 +405,13 @@ where
     let mut iterations = 0u32;
 
     loop {
-        let response = match &outcome {
+        let action = match &outcome {
             EngineOutcome::AwaitingInput { request, .. } if !is_turn_menu(request) => {
-                policy(request, &state)
+                policy(request, &state).map(|response| answer(request, response))
             }
             _ => None,
         };
-        let Some(response) = response else {
+        let Some(action) = action else {
             return ApplyResult {
                 state,
                 events,
@@ -422,14 +424,35 @@ where
             "drain_with_applier: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
              resolver or engine appears to be cycling",
         );
-        let result = applier(
-            state,
-            Action::Player(PlayerAction::ResolveInput { response }),
-        );
+        let result = applier(state, action);
         state = result.state;
         events.extend(result.events);
         outcome = result.outcome;
     }
+}
+
+/// The `ResolveInput` answering `request` with `response`, named for the
+/// investigator the prompt says answers it
+/// ([`InputRequest::answerer`]): the responder's, or the picked option's. So a
+/// test that drives a prompt never names who answers it, and the engine's
+/// responder check still runs on every answer.
+///
+/// # Panics
+///
+/// Panics if the prompt names nobody, which only a hand-built request can:
+/// one answered by several with no option offered to an investigator.
+pub(crate) fn answer(request: &InputRequest, response: InputResponse) -> Action {
+    let investigator = request.answerer(&response).unwrap_or_else(|| {
+        panic!(
+            "test support: the prompt {:?} names no investigator to answer {response:?}; build \
+             it `.answered_by(..)` one",
+            request.prompt
+        )
+    });
+    Action::Player(PlayerAction::ResolveInput {
+        investigator,
+        response,
+    })
 }
 
 #[cfg(test)]
@@ -437,7 +460,7 @@ mod tests {
     use card_dsl::dsl::SkillTestKind;
 
     use super::*;
-    use crate::engine::{self, InputKind, ResumeToken};
+    use crate::engine::{self, InputKind, Responder};
     use crate::event::Event;
     use crate::state::SkillKind;
     use crate::state::{ChaosBag, ChaosToken, Continuation, GameStateBuilder, SkillTestId};
@@ -449,8 +472,9 @@ mod tests {
 
     fn req(prompt: &str) -> InputRequest {
         // The resolver returns scripted responses regardless of `kind`; the
-        // constructor choice here is arbitrary.
-        InputRequest::confirm(prompt)
+        // constructor choice here is arbitrary. It names who answers, as every
+        // prompt the engine asks does, so the drain can name them too.
+        InputRequest::confirm(prompt).answered_by(Responder::Investigator(InvestigatorId(1)))
     }
 
     /// A commit window offering seat 1's hand cards at `hand_indices`, option
@@ -595,6 +619,7 @@ mod tests {
         let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Confirm,
             }),
             &mut resolver,
@@ -617,6 +642,7 @@ mod tests {
         let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Skip,
             }),
             &mut resolver,
@@ -641,6 +667,7 @@ mod tests {
                     assert!(matches!(
                         action,
                         Action::Player(PlayerAction::ResolveInput {
+                            investigator: InvestigatorId(1),
                             response: InputResponse::Skip
                         })
                     ));
@@ -649,7 +676,6 @@ mod tests {
                         events: vec![],
                         outcome: EngineOutcome::AwaitingInput {
                             request: req("pick first"),
-                            resume_token: ResumeToken(0),
                         },
                     }
                 }
@@ -657,6 +683,7 @@ mod tests {
                     assert!(matches!(
                         action,
                         Action::Player(PlayerAction::ResolveInput {
+                            investigator: InvestigatorId(1),
                             response: InputResponse::Confirm
                         })
                     ));
@@ -665,7 +692,6 @@ mod tests {
                         events: vec![],
                         outcome: EngineOutcome::AwaitingInput {
                             request: req("pick second"),
-                            resume_token: ResumeToken(1),
                         },
                     }
                 }
@@ -673,6 +699,7 @@ mod tests {
                     assert!(matches!(
                         action,
                         Action::Player(PlayerAction::ResolveInput {
+                            investigator: InvestigatorId(1),
                             response: InputResponse::Skip
                         })
                     ));
@@ -690,6 +717,7 @@ mod tests {
         let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Skip,
             }),
             &mut resolver,
@@ -707,13 +735,13 @@ mod tests {
             events: vec![],
             outcome: EngineOutcome::AwaitingInput {
                 request: req("nothing scripted for me"),
-                resume_token: ResumeToken(42),
             },
         };
         let mut resolver = ScriptedResolver::new();
         drop(drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Skip,
             }),
             &mut resolver,
@@ -736,7 +764,6 @@ mod tests {
                     }],
                     outcome: EngineOutcome::AwaitingInput {
                         request: req("pick"),
-                        resume_token: ResumeToken(0),
                     },
                 },
                 2 => ApplyResult {
@@ -752,6 +779,7 @@ mod tests {
         let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Skip,
             }),
             &mut resolver,
@@ -773,6 +801,7 @@ mod tests {
         let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::Confirm,
             }),
             &mut ScriptedResolver::new(),

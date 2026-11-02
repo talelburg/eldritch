@@ -6,6 +6,7 @@
 //! and [`logged_answer`] is the form the action log records it in. Both are
 //! I/O-free, so the web crate's tests run the server's exact submit path.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
@@ -13,11 +14,14 @@ use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
+use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 use serde::{Deserialize, Serialize};
 
 pub mod live;
 pub mod logged_answer;
+
+use logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -42,6 +46,10 @@ pub fn build_id() -> &'static str {
 pub enum ClientMessage {
     /// Submit a player action for validation and application.
     Submit {
+        /// The log position of the prompt this answers, as the last
+        /// [`ServerMessage::Hello`] or [`Applied`] named it. Any other
+        /// position is refused as [`Refusal::StalePrompt`].
+        prompt: LogPosition,
         /// The action to apply.
         action: PlayerAction,
     },
@@ -60,6 +68,20 @@ pub enum ServerMessage {
     /// current state and the outcome of the most recent apply (including
     /// any pending [`AwaitingInput`](EngineOutcome::AwaitingInput)).
     Hello {
+        /// The server's [`build_id`]. A client compiled from another build
+        /// reads this field alone, before parsing anything else, and shows the
+        /// version-mismatch overlay instead: the rest of the frame may not
+        /// deserialize for it. So the `"hello"` tag and this `"build"` key
+        /// keep their names in every build.
+        build: String,
+        /// The account this connection is signed in as.
+        you: AccountId,
+        /// Which account holds each investigator: the client offers a prompt,
+        /// and a Pass, only for the investigators `you` holds.
+        assigned: Assignment,
+        /// The log position of the prompt the game awaits: what a submit
+        /// answering it sends back.
+        prompt: LogPosition,
         /// Current derived game state. Boxed to keep the enum (and the
         /// per-game broadcast ring buffer) small — `GameState` dwarfs
         /// the other variants.
@@ -74,27 +96,92 @@ pub enum ServerMessage {
         events: Vec<Event>,
     },
     /// Broadcast to every connection of a game after an accepted action.
-    Applied {
-        /// The authoritative game state after the action resolved.
-        /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
-        /// `state`: `GameState` dwarfs the other variants. The client
-        /// renders this snapshot directly (events are for log/animation,
-        /// not state reconstruction).
-        state: Box<GameState>,
-        /// Events emitted by the action's resolution.
-        events: Vec<Event>,
-        /// Outcome of the apply.
-        outcome: EngineOutcome,
-    },
-    /// Sent only to the submitting client when its action is refused
-    /// (engine rejection, a malformed frame, or a persistence error).
-    Rejected {
-        /// Human-readable reason.
-        reason: String,
-    },
+    Applied(Applied),
+    /// Sent only to the submitting client when its submit is refused.
+    Rejected(Refusal),
     /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
     /// broadcast to the room.
     Pong,
+}
+
+/// A place in a game's action log: the position the next answer will occupy,
+/// which names the prompt the game is waiting on.
+///
+/// Every prompt a client is shown carries one, and a submit sends it back, so
+/// an answer meant for an earlier prompt is refused rather than resolving the
+/// current one. Transparent over the log's `i64` row position, so it
+/// serialises as a bare JSON number. The default is the first position, the
+/// one a game with no answers awaits.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct LogPosition(pub i64);
+
+impl LogPosition {
+    /// The position after this one: where the answer after an answer at this
+    /// position goes.
+    #[must_use]
+    pub fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
+impl fmt::Display for LogPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The body of [`ServerMessage::Applied`]: one accepted answer, and the game
+/// it left.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Applied {
+    /// The log position the answer occupies.
+    pub answered: LogPosition,
+    /// The investigator who answered.
+    pub by: InvestigatorId,
+    /// What they answered, as the action log recorded it: each picked
+    /// option's label, target and investigator, so every connection can say
+    /// what was decided rather than what it last clicked.
+    pub response: LoggedResponse,
+    /// The log position of the prompt the game now awaits, the one after
+    /// [`answered`](Self::answered).
+    pub prompt: LogPosition,
+    /// The authoritative game state after the action resolved.
+    /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
+    /// `state`: `GameState` dwarfs the other variants. The client
+    /// renders this snapshot directly (events are for log/animation,
+    /// not state reconstruction).
+    pub state: Box<GameState>,
+    /// Events emitted by the action's resolution.
+    pub events: Vec<Event>,
+    /// Outcome of the apply.
+    pub outcome: EngineOutcome,
+}
+
+/// Why a submit was refused: the body of [`ServerMessage::Rejected`]. Each
+/// variant tells a client how to react.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Refusal {
+    /// It answered an earlier log position than the prompt the game awaits.
+    /// The client stays quiet: it already has the newer state, or it is on
+    /// its way.
+    StalePrompt,
+    /// It answered for an investigator the submitting account doesn't hold.
+    /// A client offers only its own investigators' prompts, so this is a
+    /// client bug.
+    NotYours,
+    /// The engine rejected the answer, for this reason, which the client
+    /// shows the player.
+    Engine(String),
+    /// The frame didn't parse as a [`ClientMessage`]: a client bug.
+    Malformed,
+    /// The engine accepted the answer but it couldn't be saved, for this
+    /// reason: the log can't record it, or the store write failed. Nothing
+    /// changed, and the player may try again.
+    Failed(String),
 }
 
 /// Stable identifier for a persisted game.
@@ -141,6 +228,48 @@ pub struct AccountId(pub i64);
 impl fmt::Display for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Which account holds each investigator in a game: the account that answers
+/// for them.
+///
+/// A live game is built with one, and refuses an answer from any account but
+/// the investigator's holder. TODO(#1239): until the lobby stores an
+/// assignment, the creator holds every investigator, so any other account is
+/// a viewer. Serialises as a JSON object from investigator id to account id.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Assignment(BTreeMap<InvestigatorId, AccountId>);
+
+impl Assignment {
+    /// Every investigator in `investigators` held by `account`.
+    pub fn all_to(
+        account: AccountId,
+        investigators: impl IntoIterator<Item = InvestigatorId>,
+    ) -> Self {
+        investigators
+            .into_iter()
+            .map(|investigator| (investigator, account))
+            .collect()
+    }
+
+    /// The account holding `investigator`, if any does.
+    #[must_use]
+    pub fn holder(&self, investigator: InvestigatorId) -> Option<AccountId> {
+        self.0.get(&investigator).copied()
+    }
+
+    /// Whether `account` holds `investigator`.
+    #[must_use]
+    pub fn holds(&self, account: AccountId, investigator: InvestigatorId) -> bool {
+        self.holder(investigator) == Some(account)
+    }
+}
+
+impl FromIterator<(InvestigatorId, AccountId)> for Assignment {
+    fn from_iter<I: IntoIterator<Item = (InvestigatorId, AccountId)>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
@@ -277,7 +406,12 @@ mod tests {
             .with_seat(test_support::seat(1))
             .build();
         let events = vec![Event::ScenarioStarted];
+        let assigned = Assignment::all_to(AccountId(7), [InvestigatorId(1)]);
         let msg = ServerMessage::Hello {
+            build: "a1b2c3".to_string(),
+            you: AccountId(8),
+            assigned: assigned.clone(),
+            prompt: LogPosition(0),
             state: Box::new(state.clone()),
             outcome: EngineOutcome::Done,
             events: events.clone(),
@@ -288,10 +422,16 @@ mod tests {
 
         match back {
             ServerMessage::Hello {
+                build,
+                you,
+                assigned: a,
                 state: s,
                 events: e,
                 ..
             } => {
+                assert_eq!(build, "a1b2c3");
+                assert_eq!(you, AccountId(8));
+                assert_eq!(a, assigned, "the assignment round-trips through JSON");
                 assert_eq!(*s, state);
                 assert_eq!(e, events, "events round-trip through JSON");
             }
@@ -304,17 +444,30 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
             .build();
-        let msg = ServerMessage::Applied {
+        let msg = ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Confirm,
+            prompt: LogPosition(1),
             state: Box::new(state.clone()),
             events: Vec::new(),
             outcome: EngineOutcome::Done,
-        };
+        });
 
         let json = serde_json::to_string(&msg).expect("serialize");
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
         match back {
-            ServerMessage::Applied { state: s, .. } => assert_eq!(*s, state),
+            ServerMessage::Applied(Applied {
+                by,
+                response,
+                state: s,
+                ..
+            }) => {
+                assert_eq!(*s, state);
+                assert_eq!(by, InvestigatorId(1));
+                assert_eq!(response, LoggedResponse::Confirm);
+            }
             other => panic!("expected Applied, got {other:?}"),
         }
     }
@@ -328,16 +481,20 @@ mod tests {
         // ChoiceOption.target field survives the ServerMessage envelope
         // (game-core covers an anchored value directly).
         let outcome = test_support::awaiting_pick_single_input("Choose an action");
-        let msg = ServerMessage::Applied {
+        let msg = ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Skip,
+            prompt: LogPosition(1),
             state: Box::new(state),
             events: Vec::new(),
             outcome,
-        };
+        });
 
         let json = serde_json::to_string(&msg).expect("serialize");
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
-        let ServerMessage::Applied { outcome, .. } = back else {
+        let ServerMessage::Applied(Applied { outcome, .. }) = back else {
             panic!("expected Applied, got {back:?}");
         };
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {

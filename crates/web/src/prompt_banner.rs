@@ -10,16 +10,15 @@
 //!
 //! It stays the home for the controls that belong nowhere on the board: a live
 //! prompt's **un-anchored** options, a `PickMultiple` commit's Confirm (submitting
-//! the `MultiSelect` selection), any skippable window's Pass, and a fallback
+//! the `MultiSelect` selection), any skippable window's Pass (one per
+//! investigator still holding an option, when several do), and a fallback
 //! Confirm for an un-anchored `Confirm` the skill-test result modal is not already
 //! carrying. wasm-only — submits via `OutboundTx`.
 
 use std::collections::BTreeSet;
 
 use game_core::action::InputResponse;
-use game_core::engine::{
-    ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget, PickCount,
-};
+use game_core::engine::{ChoiceOption, InputKind, OptionId, OptionTarget, PickCount, Responder};
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
@@ -43,7 +42,9 @@ pub fn PromptBanner() -> impl IntoView {
     view! {
         {move || {
             let state = store.get();
-            let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome.clone() else {
+            // Only a prompt this account answers: a viewer, or an account
+            // whose investigators the prompt doesn't ask, is offered nothing.
+            let Some(request) = state.answerable_request() else {
                 return ().into_any();
             };
             // A decision has its own modal, and that modal is its *sole*
@@ -93,10 +94,7 @@ pub fn PromptBanner() -> impl IntoView {
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;
-                    let header = label.clone();
-                    let pick = move |_| {
-                        controls::submit(InputResponse::PickSingle(id), header.clone());
-                    };
+                    let pick = move |_| controls::submit(InputResponse::PickSingle(id));
                     view! { <button class="banner-option" on:click=pick>{label}</button> }
                 })
                 .collect();
@@ -118,16 +116,37 @@ pub fn PromptBanner() -> impl IntoView {
                 && request.target.is_none()
                 && !skill_test_result::modal_is_live(&state))
             .then(|| {
-                let confirm =
-                    move |_| controls::submit(InputResponse::Confirm, "Confirm");
+                let confirm = move |_| controls::submit(InputResponse::Confirm);
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
 
-            // Pass — whenever the request is skippable.
-            let pass_btn = request.skippable.then(|| {
-                let pass = move |_| controls::submit(InputResponse::Skip, "Skip");
-                view! { <button class="pass" on:click=pass>"Pass"</button> }
-            });
+            // Pass — whenever the request is skippable. In a window several
+            // answer, each investigator holding an option passes separately (ADR
+            // 0019), so two or more of this account's holders get a Pass each,
+            // labelled by name; one gets the plain Pass, which the store names
+            // them for. The request is already cut to this account's options,
+            // so another account's investigators get none.
+            let holders = match request.responder {
+                Responder::Several => request.holders(),
+                _ => Vec::new(),
+            };
+            let pass_btns: Vec<_> = if !request.skippable {
+                Vec::new()
+            } else if holders.len() > 1 {
+                holders
+                    .into_iter()
+                    .map(|investigator| {
+                        let label = format!("Pass ({})", state.investigator_name(investigator));
+                        let pass = move |_| {
+                            controls::submit_as(investigator, InputResponse::Skip);
+                        };
+                        view! { <button class="pass" on:click=pass>{label}</button> }.into_any()
+                    })
+                    .collect()
+            } else {
+                let pass = move |_| controls::submit(InputResponse::Skip);
+                vec![view! { <button class="pass" on:click=pass>"Pass"</button> }.into_any()]
+            };
 
             // Nothing to say and nothing to offer — the ordinary open turn, where
             // every option sits on a board surface. Render no bar at all rather
@@ -136,7 +155,7 @@ pub fn PromptBanner() -> impl IntoView {
                 && option_btns.is_empty()
                 && confirm_btn.is_none()
                 && confirm_fallback.is_none()
-                && pass_btn.is_none()
+                && pass_btns.is_empty()
             {
                 return ().into_any();
             }
@@ -148,7 +167,7 @@ pub fn PromptBanner() -> impl IntoView {
                     {option_btns}
                     {confirm_btn}
                     {confirm_fallback}
-                    {pass_btn}
+                    {pass_btns}
                 </div>
             }
             .into_any()
@@ -163,8 +182,7 @@ pub fn PromptBanner() -> impl IntoView {
 fn multi_select_confirm(count: PickCount, selected: RwSignal<BTreeSet<u32>>) -> impl IntoView {
     let confirm = move |_| {
         let sel: Vec<OptionId> = selected.get_untracked().into_iter().map(OptionId).collect();
-        let label = format!("Commit {} card(s)", sel.len());
-        controls::submit(InputResponse::PickMultiple { selected: sel }, label);
+        controls::submit(InputResponse::PickMultiple { selected: sel });
         selected.set(BTreeSet::new());
     };
     let out_of_range = move || !count.admits(selected.with(BTreeSet::len));

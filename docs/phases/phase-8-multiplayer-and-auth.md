@@ -73,8 +73,8 @@ tracker, and the tracker's dependency view is authoritative.
 - **Liveness:** #1140 (✅ PR #1290).
 
 **2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.
-#458, #581, #583 and #1194 close with it. Until #1239 lands, a dev account
-holds every investigator.
+#458, #581, #583 and #1194 close with it. Until #1239 lands, a game's creator
+holds every investigator, and any other account is a viewer.
 
 **→ The next architecture review** (#1145 step 5) runs once #1230 lands, before
 phase 9 is scoped.

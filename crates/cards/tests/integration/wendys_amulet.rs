@@ -421,6 +421,7 @@ fn a_discard_pile_card_cannot_be_committed() {
 
     s.assert_rejects(|s| {
         s.apply(Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickMultiple {
                 selected: vec![OptionId(0)],
             },

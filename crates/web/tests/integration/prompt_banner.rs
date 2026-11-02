@@ -12,13 +12,14 @@ use std::collections::BTreeSet;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount,
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
-use game_core::state::InvestigatorId;
-use game_core::test_support;
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::{GameState, GameStateBuilder};
+use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::*;
 use leptos::task;
-use protocol::ClientMessage;
+use protocol::{Assignment, ClientMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;
@@ -27,11 +28,32 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
+use crate::common;
+
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
 async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {
+    mount_with(None, outcome, preselected, None).await
+}
+
+/// [`mount`], with the store also holding `game`, so the banner can name
+/// investigators, and signed in as an account holding only `held` when it is
+/// `Some`, or every investigator when it is `None`.
+async fn mount_with(
+    game: Option<GameState>,
+    outcome: EngineOutcome,
+    preselected: &[u32],
+    held: Option<&[InvestigatorId]>,
+) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.game = game;
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+        if let Some(held) = held {
+            s.assigned = Assignment::all_to(common::YOU, held.iter().copied());
+        }
+    });
     let selected = RwSignal::new(preselected.iter().copied().collect::<BTreeSet<u32>>());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
@@ -85,7 +107,8 @@ async fn confirm_submits_the_selected_options() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(
             response,
             InputResponse::PickMultiple {
@@ -104,7 +127,8 @@ async fn confirm_with_no_selection_submits_empty() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickMultiple { selected: vec![] }),
         other => panic!("expected PickMultiple, got {other:?}"),
     }
@@ -122,7 +146,8 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Skip),
         other => panic!("expected Skip, got {other:?}"),
     }
@@ -130,14 +155,17 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 
 /// A hand-size discard that must discard exactly one card, offering two.
 fn discard_exactly_one() -> EngineOutcome {
-    test_support::awaiting_request(InputRequest::pick_multiple(
-        "Choose 1 card to discard",
-        vec![
-            ChoiceOption::new(OptionId(0), "Flashlight"),
-            ChoiceOption::new(OptionId(1), "Knife"),
-        ],
-        PickCount::exactly(1),
-    ))
+    test_support::awaiting_request(
+        InputRequest::pick_multiple(
+            "Choose 1 card to discard",
+            vec![
+                ChoiceOption::new(OptionId(0), "Flashlight"),
+                ChoiceOption::new(OptionId(1), "Knife"),
+            ],
+            PickCount::exactly(1),
+        )
+        .answered_by(Responder::Investigator(InvestigatorId(1))),
+    )
 }
 
 fn confirm_disabled() -> bool {
@@ -167,7 +195,8 @@ async fn confirm_holds_until_the_selection_is_the_count_asked() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(
             response,
             InputResponse::PickMultiple {
@@ -213,7 +242,8 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }
@@ -254,7 +284,8 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Skip),
         other => panic!("expected Skip, got {other:?}"),
     }
@@ -317,7 +348,8 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -346,7 +378,8 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -373,7 +406,8 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -408,8 +442,178 @@ async fn banner_renders_only_unanchored_options() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
+}
+
+/// A window several answer, offering investigator 2 and investigator 3 one
+/// un-anchored reaction each.
+fn offered_to_two_and_three() -> EngineOutcome {
+    test_support::awaiting_request(
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![
+                ChoiceOption::new(OptionId(0), "Two's reaction").offered_to(InvestigatorId(2)),
+                ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3)),
+            ],
+        )
+        .skippable()
+        .answered_by(Responder::Several),
+    )
+}
+
+/// The investigator a submitted frame names as answering.
+fn answering(rx: &mut UnboundedReceiver<ClientMessage>) -> (InvestigatorId, InputResponse) {
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action:
+                PlayerAction::ResolveInput {
+                    investigator,
+                    response,
+                },
+            ..
+        } => (investigator, response),
+        other => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+/// In a window several answer, a pick names the investigator its option is
+/// offered to.
+#[wasm_bindgen_test]
+async fn a_pick_in_a_window_several_answer_names_its_options_investigator() {
+    let mut rx = mount(offered_to_two_and_three(), &[]).await;
+    let btns = last_banner()
+        .query_selector_all(".banner-option")
+        .expect("query");
+    btns.item(1)
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("investigator 3's option")
+        .click();
+    task::tick().await;
+    assert_eq!(
+        answering(&mut rx),
+        (InvestigatorId(3), InputResponse::PickSingle(OptionId(1)))
+    );
+}
+
+/// The game [`offered_to_two_and_three`] is asked in: investigators 2 and 3
+/// seated.
+fn two_and_three_seated() -> GameState {
+    GameStateBuilder::new()
+        .with_seat(seat(2))
+        .with_seat(seat(3))
+        .with_seating([InvestigatorId(2), InvestigatorId(3)])
+        .build()
+}
+
+/// The `.pass` buttons the last banner renders, in order.
+fn pass_buttons() -> Vec<HtmlElement> {
+    let btns = last_banner().query_selector_all(".pass").expect("query");
+    (0..btns.length())
+        .filter_map(|i| btns.item(i))
+        .filter_map(|n| n.dyn_into::<HtmlElement>().ok())
+        .collect()
+}
+
+/// In a window several answer, each investigator holding an option passes
+/// separately (ADR 0019): one Pass each, labelled by name, and each passes
+/// for its investigator.
+#[wasm_bindgen_test]
+async fn a_window_two_answer_shows_a_labelled_pass_for_each() {
+    let game = two_and_three_seated();
+    let names = [
+        game.name_of(InvestigatorId(2)),
+        game.name_of(InvestigatorId(3)),
+    ];
+    let mut rx = mount_with(Some(game), offered_to_two_and_three(), &[], None).await;
+    let passes = pass_buttons();
+    let labels: Vec<String> = passes
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    for (label, name) in labels.iter().zip(&names) {
+        assert!(label.contains(name.as_str()), "{label} names {name}");
+    }
+    passes[1].click();
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+}
+
+/// When only one investigator in a window several answer still holds an
+/// option, the banner shows a single plain Pass, which passes for them.
+#[wasm_bindgen_test]
+async fn a_window_one_still_answers_shows_one_plain_pass() {
+    let outcome = test_support::awaiting_request(
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3))],
+        )
+        .skippable()
+        .answered_by(Responder::Several),
+    );
+    let mut rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
+    let labels: Vec<String> = pass_buttons()
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels, ["Pass"]);
+    click(".pass");
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+}
+
+/// A viewer's account holds nobody in the window investigators 2 and 3
+/// answer: the banner offers it no option and no Pass, and says nothing.
+#[wasm_bindgen_test]
+async fn a_viewer_is_offered_no_option_and_no_pass() {
+    let _rx = mount_with(
+        Some(two_and_three_seated()),
+        offered_to_two_and_three(),
+        &[],
+        Some(&[]),
+    )
+    .await;
+    assert!(
+        last_root()
+            .query_selector(".prompt-banner")
+            .expect("query")
+            .is_none(),
+        "a viewer's banner renders nothing: {}",
+        last_root().inner_html()
+    );
+}
+
+/// An account holding investigator 3, but not 2, in a window both answer gets
+/// only 3's option and a single plain Pass, which passes for 3.
+#[wasm_bindgen_test]
+async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_them() {
+    let mut rx = mount_with(
+        Some(two_and_three_seated()),
+        offered_to_two_and_three(),
+        &[],
+        Some(&[InvestigatorId(3)]),
+    )
+    .await;
+    let options: Vec<String> = {
+        let btns = last_banner()
+            .query_selector_all(".banner-option")
+            .expect("query");
+        (0..btns.length())
+            .filter_map(|i| btns.item(i))
+            .map(|n| n.text_content().unwrap_or_default())
+            .collect()
+    };
+    assert_eq!(options, ["Three's reaction"]);
+    let labels: Vec<String> = pass_buttons()
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels, ["Pass"]);
+    click(".pass");
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
 }

@@ -26,6 +26,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
+use crate::common;
+
 const INV: InvestigatorId = InvestigatorId(1);
 
 /// Mount one `AnchoredControl` for `target`, with the live prompt offering
@@ -42,6 +44,7 @@ async fn mount(
             "Choose an action",
             options,
         ));
+        common::you_hold_every_investigator(s);
     });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
@@ -82,7 +85,8 @@ fn is_disabled(el: &HtmlElement) -> bool {
 fn submitted(rx: &mut UnboundedReceiver<ClientMessage>) -> InputResponse {
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => response,
         other => panic!("expected ResolveInput, got {other:?}"),
     }

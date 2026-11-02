@@ -17,6 +17,7 @@ fn rejected_actions_do_not_mutate_state() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::Confirm,
         }),
         TEST_REGISTRIES,
@@ -51,6 +52,7 @@ fn guard_ladder_reject_leaves_state_byte_identical() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::Skip,
         }),
         TEST_REGISTRIES,
@@ -85,6 +87,7 @@ fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
 
     // Malformed response: commit window expects PickMultiple; send Skip.
     let rejected = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::Skip,
     }));
     rejected.expect_rejected();

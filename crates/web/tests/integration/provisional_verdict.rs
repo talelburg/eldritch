@@ -22,7 +22,8 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use game_core::test_support::{seat, TestSession};
-use protocol::ServerMessage;
+use protocol::logged_answer::LoggedResponse;
+use protocol::{Applied, LogPosition, ServerMessage};
 use web::skill_test_result;
 use web::store::{self, ClientState};
 
@@ -34,11 +35,15 @@ fn client(session: &TestSession) -> ClientState {
     let mut client = ClientState::default();
     store::reduce(
         &mut client,
-        ServerMessage::Applied {
+        ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Confirm,
+            prompt: LogPosition(1),
             state: Box::new(session.state().clone()),
             events: session.events().to_vec(),
             outcome: EngineOutcome::Done,
-        },
+        }),
     );
     client
 }

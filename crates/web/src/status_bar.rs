@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use game_core::engine::{EngineOutcome, Responder};
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::store::{self, ClientState, ConnStatus};
@@ -89,36 +89,26 @@ fn sign_out() {
 /// investigator a window several answer offers an option to. `None` with no
 /// prompt live, or no game to name anyone from.
 fn waiting_on(state: &ClientState) -> Option<String> {
-    let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
+    let (Some(EngineOutcome::AwaitingInput { request, .. }), Some(_)) =
+        (&state.outcome, &state.game)
+    else {
         return None;
     };
-    let game = state.game.as_ref()?;
+    let name = |id| state.investigator_name(id);
     match request.responder {
-        Responder::Investigator(id) => Some(name(game, id)),
-        Responder::Lead(id) => Some(format!("{} (lead)", name(game, id))),
+        Responder::Investigator(id) => Some(name(id)),
+        Responder::Lead(id) => Some(format!("{} (lead)", name(id))),
         Responder::Several => {
             let offered: BTreeSet<InvestigatorId> = request
                 .options
                 .iter()
                 .filter_map(|option| option.investigator)
                 .collect();
-            (!offered.is_empty()).then(|| {
-                offered
-                    .into_iter()
-                    .map(|id| name(game, id))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
+            (!offered.is_empty())
+                .then(|| offered.into_iter().map(name).collect::<Vec<_>>().join(", "))
         }
         // `Responder` is non-exhaustive; a kind this client does not know
         // names nobody it can show.
         _ => None,
     }
-}
-
-/// An investigator's name, or their seat's id if the game does not hold them.
-fn name(game: &GameState, id: InvestigatorId) -> String {
-    game.investigators
-        .get(&id)
-        .map_or_else(|| format!("investigator {}", id.0), |inv| inv.name.clone())
 }

@@ -20,10 +20,12 @@ async fn hello_carries_setup_events_after_reload_from_db() {
     // Create + persist a game (as `POST /games` does), then spin a server that
     // serves it purely from the DB — proving the events come from the reload,
     // not a retained in-memory session.
+    let creator = common::test_account(&pool).await;
     GameSession::create(
         pool.clone(),
         common::REGISTRIES,
         "g-setup-events",
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,

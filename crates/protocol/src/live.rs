@@ -1,23 +1,37 @@
 //! The **live game**: a game as it is being played, and the one decision of
 //! whether a submitted answer is accepted.
 //!
-//! [`LiveGame`] holds the current state, its place in the action log and the
-//! registries every apply runs against. [`LiveGame::submit`] decides an answer
-//! without changing anything, and [`LiveGame::commit`] advances the game by an
-//! answer it accepted. It persists nothing and sends nothing: a host stores
-//! the [`Accepted`] answer's logged form, then commits it and sends the
-//! [`ServerMessage::Applied`] that comes back.
+//! [`LiveGame`] holds the current state, its place in the action log, the
+//! [`Assignment`] of investigators to accounts and the registries every apply
+//! runs against. [`LiveGame::submit`] decides an answer without changing
+//! anything, and [`LiveGame::commit`] advances the game by an answer it
+//! accepted. It persists nothing and sends nothing: a host stores the
+//! [`Accepted`] answer's logged form, then commits it and sends each
+//! connection the [`Committed::applied_for`] its account.
+//!
+//! Every answer names the [`LogPosition`] of the prompt it answers, and
+//! [`LiveGame::submit`] refuses any position but the current one before the
+//! engine runs: an answer from a stale tab, a double-click, or a submit queued
+//! while disconnected never resolves a prompt its sender didn't see. It then
+//! refuses an account answering for an investigator it doesn't hold, which is
+//! the only place accounts meet the game: the engine never sees one.
+//!
+//! Every message for an account is built from the state `view_for` that
+//! account, which clears the RNG state, so no client can predict the chaos
+//! bag or a shuffle.
 
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::{self, EngineOutcome, Registries};
 use game_core::event::Event;
+use game_core::rng::RngState;
+use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 
 use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
-use crate::ServerMessage;
+use crate::{AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage};
 
-/// A game as it is being played: its current state, its place in the log, and
-/// the registries it applies against.
+/// A game as it is being played: its current state, its place in the log, who
+/// answers for each investigator, and the registries it applies against.
 #[derive(Debug, Clone)]
 pub struct LiveGame {
     state: GameState,
@@ -26,9 +40,11 @@ pub struct LiveGame {
     outcome: EngineOutcome,
     /// The events scenario setup emitted, carried in every `Hello`.
     setup_events: Vec<Event>,
-    /// The number of answers in the log, which is the position the next one
-    /// is stored at.
-    seq: i64,
+    /// The log position of the prompt the game awaits: the number of answers
+    /// in the log, which is where the next one is stored.
+    prompt: LogPosition,
+    /// The account answering for each investigator.
+    assignment: Assignment,
     registries: Registries,
 }
 
@@ -61,11 +77,17 @@ impl Accepted {
     }
 }
 
-/// Why [`LiveGame::submit`] refused an answer. Its `Display` is the reason a
-/// client is sent in [`ServerMessage::Rejected`].
+/// Why [`LiveGame::submit`] refused an answer. A host sends it to the client
+/// as the wire [`Refusal`] its `From` impl maps it to.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[non_exhaustive]
-pub enum Refusal {
+pub enum Refused {
+    /// It answered another log position than the prompt the game awaits.
+    #[error("the answer is for an earlier prompt")]
+    StalePrompt,
+    /// It answered for an investigator the submitting account doesn't hold.
+    #[error("the answer is for an investigator this account doesn't hold")]
+    NotYours,
     /// The engine rejected it, for this reason.
     #[error("{0}")]
     Engine(String),
@@ -75,22 +97,36 @@ pub enum Refusal {
     Unrecordable(Unrecordable),
 }
 
+impl From<Refused> for Refusal {
+    fn from(refused: Refused) -> Self {
+        match refused {
+            Refused::StalePrompt => Self::StalePrompt,
+            Refused::NotYours => Self::NotYours,
+            Refused::Engine(reason) => Self::Engine(reason),
+            unrecordable @ Refused::Unrecordable(_) => Self::Failed(unrecordable.to_string()),
+        }
+    }
+}
+
 impl LiveGame {
     /// The live game at `state`, whose last apply (or setup) left `outcome`,
-    /// with `seq` answers already in its log.
+    /// awaiting the answer at log position `prompt`, and each investigator
+    /// answered for by the account `assignment` gives them to.
     #[must_use]
     pub fn new(
         state: GameState,
         outcome: EngineOutcome,
         setup_events: Vec<Event>,
-        seq: i64,
+        prompt: LogPosition,
+        assignment: Assignment,
         registries: Registries,
     ) -> Self {
         Self {
             state,
             outcome,
             setup_events,
-            seq,
+            prompt,
+            assignment,
             registries,
         }
     }
@@ -113,38 +149,65 @@ impl LiveGame {
         &self.setup_events
     }
 
-    /// The number of answers in the log, which is the position the next
-    /// accepted answer is stored at.
+    /// The log position of the prompt the game awaits: the one a submit must
+    /// name, and where the next accepted answer is stored.
     #[must_use]
-    pub fn seq(&self) -> i64 {
-        self.seq
+    pub fn prompt(&self) -> LogPosition {
+        self.prompt
     }
 
-    /// The render baseline a connection is sent when it attaches.
+    /// The account answering for each investigator.
     #[must_use]
-    pub fn hello(&self) -> ServerMessage {
+    pub fn assignment(&self) -> &Assignment {
+        &self.assignment
+    }
+
+    /// The render baseline a connection signed in as `account` is sent when
+    /// it attaches.
+    #[must_use]
+    pub fn hello_for(&self, account: AccountId) -> ServerMessage {
         ServerMessage::Hello {
-            state: Box::new(self.state.clone()),
+            build: crate::build_id().to_string(),
+            you: account,
+            assigned: self.assignment.clone(),
+            prompt: self.prompt(),
+            state: Box::new(view_for(account, self.state.clone())),
             outcome: self.outcome.clone(),
             events: self.setup_events.clone(),
         }
     }
 
-    /// Decide `action`: run the engine on a copy of the state, then log it as
-    /// the answer to the prompt the game awaits. Changes nothing; an accepted
-    /// answer takes effect only through [`commit`](Self::commit).
+    /// Decide `action`, `account`'s answer to the prompt at `prompt`: check it
+    /// answers the prompt the game awaits, check `account` holds the
+    /// investigator it answers for, run the engine on a copy of the state,
+    /// then log it. Changes nothing; an accepted answer takes effect only
+    /// through [`commit`](Self::commit).
     ///
     /// # Errors
     ///
-    /// [`Refusal::Engine`] if the engine rejects the action, or
-    /// [`Refusal::Unrecordable`] if it accepts one the log can't record.
-    pub fn submit(&self, action: PlayerAction) -> Result<Accepted, Refusal> {
+    /// In the order they are checked: [`Refused::StalePrompt`] if `prompt`
+    /// isn't the position the game awaits; [`Refused::NotYours`] if `account`
+    /// doesn't hold the investigator the action answers for, or the action
+    /// names none; [`Refused::Engine`] if the engine rejects the action; or
+    /// [`Refused::Unrecordable`] if it accepts one the log can't record.
+    pub fn submit(
+        &self,
+        account: AccountId,
+        prompt: LogPosition,
+        action: PlayerAction,
+    ) -> Result<Accepted, Refused> {
+        if prompt != self.prompt() {
+            return Err(Refused::StalePrompt);
+        }
+        if !answering(&action).is_some_and(|inv| self.assignment.holds(account, inv)) {
+            return Err(Refused::NotYours);
+        }
         let answer = self.record(&action);
         let result = engine::apply(self.state.clone(), Action::Player(action), self.registries);
         if let EngineOutcome::Rejected { reason } = result.outcome {
-            return Err(Refusal::Engine(reason.into_owned()));
+            return Err(Refused::Engine(reason.into_owned()));
         }
-        let answer = answer.map_err(Refusal::Unrecordable)?;
+        let answer = answer.map_err(Refused::Unrecordable)?;
         Ok(Accepted {
             answer,
             draws: result.state.rng.draws,
@@ -155,32 +218,78 @@ impl LiveGame {
     }
 
     /// Advance the game by an answer [`submit`](Self::submit) accepted, and
-    /// hand back the [`ServerMessage::Applied`] every connection is sent. A
-    /// host that persists the log commits only once the answer is stored.
+    /// hand back the [`Committed`] answer, from which each connection is sent
+    /// the [`Applied`] for its account. A host that persists the log commits
+    /// only once the answer is stored.
     ///
     /// `accepted` must come from `submit` on this game in its current state:
     /// the type can't tie the two together, so committing a stale answer
     /// installs that answer's state.
-    pub fn commit(&mut self, accepted: Accepted) -> ServerMessage {
-        let applied = ServerMessage::Applied {
-            state: Box::new(accepted.state.clone()),
+    pub fn commit(&mut self, accepted: Accepted) -> Committed {
+        let answered = self.prompt;
+        self.prompt = answered.next();
+        self.state = accepted.state.clone();
+        self.outcome = accepted.outcome.clone();
+        Committed(Applied {
+            answered,
+            by: accepted.answer.investigator,
+            response: accepted.answer.response,
+            prompt: self.prompt,
+            state: Box::new(accepted.state),
             events: accepted.events,
-            outcome: accepted.outcome.clone(),
-        };
-        self.state = accepted.state;
-        self.outcome = accepted.outcome;
-        self.seq += 1;
-        applied
+            outcome: accepted.outcome,
+        })
     }
 
     /// Log `action` as the answer to the prompt the game awaits.
     fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, Unrecordable> {
-        let PlayerAction::ResolveInput { response } = action else {
+        let PlayerAction::ResolveInput {
+            investigator,
+            response,
+        } = action
+        else {
             return Err(Unrecordable::NotAnAnswer(action.clone()));
         };
         let EngineOutcome::AwaitingInput { request, .. } = &self.outcome else {
             return Err(Unrecordable::NoPrompt);
         };
-        logged_answer::record(request, response)
+        logged_answer::record(request, *investigator, response)
     }
+}
+
+/// An answer [`LiveGame::commit`] installed, the same for every account: a host
+/// shares one among its connections, and each sends
+/// [`applied_for`](Self::applied_for) its own account.
+///
+/// It holds the [`Applied`] before any account's view is cut from its state.
+#[derive(Debug)]
+pub struct Committed(Applied);
+
+impl Committed {
+    /// The [`Applied`] a connection signed in as `account` is sent.
+    #[must_use]
+    pub fn applied_for(&self, account: AccountId) -> Applied {
+        let mut applied = self.0.clone();
+        applied.state = Box::new(view_for(account, *applied.state));
+        applied
+    }
+}
+
+/// The investigator `action` answers for, if it names one.
+fn answering(action: &PlayerAction) -> Option<InvestigatorId> {
+    match action {
+        PlayerAction::ResolveInput { investigator, .. } => Some(*investigator),
+        _ => None,
+    }
+}
+
+/// `state` as `account` may see it: the one place a message for an account
+/// is cut down from the game, so hidden information has one place to change.
+///
+/// Today it clears the RNG state, which would let a client predict every
+/// chaos-token pull and shuffle, and nothing else, so every account sees the
+/// same state.
+fn view_for(_account: AccountId, mut state: GameState) -> GameState {
+    state.rng = RngState::new(0);
+    state
 }
