@@ -12,5 +12,6 @@ mod player_order;
 mod registries_per_apply;
 mod resolution_module;
 mod token_result;
+mod turn_choice;
 mod upkeep_cascade;
 mod upkeep_hand_size;

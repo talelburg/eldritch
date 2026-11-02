@@ -274,6 +274,8 @@ pub enum Continuation {
     HunterMove(HunterChoice),
     /// A suspended engagement-on-spawn choice.
     SpawnEngage(SpawnEngagePending),
+    /// See [`TurnChoiceFrame`].
+    TurnChoice(TurnChoiceFrame),
     /// A suspended upkeep hand-size discard.
     HandSizeDiscard(HandSizeDiscard),
     /// See [`EmitEventFrame`].
@@ -344,6 +346,7 @@ impl_frame!(AcknowledgeForced, AcknowledgeForcedFrame);
 impl_frame!(SkillTest, InFlightSkillTest);
 impl_frame!(HunterMove, HunterChoice);
 impl_frame!(SpawnEngage, SpawnEngagePending);
+impl_frame!(TurnChoice, TurnChoiceFrame);
 impl_frame!(HandSizeDiscard, HandSizeDiscard);
 impl_frame!(EmitEvent, EmitEventFrame);
 impl_frame!(TimingPoint, TimingPointFrame);
@@ -745,6 +748,7 @@ impl Continuation {
             | Continuation::AdditionalActionChoice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
+            | Continuation::TurnChoice(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::Mulligan(_)
             | Continuation::EncounterDraw(_) => (
@@ -1142,7 +1146,7 @@ pub enum InvestigationResume {
     /// window and re-park at [`Begins`](Self::Begins). Set by
     /// `investigation_phase` before it emits, per ADR 0003.
     AfterPhaseStartForced,
-    /// Post-2.1 window closed; begin the first investigator's turn.
+    /// Post-2.1 window closed; run step 2.2 for the round's first turn.
     Begins,
     /// Step 2.2's `TurnBegan` sequence is *queued* above this anchor — its
     /// `after` cell, where On the Lam 01010 is played. On re-exposure, open
@@ -2083,6 +2087,35 @@ impl SpawnEngagePending {
     #[must_use]
     pub fn new(enemy: EnemyId, candidates: Vec<InvestigatorId>) -> Self {
         Self { enemy, candidates }
+    }
+}
+
+/// The lead's choice of who takes the next Investigation turn, pushed above
+/// the [`InvestigationPhase`](Continuation::InvestigationPhase) anchor at step
+/// 2.2 while two or more investigators are still waiting for a turn this phase.
+///
+/// Appendix II 2.2: *"The investigators may take their turns in any order. The
+/// investigators choose among themselves who (among the investigators) will
+/// take this turn, and making this choice begins that investigator's turn."*
+/// The group decision is the lead's, `glossary/Lead_Investigator.md`: *"the
+/// lead investigator is the final arbiter in choosing among those options"*
+/// (ADR 0019). Answering it pops the frame and begins the chosen
+/// investigator's turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct TurnChoiceFrame {
+    /// The Active investigators who have not yet taken a turn this phase, in
+    /// player order.
+    pub candidates: Vec<InvestigatorId>,
+}
+
+impl TurnChoiceFrame {
+    /// The choice among `candidates`. The constructor for code outside the
+    /// crate, such as a test staging the prompt, where `#[non_exhaustive]`
+    /// blocks the struct literal.
+    #[must_use]
+    pub fn new(candidates: Vec<InvestigatorId>) -> Self {
+        Self { candidates }
     }
 }
 

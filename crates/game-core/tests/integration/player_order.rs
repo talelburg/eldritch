@@ -10,6 +10,7 @@
 //! of the seating would leave seat 1 out.
 
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Responder;
 use game_core::event::Event;
 use game_core::state::{GameStateBuilder, InvestigatorId, Phase};
 use game_core::test_support::{self, enemy, seat, TestSession, TEST_REGISTRIES, TEST_TREACHERY};
@@ -57,17 +58,20 @@ fn mythos_draws_start_at_the_lead() {
     assert_eq!(session.state().current_encounter_drawer(), Some(FIRST_SEAT));
 }
 
-/// Investigation 2.2 walks player order as a stand-in for the investigators'
-/// choice of who takes the next turn: the lead's turn, then seat 1's,
-/// and seat 1's ending ends the phase.
+/// Investigation 2.2 is the lead's choice, offered in player order: the lead
+/// is asked, and their pick of seat 1 opens seat 1's turn first. Seat 2's
+/// follows unasked, as the only investigator still waiting, and its end ends
+/// the phase.
 #[test]
-fn investigation_turns_start_at_the_lead() {
+fn the_leads_pick_opens_that_investigators_turn() {
     let session = session(lead_on_the_second_seat().ending_upkeep_phase())
         .confirm()
         .confirm();
-    session.assert_at_turn_menu(LEAD);
-    let session = session.take(&TurnAction::EndTurn);
+    assert_eq!(session.prompt().responder, Responder::Lead(LEAD));
+    let session = session.choose_turn(FIRST_SEAT);
     session.assert_at_turn_menu(FIRST_SEAT);
+    let session = session.take(&TurnAction::EndTurn);
+    session.assert_at_turn_menu(LEAD);
     let session = session.take(&TurnAction::EndTurn);
     assert!(
         session.events().iter().any(|e| matches!(
@@ -76,7 +80,7 @@ fn investigation_turns_start_at_the_lead() {
                 phase: Phase::Investigation
             }
         )),
-        "the first seat is last in player order, so their turn ends the phase"
+        "each investigator has taken a turn, so the phase ends"
     );
 }
 

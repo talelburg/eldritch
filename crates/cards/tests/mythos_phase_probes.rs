@@ -133,8 +133,8 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 }
 
 /// Seat `seats` test investigators through `seat_and_open`, keep every opening
-/// hand at the mulligan, and end every turn — the last `EndTurn` in
-/// player order ticks through Investigation → Enemy → Upkeep into Mythos
+/// hand at the mulligan, and end every turn, the lead choosing them in seat
+/// order while two or more are waiting — the last `EndTurn` ticks through Investigation → Enemy → Upkeep into Mythos
 /// (round 2), pausing with the encounter-draw cursor on inv1.
 fn at_mythos_draw(seats: usize) -> TestSession {
     // Seating refuses one investigator twice, so the seats after the first
@@ -153,7 +153,16 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         registries(),
     );
     let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));
-    (0..seats).fold(session, |s, _| s.take(&TurnAction::EndTurn))
+    (1..=seats).fold(session, |s, seat| {
+        let s = if seats - seat >= 1 {
+            s.choose_turn(InvestigatorId(
+                u32::try_from(seat).expect("a seat number fits in u32"),
+            ))
+        } else {
+            s
+        };
+        s.take(&TurnAction::EndTurn)
+    })
 }
 
 /// [`at_mythos_draw`] with the encounter deck then seeded to `codes`, *after*
@@ -313,7 +322,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     );
 
     // inv2 draws: one plain treachery, no surge.
-    let done = second.confirm();
+    let done = second.confirm().choose_turn(INV1);
     done.assert_at_turn_menu(INV1);
     assert_eq!(done.state().phase, Phase::Investigation);
     assert_eq!(done.state().current_encounter_drawer(), None);
@@ -324,7 +333,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
         "all three cards in discard after both investigators draw"
     );
     assert_event!(
-        done.finish().events,
+        done.events(),
         Event::CardRevealed { investigator, code, .. }
             if *investigator == INV2
                 && *code == CardCode::new(PROBE_TREACHERY)

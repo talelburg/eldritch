@@ -113,8 +113,9 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     // Mulligan past the loop for both investigators (keep each hand). The
     // engine requires every investigator to mulligan before the turn opens.
     let session = session.choose_from_hand(&[]).choose_from_hand(&[]);
-    // After the last mulligan, the Investigation phase begins and the
-    // first investigator in player order becomes active.
+    // After the last mulligan, the Investigation phase begins and the lead
+    // chooses who goes first.
+    let session = session.choose_turn(inv1);
     session.assert_at_turn_menu(inv1);
 
     // First EndTurn (inv1): rotates to inv2 within Investigation.

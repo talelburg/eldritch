@@ -88,12 +88,9 @@ pub struct GameState {
     /// the [`lead`](Self::lead); walk it through `engine::player_order`, not
     /// directly.
     ///
-    /// The Investigation phase's turns walk player order too, a fixed order
-    /// standing in for a choice the rules leave open each turn: *"The
-    /// investigators may take their turns in any order. The investigators
-    /// choose among themselves who (among the investigators) will take this
-    /// turn"* (Appendix II, step 2.2). TODO(#1185): let the investigators
-    /// choose who takes each turn.
+    /// It is not the order the Investigation phase's turns are taken in: *"The
+    /// investigators may take their turns in any order"* (Appendix II, step
+    /// 2.2), and the lead chooses who takes each.
     pub seating: Vec<InvestigatorId>,
     /// The lead investigator chosen at game creation, Appendix III step 3:
     /// *"Choose one of those investigators to be the lead investigator for

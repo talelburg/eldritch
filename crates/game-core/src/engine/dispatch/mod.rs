@@ -309,6 +309,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
+            | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_)
                 if top.awaits_input() =>
@@ -424,6 +425,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
+            | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_) => {
                 unreachable!(
@@ -710,6 +712,7 @@ pub(crate) fn resolve_input(
         Continuation::Effect(_) => choice::resume_effect_choice(cx, response),
         Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
         Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
+        Continuation::TurnChoice(_) => phases::resume_turn_choice(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
         Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),
         Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),

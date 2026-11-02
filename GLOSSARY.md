@@ -171,12 +171,12 @@ The player who makes the group's decisions — What Have You Done? 01110's choic
 _Avoid_: "The first seat", "the first Active investigator in `seating`", or "the lead proxy": with the lead on seat 2 those are different investigators. Also avoid saying "the lead" for an offer an ability makes to a group it names — The Barrier 01109's *"investigators in the hallway may, as a group"* goes to the group, not to a lead outside it (ADR 0019; #1193).
 
 **Player order**:
-The order of every *"in player order"* step: Mythos 1.4's draws, Enemy 3.3's attacks, Upkeep 4.4, the mulligan, hand size, an "each investigator" effect. `glossary/In_Player_Order.md`: *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order."* Ours is `engine::player_order`: the seating (`GameState::seating`) rotated to start at the stored lead, Active investigators only. Investigation 2.2's turns walk it too, as a stand-in for the investigators' choice (#1185).
+The order of every *"in player order"* step: Mythos 1.4's draws, Enemy 3.3's attacks, Upkeep 4.4, the mulligan, hand size, an "each investigator" effect. `glossary/In_Player_Order.md`: *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order."* Ours is `engine::player_order`: the seating (`GameState::seating`) rotated to start at the stored lead, Active investigators only.
 _Avoid_: Calling `seating` the player order, or walking it directly. The seating is unrotated, and a walk over it starts at seat 1 whoever leads. A walk's cursor advances with `next_in_player_order`, which wraps past the seating's end and stops at the rotation's: a successor that stops at the end of the seating leaves seat 1 out when seat 2 leads.
 
 **Seating**:
 The clockwise order the investigators sit in around the table. It is fixed at creation and never rotates, and it includes eliminated investigators. **Player order** is derived from it: `glossary/In_Player_Order.md` says *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order"*, and the clockwise part of that is the seating.
-_Avoid_: "Turn order". The seating is not the order turns are taken in once the lead isn't in seat 1, and Investigation 2.2's turns walk player order (see **Player order**). Bare "seating" means the order. Name the act of placing the investigators at creation as an act instead: "seating the investigators", or `seat_and_open`.
+_Avoid_: "Turn order". The seating is not the order turns are taken in: the lead chooses who takes each Investigation turn. Bare "seating" means the order. Name the act of placing the investigators at creation as an act instead: "seating the investigators", or `seat_and_open`.
 
 ## Project vocabulary
 

@@ -133,6 +133,7 @@ mod the_barrier;
 mod the_barrier_eligibility;
 mod the_necronomicon;
 mod theyre_getting_out;
+mod turn_choice_windows;
 mod upkeep_draw_revelation;
 mod vicious_blow;
 mod ward_of_protection;

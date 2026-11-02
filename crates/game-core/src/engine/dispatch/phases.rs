@@ -11,18 +11,18 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, cursor, emit, encounter, engagement, hand_pick, hunters, prompt,
-    reaction_windows, reveal,
+    act_agenda, cards, choice, combat, cursor, emit, encounter, engagement, hand_pick, hunters,
+    prompt, reaction_windows, reveal,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, PickCount};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, PickCount};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
     EnemyResume, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InvestigationPhaseFrame,
     InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
-    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame,
-    UpkeepResume, Zone,
+    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, TurnChoiceFrame,
+    UpkeepPhaseFrame, UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -370,8 +370,8 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Run the post-`EndOfTurn`-forced portion of [`end_turn`] (Rules
-/// Reference p.24 step 2.2.2): rotate to the next active investigator, or
-/// end the Investigation phase. Reached uniformly through the `drive` loop's
+/// Reference p.24 step 2.2.2): record the turn, then return to step 2.2
+/// ([`next_investigator_turn`]). Reached uniformly through the `drive` loop's
 /// `InvestigatorTurn { ending: true }` arm: `end_turn` arms
 /// that flag and emits `EndOfTurn`, whose forced/reaction effects (Frozen in
 /// Fear 01164's willpower test) the loop drives as frames; once they pop, the
@@ -391,48 +391,120 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     // 2.2.2 Investigator's turn ends: "If an investigator has not yet taken a
     // turn this phase, return to 2.2. If each investigator has taken a turn
     // this phase, proceed to 2.3." Record the turn on the phase anchor — an
-    // elimination ends the turn here too — then hand the next turn to the first
-    // investigator in player order still waiting (a stand-in for the
-    // investigators' choice; TODO(#1185): let them choose).
+    // elimination ends the turn here too — then return to 2.2.
     cx.state
         .continuations
         .topmost_of_mut::<InvestigationPhaseFrame>()
         .expect("resume_end_turn: no InvestigationPhase anchor beneath the turn")
         .turns_taken
         .push(active_id);
-    if let Some(next_id) = first_waiting(cx.state) {
-        begin_investigator_turn(cx, next_id)
-    } else {
-        cx.state.active_investigator = None;
-        // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
-        // (Enemy 3.2); propagate its outcome rather than swallowing it.
-        investigation_phase_end(cx)
+    next_investigator_turn(cx)
+}
+
+/// Step 2.2, decided from the Investigation phase anchor's record of who has
+/// taken a turn: run after the post-2.1 player window and after each 2.2.2.
+///
+/// Appendix II 2.2: *"The investigators may take their turns in any order. The
+/// investigators choose among themselves who (among the investigators) will
+/// take this turn, and making this choice begins that investigator's turn."*
+///
+/// - **Two or more waiting:** push a [`TurnChoiceFrame`] for the lead to
+///   answer ([`resume_turn_choice`]), with nobody active until they do.
+///   Pushed and returned from, like a spawn's engagement tie: the `drive` loop
+///   surfaces it, and the post-2.1 window's inline close requires `Done`.
+/// - **One waiting:** begin their turn; there is nothing to choose.
+/// - **None waiting:** 2.2.2's *"If each investigator has taken a turn this
+///   phase, proceed to 2.3."*
+///
+/// Waiting means Active and not yet recorded, so an eliminated investigator is
+/// never offered a turn.
+fn next_investigator_turn(cx: &mut Cx) -> EngineOutcome {
+    let waiting = {
+        let anchor = cx
+            .state
+            .continuations
+            .topmost_of::<InvestigationPhaseFrame>()
+            .expect("next_investigator_turn: no InvestigationPhase anchor on the stack");
+        cursor::player_order(cx.state)
+            .into_iter()
+            .filter(|id| !anchor.turns_taken.contains(id))
+            .collect::<Vec<_>>()
+    };
+    match waiting.as_slice() {
+        [] => {
+            cx.state.active_investigator = None;
+            // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
+            // (Enemy 3.2); propagate its outcome rather than swallowing it.
+            investigation_phase_end(cx)
+        }
+        [only] => begin_investigator_turn(cx, *only),
+        [_, _, ..] => {
+            cx.state.active_investigator = None;
+            cx.state.continuations.push(TurnChoiceFrame::new(waiting));
+            EngineOutcome::Done
+        }
     }
 }
 
-/// The first Active investigator in player order who has not yet taken a turn
-/// this phase, by the Investigation phase anchor's record; `None` once each
-/// has. Player order holds Active investigators only, so an eliminated
-/// investigator is never offered a turn.
-fn first_waiting(state: &GameState) -> Option<InvestigatorId> {
-    let anchor = state
+/// What a [`TurnChoice`](Continuation::TurnChoice) frame asks: who takes the
+/// next turn among the investigators still waiting, each anchored to their
+/// investigator card. One of the [prompt table](prompt::request)'s helpers.
+pub(super) fn turn_choice_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &TurnChoiceFrame,
+) -> InputRequest {
+    InputRequest::pick_single(
+        "The lead investigator chooses who takes the next turn.",
+        choice::candidate_options(state, cards, &frame.candidates, |i| {
+            state.investigators[i].card_anchor()
+        }),
+    )
+}
+
+/// Resume the [`TurnChoice`](Continuation::TurnChoice) with the lead's
+/// `PickSingle`: pop the frame and begin the chosen investigator's turn.
+/// *"making this choice begins that investigator's turn"* (Appendix II 2.2),
+/// so no player window sits between the answer and the turn beginning, and
+/// the `TurnBegan` sequence — On the Lam 01010's *"Play after your turn
+/// begins."* — and the post-2.2 window follow from here.
+///
+/// Validate-first: a response of the wrong shape or an option out of range
+/// rejects and leaves the frame on the stack for a retry.
+pub(super) fn resume_turn_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: the turn choice expects InputResponse::PickSingle, got {response:?}"
+            )
+            .into(),
+        };
+    };
+    let candidates = &cx
+        .state
         .continuations
-        .topmost_of::<InvestigationPhaseFrame>()
-        .expect("first_waiting: no InvestigationPhase anchor on the stack");
-    cursor::player_order(state)
-        .into_iter()
-        .find(|id| !anchor.turns_taken.contains(id))
+        .top_expect::<TurnChoiceFrame>()
+        .candidates;
+    let Some(&who) = candidates.get(*i as usize) else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: turn choice option {i} out of range (0..{})",
+                candidates.len()
+            )
+            .into(),
+        };
+    };
+    cx.state.continuations.pop_expect::<TurnChoiceFrame>();
+    begin_investigator_turn(cx, who)
 }
 
 /// Entered by [`advance_phase_entry`] on any-to-Investigation transition, and
 /// by the mulligan's completion (`cards::resume_mulligan`) for round 1.
 /// Owns the `PhaseStarted(Investigation)` emit (Rules Reference p.24 step 2.1)
 /// and queues its forced abilities; [`investigation_after_phase_start`] opens
-/// the post-2.1 player window once they have resolved. Rotation to the
-/// first active investigator (step 2.2) runs in the
-/// [`PhaseStep::InvestigationBegins`] continuation via
-/// [`begin_investigator_turn`], the first investigator in player order
-/// first. TODO(#146): let the players choose who takes the first turn.
+/// the post-2.1 player window once they have resolved. Step 2.2, the choice of
+/// who takes the first turn ([`next_investigator_turn`]), runs in that
+/// window's continuation.
 pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // 2.1 Investigation phase begins.
     cx.events.push(Event::PhaseStarted {
@@ -464,12 +536,11 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
 /// resume once step 2.1's queued forced abilities have resolved: open the
 /// post-2.1 player window.
 ///
-/// PLAYER WINDOW (post-2.1). Rotation to the first investigator (step 2.2) runs
-/// in this window's continuation (`anchor_on_child_pop` →
+/// PLAYER WINDOW (post-2.1). Step 2.2 ([`next_investigator_turn`]) runs in this
+/// window's continuation (`anchor_on_child_pop` →
 /// [`Begins`](crate::state::InvestigationResume::Begins)), so the printed order
 /// 2.1 → window → 2.2 holds. Auto-skips inline when nothing is Fast-eligible, so
-/// single-investigator entry still makes the first investigator in player order
-/// active within the same `apply()` call.
+/// a single investigator's turn still begins within the same `apply()` call.
 fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::Begins);
     let outcome = reaction_windows::open_fast_window(
@@ -497,12 +568,12 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
-/// `who` (the chosen/default investigator) and announces
+/// `who` (the lead's choice, or the only investigator still waiting) and announces
 /// [`TimingEvent::TurnBegan`], whose `after` cell is where On the Lam 01010's
 /// *"Play after your turn begins."* is played; the post-2.2 player window opens
 /// once that sequence has resolved ([`investigation_after_turn_began`]). Called
-/// from the `InvestigationBegins` continuation (first turn of the phase) and
-/// from `end_turn` (each subsequent turn, the rules' "return to 2.2"). Step
+/// from [`next_investigator_turn`] when one investigator is left waiting, and
+/// from [`resume_turn_choice`] when the lead has chosen. Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
 /// inputs while `InvestigatorTurnBegins` is the "previous player window."
 ///
@@ -510,8 +581,8 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
 /// the emit, so the window cannot be pushed above what the emit queues.
 ///
-/// `who` must be an `Active` investigator in `seating`; callers
-/// resolve it with [`first_waiting`].
+/// `who` must be an `Active` investigator in `seating` who has not yet taken a
+/// turn this phase.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
@@ -548,8 +619,8 @@ fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)` emit and
 /// queues its forced abilities; the Investigation → Enemy transition runs from
 /// [`investigation_phase_end_transition`] once they have resolved. Called only
-/// from `end_turn`'s terminal branch (the last investigator has taken a turn
-/// this round).
+/// from [`next_investigator_turn`], once nobody is left waiting for a turn this
+/// phase.
 ///
 /// **Emits in tail position** (ADR 0003), the shape `enemy_phase_end` and
 /// `upkeep_phase_end` already had: the anchor is re-parked at
@@ -1138,17 +1209,10 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: InvestigationResume::Begins,
             ..
         })) => {
-            // Post-2.1 window closed; start the first investigator's turn
-            // (step 2.2). No skill-test-in-flight guard: runs at phase start
-            // (no test in flight) and does not transition phase.
-            // None branch: no active investigator can take a turn — the
-            // cascade-breaker park (the loss already resolved at the defeat
-            // site). See the former anchor_on_child_pop arm. Nobody has taken a
-            // turn yet, so this is the first investigator in player order.
-            match first_waiting(cx.state) {
-                Some(id) => begin_investigator_turn(cx, id),
-                None => EngineOutcome::Done,
-            }
+            // Post-2.1 window closed: step 2.2 for the round's first turn. No
+            // skill-test-in-flight guard: runs at phase start (no test in
+            // flight).
+            next_investigator_turn(cx)
         }
         // Step 2.2's queued `TurnBegan` sequence has resolved, re-exposing this
         // anchor: open the post-2.2 window.

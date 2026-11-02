@@ -126,12 +126,12 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
 }
 
 #[test]
-fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
+fn investigation_phase_emits_phase_started_and_asks_who_goes_first() {
     // Two investigators; investigation_phase should emit
     // PhaseStarted(Investigation), open the post-2.1 InvestigationBegins
     // window (which auto-skips in tests — the test registry serves no ability),
-    // and then rotate to the first investigator in player order
-    // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
+    // and then, at step 2.2, ask the lead who takes the first turn, with both
+    // investigators waiting in player order and nobody active yet.
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -146,10 +146,13 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     drive_phase(&mut cx, outcome);
 
     assert_eq!(
-        state.active_investigator,
-        Some(InvestigatorId(1)),
-        "investigation_phase must rotate to the lead (first in player order)"
+        state.continuations.top(),
+        Some(&Continuation::TurnChoice(TurnChoiceFrame::new(vec![
+            InvestigatorId(1),
+            InvestigatorId(2)
+        ]))),
     );
+    assert_eq!(state.active_investigator, None);
     assert!(
         events.iter().any(|e| matches!(
             e,

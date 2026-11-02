@@ -372,6 +372,13 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         (
+            Continuation::TurnChoice(TurnChoiceFrame::new(vec![
+                InvestigatorId(2),
+                InvestigatorId(1),
+            ])),
+            profile(PROMPT, CANCEL),
+        ),
+        (
             Continuation::HandSizeDiscard(HandSizeDiscard {
                 remaining: vec![InvestigatorId(1)],
             }),

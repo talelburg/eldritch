@@ -23,8 +23,8 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
-    SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, LocationId, Phase, SkillKind,
 };
 use game_core::test_support::{enemy, location, seat, Printed, Seat, StagedEnemy, TestSession};
 
@@ -180,6 +180,34 @@ fn played_after_the_turn_begins() {
         session.state().investigators[&INV].actions_remaining,
         before,
         "Fast: playing it costs no action",
+    );
+    session.assert_at_turn_menu(INV);
+}
+
+/// Appendix II 2.2: *"making this choice begins that investigator's turn"*.
+/// With both investigators waiting, the lead's choice of investigator 1 begins
+/// their turn, and its `TurnBegan` cell offers On the Lam.
+#[test]
+fn played_after_the_turn_the_lead_chose_begins() {
+    let window = study_board(skids(), vec![])
+        .with_seat(seat(2).at(HERE))
+        .with_seating([INV, OTHER])
+        .with_phase(Phase::Investigation)
+        .with_phase_anchor(InvestigationPhaseFrame::at(
+            InvestigationResume::AfterPhaseStartForced,
+        ))
+        .session()
+        .choose_turn(INV);
+    assert_eq!(
+        window.offered_at(&on_the_lam_of(INV)),
+        1,
+        "the cell after the chosen turn begins offers On the Lam: {:?}",
+        window.prompt(),
+    );
+    let session = play_on_the_lam(window);
+    assert_event!(
+        session.events(),
+        Event::PlayCommenced { investigator: INV, code } if code.as_str() == ON_THE_LAM
     );
     session.assert_at_turn_menu(INV);
 }
