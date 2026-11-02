@@ -1,5 +1,5 @@
-//! A failed attack against an enemy engaged with another investigator deals
-//! its damage to that investigator (#409).
+//! Regression for #409: a failed attack against an enemy engaged with another
+//! investigator deals its damage to that investigator.
 //!
 //! `data/rules-reference/rules/glossary/Fight_Action.md`:
 //!
@@ -19,8 +19,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, UseKind,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId,
+    LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{enemy, location, seat, uses, BoardLookup as _, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -102,29 +102,19 @@ fn basic_fight(session: TestSession) -> TestSession {
 /// `investigator` activates the first printed ability of their in-play
 /// `code` (a **Fight**) against whatever it targets, committing `commit`.
 fn attack_with(
-    state: GameState,
+    session: TestSession,
     investigator: InvestigatorId,
     code: &str,
     commit: &[&str],
 ) -> TestSession {
-    let card = state.in_play(investigator, code);
-    TestSession::new(state, TEST_REGISTRIES)
+    let card = session.state().in_play(investigator, code);
+    session
         .take(&TurnAction::ActivateAbility {
             investigator,
             source: AbilitySource::InPlay(card),
             address: AbilityAddress::Printed(0),
         })
         .commit(commit)
-}
-
-/// The damage on `investigator`'s in-play `card`.
-fn damage_on(state: &GameState, investigator: InvestigatorId, card: CardInstanceId) -> u8 {
-    state.investigators[&investigator]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == card)
-        .expect("the card is still in play")
-        .accumulated_damage
 }
 
 /// Case 1: a basic Fight fails against the Priest engaged with Roland. Roland
@@ -162,9 +152,12 @@ fn a_weapons_plus_one_damage_rides_on_the_redirect() {
         .at(HALLWAY)
         .skill(SkillKind::Willpower, 1)
         .in_play([(SHRIVELLING, uses(UseKind::Charges, 4))]);
-    let state = hallway(agnes, seat(2).at(HALLWAY), Some(ROLAND)).build();
-
-    let session = attack_with(state, AGNES, SHRIVELLING, &[]);
+    let session = attack_with(
+        hallway(agnes, seat(2).at(HALLWAY), Some(ROLAND)).session(),
+        AGNES,
+        SHRIVELLING,
+        &[],
+    );
 
     session.assert_at_turn_menu(AGNES);
     assert_event!(session.events(), Event::SkillTestFailed { .. });
@@ -193,9 +186,12 @@ fn a_committed_skills_success_bonus_never_reaches_the_redirect() {
         .skill(SkillKind::Combat, 1)
         .hand([VICIOUS_BLOW])
         .in_play([(AUTOMATIC, uses(UseKind::Ammo, 4))]);
-    let state = hallway_on_turn(ROLAND, seat(1).at(HALLWAY), roland, Some(AGNES)).build();
-
-    let session = attack_with(state, ROLAND, AUTOMATIC, &[VICIOUS_BLOW]);
+    let session = attack_with(
+        hallway_on_turn(ROLAND, seat(1).at(HALLWAY), roland, Some(AGNES)).session(),
+        ROLAND,
+        AUTOMATIC,
+        &[VICIOUS_BLOW],
+    );
 
     session.assert_at_turn_menu(ROLAND);
     assert_event!(session.events(), Event::SkillTestFailed { .. });
@@ -223,10 +219,10 @@ fn a_committed_skills_success_bonus_never_reaches_the_redirect() {
 #[test]
 fn the_teammate_soaks_the_redirect_and_guard_dog_stays_silent() {
     let roland = seat(2).at(HALLWAY).in_play([GUARD_DOG]);
-    let state = hallway(fighter(), roland, Some(ROLAND)).build();
-    let dog = state.in_play(ROLAND, GUARD_DOG);
+    let session = hallway(fighter(), roland, Some(ROLAND)).session();
+    let dog = session.state().in_play(ROLAND, GUARD_DOG);
 
-    let session = basic_fight(TestSession::new(state, TEST_REGISTRIES));
+    let session = basic_fight(session);
 
     assert_eq!(
         session.prompt().responder,
@@ -238,7 +234,13 @@ fn the_teammate_soaks_the_redirect_and_guard_dog_stays_silent() {
 
     // No Guard Dog window: the next stop is Agnes's turn, after the Retaliate.
     session.assert_at_turn_menu(AGNES);
-    assert_eq!(damage_on(session.state(), ROLAND, dog), 1);
+    assert_eq!(
+        session
+            .state()
+            .card_in_play(ROLAND, GUARD_DOG)
+            .accumulated_damage,
+        1
+    );
     assert_eq!(session.state().investigators[&ROLAND].damage(), 0);
     assert_eq!(session.state().enemies[&PRIEST].damage, 0);
     assert_no_event!(session.events(), Event::EnemyDamaged { .. });

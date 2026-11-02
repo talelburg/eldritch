@@ -38,6 +38,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 |---|---|
 | #371 | Location-attachment ownership, PR #984 |
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
+| #409 | A failed Fight deals the attack's damage to the investigator engaged with the attacked enemy, PR #1301 |
 | #458 | Deterministic prompt ids: a prompt is named by its log position, with #1230, PR #1297 |
 | #570 | Replay integrity; not planned, superseded by #1224's label-matched replay |
 | #573 | Act clue thresholds scale per investigator; an act with no clue objective carries none, PR #1298 |

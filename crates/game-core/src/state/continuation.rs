@@ -1798,9 +1798,12 @@ pub enum SkillTestStep {
     FireOnCommit,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
-    /// pushes its `discover_clue` effect for the drive loop (yielding);
-    /// Fight / Evade / None run synchronously. On failure the follow-up
-    /// is skipped (follow-ups are success-only). Pre-advances to
+    /// pushes its `discover_clue` effect and the Evade follow-up its
+    /// `EnemyEvaded` timing event, each yielding to the drive loop; Fight and
+    /// None run synchronously. On failure the follow-up is skipped, except a
+    /// Fight's: the attack's damage is dealt to the investigator engaged with
+    /// the attacked enemy, if that is someone other than the fighter, and the
+    /// deal's frame yields the same way. Pre-advances to
     /// [`ApplyResultEffect`](Self::ApplyResultEffect).
     ApplyFollowUp,
     /// RR ST.7 part 2 — push the success/failure card effect: `on_success`

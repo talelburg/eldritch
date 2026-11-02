@@ -1166,31 +1166,32 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
         .continuation = SkillTestStep::ApplyResultEffect;
 
     // Each basic action owns its after-test step; the test procedure only
-    // dispatches by kind.
-    if !resolved(cx).succeeded {
-        if let SkillTestFollowUp::Fight {
-            enemy,
-            extra_damage,
-        } = follow_up
-        {
-            return fight::after_failed_test(cx, investigator, enemy, extra_damage.as_ref());
-        }
-        return EngineOutcome::Done;
-    }
-    match follow_up {
-        SkillTestFollowUp::None => {}
-        SkillTestFollowUp::Investigate => investigate::after_test(cx, investigator),
-        SkillTestFollowUp::Fight {
-            enemy,
-            extra_damage,
-        } => {
+    // dispatches by kind and outcome.
+    match (resolved(cx).succeeded, follow_up) {
+        (true, SkillTestFollowUp::Investigate) => investigate::after_test(cx, investigator),
+        (
+            true,
+            SkillTestFollowUp::Fight {
+                enemy,
+                extra_damage,
+            },
+        ) => {
             if let Err(rejection) =
                 fight::after_test(cx, investigator, enemy, extra_damage.as_ref())
             {
                 return rejection;
             }
         }
-        SkillTestFollowUp::Evade { enemy } => evade::after_test(cx, investigator, enemy),
+        (
+            false,
+            SkillTestFollowUp::Fight {
+                enemy,
+                extra_damage,
+            },
+        ) => return fight::after_failed_test(cx, investigator, enemy, extra_damage.as_ref()),
+        (true, SkillTestFollowUp::Evade { enemy }) => evade::after_test(cx, investigator, enemy),
+        (_, SkillTestFollowUp::None)
+        | (false, SkillTestFollowUp::Investigate | SkillTestFollowUp::Evade { .. }) => {}
     }
     EngineOutcome::Done
 }
