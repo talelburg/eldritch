@@ -10,7 +10,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use protocol::{
     Applied, ClientMessage, LogPosition, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
     CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
@@ -21,7 +21,7 @@ use sqlx::SqlitePool;
 use tokio::time;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::common::{self, TEST_SCENARIO_ID};
+use crate::common::{self, OTHER_ACCOUNT, TEST_SCENARIO_ID};
 
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
     let creator = common::test_account(pool).await;
@@ -235,21 +235,21 @@ async fn a_second_tab_answering_the_prompt_already_answered_is_refused_as_stale(
 async fn a_stale_answer_from_another_account_is_refused_as_stale() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-stale-other").await;
-    common::add_account(&pool, "Sam").await;
+    common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool.clone()).await;
 
     let mut tester = common::connect(addr, "g-stale-other").await;
-    let mut sam = common::connect_as(addr, "g-stale-other", "Sam").await;
+    let mut other = common::connect_as(addr, "g-stale-other", OTHER_ACCOUNT).await;
     let prompt = hello_prompt(common::recv(&mut tester).await);
-    let _ = common::recv(&mut sam).await;
+    let _ = common::recv(&mut other).await;
     common::send(&mut tester, &keep_opening_hand(prompt)).await;
     let _ = common::recv_within(&mut tester).await;
-    let _ = common::recv_within(&mut sam).await;
+    let _ = common::recv_within(&mut other).await;
 
     // The position is checked first, whoever sends it.
-    common::send(&mut sam, &keep_opening_hand(prompt)).await;
+    common::send(&mut other, &keep_opening_hand(prompt)).await;
 
-    assert_stale(&mut sam).await;
+    assert_stale(&mut other).await;
     assert_eq!(common::stored_rows(&pool, "g-stale-other").await, (1, 1));
 }
 
@@ -257,15 +257,16 @@ async fn a_stale_answer_from_another_account_is_refused_as_stale() {
 async fn another_accounts_answer_is_refused_as_not_yours_and_nothing_is_stored() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-not-yours").await;
-    common::add_account(&pool, "Sam").await;
+    common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool.clone()).await;
 
-    // The creator holds the one investigator, so Sam is a viewer.
-    let mut sam = common::connect_as(addr, "g-not-yours", "Sam").await;
-    let prompt = hello_prompt(common::recv(&mut sam).await);
-    common::send(&mut sam, &keep_opening_hand(prompt)).await;
+    // The creator holds the one investigator, so the other account is a
+    // viewer.
+    let mut other = common::connect_as(addr, "g-not-yours", OTHER_ACCOUNT).await;
+    let prompt = hello_prompt(common::recv(&mut other).await);
+    common::send(&mut other, &keep_opening_hand(prompt)).await;
 
-    match common::recv_within(&mut sam).await {
+    match common::recv_within(&mut other).await {
         ServerMessage::Rejected(Refusal::NotYours) => {}
         other => panic!("expected a NotYours refusal, got {other:?}"),
     }
@@ -277,13 +278,13 @@ async fn hello_names_each_account_and_the_creator_holds_every_investigator() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-assigned").await;
     let creator = common::test_account(&pool).await;
-    let sam = common::add_account(&pool, "Sam").await.id;
+    let other = common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool).await;
 
     let mut tester_ws = common::connect(addr, "g-assigned").await;
-    let mut sam_ws = common::connect_as(addr, "g-assigned", "Sam").await;
+    let mut other_ws = common::connect_as(addr, "g-assigned", OTHER_ACCOUNT).await;
 
-    for (ws, account) in [(&mut tester_ws, creator), (&mut sam_ws, sam)] {
+    for (ws, account) in [(&mut tester_ws, creator), (&mut other_ws, other)] {
         let ServerMessage::Hello {
             you,
             assigned,
@@ -310,16 +311,16 @@ async fn hello_names_each_account_and_the_creator_holds_every_investigator() {
 async fn every_account_is_sent_the_answer_with_no_rng_state() {
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-per-account").await;
-    common::add_account(&pool, "Sam").await;
+    common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool).await;
 
     let mut tester = common::connect(addr, "g-per-account").await;
-    let mut sam = common::connect_as(addr, "g-per-account", "Sam").await;
+    let mut other = common::connect_as(addr, "g-per-account", OTHER_ACCOUNT).await;
     let prompt = hello_prompt(common::recv(&mut tester).await);
-    let _ = common::recv(&mut sam).await;
+    let _ = common::recv(&mut other).await;
     common::send(&mut tester, &keep_opening_hand(prompt)).await;
 
-    for ws in [&mut tester, &mut sam] {
+    for ws in [&mut tester, &mut other] {
         let ServerMessage::Applied(Applied { by, state, .. }) = common::recv_within(ws).await
         else {
             panic!("expected Applied");

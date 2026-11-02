@@ -160,7 +160,7 @@ mod tests {
 
     use super::*;
 
-    /// ID-token claims as Google sends them for `sam@gmail.com`, with
+    /// ID-token claims as Google sends them for `user1@gmail.com`, with
     /// `email_verified` set to `verified`, or left out when it is `None`.
     fn claims(verified: Option<bool>) -> CoreIdTokenClaims {
         let mut claims = json!({
@@ -169,7 +169,7 @@ mod tests {
             "exp": 1_900_000_000,
             "iat": 1_899_999_000,
             "sub": "110169484474386276334",
-            "email": "sam@gmail.com",
+            "email": "user1@gmail.com",
         });
         if let Some(verified) = verified {
             claims["email_verified"] = Value::Bool(verified);
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(
             reported_emails(&claims(Some(true))),
             vec![ReportedEmail {
-                address: "sam@gmail.com".to_string(),
+                address: "user1@gmail.com".to_string(),
                 verified: true,
             }]
         );
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(
             reported_emails(&claims(Some(false))),
             vec![ReportedEmail {
-                address: "sam@gmail.com".to_string(),
+                address: "user1@gmail.com".to_string(),
                 verified: false,
             }]
         );
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(
             reported_emails(&claims(None)),
             vec![ReportedEmail {
-                address: "sam@gmail.com".to_string(),
+                address: "user1@gmail.com".to_string(),
                 verified: false,
             }]
         );

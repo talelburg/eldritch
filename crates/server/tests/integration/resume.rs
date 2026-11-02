@@ -11,7 +11,7 @@
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use protocol::{Applied, ClientMessage, LogPosition, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;

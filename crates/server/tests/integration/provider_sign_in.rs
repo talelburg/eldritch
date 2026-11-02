@@ -19,12 +19,12 @@ use url::Url;
 
 use crate::common::{self, FakeProvider, FAILING_CODE, FAKE_ORIGIN, FAKE_STATE};
 
-/// The pool, with Sam on the allowlist as `sam@gmail.com`.
-async fn pool_with_sam() -> SqlitePool {
+/// The pool, with User1 on the allowlist as `user1@gmail.com`.
+async fn pool_with_user1() -> SqlitePool {
     let pool = common::memory_pool().await;
-    accounts::add(&pool, "Sam", &["sam@gmail.com".to_string()])
+    accounts::add(&pool, "User1", &["user1@gmail.com".to_string()])
         .await
-        .expect("add Sam");
+        .expect("add User1");
     pool
 }
 
@@ -179,13 +179,13 @@ async fn a_login_the_provider_cannot_start_gets_the_try_again_page_and_no_cookie
     assert_eq!(common::set_cookie(&headers, auth::SIGN_IN_COOKIE), None);
 }
 
-/// Sam's first verified address isn't on the list; the second is.
+/// User1's first verified address isn't on the list; the second is.
 #[tokio::test]
 async fn a_verified_address_that_is_not_the_first_signs_in_as_its_account() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@work.com", true), ("Sam@Gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@work.com", true), ("User1@Gmail.com", true)]),
         false,
     );
 
@@ -198,12 +198,12 @@ async fn a_verified_address_that_is_not_the_first_signs_in_as_its_account() {
     let (status, _, body) = common::get(&app, "/auth/me", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK);
     let signed_in: SignedIn = serde_json::from_str(&body).expect("an account");
-    assert_eq!(signed_in.display_name, "Sam");
+    assert_eq!(signed_in.display_name, "User1");
 }
 
 #[tokio::test]
 async fn the_callback_clears_the_in_flight_cookie() {
-    let app = common::provider_app(pool_with_sam().await, FakeProvider::reporting(&[]), false);
+    let app = common::provider_app(pool_with_user1().await, FakeProvider::reporting(&[]), false);
 
     let (_, headers, _) = sign_in(&app, "a-code").await;
 
@@ -212,27 +212,27 @@ async fn the_callback_clears_the_in_flight_cookie() {
 
 #[tokio::test]
 async fn an_unverified_address_is_refused_even_on_the_list() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", false)]),
+        FakeProvider::reporting(&[("user1@gmail.com", false)]),
         false,
     );
 
     let (status, _, page) = sign_in(&app, "a-code").await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(page.contains("sam@gmail.com"), "{page}");
+    assert!(page.contains("user1@gmail.com"), "{page}");
     assert!(page.contains("not verified"), "{page}");
     assert_eq!(common::session_count(&pool).await, 0);
 }
 
 #[tokio::test]
 async fn an_address_not_on_the_list_gets_the_ask_the_host_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("alex@work.com", true), ("alex@<b>home</b>.com", true)]),
+        FakeProvider::reporting(&[("user2@work.com", true), ("user2@<b>home</b>.com", true)]),
         false,
     );
 
@@ -240,9 +240,9 @@ async fn an_address_not_on_the_list_gets_the_ask_the_host_page() {
 
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(page.contains("Fake"), "names the provider: {page}");
-    assert!(page.contains("alex@work.com"), "{page}");
+    assert!(page.contains("user2@work.com"), "{page}");
     assert!(
-        page.contains("alex@&lt;b&gt;home&lt;/b&gt;.com"),
+        page.contains("user2@&lt;b&gt;home&lt;/b&gt;.com"),
         "escaped: {page}"
     );
     assert!(page.contains("Ask the host"), "{page}");
@@ -253,17 +253,17 @@ async fn an_address_not_on_the_list_gets_the_ask_the_host_page() {
 /// the page doesn't claim the provider verified nothing.
 #[tokio::test]
 async fn a_verified_address_that_cannot_be_an_email_is_listed_as_unusable() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam-at-gmail", true)]),
+        FakeProvider::reporting(&[("user1-at-gmail", true)]),
         false,
     );
 
     let (status, _, page) = sign_in(&app, "a-code").await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(page.contains("sam-at-gmail"), "{page}");
+    assert!(page.contains("user1-at-gmail"), "{page}");
     assert!(page.contains("aren't email addresses"), "{page}");
     assert!(!page.contains("no verified address"), "{page}");
     assert_eq!(common::session_count(&pool).await, 0);
@@ -271,29 +271,29 @@ async fn a_verified_address_that_cannot_be_an_email_is_listed_as_unusable() {
 
 #[tokio::test]
 async fn an_address_on_a_disabled_entry_gets_the_ask_the_host_page() {
-    let pool = pool_with_sam().await;
-    let sam = EntryRef::Email(Email::parse("sam@gmail.com").expect("an email"));
-    accounts::remove(&pool, &sam).await.expect("disable Sam");
+    let pool = pool_with_user1().await;
+    let user1 = EntryRef::Email(Email::parse("user1@gmail.com").expect("an email"));
+    accounts::remove(&pool, &user1).await.expect("disable User1");
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
 
     let (status, _, page) = sign_in(&app, "a-code").await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(page.contains("sam@gmail.com"), "{page}");
+    assert!(page.contains("user1@gmail.com"), "{page}");
     assert!(page.contains("Ask the host"), "{page}");
     assert_eq!(common::session_count(&pool).await, 0);
 }
 
 #[tokio::test]
 async fn a_callback_without_the_in_flight_cookie_gets_the_try_again_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
 
@@ -311,10 +311,10 @@ async fn a_callback_without_the_in_flight_cookie_gets_the_try_again_page() {
 
 #[tokio::test]
 async fn a_callback_whose_state_does_not_match_gets_the_try_again_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
     let (_, cookie) = start(&app).await;
@@ -332,10 +332,10 @@ async fn a_callback_whose_state_does_not_match_gets_the_try_again_page() {
 
 #[tokio::test]
 async fn a_callback_with_a_forged_cookie_gets_the_try_again_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
     let forged = format!(
@@ -356,10 +356,10 @@ async fn a_callback_with_a_forged_cookie_gets_the_try_again_page() {
 
 #[tokio::test]
 async fn a_sign_in_cancelled_at_the_provider_gets_the_try_again_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
     let (state, cookie) = start(&app).await;
@@ -380,10 +380,10 @@ async fn a_sign_in_cancelled_at_the_provider_gets_the_try_again_page() {
 
 #[tokio::test]
 async fn an_exchange_that_fails_at_the_provider_gets_the_try_again_page() {
-    let pool = pool_with_sam().await;
+    let pool = pool_with_user1().await;
     let app = common::provider_app(
         pool.clone(),
-        FakeProvider::reporting(&[("sam@gmail.com", true)]),
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
         false,
     );
 

@@ -226,7 +226,10 @@ async fn a_game_stored_before_games_recorded_a_creator_is_still_a_version_error(
     .await
     .expect("store a version 2 game");
 
-    MIGRATOR.run(&pool).await.expect("migrate to the current schema");
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("migrate to the current schema");
     let reason = expect_unresumable(&pool, "stored-before").await;
 
     assert_eq!(reason, UnresumableReason::Version { found: 2 });

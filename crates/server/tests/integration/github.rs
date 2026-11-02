@@ -42,9 +42,9 @@ async fn emails(headers: HeaderMap) -> Response {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     Json(json!([
-        { "email": "sam@work.com", "primary": true, "verified": true, "visibility": "public" },
-        { "email": "sam@gmail.com", "primary": false, "verified": true, "visibility": null },
-        { "email": "sam@old.com", "primary": false, "verified": false, "visibility": null },
+        { "email": "user1@work.com", "primary": true, "verified": true, "visibility": "public" },
+        { "email": "user1@gmail.com", "primary": false, "verified": true, "visibility": null },
+        { "email": "user1@old.com", "primary": false, "verified": false, "visibility": null },
     ]))
     .into_response()
 }
@@ -106,9 +106,9 @@ async fn github_reports_every_address_with_its_own_verified_flag() {
     assert_eq!(
         reported,
         vec![
-            email("sam@work.com", true),
-            email("sam@gmail.com", true),
-            email("sam@old.com", false),
+            email("user1@work.com", true),
+            email("user1@gmail.com", true),
+            email("user1@old.com", false),
         ]
     );
 }

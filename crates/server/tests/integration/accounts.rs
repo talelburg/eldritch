@@ -73,26 +73,26 @@ fn list(db: &TempDb) -> String {
 fn an_added_account_is_listed() {
     let db = TempDb::new("accounts");
 
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
 
-    assert_eq!(list(&db), "1\tSam\tsam@gmail.com\tenabled\n");
+    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com\tenabled\n");
 }
 
 #[test]
 fn an_email_another_entry_holds_is_refused_naming_that_entry() {
     let db = TempDb::new("accounts");
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
 
-    for email in ["sam@gmail.com", "SAM@gmail.com"] {
-        let stderr = refused(&db, &["add", "--name", "Alex", "alex@x.com", email]);
+    for email in ["user1@gmail.com", "USER1@gmail.com"] {
+        let stderr = refused(&db, &["add", "--name", "User2", "user2@x.com", email]);
         assert!(
-            stderr.contains("sam@gmail.com is already on entry 1 (Sam)"),
-            "refusal should name Sam's entry: {stderr}"
+            stderr.contains("user1@gmail.com is already on entry 1 (User1)"),
+            "refusal should name User1's entry: {stderr}"
         );
     }
 
     // Nothing of a refused entry is kept, not even its other email.
-    assert_eq!(list(&db), "1\tSam\tsam@gmail.com\tenabled\n");
+    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com\tenabled\n");
 }
 
 #[test]
@@ -101,24 +101,24 @@ fn one_entry_holds_several_emails_lowercased() {
 
     accounts(
         &db,
-        &["add", "--name", "Sam", "Sam@Work.com", "sam@gmail.com"],
+        &["add", "--name", "User1", "User1@Work.com", "user1@gmail.com"],
     );
 
-    assert_eq!(list(&db), "1\tSam\tsam@gmail.com, sam@work.com\tenabled\n");
+    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com, user1@work.com\tenabled\n");
 }
 
 #[test]
 fn a_removed_entry_is_listed_disabled() {
     let db = TempDb::new("accounts");
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
-    accounts(&db, &["add", "--name", "Alex", "alex@x.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
+    accounts(&db, &["add", "--name", "User2", "user2@x.com"]);
 
-    accounts(&db, &["remove", "SAM@gmail.com"]);
+    accounts(&db, &["remove", "USER1@gmail.com"]);
     accounts(&db, &["remove", "2"]);
 
     assert_eq!(
         list(&db),
-        "1\tSam\tsam@gmail.com\tdisabled\n2\tAlex\talex@x.com\tdisabled\n"
+        "1\tUser1\tuser1@gmail.com\tdisabled\n2\tUser2\tuser2@x.com\tdisabled\n"
     );
 }
 
@@ -126,17 +126,17 @@ fn a_removed_entry_is_listed_disabled() {
 #[test]
 fn removing_by_a_padded_mixed_case_email_disables_its_entry() {
     let db = TempDb::new("accounts");
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
 
-    accounts(&db, &["remove", " SAM@gmail.com "]);
+    accounts(&db, &["remove", " USER1@gmail.com "]);
 
-    assert_eq!(list(&db), "1\tSam\tsam@gmail.com\tdisabled\n");
+    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com\tdisabled\n");
 }
 
 #[test]
 fn removing_an_entry_nobody_holds_is_refused() {
     let db = TempDb::new("accounts");
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
 
     let by_email = refused(&db, &["remove", "nobody@x.com"]);
     assert!(
@@ -146,33 +146,33 @@ fn removing_an_entry_nobody_holds_is_refused() {
     let by_id = refused(&db, &["remove", "7"]);
     assert!(by_id.contains("no entry matches 7"), "{by_id}");
 
-    assert_eq!(list(&db), "1\tSam\tsam@gmail.com\tenabled\n");
+    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com\tenabled\n");
 }
 
-/// Removing an entry ends its sessions: the cookie Sam signed in with fails
-/// on Sam's next request and on Sam's next connect. Alex, signed in too, is
-/// untouched.
+/// Removing an entry ends its sessions: the cookie User1 signed in with fails
+/// on User1's next request and on User1's next connect. User2, signed in too,
+/// is untouched.
 #[tokio::test]
 async fn removing_an_entry_ends_its_sessions() {
     let db = TempDb::new("accounts-sessions");
     let pool = db::connect_pool(&db.url()).await.expect("open the file");
     MIGRATOR.run(&pool).await.expect("migrate");
     common::create_game(&pool, "g-removed").await;
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
-    accounts(&db, &["add", "--name", "Alex", "alex@x.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
+    accounts(&db, &["add", "--name", "User2", "user2@x.com"]);
     let addr = common::serve_dev_auth(pool, true).await;
-    let sam = common::sign_in_over_http(addr, "Sam").await;
-    let alex = common::sign_in_over_http(addr, "Alex").await;
+    let user1 = common::sign_in_over_http(addr, "User1").await;
+    let user2 = common::sign_in_over_http(addr, "User2").await;
 
-    accounts(&db, &["remove", "sam@gmail.com"]);
+    accounts(&db, &["remove", "user1@gmail.com"]);
 
     assert_eq!(
-        common::me(addr, Some(&sam)).await.status(),
+        common::me(addr, Some(&user1)).await.status(),
         StatusCode::UNAUTHORIZED
     );
-    let mut ws = common::connect_with(addr, "g-removed", Some(&sam)).await;
+    let mut ws = common::connect_with(addr, "g-removed", Some(&user1)).await;
     common::assert_closed_unauthenticated(&mut ws).await;
-    assert_eq!(common::me(addr, Some(&alex)).await.status(), StatusCode::OK);
+    assert_eq!(common::me(addr, Some(&user2)).await.status(), StatusCode::OK);
 }
 
 #[test]
@@ -196,13 +196,13 @@ fn with_no_subcommand_the_binary_serves() {
 #[test]
 fn with_dev_auth_the_binary_serves_the_dev_picker() {
     let db = TempDb::new("accounts-dev-auth");
-    accounts(&db, &["add", "--name", "Sam", "sam@gmail.com"]);
+    accounts(&db, &["add", "--name", "User1", "user1@gmail.com"]);
 
     let responses = serve_binary(&db, &["--dev-auth"], &["/auth/dev"]);
 
     assert!(
-        responses[0].starts_with("HTTP/1.1 200") && responses[0].contains(">Sam</button>"),
-        "the dev picker should list Sam: {}",
+        responses[0].starts_with("HTTP/1.1 200") && responses[0].contains(">User1</button>"),
+        "the dev picker should list User1: {}",
         responses[0]
     );
 }

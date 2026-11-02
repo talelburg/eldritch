@@ -14,7 +14,8 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::GameState;
 use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use server::session::GameSession;
 

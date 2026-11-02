@@ -143,7 +143,7 @@ async fn signed_out_me_lists_no_method_without_the_dev_picker() {
 #[tokio::test]
 async fn picking_an_account_on_the_dev_picker_signs_in_as_it() {
     let pool = common::memory_pool().await;
-    common::add_test_account(&pool).await;
+    common::test_account(&pool).await;
     let addr = common::serve_dev_auth(pool, true).await;
 
     let cookie = common::sign_in_over_http(addr, TEST_ACCOUNT).await;

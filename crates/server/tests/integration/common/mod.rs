@@ -164,28 +164,35 @@ pub(crate) const FIXTURE_DIST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test
 /// signs in as.
 pub(crate) const TEST_ACCOUNT: &str = "Tester";
 
-/// Add the [`TEST_ACCOUNT`] entry to `pool` unless it is there already, so a
-/// test that serves the same database twice can call it twice.
-pub(crate) async fn add_test_account(pool: &SqlitePool) {
-    let email = "tester@example.com".to_string();
-    match accounts::add(pool, TEST_ACCOUNT, &[email]).await {
-        Ok(_) | Err(AccountsError::EmailTaken { .. }) => {}
-        Err(error) => panic!("add the test account: {error}"),
-    }
-}
+/// The display name of a second account, beside the [`TEST_ACCOUNT`], for a
+/// test of what an account holding no investigator may do.
+pub(crate) const OTHER_ACCOUNT: &str = "Other";
 
 /// The id of the [`TEST_ACCOUNT`] in `pool`, adding it first if it isn't
 /// there: the creator a test's game is stored with, which a stored game's
 /// `creator` column requires to exist.
 pub(crate) async fn test_account(pool: &SqlitePool) -> AccountId {
-    add_test_account(pool).await;
-    accounts::list(pool)
-        .await
-        .expect("list the accounts")
-        .into_iter()
-        .find(|account| account.display_name == TEST_ACCOUNT)
-        .expect("the test account was added")
-        .id
+    add_account(pool, TEST_ACCOUNT).await
+}
+
+/// The id of the account named `name` in `pool`'s allowlist, adding it first
+/// if it isn't there, so a test that serves the same database twice can call
+/// it twice. Call it before the pool is served.
+pub(crate) async fn add_account(pool: &SqlitePool, name: &str) -> AccountId {
+    let email = format!("{}@example.com", name.to_lowercase());
+    match accounts::add(pool, name, &[email]).await {
+        Ok(account) => account.id,
+        Err(AccountsError::EmailTaken { .. }) => {
+            accounts::list(pool)
+                .await
+                .expect("list the accounts")
+                .into_iter()
+                .find(|account| account.display_name == name)
+                .unwrap_or_else(|| panic!("the account {name} was added"))
+                .id
+        }
+        Err(error) => panic!("add the account {name}: {error}"),
+    }
 }
 
 /// The server's router over `pool` and `registries`, with the dev sign-in
@@ -215,7 +222,7 @@ async fn serve(app: Router) -> SocketAddr {
 /// Spawn the server with the dev sign-in on and the [`TEST_ACCOUNT`] on its
 /// allowlist; return its bound address.
 pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
-    add_test_account(&pool).await;
+    test_account(&pool).await;
     serve_dev_auth(pool, true).await
 }
 
@@ -226,7 +233,7 @@ pub(crate) async fn spawn_server_with(
     pool: SqlitePool,
     configure: impl FnOnce(AppState) -> AppState,
 ) -> SocketAddr {
-    add_test_account(&pool).await;
+    test_account(&pool).await;
     let state = AppState::new(pool, REGISTRIES).with_dev_auth(true);
     serve(server::app(configure(state))).await
 }
@@ -521,7 +528,7 @@ pub(crate) async fn sign_in_over_http(addr: SocketAddr, name: &str) -> String {
 /// Serve the router for a `POST /games` test: the dev sign-in on and the
 /// [`TEST_ACCOUNT`] signed in. Returns the router and the session cookie.
 pub(crate) async fn signed_in_app(pool: SqlitePool, registries: Registries) -> (Router, String) {
-    add_test_account(&pool).await;
+    test_account(&pool).await;
     let app = dev_auth_app(pool, registries, true);
     let cookie = sign_in_through(InProcess(&app), TEST_ACCOUNT).await;
     (app, cookie)
@@ -533,16 +540,6 @@ pub(crate) type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// websocket to a game with that session.
 pub(crate) async fn connect(addr: SocketAddr, game_id: &str) -> Client {
     connect_as(addr, game_id, TEST_ACCOUNT).await
-}
-
-/// Add an account named `name` to `pool`'s allowlist, beside the
-/// [`TEST_ACCOUNT`], so a test can sign a second account in. Call it before
-/// the pool is served.
-pub(crate) async fn add_account(pool: &SqlitePool, name: &str) -> accounts::Account {
-    let email = format!("{}@example.com", name.to_lowercase());
-    accounts::add(pool, name, &[email])
-        .await
-        .unwrap_or_else(|error| panic!("add the account {name}: {error}"))
 }
 
 /// Sign in as the account named `name` through the dev picker, then open a
