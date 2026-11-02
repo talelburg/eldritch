@@ -437,7 +437,7 @@ mod tests {
     use card_dsl::dsl::SkillTestKind;
 
     use super::*;
-    use crate::engine::{self, InputKind, ResumeToken};
+    use crate::engine::{self, InputKind};
     use crate::event::Event;
     use crate::state::SkillKind;
     use crate::state::{ChaosBag, ChaosToken, Continuation, GameStateBuilder, SkillTestId};
@@ -649,7 +649,6 @@ mod tests {
                         events: vec![],
                         outcome: EngineOutcome::AwaitingInput {
                             request: req("pick first"),
-                            resume_token: ResumeToken(0),
                         },
                     }
                 }
@@ -665,7 +664,6 @@ mod tests {
                         events: vec![],
                         outcome: EngineOutcome::AwaitingInput {
                             request: req("pick second"),
-                            resume_token: ResumeToken(1),
                         },
                     }
                 }
@@ -707,7 +705,6 @@ mod tests {
             events: vec![],
             outcome: EngineOutcome::AwaitingInput {
                 request: req("nothing scripted for me"),
-                resume_token: ResumeToken(42),
             },
         };
         let mut resolver = ScriptedResolver::new();
@@ -736,7 +733,6 @@ mod tests {
                     }],
                     outcome: EngineOutcome::AwaitingInput {
                         request: req("pick"),
-                        resume_token: ResumeToken(0),
                     },
                 },
                 2 => ApplyResult {
