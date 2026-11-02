@@ -49,6 +49,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
+| #1132 | An eliminated investigator's card that later leaves play is removed from the game into their own pile, PR #1302 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
 | #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
 | #1179 | `mount_board` for the web tests, PR #1260 |
@@ -92,7 +93,7 @@ landed, before phase 9 is scoped.
 
 **3. Rules fixes, after #1234.**
 
-- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132, #1185.
+- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185.
 - Engagement: #151, card 07's tie frame.
 - ST.7: #1086 → #642 → #65. #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.

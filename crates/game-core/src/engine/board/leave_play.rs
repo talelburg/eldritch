@@ -23,14 +23,23 @@
 //! (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
 //! controls her temporarily during "The Gathering" scenario (i.e. while she is
 //! technically not a part of that player's deck), remove her from the game (do
-//! not place her into any discard pile)."* An investigator owner who is no
-//! longer in the game has no pile either, and their card is removed to the
-//! game's pile.
+//! not place her into any discard pile)."*
 //!
-//! [`place_in_victory_display`] is the one exit the owner does not route: the
-//! victory display is *"an out-of-play game area shared by all players"*
-//! (`glossary/Victory_Display_Victory_Points.md`), so every card that takes it
-//! lands in the one display.
+//! **An eliminated owner overrides every exit.** `glossary/Elimination.md`
+//! step 1: *"Any card that player owns but does not control that is in play
+//! remains in play, but if that card leaves play it is removed from the
+//! game."* So a card whose owner is an investigator no longer
+//! [`Status::Active`] — their enemy weakness, such as Stubborn Detective 01103,
+//! defeated after they were — is removed from the game into that
+//! investigator's own removed-from-game pile, whichever exit it took. It never
+//! reaches a discard pile (elimination removed theirs from the game) or the
+//! victory display. The eliminated investigator stays in the investigators map,
+//! so their pile is still there to file into.
+//!
+//! [`place_in_victory_display`] is the one exit an Active owner does not
+//! route: the victory display is *"an out-of-play game area shared by all
+//! players"* (`glossary/Victory_Display_Victory_Points.md`), so every card that
+//! takes it lands in the one display.
 //!
 //! # Leaves Play's consequences
 //!
@@ -70,9 +79,11 @@
 //! eliminated investigator. Trigger any “when the game ends” abilities on each
 //! weakness the eliminated investigator owns that is in play. Then, remove
 //! those weaknesses from the game."* The game is over for that investigator,
-//! so nothing they hold stays in play. Elimination's drains take
-//! [`remove_from_game_on_elimination`] and [`discard_from_play_on_elimination`],
-//! which skip the check.
+//! so the cards elimination takes out of play leave even where they cannot
+//! leave play. Elimination's drains take [`remove_from_game_on_elimination`]
+//! and [`discard_from_play_on_elimination`], which skip the check. (Not every
+//! card the investigator owns leaves then: an enemy weakness, which no player
+//! controls, stays in play under step 1 — see "Filed by its owner".)
 //!
 //! # One event per card
 //!
@@ -100,8 +111,8 @@ use crate::engine::board::{self, Placement};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, InvestigatorId, LocationId, Owner,
-    Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, GameState, InvestigatorId,
+    LocationId, Owner, Status, Zone,
 };
 
 /// A card that can leave play: a card instance, wherever it sits on the board,
@@ -133,8 +144,8 @@ impl From<EnemyId> for LeavingCard {
 
 /// **Discard `card` from play**, wherever it sits, and file it by its owner:
 /// an investigator's card to their discard, an encounter card to the encounter
-/// discard, and a scenario-owned card out of the game (see the
-/// `leave_play` module docs). Its attachments are discarded with it, each by its own
+/// discard, and a scenario-owned card or an eliminated investigator's out of
+/// the game (see the `leave_play` module docs). Its attachments are discarded with it, each by its own
 /// owner, and its tokens go away.
 ///
 /// Returns the [`Placement`] the card left, from which a caller derives the
@@ -208,7 +219,9 @@ pub(crate) fn discard_from_play_on_elimination(
 /// **Place `card` in the victory display**, wherever it sits, worth `victory`
 /// points. The victory display is *"an out-of-play game area shared by all
 /// players"* (`glossary/Victory_Display_Victory_Points.md`), so the card goes
-/// there whoever owns it, and emits [`Event::EnteredVictoryDisplay`]. Its
+/// there whichever Active owner it has, and emits
+/// [`Event::EnteredVictoryDisplay`]; an eliminated investigator's card is
+/// removed from the game instead (see the `leave_play` module docs). Its
 /// attachments are *discarded*, each by its own owner, and its tokens go away,
 /// as for every exit.
 ///
@@ -270,7 +283,8 @@ pub(crate) fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bo
 
 /// Discard `code`, a card outside any zone of play, to its `owner`'s discard
 /// pile, and emit its [`Event::CardDiscarded`] naming `from`. Filed through the
-/// same router as the leave-play exits.
+/// same router as the leave-play exits, so an eliminated owner's card is
+/// removed from the game instead.
 ///
 /// The card never entered play, so it takes no leave-play cascade: it has no
 /// tokens and no attachments. `glossary/Discard_Piles.md`: *"Any time a card is
@@ -380,7 +394,17 @@ fn discard_attachments(cx: &mut Cx, attachments: Vec<CardInPlay>, from: Zone) {
 /// Wendy's Amulet 01014's *"discard an event from play: Place it on the bottom
 /// of your deck instead of in your discard pile"*. An eliminated investigator's
 /// sweep never reaches it: step 1 has already taken the Amulet out of play.
+///
+/// **An eliminated owner overrides the exit.** A card whose owner is an
+/// investigator no longer [`Status::Active`] is removed from the game into that
+/// investigator's own pile, whichever exit it took — before the Amulet's
+/// redirect and before the victory display (see the `leave_play` module docs).
 fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
+    let exit = if owner_is_eliminated(cx.state, owner) {
+        Exit::RemoveFromGame
+    } else {
+        exit
+    };
     if let (Exit::Discard, Owner::Investigator(id)) = (&exit, owner) {
         if (cx.cards.metadata_for)(&code).map(CardMetadata::card_type) == Some(CardType::Event)
             && redirect_event_to_bottom_of_deck(cx, id, &code)
@@ -419,7 +443,7 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
             inv.removed_from_game.push(code.clone());
             Event::CardRemovedFromGame { code, from }
         }
-        // A scenario-owned card, an owner no longer in the game, or a removal
+        // A scenario-owned card, an investigator owner missing from the map, or a removal
         // of a card no investigator owns: the game's removed-from-game pile.
         _ => {
             state.removed_from_game.push(code.clone());
@@ -427,6 +451,18 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         }
     };
     cx.events.push(event);
+}
+
+/// Whether `owner` is an investigator still in the investigators map but no
+/// longer [`Status::Active`]: defeated or resigned, so eliminated.
+fn owner_is_eliminated(state: &GameState, owner: Owner) -> bool {
+    match owner {
+        Owner::Investigator(id) => state
+            .investigators
+            .get(&id)
+            .is_some_and(|inv| inv.status != Status::Active),
+        Owner::EncounterDeck | Owner::Scenario => false,
+    }
 }
 
 /// Place the event `code`, which `investigator` owns and which would go to

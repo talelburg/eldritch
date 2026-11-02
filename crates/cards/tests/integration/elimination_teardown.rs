@@ -1,7 +1,8 @@
 //! Elimination teardown: an eliminated investigator stops driving
 //! the engine — their in-flight skill test is abandoned rather than resolved
-//! against the hand elimination drained, and their threat area is emptied to the
-//! right pile.
+//! against the hand elimination drained, their threat area is emptied to the
+//! right pile, and their enemy weakness stays in play until it leaves, when it
+//! is removed from the game.
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs real card
 //! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
@@ -29,14 +30,23 @@
 //! **Dissonant Voices (01165):** "<b>Revelation</b> - Put Dissonant Voices into
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
+//! **Stubborn Detective (01103):** "<b>Prey</b> - Bearer only.\nHunter.\nWhile
+//! Stubborn Detective is at your location, treat your investigator as if his or
+//! her printed text box were blank (except for [[Traits]])." Fight 3, health 2,
+//! damage 1. Ruling (<https://arkhamdb.com/card/01103>): *"His static ability
+//! affects each investigator in his location (not just the bearer)."*
+//! **Roland Banks (01001):** "[elder_sign] effect: +1 for each clue on your
+//! location." — how the blank is observed, as in `stubborn_detective.rs`.
+//! **Daisy Walker (01002):** health 5; the Detective's bearer here.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, Status, Zone,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, SkillKind, Status,
+    Zone,
 };
 use game_core::test_support::{self, clues, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -596,4 +606,116 @@ fn elimination_step_one_emits_one_removal_event_per_card_in_play() {
     assert_event!(r.events, Event::CardRemovedFromGame { code, from: Zone::ThreatArea }
         if code.as_str() == OWNED_THREAT);
     assert_event_count!(r.events, 2, Event::CardRemovedFromGame { .. });
+}
+
+// ---- an eliminated investigator's enemy weakness -------------------------
+//
+// `glossary/Elimination.md` step 1: *"Any card that player owns but does not
+// control that is in play remains in play, but if that card leaves play it is
+// removed from the game."*
+
+const STUBBORN_DETECTIVE: &str = "01103";
+const ROLAND: &str = "01001";
+const DAISY: &str = "01002";
+const DETECTIVE: EnemyId = EnemyId(50);
+/// The Detective's bearer, eliminated by his attack of opportunity.
+const BEARER: InvestigatorId = InvestigatorId(1);
+/// Roland, who survives at the same location.
+const ROLAND_ID: InvestigatorId = InvestigatorId(2);
+
+/// Daisy (one damage from defeat) and Roland in the Hallway, two clues on it,
+/// with Daisy's Stubborn Detective ready and engaged with her, `detective_damage`
+/// already on him. Daisy draws, provoking his lethal attack of opportunity, and
+/// the turn passes to Roland.
+fn daisy_eliminated_beside_her_detective(token: ChaosToken, detective_damage: u8) -> TestSession {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::location(HERE).clues(2))
+        .with_seat(
+            seat(BEARER.0)
+                .as_card(DAISY)
+                .at(HERE)
+                .harm(4, 0)
+                .deck(["filler1"]),
+        )
+        .with_seat(seat(ROLAND_ID.0).as_card(ROLAND).at(HERE))
+        .with_seating([BEARER, ROLAND_ID])
+        .with_enemy(
+            test_support::enemy(DETECTIVE)
+                .as_card(STUBBORN_DETECTIVE)
+                .owner(Owner::Investigator(BEARER))
+                .at(HERE)
+                .damage(detective_damage)
+                .engaged_with(BEARER),
+        )
+        .with_chaos_bag(ChaosBag::new([token]))
+        .open_turn(BEARER)
+        .session()
+        .take(&TurnAction::Draw {
+            investigator: BEARER,
+        });
+    assert_eq!(
+        session.state().investigators[&BEARER].status,
+        Status::Defeated
+    );
+    session.assert_at_turn_menu(ROLAND_ID);
+    session
+}
+
+/// **The enemy weakness stays in play, unengaged, and still blanks.** Step 1
+/// leaves a card the eliminated investigator owns but does not control in play,
+/// step 3 disengages it, and with his bearer gone he engages no one. Roland's
+/// elder sign would be `+2` for the Hallway's two clues; blanked, the
+/// Willpower (3) test succeeds by 0.
+#[test]
+fn an_eliminated_bearers_enemy_weakness_stays_in_play_unengaged() {
+    let session = daisy_eliminated_beside_her_detective(ChaosToken::ElderSign, 0);
+
+    let detective = &session.state().enemies[&DETECTIVE];
+    assert_eq!(detective.current_location, Some(HERE));
+    assert_eq!(detective.engaged_with, None);
+
+    let session = session
+        .test_skill(ROLAND_ID, SkillKind::Willpower, 3)
+        .commit(&[]);
+    assert_event!(
+        session.events(),
+        Event::SkillTestSucceeded { margin: 0, .. }
+    );
+}
+
+/// Regression for #1132: **defeated later, he is removed from the game**, into his eliminated
+/// bearer's own removed-from-game pile, with one `CardRemovedFromGame` — never
+/// into her discard pile, which step 1 has already removed from the game.
+#[test]
+fn an_eliminated_bearers_enemy_weakness_is_removed_from_the_game_when_defeated() {
+    let session = daisy_eliminated_beside_her_detective(ChaosToken::Numeric(0), 1);
+    let session = session
+        .take(&TurnAction::Fight {
+            investigator: ROLAND_ID,
+            enemy: DETECTIVE,
+        })
+        .commit(&[]);
+
+    assert!(!session.state().enemies.contains_key(&DETECTIVE));
+    let daisy = &session.state().investigators[&BEARER];
+    assert!(
+        daisy
+            .removed_from_game
+            .iter()
+            .any(|c| c.as_str() == STUBBORN_DETECTIVE),
+        "removed = {:?}",
+        daisy.removed_from_game
+    );
+    assert!(daisy.discard.is_empty(), "discard = {:?}", daisy.discard);
+    assert_event_count!(
+        session.events(),
+        1,
+        Event::CardRemovedFromGame { code, from: Zone::Enemy }
+            if code.as_str() == STUBBORN_DETECTIVE
+    );
+    assert_no_event!(
+        session.events(),
+        Event::CardDiscarded { code, .. } if code.as_str() == STUBBORN_DETECTIVE
+    );
 }
