@@ -258,8 +258,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
 
 /// What to do with `sink` after handling one inbound frame.
 enum Disposition {
-    /// Send this message directly to the submitting client only.
-    Reply(ServerMessage),
+    /// Send this message directly to the submitting client only. Boxed because
+    /// a `ServerMessage` is as large as its `Applied`, though a reply is only
+    /// ever a refusal or a pong.
+    Reply(Box<ServerMessage>),
     /// Close the connection.
     Close,
 }
@@ -284,13 +286,15 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         let _ = room.tx.send(ServerMessage::Applied(applied));
                         None
                     }
-                    Err(e) => Some(Disposition::Reply(ServerMessage::Rejected(refusal(e)))),
+                    Err(e) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
+                        refusal(e),
+                    )))),
                 }
             }
-            Ok(ClientMessage::Ping) => Some(Disposition::Reply(ServerMessage::Pong)),
-            Err(_) => Some(Disposition::Reply(ServerMessage::Rejected(
+            Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
+            Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
-            ))),
+            )))),
         },
         Message::Close(_) => Some(Disposition::Close),
         // WebSocket-level ping/pong and binary frames are not part of the
