@@ -131,9 +131,9 @@ fn defeating_other_enemy_does_not_advance_act_3() {
 }
 
 /// Regression for #486: Act 01110 ("What Have You Done?") advances only via its
-/// Forced `EnemyDefeated` objective (the Ghoul Priest), so its corpus clue
-/// threshold is `null` -> 0. The deliberate clue-spend `AdvanceAct` action is
-/// rejected for it — otherwise the player could "spend 0 clues to advance" and
+/// Forced `EnemyDefeated` objective (the Ghoul Priest), so it prints no clue
+/// value. The deliberate clue-spend `AdvanceAct` action is rejected for it —
+/// otherwise the player could advance it without the fight, and
 /// instantly latch the terminal Won resolution, bypassing the Ghoul Priest fight.
 /// The legitimate defeat path stays covered by
 /// `defeating_ghoul_priest_advances_act_3_to_won` above.
@@ -176,5 +176,21 @@ fn advance_act_rejected_for_round_end_advance_act() {
         session.state().investigators[&INV].clues,
         9,
         "no clues spent"
+    );
+}
+
+/// Finding A Way Inside (02122) prints a fixed 2 clues (`clues_fixed`), so two
+/// seated investigators still need exactly 2 to advance it.
+#[test]
+fn a_fixed_clue_act_asks_its_printed_value_of_two_investigators() {
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .with_seat(seat(2))
+        .with_act_deck(["02122"])
+        .build();
+    assert_eq!(
+        state.act_deck[state.act_index].clues_to_advance(&state),
+        Some(2)
     );
 }

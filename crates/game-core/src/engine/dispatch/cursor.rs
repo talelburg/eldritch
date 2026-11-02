@@ -95,8 +95,8 @@ pub(super) fn next_in_player_order(
 }
 
 /// `n` per investigator: [`scale_per_investigator`] by [`investigator_count`].
-/// A location's per-investigator clue value scales by it.
-pub(super) fn per_investigator(state: &GameState, n: u8) -> u8 {
+/// A location's or an act's per-investigator clue value scales by it.
+pub(crate) fn per_investigator(state: &GameState, n: u8) -> u8 {
     scale_per_investigator(n, investigator_count(state))
 }
 

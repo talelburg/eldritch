@@ -21,7 +21,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardInstanceId, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{act, seat, MockRegistry, TestSession};
+use game_core::test_support::{objective_act, seat, MockRegistry, TestSession};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -86,7 +86,7 @@ fn round_end_window() -> TestSession {
         // owns it.
         .with_seat(seat(1).threat_area([TEST_X]))
         .with_seating([InvestigatorId(1)])
-        .with_act_deck([act(TEST_ACT, 0)])
+        .with_act_deck([objective_act(TEST_ACT)])
         .build();
     TestSession::new(state, registries())
 }

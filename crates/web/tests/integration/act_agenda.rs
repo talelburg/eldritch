@@ -38,8 +38,8 @@ fn section_text() -> String {
 
 #[wasm_bindgen_test]
 async fn act_and_agenda_render_name_text_and_thresholds() {
-    // Act 01109 "The Barrier" (Objective text, 3 clues); Agenda 01107
-    // "They're Getting Out!" (Forced text, doom 10).
+    // Act 01109 "The Barrier" (Objective text, 3 clues per investigator, one
+    // seated); Agenda 01107 "They're Getting Out!" (Forced text, doom 10).
     let state = barrier_and_getting_out();
 
     mount_to_body(move || {
@@ -51,7 +51,7 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     let text = section_text();
     assert!(text.contains("The Barrier"), "act name missing: {text}");
     assert!(
-        text.contains("clues to advance: 3"),
+        text.contains("clues to advance: 3 per investigator (3)"),
         "act threshold missing: {text}"
     );
     assert!(
@@ -65,10 +65,54 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     assert!(text.contains("doom 1/10"), "agenda doom missing: {text}");
 }
 
-/// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda.
+/// The act card's clue line for `act`, staged by code under two seated
+/// investigators.
+async fn clue_line_of_act(act: &'static str) -> String {
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_act_deck([act])
+        .build();
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        act_agenda::act_agenda_view(&state)
+    });
+    task::tick().await;
+    act_card().text_content().unwrap_or_default()
+}
+
+#[wasm_bindgen_test]
+async fn a_per_investigator_act_shows_its_printed_value_and_the_total() {
+    // Trapped (01108): 2 per investigator, two seated.
+    let text = clue_line_of_act("01108").await;
+    assert!(
+        text.contains("clues to advance: 2 per investigator (4)"),
+        "{text}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn a_fixed_act_shows_just_its_number() {
+    // Finding A Way Inside (02122): a fixed 2, whoever is seated.
+    let text = clue_line_of_act("02122").await;
+    assert!(text.contains("clues to advance: 2"), "{text}");
+    assert!(!text.contains("per investigator"), "{text}");
+}
+
+#[wasm_bindgen_test]
+async fn an_objective_act_shows_no_clue_line() {
+    // What Have You Done? (01110) advances when the Ghoul Priest is defeated.
+    let text = clue_line_of_act("01110").await;
+    assert!(!text.contains("clues to advance"), "{text}");
+}
+
+/// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda
+/// and one investigator seated.
 fn barrier_and_getting_out() -> GameState {
     GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(test_support::seat(1))
         .with_act_deck(["01109"])
         .with_agenda_deck(["01107"])
         .with_agenda_doom(1)

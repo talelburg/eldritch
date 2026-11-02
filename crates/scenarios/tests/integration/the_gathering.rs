@@ -467,6 +467,9 @@ fn advancing_act_1_does_not_place_a_resigned_investigator() {
     gone.status = Status::Resigned;
     state.investigators.insert(resigned, gone);
     state.seating.push(resigned);
+    // The resigned investigator started the scenario, so Trapped's "2 per
+    // investigator" asks 4.
+    state.investigators.get_mut(&INV).expect("seated").clues = 4;
 
     let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV });

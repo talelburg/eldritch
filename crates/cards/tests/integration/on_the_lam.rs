@@ -394,9 +394,9 @@ fn an_elite_enemy_still_retaliates() {
 fn the_protection_is_gone_before_any_round_end_ability() {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(skids().at(HALLWAY).clues(3))
+        .with_seat(skids().at(HALLWAY).clues(6))
         .with_location(location(HALLWAY).as_card("01112"))
-        // The Barrier's printed threshold is 3 clues.
+        // The Barrier prints 3 clues per investigator: 6 for the two seated.
         .with_act_deck(["01109"]);
     let played = play_on_the_lam(turn_began(builder, seat(2).at(HALLWAY)));
     assert!(

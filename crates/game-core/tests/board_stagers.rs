@@ -21,8 +21,8 @@ use game_core::state::{
     MythosResume, Owner, Phase, SkillKind,
 };
 use game_core::test_support::{
-    self, act, agenda, clues, enemy, location, seat, AnyKind, BoardLookup as _, MockRegistry, Seat,
-    StagedAgenda, TestSession,
+    self, act, agenda, clues, enemy, location, objective_act, seat, AnyKind, BoardLookup as _,
+    MockRegistry, Seat, StagedAgenda, TestSession,
 };
 
 /// An enemy printed 4 fight, 3 evade, 3 health per investigator, 2 damage and
@@ -34,9 +34,9 @@ const PROBE_LOC: &str = "_stage_loc";
 const PROBE_INV: &str = "_stage_inv";
 /// An enemy encounter card with no spawn instruction and no Revelation.
 const SPAWNER: &str = "_stage_spawn";
-/// An act printed with a clue threshold of 2.
+/// An act printed with a clue value of 2 per investigator.
 const PROBE_ACT: &str = "_stage_act";
-/// An act that advances on an objective: it prints no clue threshold.
+/// An act that advances on an objective: it prints no clue value.
 const PROBE_OBJECTIVE_ACT: &str = "_stage_objective_act";
 /// An agenda printed with a doom threshold of 4.
 const PROBE_AGENDA: &str = "_stage_agenda";
@@ -91,7 +91,7 @@ fn registries() -> Registries {
                 PROBE_ACT,
                 "Stage Act",
                 CardKind::Act {
-                    clue_threshold: Some(2),
+                    printed_clues: Some(ClueValue::PerInvestigator(2)),
                     victory: None,
                 },
             ))
@@ -99,7 +99,7 @@ fn registries() -> Registries {
                 PROBE_OBJECTIVE_ACT,
                 "Stage Objective",
                 CardKind::Act {
-                    clue_threshold: None,
+                    printed_clues: None,
                     victory: None,
                 },
             ))
@@ -409,12 +409,18 @@ fn an_act_deck_carries_each_cards_printed_threshold_in_order() {
         .with_registries(registries())
         .with_act_deck([PROBE_ACT, PROBE_OBJECTIVE_ACT])
         .build();
-    let deck: Vec<(&str, u8)> = state
+    let deck: Vec<(&str, Option<ClueValue>)> = state
         .act_deck
         .iter()
-        .map(|act| (act.code.as_str(), act.clue_threshold))
+        .map(|act| (act.code.as_str(), act.printed_clues))
         .collect();
-    assert_eq!(deck, [(PROBE_ACT, 2), (PROBE_OBJECTIVE_ACT, 0)]);
+    assert_eq!(
+        deck,
+        [
+            (PROBE_ACT, Some(ClueValue::PerInvestigator(2))),
+            (PROBE_OBJECTIVE_ACT, None)
+        ]
+    );
 }
 
 #[test]
@@ -450,12 +456,18 @@ fn a_stock_act_keeps_its_stated_threshold_with_no_registries() {
     let state = GameStateBuilder::new()
         .with_act_deck([act("_act_1", 3), act("_act_2", 1)])
         .build();
-    let deck: Vec<(&str, u8)> = state
+    let deck: Vec<(&str, Option<ClueValue>)> = state
         .act_deck
         .iter()
-        .map(|act| (act.code.as_str(), act.clue_threshold))
+        .map(|act| (act.code.as_str(), act.printed_clues))
         .collect();
-    assert_eq!(deck, [("_act_1", 3), ("_act_2", 1)]);
+    assert_eq!(
+        deck,
+        [
+            ("_act_1", Some(ClueValue::Fixed(3))),
+            ("_act_2", Some(ClueValue::Fixed(1)))
+        ]
+    );
 }
 
 #[test]
@@ -483,6 +495,23 @@ fn the_current_act_and_agenda_and_the_doom_land() {
 #[should_panic(expected = "with_act_deck([\"01108\"])")]
 fn a_stock_act_rejects_a_printed_code() {
     let _ = act("01108", 2);
+}
+
+#[test]
+#[should_panic(expected = "objective_act(\"_act\")")]
+fn a_zero_clue_stock_act_points_to_objective_act() {
+    let _ = act("_act", 0);
+}
+
+#[test]
+fn a_stock_act_asks_its_fixed_clues_whoever_is_seated() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1))
+        .with_seat(seat(2))
+        .with_act_deck([act("_act", 2), objective_act("_objective")])
+        .build();
+    assert_eq!(state.act_deck[0].clues_to_advance(&state), Some(2));
+    assert_eq!(state.act_deck[1].clues_to_advance(&state), None);
 }
 
 #[test]

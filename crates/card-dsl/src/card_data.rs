@@ -336,15 +336,16 @@ pub enum WeaknessKind {
     Other,
 }
 
-/// A location's printed clue value.
+/// A location's or an act's printed clue value.
 ///
-/// `PerInvestigator(n)` places
-/// `n × (number of investigators who started the scenario)` on reveal;
-/// `Fixed(n)` places exactly `n`. Distinguishes `ArkhamDB`'s `clues_fixed`
+/// `PerInvestigator(n)` means
+/// `n × (number of investigators who started the scenario)`: the clues a
+/// location places on reveal, or the clues the group spends to advance an act.
+/// `Fixed(n)` means exactly `n`. Distinguishes `ArkhamDB`'s `clues_fixed`
 /// (absent/false → per-investigator; `true` → fixed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClueValue {
-    /// `value × #investigators` at reveal time.
+    /// `value × #investigators who started the scenario`.
     PerInvestigator(u8),
     /// Exactly `value`, regardless of investigator count.
     Fixed(u8),
@@ -551,9 +552,9 @@ pub enum CardKind {
     },
     /// Act — the investigators' side of the act/agenda deck.
     Act {
-        /// Clues the group spends to advance, or `None` for acts that
-        /// advance on a non-clue objective.
-        clue_threshold: Option<u8>,
+        /// Printed clues the group spends to advance (per-investigator or
+        /// fixed), or `None` for an act that advances on a non-clue objective.
+        printed_clues: Option<ClueValue>,
         /// Victory points, if any.
         victory: Option<u8>,
     },

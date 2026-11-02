@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
+use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, SkillKind};
 use card_dsl::dsl::{Determination, IntExpr, Restriction, Stat};
 use serde::{Deserialize, Serialize};
 
@@ -304,7 +304,7 @@ pub struct Agenda {
 }
 
 /// One act card's mechanically-relevant state: the clues the group must spend
-/// to advance it.
+/// to advance it, read through [`Act::clues_to_advance`].
 ///
 /// Its `(→R#)` resolution point is printed on its reverse and reached by
 /// effect, exactly as [`Agenda`]'s is. Not `#[non_exhaustive]` for the same
@@ -315,9 +315,11 @@ pub struct Act {
     /// Lets the trigger dispatcher resolve the act's `Trigger::OnEvent`
     /// abilities through the card registry.
     pub code: CardCode,
-    /// Clues the investigators must spend to advance (Rules Reference
-    /// p.3). Flat value only for now.
-    pub clue_threshold: u8,
+    /// The clue value the act prints, unscaled: per investigator, fixed, or
+    /// `None` for an act that advances on a non-clue objective. Stored as
+    /// printed because a scenario builds its act deck before the roster is
+    /// seated; [`Act::clues_to_advance`] scales it on read.
+    pub printed_clues: Option<ClueValue>,
 }
 
 impl Agenda {
@@ -340,21 +342,39 @@ impl Agenda {
 }
 
 impl Act {
-    /// The act `metadata` prints, with its printed clue threshold. An act
-    /// that advances on an objective rather than a clue spend prints none,
-    /// which reads as 0. `None` when `metadata` is not an act card.
+    /// The act `metadata` prints, with its printed clue value. An act that
+    /// advances on an objective rather than a clue spend prints none. `None`
+    /// when `metadata` is not an act card.
     ///
     /// The one place an act's threshold is read from its card: a scenario's
     /// `setup()` builds its act deck with it, and so does the test-only
     /// `with_act_deck`.
     #[must_use]
     pub fn from_metadata(metadata: &CardMetadata) -> Option<Self> {
-        let CardKind::Act { clue_threshold, .. } = metadata.kind else {
+        let CardKind::Act { printed_clues, .. } = metadata.kind else {
             return None;
         };
         Some(Self {
             code: CardCode::new(metadata.code.clone()),
-            clue_threshold: clue_threshold.unwrap_or(0),
+            printed_clues,
+        })
+    }
+
+    /// The clues the investigators must spend to advance this act in
+    /// `state`, or `None` when it advances on a non-clue objective.
+    ///
+    /// A per-investigator value is multiplied by the number of investigators
+    /// who started the scenario, eliminated ones included (`Per_Investigator`:
+    /// *"that value is multiplied by the number of investigators who started
+    /// the scenario"*; *"If investigators have been eliminated from the
+    /// scenario, they still count toward \"per investigator\" values."*).
+    /// The one reading of an act's requirement, for the engine and the web
+    /// client alike.
+    #[must_use]
+    pub fn clues_to_advance(&self, state: &GameState) -> Option<u8> {
+        self.printed_clues.map(|printed| match printed {
+            ClueValue::PerInvestigator(n) => crate::engine::per_investigator(state, n),
+            ClueValue::Fixed(n) => n,
         })
     }
 }

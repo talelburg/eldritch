@@ -28,7 +28,7 @@ use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{self, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{act, location, seat, MockRegistry, TestSession};
+use game_core::test_support::{location, objective_act, seat, MockRegistry, TestSession};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
@@ -182,7 +182,7 @@ fn mid_investigation() -> TestSession {
         .with_seat(seat(1).at(HERE).actions(0).deck(["filler-card"]))
         .with_location(location(HERE))
         .open_turn(INV)
-        .with_act_deck([act(ACT, 0)])
+        .with_act_deck([objective_act(ACT)])
         .with_encounter_deck([TREACHERY])
         .build();
     TestSession::new(state, registries())

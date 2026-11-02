@@ -142,7 +142,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 
     assert!(html.contains("doom 1/3"), "agenda doom missing: {html}");
     assert!(
-        html.contains("clues to advance: 2"),
+        html.contains("clues to advance: 2 per investigator (2)"),
         "act threshold missing: {html}"
     );
 }
