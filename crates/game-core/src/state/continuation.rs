@@ -2090,9 +2090,11 @@ impl SpawnEngagePending {
     }
 }
 
-/// The lead's choice of who takes the next Investigation turn, pushed above
-/// the [`InvestigationPhase`](Continuation::InvestigationPhase) anchor at step
-/// 2.2 while two or more investigators are still waiting for a turn this phase.
+/// The lead's choice of who takes the next Investigation turn.
+///
+/// Pushed above the [`InvestigationPhase`](Continuation::InvestigationPhase)
+/// anchor at step 2.2 while two or more investigators are still waiting for a
+/// turn this phase.
 ///
 /// Appendix II 2.2: *"The investigators may take their turns in any order. The
 /// investigators choose among themselves who (among the investigators) will
