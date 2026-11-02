@@ -413,19 +413,29 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
 ///   Pushed and returned from, like a spawn's engagement tie: the `drive` loop
 ///   surfaces it, and the post-2.1 window's inline close requires `Done`.
 /// - **One waiting:** begin their turn; there is nothing to choose.
-/// - **None waiting:** 2.2.2's *"If each investigator has taken a turn this
-///   phase, proceed to 2.3."*
+/// - **None waiting, some Active:** 2.2.2's *"If each investigator has taken a
+///   turn this phase, proceed to 2.3."*
+/// - **Nobody Active at all:** park (`Done`) without proceeding to 2.3. The
+///   2.2.2 clause presumes there are investigators to have taken turns; with
+///   none, proceeding would cycle Enemy → Upkeep → Mythos → Investigation
+///   forever wherever no scenario end has latched. The park is the
+///   cascade-breaker (the loss already resolved at the defeat site).
 ///
 /// Waiting means Active and not yet recorded, so an eliminated investigator is
 /// never offered a turn.
 fn next_investigator_turn(cx: &mut Cx) -> EngineOutcome {
+    let active = cursor::player_order(cx.state);
+    if active.is_empty() {
+        cx.state.active_investigator = None;
+        return EngineOutcome::Done;
+    }
     let waiting = {
         let anchor = cx
             .state
             .continuations
             .topmost_of::<InvestigationPhaseFrame>()
             .expect("next_investigator_turn: no InvestigationPhase anchor on the stack");
-        cursor::player_order(cx.state)
+        active
             .into_iter()
             .filter(|id| !anchor.turns_taken.contains(id))
             .collect::<Vec<_>>()

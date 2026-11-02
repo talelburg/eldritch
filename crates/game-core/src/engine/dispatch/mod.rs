@@ -236,7 +236,7 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 ///   boundary by returning `Done`.
 ///
 /// The pass also returns `Done` at terminal (empty stack) and when an anchor's
-/// advance makes no progress (a parked phase, e.g. Investigation with no active
+/// advance makes no progress (a parked phase, e.g. Investigation with no Active
 /// investigator).
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
     loop {
@@ -260,7 +260,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::UpkeepPhase(_) => {
                 let outcome = phases::anchor_on_child_pop(cx);
                 // No-progress guard: a parked phase (e.g. Investigation with
-                // no active investigator) leaves the same anchor on top —
+                // no Active investigator) leaves the same anchor on top —
                 // break rather than spin.
                 if matches!(outcome, EngineOutcome::Done)
                     && cx.state.continuations.top() == Some(&top)
