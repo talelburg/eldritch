@@ -53,6 +53,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
 | #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
 | #1179 | `mount_board` for the web tests, PR #1260 |
+| #1185 | The lead chooses who takes each Investigation turn while two or more investigators are waiting, PR #1305; slices #1303, #1304 |
 | #1194 | Each answerer passes separately in a reaction window, with #1230, PR #1297 |
 | #1224 | A stored game is its creation inputs plus a checked action log, PR #1264; slices #1262, #1263 |
 | #1225 | Configurable bind, dist path and build id, PR #1261 |
