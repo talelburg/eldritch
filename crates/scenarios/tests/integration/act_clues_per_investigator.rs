@@ -1,16 +1,17 @@
 //! An act's printed clue value scales by the investigators who started the
 //! scenario: The Gathering seated with two investigators asks 4 clues of
 //! Trapped (01108, "2 per investigator") and 6 of The Barrier (01109, "3 per
-//! investigator"), while Finding A Way Inside (02122, `clues_fixed`) asks
-//! exactly its printed 2.
+//! investigator"). The fixed-value case, Finding A Way Inside (02122), is in
+//! `cards`' `act_advancement` tests.
 //!
-//! Glossary, Per Investigator: *"When the [per_investigator] symbol appears
+//! Glossary, Per Investigator: *"When the \[per_investigator\] symbol appears
 //! after a value, that value is multiplied by the number of investigators who
 //! started the scenario."*
 
 use game_core::action::RosterEntry;
-use game_core::engine::enumerate::{legal_actions, TurnAction};
-use game_core::engine::round_end_advance_affordable;
+use game_core::assert_event;
+use game_core::engine;
+use game_core::engine::enumerate::{self, TurnAction};
 use game_core::event::Event;
 use game_core::state::{CardCode, GameState, InvestigatorId};
 use game_core::test_support::TestSession;
@@ -32,7 +33,7 @@ fn seated_pair() -> GameState {
             random_basic_weaknesses: 0,
         })
         .collect();
-    let opened = game_core::engine::seat_and_open(
+    let opened = engine::seat_and_open(
         the_gathering::setup(),
         &roster,
         0,
@@ -54,7 +55,7 @@ fn give_clues(state: &mut GameState, investigator: InvestigatorId, clues: u8) {
 }
 
 fn advance_offered(state: &GameState) -> bool {
-    legal_actions(state, scenarios::TEST_REGISTRIES.cards)
+    enumerate::legal_actions(state, scenarios::TEST_REGISTRIES.cards)
         .iter()
         .any(|a| matches!(a, TurnAction::AdvanceAct { .. }))
 }
@@ -79,14 +80,7 @@ fn trapped_asks_four_clues_of_two_investigators() {
         TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
             investigator: ROLAND,
         });
-    assert!(
-        session
-            .events()
-            .iter()
-            .any(|e| matches!(e, Event::ActAdvanced { .. })),
-        "Trapped advances on 4 clues: {:?}",
-        session.events(),
-    );
+    assert_event!(session.events(), Event::ActAdvanced { .. });
     let state = session.state();
     assert_eq!(
         (
@@ -115,26 +109,12 @@ fn the_barrier_asks_six_clues_of_two_investigators_in_the_hallway() {
     give_clues(&mut state, ROLAND, 3);
     give_clues(&mut state, DAISY, 2);
     assert!(
-        !round_end_advance_affordable(&state, HALLWAY),
+        !engine::round_end_advance_affordable(&state, HALLWAY),
         "5 clues < 3 × 2 investigators"
     );
     give_clues(&mut state, DAISY, 3);
     assert!(
-        round_end_advance_affordable(&state, HALLWAY),
+        engine::round_end_advance_affordable(&state, HALLWAY),
         "6 clues = 3 × 2 investigators"
-    );
-}
-
-#[test]
-fn finding_a_way_inside_asks_its_fixed_two_at_any_investigator_count() {
-    let mut state = seated_pair();
-    let inside = game_core::state::Act::from_metadata(
-        cards::by_code("02122").expect("Finding A Way Inside in corpus"),
-    )
-    .expect("an act card");
-    state.act_deck[state.act_index] = inside;
-    assert_eq!(
-        state.act_deck[state.act_index].clues_to_advance(&state),
-        Some(2)
     );
 }

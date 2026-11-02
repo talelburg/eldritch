@@ -62,7 +62,7 @@ pub fn act(code: impl Into<CardCode>, clues: u8) -> StagedAct {
     );
     stock_act(
         &format!("act({code}, {clues})"),
-        code,
+        &code,
         Some(ClueValue::Fixed(clues)),
     )
 }
@@ -76,12 +76,12 @@ pub fn act(code: impl Into<CardCode>, clues: u8) -> StagedAct {
 /// its code, which reads its printed threshold.
 pub fn objective_act(code: impl Into<CardCode>) -> StagedAct {
     let code = code.into();
-    stock_act(&format!("objective_act({code})"), code, None)
+    stock_act(&format!("objective_act({code})"), &code, None)
 }
 
 /// The stock act `code` with `printed_clues`; `call` names the helper for
 /// [`synthetic_code`]'s panic.
-fn stock_act(call: &str, code: CardCode, printed_clues: Option<ClueValue>) -> StagedAct {
+fn stock_act(call: &str, code: &CardCode, printed_clues: Option<ClueValue>) -> StagedAct {
     let code = synthetic_code(
         call,
         code.clone(),

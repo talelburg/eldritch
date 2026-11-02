@@ -73,8 +73,9 @@ fn an_eliminated_investigator_is_offered_no_reaction() {
 
 /// The Barrier (01109) is the current act, and seat 2 stands in the Hallway
 /// (01112) holding the act's clue threshold, in their turn. Seat 1 has been
-/// eliminated, and still counts toward the threshold's 3 per investigator. 01109: *"Objective - When the round ends, investigators in the
-/// hallway may, as a group, spend the requisite number of clues to advance."*
+/// eliminated, and still counts toward the threshold's 3 per investigator.
+/// 01109: *"Objective - When the round ends, investigators in the hallway may,
+/// as a group, spend the requisite number of clues to advance."*
 fn barrier_table_with_seat_1_eliminated() -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

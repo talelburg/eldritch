@@ -178,3 +178,19 @@ fn advance_act_rejected_for_round_end_advance_act() {
         "no clues spent"
     );
 }
+
+/// Finding A Way Inside (02122) prints a fixed 2 clues (`clues_fixed`), so two
+/// seated investigators still need exactly 2 to advance it.
+#[test]
+fn a_fixed_clue_act_asks_its_printed_value_of_two_investigators() {
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .with_seat(seat(2))
+        .with_act_deck(["02122"])
+        .build();
+    assert_eq!(
+        state.act_deck[state.act_index].clues_to_advance(&state),
+        Some(2)
+    );
+}

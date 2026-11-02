@@ -87,10 +87,12 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
     )
 }
 
-/// The act's front-face clue line: `clues to advance: 2 per investigator (4)`
-/// for a per-investigator value, with the effective total for `game`'s
-/// investigators in parentheses; `clues to advance: 2` for a fixed one; `None`
-/// for an act that advances on a non-clue objective.
+/// The act's front-face clue line, `None` for an act that advances on a
+/// non-clue objective.
+///
+/// A per-investigator value reads `clues to advance: 2 per investigator (4)`,
+/// the effective total for `game`'s investigators in parentheses; a fixed one
+/// reads `clues to advance: 2`.
 #[must_use]
 pub fn clue_line(act: &Act, game: &GameState) -> Option<String> {
     let total = act.clues_to_advance(game)?;

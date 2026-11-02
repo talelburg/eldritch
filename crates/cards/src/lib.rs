@@ -203,6 +203,7 @@ mod tests {
     use std::path::Path;
 
     use card_dsl::dsl::NativeKind;
+    use game_core::state::Act;
 
     use super::*;
     use crate::impls::CardRecord;
@@ -238,7 +239,7 @@ mod tests {
         // (02122) a fixed 2 (`clues_fixed`), and What Have You Done? (01110)
         // no clue value: it advances when the Ghoul Priest is defeated.
         let printed = |code| {
-            game_core::state::Act::from_metadata(by_code(code).expect("act in corpus"))
+            Act::from_metadata(by_code(code).expect("act in corpus"))
                 .expect("an act card")
                 .printed_clues
         };

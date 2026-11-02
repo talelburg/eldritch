@@ -34,9 +34,9 @@ const PROBE_LOC: &str = "_stage_loc";
 const PROBE_INV: &str = "_stage_inv";
 /// An enemy encounter card with no spawn instruction and no Revelation.
 const SPAWNER: &str = "_stage_spawn";
-/// An act printed with a clue threshold of 2.
+/// An act printed with a clue value of 2 per investigator.
 const PROBE_ACT: &str = "_stage_act";
-/// An act that advances on an objective: it prints no clue threshold.
+/// An act that advances on an objective: it prints no clue value.
 const PROBE_OBJECTIVE_ACT: &str = "_stage_objective_act";
 /// An agenda printed with a doom threshold of 4.
 const PROBE_AGENDA: &str = "_stage_agenda";

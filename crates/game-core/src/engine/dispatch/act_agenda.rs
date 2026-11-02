@@ -259,9 +259,10 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
     debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
-/// Whether the current act's round-end group clue-spend advance is affordable:
-/// investigators at `contributor_location_code` hold at least the current act's
-/// [`clues_to_advance`](crate::state::Act::clues_to_advance).
+/// Whether the current act's round-end group clue-spend advance is affordable.
+///
+/// It is when the investigators at `contributor_location_code` hold at least
+/// the current act's [`clues_to_advance`](crate::state::Act::clues_to_advance).
 ///
 /// Shared by the offer-side eligibility condition (act 01109's
 /// `01109:can-advance`) and the resolve-side
@@ -287,7 +288,8 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// 01109's "investigators in the Hallway may, as a group, spend the requisite
 /// number of clues to advance" (the only card-specific datum is the contributor
 /// location, passed in). If [`round_end_advance_affordable`], spends the act's
-/// [`clues_to_advance`](crate::state::Act::clues_to_advance) from the contributors (player order) and advances the act.
+/// [`clues_to_advance`](crate::state::Act::clues_to_advance) from the
+/// contributors (player order) and advances the act.
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
 /// eligibility condition (which calls [`round_end_advance_affordable`]), so the
