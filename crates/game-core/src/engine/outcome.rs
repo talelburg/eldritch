@@ -39,9 +39,6 @@ pub enum EngineOutcome {
     AwaitingInput {
         /// Description of the prompt to show the player.
         request: InputRequest,
-        /// Opaque token the engine uses to resume from this point when
-        /// the response arrives.
-        resume_token: ResumeToken,
     },
     /// Action was illegal; nothing changed.
     Rejected {
@@ -611,17 +608,6 @@ fn picked(response: &InputResponse) -> &[OptionId] {
     }
 }
 
-/// Opaque continuation token returned alongside [`AwaitingInput`].
-///
-/// The engine uses this to identify which choice point a
-/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) is answering.
-/// The inner field is `pub(crate)` so external crates cannot fabricate
-/// tokens; they receive them from the engine and pass them back.
-///
-/// [`AwaitingInput`]: EngineOutcome::AwaitingInput
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ResumeToken(pub(crate) u64);
-
 // The prompt types and their `OptionId`s are these tests' subject, so they
 // build options by hand rather than reading them off a session.
 #[cfg(test)]
@@ -834,7 +820,6 @@ mod tests {
                         .at(OptionTarget::Enemy(EnemyId(7))),
                 ],
             ),
-            resume_token: ResumeToken(0),
         };
         let json = serde_json::to_string(&outcome).expect("serialize");
         let back: EngineOutcome = serde_json::from_str(&json).expect("deserialize");

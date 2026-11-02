@@ -7,6 +7,11 @@
 //! answer it accepted. It persists nothing and sends nothing: a host stores
 //! the [`Accepted`] answer's logged form, then commits it and sends the
 //! [`ServerMessage::Applied`] that comes back.
+//!
+//! Every answer names the [`LogPosition`] of the prompt it answers, and
+//! [`LiveGame::submit`] refuses any position but the current one before the
+//! engine runs: an answer from a stale tab, a double-click, or a submit queued
+//! while disconnected never resolves a prompt its sender didn't see.
 
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::{self, EngineOutcome, Registries};
@@ -14,7 +19,7 @@ use game_core::event::Event;
 use game_core::state::GameState;
 
 use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
-use crate::ServerMessage;
+use crate::{Applied, LogPosition, Refusal, ServerMessage};
 
 /// A game as it is being played: its current state, its place in the log, and
 /// the registries it applies against.
@@ -61,11 +66,14 @@ impl Accepted {
     }
 }
 
-/// Why [`LiveGame::submit`] refused an answer. Its `Display` is the reason a
-/// client is sent in [`ServerMessage::Rejected`].
+/// Why [`LiveGame::submit`] refused an answer. A host sends it to the client
+/// as the wire [`Refusal`] its `From` impl maps it to.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[non_exhaustive]
-pub enum Refusal {
+pub enum Refused {
+    /// It answered another log position than the prompt the game awaits.
+    #[error("the answer is for an earlier prompt")]
+    StalePrompt,
     /// The engine rejected it, for this reason.
     #[error("{0}")]
     Engine(String),
@@ -73,6 +81,16 @@ pub enum Refusal {
     /// never holds a move its log can't replay.
     #[error("the action log can't record this: {0}")]
     Unrecordable(Unrecordable),
+}
+
+impl From<Refused> for Refusal {
+    fn from(refused: Refused) -> Self {
+        match refused {
+            Refused::StalePrompt => Self::StalePrompt,
+            Refused::Engine(reason) => Self::Engine(reason),
+            unrecordable @ Refused::Unrecordable(_) => Self::Failed(unrecordable.to_string()),
+        }
+    }
 }
 
 impl LiveGame {
@@ -120,31 +138,45 @@ impl LiveGame {
         self.seq
     }
 
+    /// The log position of the prompt the game awaits: the one a submit must
+    /// name.
+    #[must_use]
+    pub fn prompt(&self) -> LogPosition {
+        LogPosition(self.seq)
+    }
+
     /// The render baseline a connection is sent when it attaches.
     #[must_use]
     pub fn hello(&self) -> ServerMessage {
         ServerMessage::Hello {
+            prompt: self.prompt(),
             state: Box::new(self.state.clone()),
             outcome: self.outcome.clone(),
             events: self.setup_events.clone(),
         }
     }
 
-    /// Decide `action`: run the engine on a copy of the state, then log it as
-    /// the answer to the prompt the game awaits. Changes nothing; an accepted
-    /// answer takes effect only through [`commit`](Self::commit).
+    /// Decide `action`, the answer to the prompt at `prompt`: check it answers
+    /// the prompt the game awaits, run the engine on a copy of the state, then
+    /// log it. Changes nothing; an accepted answer takes effect only through
+    /// [`commit`](Self::commit).
     ///
     /// # Errors
     ///
-    /// [`Refusal::Engine`] if the engine rejects the action, or
-    /// [`Refusal::Unrecordable`] if it accepts one the log can't record.
-    pub fn submit(&self, action: PlayerAction) -> Result<Accepted, Refusal> {
+    /// [`Refused::StalePrompt`] if `prompt` isn't the position the game
+    /// awaits, checked before the engine runs; [`Refused::Engine`] if the
+    /// engine rejects the action; or [`Refused::Unrecordable`] if it accepts
+    /// one the log can't record.
+    pub fn submit(&self, prompt: LogPosition, action: PlayerAction) -> Result<Accepted, Refused> {
+        if prompt != self.prompt() {
+            return Err(Refused::StalePrompt);
+        }
         let answer = self.record(&action);
         let result = engine::apply(self.state.clone(), Action::Player(action), self.registries);
         if let EngineOutcome::Rejected { reason } = result.outcome {
-            return Err(Refusal::Engine(reason.into_owned()));
+            return Err(Refused::Engine(reason.into_owned()));
         }
-        let answer = answer.map_err(Refusal::Unrecordable)?;
+        let answer = answer.map_err(Refused::Unrecordable)?;
         Ok(Accepted {
             answer,
             draws: result.state.rng.draws,
@@ -162,11 +194,14 @@ impl LiveGame {
     /// the type can't tie the two together, so committing a stale answer
     /// installs that answer's state.
     pub fn commit(&mut self, accepted: Accepted) -> ServerMessage {
-        let applied = ServerMessage::Applied {
+        let answered = self.prompt();
+        let applied = ServerMessage::Applied(Applied {
+            answered,
+            prompt: answered.next(),
             state: Box::new(accepted.state.clone()),
             events: accepted.events,
             outcome: accepted.outcome.clone(),
-        };
+        });
         self.state = accepted.state;
         self.outcome = accepted.outcome;
         self.seq += 1;

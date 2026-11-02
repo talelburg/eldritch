@@ -23,7 +23,6 @@ use card_dsl::dsl::SkillTestKind;
 
 use crate::engine::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
-    ResumeToken,
 };
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
@@ -271,8 +270,7 @@ const SEAT_ONE: Responder = Responder::Investigator(InvestigatorId(1));
 /// outcome, for client/UI fixtures.
 ///
 /// Seat 1 picks any number of their hand cards at `hand_indices`, option `i`
-/// anchored to `hand_indices[i]`. The `ResumeToken` value is irrelevant to
-/// rendering.
+/// anchored to `hand_indices[i]`.
 #[must_use]
 pub fn awaiting_commit_input(prompt: impl Into<String>, hand_indices: &[u8]) -> EngineOutcome {
     awaiting_commit_input_for(prompt, InvestigatorId(1), hand_indices)
@@ -287,7 +285,6 @@ pub fn awaiting_commit_input_for(
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: hand_pick(prompt, investigator, hand_indices),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -304,7 +301,6 @@ pub fn awaiting_skippable_commit_input(
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: hand_pick(prompt, InvestigatorId(1), hand_indices).skippable(),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -336,15 +332,9 @@ fn hand_pick(
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) around an arbitrary
 /// `request`, for a UI fixture that needs a prompt shape the named helpers do
 /// not build — an anchored decision, say.
-///
-/// [`ResumeToken`]'s field is `pub(crate)`, so a host crate cannot wrap its own
-/// request without this.
 #[must_use]
 pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
-    EngineOutcome::AwaitingInput {
-        request,
-        resume_token: ResumeToken(0),
-    }
+    EngineOutcome::AwaitingInput { request }
 }
 
 /// A sample structured [`PickSingle`](crate::action::InputResponse::PickSingle)
@@ -353,8 +343,6 @@ pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
 ///
 /// - `OptionId(0)` → `"End turn"`
 /// - `OptionId(1)` → `"Investigate"`
-///
-/// The `ResumeToken` value is irrelevant to rendering.
 #[must_use]
 pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
@@ -366,7 +354,6 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
             ],
         )
         .answered_by(SEAT_ONE),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -375,8 +362,7 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
 ///
 /// For host/UI tests that need a specific
 /// [`OptionTarget`](crate::engine::OptionTarget) anchor (the no-arg
-/// [`awaiting_pick_single_input`] fixture is un-anchored only). `ResumeToken(0)`
-/// matches the other fixtures (the UI never inspects it).
+/// [`awaiting_pick_single_input`] fixture is un-anchored only).
 #[must_use]
 pub fn awaiting_pick_single_with(
     prompt: impl Into<String>,
@@ -384,7 +370,6 @@ pub fn awaiting_pick_single_with(
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(prompt, options).answered_by(SEAT_ONE),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -405,7 +390,6 @@ pub fn awaiting_confirm_input_for(
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::confirm(prompt).answered_by(Responder::Investigator(investigator)),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -420,7 +404,6 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
         request: InputRequest::pick_single(prompt, vec![ChoiceOption::new(OptionId(0), "Resolve")])
             .skippable()
             .answered_by(SEAT_ONE),
-        resume_token: ResumeToken(0),
     }
 }
 
@@ -439,7 +422,6 @@ pub fn awaiting_skippable_pick_single_with(
         request: InputRequest::pick_single(prompt, options)
             .skippable()
             .answered_by(SEAT_ONE),
-        resume_token: ResumeToken(0),
     }
 }
 

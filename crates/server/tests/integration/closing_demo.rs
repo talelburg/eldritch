@@ -15,13 +15,13 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{GameState, InvestigatorId};
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use server::session::GameSession;
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
-fn submit(action: PlayerAction) -> ClientMessage {
-    ClientMessage::Submit { action }
+fn submit(prompt: LogPosition, action: PlayerAction) -> ClientMessage {
+    ClientMessage::Submit { prompt, action }
 }
 
 fn hello_state(msg: ServerMessage) -> GameState {
@@ -40,7 +40,7 @@ fn hello_outcome(msg: ServerMessage) -> EngineOutcome {
 
 fn applied_events(msg: ServerMessage) -> Vec<Event> {
     match msg {
-        ServerMessage::Applied { events, .. } => events,
+        ServerMessage::Applied(Applied { events, .. }) => events,
         other => panic!("expected Applied, got {other:?}"),
     }
 }
@@ -75,10 +75,13 @@ async fn phase_5_closing_demo() {
     // The spectator, who sends nothing, observes the identical event stream.
     common::send(
         &mut actor,
-        &submit(PlayerAction::ResolveInput {
-            investigator: InvestigatorId(1),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
+        &submit(
+            LogPosition(0),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        ),
     )
     .await;
     let actor_resolved = applied_events(common::recv(&mut actor).await);

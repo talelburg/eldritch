@@ -63,7 +63,7 @@ impl Harness {
     /// Drain one submitted frame, submit it to the live game and commit it, and
     /// fold the `Applied` back in — the transport's round trip, in-process.
     async fn pump(&mut self) {
-        let ClientMessage::Submit { action } = self
+        let ClientMessage::Submit { prompt, action } = self
             .board
             .rx
             .try_recv()
@@ -72,7 +72,7 @@ impl Harness {
         else {
             panic!("the click submitted a frame other than a Submit");
         };
-        let accepted = self.live.submit(action).unwrap_or_else(|refusal| {
+        let accepted = self.live.submit(prompt, action).unwrap_or_else(|refusal| {
             panic!("the board offered something the server refuses: {refusal}")
         });
         let applied = self.live.commit(accepted);

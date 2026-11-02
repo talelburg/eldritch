@@ -5,7 +5,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{ChaosToken, GameState, InvestigatorId, TokenResolution};
 use leptos::prelude::*;
-use protocol::{ServerMessage, SignInMethod, SignedIn};
+use protocol::{Applied, LogPosition, Refusal, ServerMessage, SignInMethod, SignedIn};
 
 use crate::socket_ending::SocketEnding;
 
@@ -78,6 +78,14 @@ impl ConnStatus {
     }
 }
 
+/// What the status bar says for a [`Refusal::Failed`]: the answer didn't take
+/// effect, and trying again may work.
+const SAVE_ERROR: &str = "Couldn't save, try again.";
+
+/// What the status bar says for a refusal that means this client has a bug
+/// ([`Refusal::Malformed`]). The detail goes to the console.
+const CLIENT_BUG: &str = "Something went wrong. Reload if it keeps happening.";
+
 /// One applied submit's worth of events, for the event-log view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogBatch {
@@ -104,6 +112,10 @@ pub struct RevealedToken {
 pub struct ClientState {
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
+    /// The log position of the prompt `outcome` holds, which every submit
+    /// sends back. From `Hello`, then each `Applied`; the start of the log
+    /// before the first `Hello`, while the board is still locked.
+    pub prompt: LogPosition,
     pub status: ConnStatus,
     /// The account this client is signed in as, once the server has said.
     /// Set by the transport, not by `reduce`.
@@ -182,12 +194,14 @@ impl ClientState {
 pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
     match msg {
         ServerMessage::Hello {
+            prompt,
             state: s,
             outcome,
             events,
         } => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
+            state.prompt = prompt;
             state.last_rejection = None;
             state.last_skill_test_difficulty = None;
             state.last_revealed_token = None;
@@ -201,13 +215,20 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                 });
             }
         }
-        ServerMessage::Applied {
+        // An answer to a position before the current one is already in this
+        // state: a socket attaching can be sent an `Applied` its `Hello`
+        // already includes.
+        ServerMessage::Applied(Applied { answered, .. }) if answered < state.prompt => {}
+        ServerMessage::Applied(Applied {
+            prompt,
             state: s,
             events,
             outcome,
-        } => {
+            ..
+        }) => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
+            state.prompt = prompt;
             // Walk the batch in order, latching what the result panel renders
             // from. Order matters within a batch as much as across batches:
             // `SkillTestStarted` clears the *previous* test's token and result,
@@ -272,9 +293,22 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                 .unwrap_or_else(|| "(action)".into());
             state.log.push(LogBatch { header, events });
         }
-        ServerMessage::Rejected { reason } => {
-            state.last_rejection = Some(reason);
+        ServerMessage::Rejected(refusal) => {
+            // A refused submit produced no batch, so its label labels nothing.
             state.pending_label = None;
+            match refusal {
+                // The newer state is already here, or on its way.
+                Refusal::StalePrompt => {}
+                Refusal::Engine(reason) => state.last_rejection = Some(reason),
+                Refusal::Failed(reason) => {
+                    leptos::logging::warn!("the server couldn't save an answer: {reason}");
+                    state.last_rejection = Some(SAVE_ERROR.into());
+                }
+                Refusal::Malformed => {
+                    leptos::logging::error!("the server couldn't parse a frame this client sent");
+                    state.last_rejection = Some(CLIENT_BUG.into());
+                }
+            }
         }
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
@@ -310,12 +344,26 @@ mod tests {
 
     use super::*;
 
-    /// An `Applied` frame carrying `events` and nothing else of interest.
-    fn applied(events: Vec<Event>) -> ServerMessage {
-        ServerMessage::Applied {
+    /// An `Applied` frame answering the prompt at log position `answered`,
+    /// carrying `events` and nothing else of interest.
+    fn applied_at(answered: i64, events: Vec<Event>) -> ServerMessage {
+        ServerMessage::Applied(Applied {
+            answered: LogPosition(answered),
+            prompt: LogPosition(answered + 1),
             state: Box::new(sample_state()),
             events,
             outcome: EngineOutcome::Done,
+        })
+    }
+
+    /// A `Hello` naming the prompt at log position `prompt`, carrying setup's
+    /// `events`.
+    fn hello_at(prompt: i64, events: Vec<Event>) -> ServerMessage {
+        ServerMessage::Hello {
+            prompt: LogPosition(prompt),
+            state: Box::new(sample_state()),
+            outcome: EngineOutcome::Done,
+            events,
         }
     }
 
@@ -347,14 +395,7 @@ mod tests {
             last_rejection: Some("stale".into()),
             ..Default::default()
         };
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
+        reduce(&mut s, hello_at(0, Vec::new()));
         assert!(s.game.is_some());
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
         assert_eq!(s.last_rejection, None);
@@ -368,14 +409,7 @@ mod tests {
             last_rejection: Some("stale".into()),
             ..Default::default()
         };
-        reduce(
-            &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: Vec::new(),
-                outcome: EngineOutcome::Done,
-            },
-        );
+        reduce(&mut s, applied_at(0, Vec::new()));
         assert!(s.game.is_some());
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
         assert_eq!(s.last_rejection.as_deref(), Some("stale"));
@@ -386,15 +420,14 @@ mod tests {
         let mut s = ClientState::default();
         reduce(
             &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![Event::SkillTestStarted {
+            applied_at(
+                0,
+                vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Willpower,
                     difficulty: 3,
                 }],
-                outcome: EngineOutcome::Done,
-            },
+            ),
         );
         assert_eq!(s.last_skill_test_difficulty, Some(3));
         assert_eq!(s.log.len(), 1, "the batch is logged");
@@ -408,14 +441,13 @@ mod tests {
         let mut s = ClientState::default();
         reduce(
             &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![Event::ChaosTokenRevealed {
+            applied_at(
+                0,
+                vec![Event::ChaosTokenRevealed {
                     token: ChaosToken::Tablet,
                     resolution: TokenResolution::Modifier(-2),
                 }],
-                outcome: EngineOutcome::Done,
-            },
+            ),
         );
         assert_eq!(
             s.last_revealed_token,
@@ -427,16 +459,15 @@ mod tests {
         // The next batch carries the outcome and no reveal; the latch survives.
         reduce(
             &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![Event::SkillTestFailed {
+            applied_at(
+                1,
+                vec![Event::SkillTestFailed {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Combat,
                     reason: FailureReason::Total,
                     by: 1,
                 }],
-                outcome: EngineOutcome::Done,
-            },
+            ),
         );
         assert_eq!(
             s.last_revealed_token,
@@ -461,15 +492,14 @@ mod tests {
         };
         reduce(
             &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![Event::SkillTestStarted {
+            applied_at(
+                0,
+                vec![Event::SkillTestStarted {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Willpower,
                     difficulty: 3,
                 }],
-                outcome: EngineOutcome::Done,
-            },
+            ),
         );
         assert_eq!(
             s.last_revealed_token, None,
@@ -484,9 +514,9 @@ mod tests {
         let mut s = ClientState::default();
         reduce(
             &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![
+            applied_at(
+                0,
+                vec![
                     Event::SkillTestStarted {
                         investigator: InvestigatorId(1),
                         skill: SkillKind::Willpower,
@@ -497,8 +527,7 @@ mod tests {
                         resolution: TokenResolution::Modifier(1),
                     },
                 ],
-                outcome: EngineOutcome::Done,
-            },
+            ),
         );
         assert_eq!(
             s.last_revealed_token,
@@ -520,14 +549,7 @@ mod tests {
             last_skill_test_result: Some(succeeded(1)),
             ..Default::default()
         };
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
+        reduce(&mut s, hello_at(0, Vec::new()));
         assert_eq!(
             s.last_skill_test_difficulty, None,
             "Hello clears the retained difficulty"
@@ -548,9 +570,9 @@ mod tests {
     #[test]
     fn applied_latches_the_resolution_across_batches() {
         let mut s = ClientState::default();
-        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        reduce(&mut s, applied_at(0, vec![started(3), succeeded(0)]));
         assert_eq!(s.last_skill_test_result, Some(succeeded(0)));
-        reduce(&mut s, applied(Vec::new()));
+        reduce(&mut s, applied_at(1, Vec::new()));
         assert_eq!(
             s.last_skill_test_result,
             Some(succeeded(0)),
@@ -565,12 +587,15 @@ mod tests {
     #[test]
     fn the_end_of_a_test_clears_its_result() {
         let mut s = ClientState::default();
-        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        reduce(&mut s, applied_at(0, vec![started(3), succeeded(0)]));
         reduce(
             &mut s,
-            applied(vec![Event::SkillTestEnded {
-                investigator: InvestigatorId(1),
-            }]),
+            applied_at(
+                1,
+                vec![Event::SkillTestEnded {
+                    investigator: InvestigatorId(1),
+                }],
+            ),
         );
         assert_eq!(s.last_skill_test_result, None);
     }
@@ -583,7 +608,7 @@ mod tests {
             last_skill_test_result: Some(succeeded(4)),
             ..Default::default()
         };
-        reduce(&mut s, applied(vec![started(2)]));
+        reduce(&mut s, applied_at(0, vec![started(2)]));
         assert_eq!(s.last_skill_test_result, None);
     }
 
@@ -594,15 +619,18 @@ mod tests {
     #[test]
     fn one_batch_can_end_a_test_and_start_the_next() {
         let mut s = ClientState::default();
-        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        reduce(&mut s, applied_at(0, vec![started(3), succeeded(0)]));
         reduce(
             &mut s,
-            applied(vec![
-                Event::SkillTestEnded {
-                    investigator: InvestigatorId(1),
-                },
-                started(5),
-            ]),
+            applied_at(
+                1,
+                vec![
+                    Event::SkillTestEnded {
+                        investigator: InvestigatorId(1),
+                    },
+                    started(5),
+                ],
+            ),
         );
         assert_eq!(
             s.last_skill_test_result, None,
@@ -616,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn rejected_sets_reason_without_touching_game() {
+    fn an_engine_refusal_shows_its_reason_without_touching_game() {
         let mut s = ClientState {
             game: Some(sample_state()),
             outcome: Some(EngineOutcome::Done),
@@ -625,13 +653,73 @@ mod tests {
         let before = s.game.clone();
         reduce(
             &mut s,
-            ServerMessage::Rejected {
-                reason: "not your turn".into(),
-            },
+            ServerMessage::Rejected(Refusal::Engine("not your turn".into())),
         );
         assert_eq!(s.last_rejection.as_deref(), Some("not your turn"));
         assert_eq!(s.game, before);
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
+    }
+
+    #[test]
+    fn a_stale_prompt_refusal_pushes_nothing() {
+        let mut s = ClientState::default();
+        reduce(&mut s, hello_at(4, vec![Event::ScenarioStarted]));
+        let before = s.clone();
+
+        reduce(&mut s, ServerMessage::Rejected(Refusal::StalePrompt));
+
+        assert_eq!(s, before, "the newer state is already on its way");
+    }
+
+    #[test]
+    fn a_failed_refusal_shows_a_save_error() {
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Rejected(Refusal::Failed("database is locked".into())),
+        );
+        assert_eq!(
+            s.last_rejection.as_deref(),
+            Some("Couldn't save, try again.")
+        );
+    }
+
+    #[test]
+    fn a_malformed_refusal_shows_a_generic_error() {
+        let mut s = ClientState::default();
+        reduce(&mut s, ServerMessage::Rejected(Refusal::Malformed));
+        assert_eq!(
+            s.last_rejection.as_deref(),
+            Some("Something went wrong. Reload if it keeps happening.")
+        );
+    }
+
+    #[test]
+    fn hello_names_the_prompt_every_submit_answers() {
+        let mut s = ClientState::default();
+        reduce(&mut s, hello_at(7, Vec::new()));
+        assert_eq!(s.prompt, LogPosition(7));
+    }
+
+    #[test]
+    fn an_applied_moves_the_prompt_on() {
+        let mut s = ClientState::default();
+        reduce(&mut s, hello_at(7, Vec::new()));
+        reduce(&mut s, applied_at(7, Vec::new()));
+        assert_eq!(s.prompt, LogPosition(8));
+    }
+
+    /// The attach race: a socket can be sent an `Applied` its `Hello` already
+    /// includes.
+    #[test]
+    fn an_applied_the_hello_already_included_is_not_logged_twice() {
+        let mut s = ClientState::default();
+        reduce(&mut s, hello_at(3, vec![Event::ScenarioStarted]));
+        let before = s.clone();
+
+        reduce(&mut s, applied_at(2, vec![Event::ScenarioStarted]));
+
+        assert_eq!(s, before, "the Applied for position 2 is dropped");
     }
 
     #[test]
@@ -640,14 +728,7 @@ mod tests {
             pending_label: Some("Move to Cellar".into()),
             ..Default::default()
         };
-        reduce(
-            &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: vec![Event::ScenarioStarted],
-                outcome: EngineOutcome::Done,
-            },
-        );
+        reduce(&mut s, applied_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1);
         assert_eq!(s.log[0].header, "Move to Cellar");
         assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
@@ -657,14 +738,7 @@ mod tests {
     #[test]
     fn applied_without_pending_label_uses_generic_header() {
         let mut s = ClientState::default();
-        reduce(
-            &mut s,
-            ServerMessage::Applied {
-                state: Box::new(sample_state()),
-                events: Vec::new(),
-                outcome: EngineOutcome::Done,
-            },
-        );
+        reduce(&mut s, applied_at(0, Vec::new()));
         assert_eq!(s.log.len(), 1);
         assert_eq!(s.log[0].header, "(action)");
     }
@@ -672,16 +746,9 @@ mod tests {
     #[test]
     fn consecutive_applied_accumulate_in_order() {
         let mut s = ClientState::default();
-        for label in ["first", "second"] {
+        for (answered, label) in [(0, "first"), (1, "second")] {
             s.pending_label = Some(label.to_string());
-            reduce(
-                &mut s,
-                ServerMessage::Applied {
-                    state: Box::new(sample_state()),
-                    events: Vec::new(),
-                    outcome: EngineOutcome::Done,
-                },
-            );
+            reduce(&mut s, applied_at(answered, Vec::new()));
         }
         let headers: Vec<&str> = s.log.iter().map(|b| b.header.as_str()).collect();
         assert_eq!(headers, vec!["first", "second"]);
@@ -695,9 +762,7 @@ mod tests {
         };
         reduce(
             &mut s,
-            ServerMessage::Rejected {
-                reason: "nope".into(),
-            },
+            ServerMessage::Rejected(Refusal::Engine("nope".into())),
         );
         assert!(s.log.is_empty(), "rejection pushes no batch");
         assert_eq!(s.pending_label, None, "rejection clears the stale label");
@@ -713,14 +778,7 @@ mod tests {
             header: "old".into(),
             events: Vec::new(),
         });
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
+        reduce(&mut s, hello_at(0, Vec::new()));
         assert!(s.log.is_empty());
         assert_eq!(s.pending_label, None);
     }
@@ -728,14 +786,7 @@ mod tests {
     #[test]
     fn hello_with_events_pushes_setup_batch() {
         let mut s = ClientState::default();
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: vec![Event::ScenarioStarted],
-            },
-        );
+        reduce(&mut s, hello_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1, "one Setup batch expected");
         assert_eq!(s.log[0].header, "Setup");
         assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
@@ -744,14 +795,7 @@ mod tests {
     #[test]
     fn hello_with_empty_events_leaves_log_empty() {
         let mut s = ClientState::default();
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: Vec::new(),
-            },
-        );
+        reduce(&mut s, hello_at(0, Vec::new()));
         assert!(s.log.is_empty(), "no setup batch when events is empty");
     }
 
@@ -764,14 +808,7 @@ mod tests {
             events: vec![Event::ScenarioStarted],
         });
         // Hello with setup events: prior batch gone, Setup batch present.
-        reduce(
-            &mut s,
-            ServerMessage::Hello {
-                state: Box::new(sample_state()),
-                outcome: EngineOutcome::Done,
-                events: vec![Event::ScenarioStarted],
-            },
-        );
+        reduce(&mut s, hello_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1, "only the Setup batch should remain");
         assert_eq!(s.log[0].header, "Setup");
     }

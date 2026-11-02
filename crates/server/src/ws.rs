@@ -13,7 +13,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
 use protocol::{
-    ClientMessage, GameId, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING,
+    ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING,
     CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
@@ -23,7 +23,7 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::time::{self, Instant};
 
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
-use crate::session::{GameSession, SessionError, StoredGame};
+use crate::session::{ApplyError, GameSession, SessionError, StoredGame};
 use crate::{auth, AppState};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
@@ -184,11 +184,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
         }
     };
     let room = connection.room();
-    let mut rx = room.tx.subscribe();
+    // Subscribe and take the render baseline under the session lock. A submit
+    // broadcasts its `Applied` under that same lock, so every `Applied` this
+    // socket receives is one its `Hello` doesn't already include.
+    let (mut rx, hello) = {
+        let session = room.session.lock().await;
+        (room.tx.subscribe(), session.live().hello())
+    };
     let (mut sink, mut stream) = socket.split();
 
     // Send the render baseline before streaming events.
-    let hello = room.session.lock().await.live().hello();
     if send_msg(&mut sink, &hello).await.is_err() {
         return;
     }
@@ -266,10 +271,12 @@ enum Disposition {
 async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disposition> {
     match message {
         Message::Text(text) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
-            Ok(ClientMessage::Submit { action }) => {
+            Ok(ClientMessage::Submit { prompt, action }) => {
                 let mut session = room.session.lock().await;
-                match session.apply(action).await {
+                match session.apply(prompt, action).await {
                     Ok(applied) => {
+                        // Sent under the session lock, which a socket attaching
+                        // also holds while it subscribes and takes its `Hello`.
                         // A broadcast send fails only when no receiver exists.
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
@@ -277,20 +284,28 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         let _ = room.tx.send(applied);
                         None
                     }
-                    Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {
-                        reason: e.to_string(),
-                    })),
+                    Err(e) => Some(Disposition::Reply(ServerMessage::Rejected(refusal(e)))),
                 }
             }
             Ok(ClientMessage::Ping) => Some(Disposition::Reply(ServerMessage::Pong)),
-            Err(_) => Some(Disposition::Reply(ServerMessage::Rejected {
-                reason: "malformed message".to_string(),
-            })),
+            Err(_) => Some(Disposition::Reply(ServerMessage::Rejected(
+                Refusal::Malformed,
+            ))),
         },
         Message::Close(_) => Some(Disposition::Close),
         // WebSocket-level ping/pong and binary frames are not part of the
         // protocol; ignore them. They still reset the silence deadline.
         _ => None,
+    }
+}
+
+/// The refusal a client is sent for an answer [`GameSession::apply`] didn't
+/// apply. One the live game accepted but the store couldn't save is
+/// [`Refusal::Failed`], as is one the action log can't record.
+fn refusal(error: ApplyError) -> Refusal {
+    match error {
+        ApplyError::Refused(refused) => refused.into(),
+        ApplyError::Session(error) => Refusal::Failed(error.to_string()),
     }
 }
 

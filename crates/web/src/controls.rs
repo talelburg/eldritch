@@ -41,8 +41,9 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
         .next()
 }
 
-/// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine,
-/// recording `label` as the next `Applied` batch's event-log header.
+/// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine
+/// as the answer to the prompt the store holds, recording `label` as the next
+/// `Applied` batch's event-log header.
 ///
 /// The answer is named for the investigator the live prompt asks
 /// ([`ClientState::answer`](crate::store::ClientState::answer)). With no live
@@ -83,8 +84,10 @@ pub fn submit_as(investigator: InvestigatorId, response: InputResponse, label: i
 #[cfg(target_arch = "wasm32")]
 fn send(action: PlayerAction, label: impl Into<String>) {
     if let Some(tx) = use_context::<OutboundTx>() {
-        store::use_store().update(|s| s.pending_label = Some(label.into()));
-        let _ = tx.unbounded_send(ClientMessage::Submit { action });
+        let store = store::use_store();
+        let prompt = store.with_untracked(|s| s.prompt);
+        store.update(|s| s.pending_label = Some(label.into()));
+        let _ = tx.unbounded_send(ClientMessage::Submit { prompt, action });
     }
 }
 

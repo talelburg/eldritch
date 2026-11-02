@@ -5,17 +5,20 @@
 use std::time::Duration;
 
 use axum::extract::ws::close_code;
+use futures_util::SinkExt as _;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::InvestigatorId;
 use protocol::{
-    ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
+    Applied, ClientMessage, LogPosition, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
+    CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
 };
 use server::session::GameSession;
 use server::shutdown::Shutdown;
 use sqlx::SqlitePool;
 use tokio::time;
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::common::{self, TEST_SCENARIO_ID};
 
@@ -98,6 +101,7 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
     common::send(
         &mut a,
         &ClientMessage::Submit {
+            prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
@@ -108,9 +112,9 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
 
     for ws in [&mut a, &mut b] {
         match common::recv(ws).await {
-            ServerMessage::Applied {
+            ServerMessage::Applied(Applied {
                 outcome, events, ..
-            } => {
+            }) => {
                 assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
                 assert!(
                     matches!(outcome, EngineOutcome::AwaitingInput { .. } | EngineOutcome::Done),
@@ -139,6 +143,7 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     common::send(
         &mut a,
         &ClientMessage::Submit {
+            prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple {
@@ -150,8 +155,8 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     .await;
 
     match common::recv(&mut a).await {
-        ServerMessage::Rejected { .. } => {}
-        other => panic!("expected Rejected, got {other:?}"),
+        ServerMessage::Rejected(Refusal::Engine(_)) => {}
+        other => panic!("expected an engine Rejected, got {other:?}"),
     }
 
     // B sees nothing: rejections are not broadcast.
@@ -160,6 +165,107 @@ async fn rejected_action_returns_rejected_to_sender_only() {
         quiet.is_err(),
         "B must receive nothing for a rejected action"
     );
+}
+
+/// The log position a `Hello` names.
+fn hello_prompt(msg: ServerMessage) -> LogPosition {
+    match msg {
+        ServerMessage::Hello { prompt, .. } => prompt,
+        other => panic!("expected Hello, got {other:?}"),
+    }
+}
+
+/// The mulligan's answer that keeps the whole opening hand, for the prompt at
+/// `prompt`.
+fn keep_opening_hand(prompt: LogPosition) -> ClientMessage {
+    ClientMessage::Submit {
+        prompt,
+        action: PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
+            response: InputResponse::PickMultiple { selected: vec![] },
+        },
+    }
+}
+
+/// Require the next message on `ws` to be a `StalePrompt` refusal.
+async fn assert_stale(ws: &mut common::Client) {
+    match common::recv_within(ws).await {
+        ServerMessage::Rejected(Refusal::StalePrompt) => {}
+        other => panic!("expected a StalePrompt refusal, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_second_tab_answering_the_prompt_already_answered_is_refused_as_stale() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-stale").await;
+    let addr = common::spawn_server(pool.clone()).await;
+
+    // Two tabs of one account, both shown the mulligan.
+    let mut a = common::connect(addr, "g-stale").await;
+    let mut b = common::connect(addr, "g-stale").await;
+    let a_prompt = hello_prompt(common::recv(&mut a).await);
+    let b_prompt = hello_prompt(common::recv(&mut b).await);
+    assert_eq!(a_prompt, b_prompt, "both tabs are shown the same prompt");
+
+    // Tab A answers it, and both tabs are sent the Applied.
+    common::send(&mut a, &keep_opening_hand(a_prompt)).await;
+    for ws in [&mut a, &mut b] {
+        match common::recv_within(ws).await {
+            ServerMessage::Applied(applied) => assert_eq!(applied.answered, a_prompt),
+            other => panic!("expected Applied, got {other:?}"),
+        }
+    }
+
+    // Tab B, before it has redrawn, sends the same answer to the same prompt.
+    common::send(&mut b, &keep_opening_hand(b_prompt)).await;
+
+    assert_stale(&mut b).await;
+    assert_eq!(
+        common::stored_rows(&pool, "g-stale").await,
+        (1, 1),
+        "only tab A's answer is stored"
+    );
+}
+
+#[tokio::test]
+async fn a_stale_answer_from_another_account_is_refused_as_stale() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-stale-other").await;
+    common::add_account(&pool, "Sam").await;
+    let addr = common::spawn_server(pool.clone()).await;
+
+    let mut tester = common::connect(addr, "g-stale-other").await;
+    let mut sam = common::connect_as(addr, "g-stale-other", "Sam").await;
+    let prompt = hello_prompt(common::recv(&mut tester).await);
+    let _ = common::recv(&mut sam).await;
+    common::send(&mut tester, &keep_opening_hand(prompt)).await;
+    let _ = common::recv_within(&mut tester).await;
+    let _ = common::recv_within(&mut sam).await;
+
+    // The position is checked first, whoever sends it.
+    common::send(&mut sam, &keep_opening_hand(prompt)).await;
+
+    assert_stale(&mut sam).await;
+    assert_eq!(common::stored_rows(&pool, "g-stale-other").await, (1, 1));
+}
+
+#[tokio::test]
+async fn a_frame_that_does_not_parse_is_refused_as_malformed() {
+    let pool = common::memory_pool().await;
+    seed_game(&pool, "g-malformed").await;
+    let addr = common::spawn_server(pool).await;
+
+    let mut ws = common::connect(addr, "g-malformed").await;
+    let _ = common::recv(&mut ws).await;
+    ws.send(Message::Text("{\"submit\":{}}".into()))
+        .await
+        .expect("ws send");
+
+    match common::recv_within(&mut ws).await {
+        ServerMessage::Rejected(Refusal::Malformed) => {}
+        other => panic!("expected a Malformed refusal, got {other:?}"),
+    }
 }
 
 #[tokio::test]

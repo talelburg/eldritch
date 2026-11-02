@@ -10,7 +10,7 @@ use game_core::action::{InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
-use protocol::live::Refusal;
+use protocol::live::Refused;
 use protocol::logged_answer::ReplayFailure;
 use protocol::GameId;
 use server::session::{ApplyError, GameSession, SessionError, UnresumableReason};
@@ -163,10 +163,13 @@ async fn apply_persists_accepted_action_and_advances_state() {
     // create lands at round-1 mulligan-pending; resolve the mulligan (keep
     // the whole hand — empty redraw).
     session
-        .apply(PlayerAction::ResolveInput {
-            investigator: InvestigatorId(1),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        })
+        .apply(
+            session.live().prompt(),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        )
         .await
         .expect("the mulligan is accepted");
     // After the mulligan resolves the mulligan queue must be empty (solo
@@ -202,16 +205,19 @@ async fn apply_rejects_invalid_action_without_persisting() {
     // index (OptionId(999_999)) is rejected by the mulligan handler since
     // the deck is empty (hand size 0, so any index ≥ 0 is out of bounds).
     let refused = session
-        .apply(PlayerAction::ResolveInput {
-            investigator: InvestigatorId(1),
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(999_999)],
+        .apply(
+            session.live().prompt(),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple {
+                    selected: vec![OptionId(999_999)],
+                },
             },
-        })
+        )
         .await;
 
     assert!(
-        matches!(refused, Err(ApplyError::Refused(Refusal::Engine(_)))),
+        matches!(refused, Err(ApplyError::Refused(Refused::Engine(_)))),
         "selecting a non-existent card must be rejected, got {refused:?}"
     );
     // State must be unchanged: round is still 1 and investigator still in
@@ -245,10 +251,13 @@ async fn load_replays_log_to_reproduce_live_state() {
     .unwrap();
     // Resolve the mulligan so the log has one action.
     session
-        .apply(PlayerAction::ResolveInput {
-            investigator: InvestigatorId(1),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        })
+        .apply(
+            session.live().prompt(),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        )
         .await
         .expect("the mulligan is accepted");
 
@@ -280,10 +289,13 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "stale").await;
     session
-        .apply(PlayerAction::ResolveInput {
-            investigator: InvestigatorId(1),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        })
+        .apply(
+            session.live().prompt(),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        )
         .await
         .expect("the mulligan is accepted");
     common::set_logged(&pool, "stale", 0, "$.response", "Confirm").await;

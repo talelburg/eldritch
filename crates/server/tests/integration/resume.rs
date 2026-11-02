@@ -12,7 +12,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::InvestigatorId;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{Applied, ClientMessage, LogPosition, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
@@ -99,6 +99,7 @@ async fn resolve_input_resumes_and_completes() {
     common::send(
         &mut a,
         &ClientMessage::Submit {
+            prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
@@ -107,7 +108,7 @@ async fn resolve_input_resumes_and_completes() {
     )
     .await;
     match common::recv(&mut a).await {
-        ServerMessage::Applied { outcome, .. } => {
+        ServerMessage::Applied(Applied { outcome, .. }) => {
             assert!(
                 !matches!(outcome, EngineOutcome::Rejected { .. }),
                 "resolving the mulligan is accepted and drives forward, got {outcome:?}"
@@ -132,6 +133,7 @@ async fn invalid_mulligan_response_is_rejected() {
     common::send(
         &mut a,
         &ClientMessage::Submit {
+            prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
                 investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple {
@@ -142,7 +144,7 @@ async fn invalid_mulligan_response_is_rejected() {
     )
     .await;
     match common::recv(&mut a).await {
-        ServerMessage::Rejected { .. } => {}
+        ServerMessage::Rejected(Refusal::Engine(_)) => {}
         other => panic!("expected Rejected while awaiting input, got {other:?}"),
     }
 }

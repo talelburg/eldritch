@@ -182,11 +182,14 @@ pub fn ContextMenu(
                                 if let Some(tx) = tx.clone() {
                                     let answer = store.with_untracked(|s| {
                                         s.answer(InputResponse::PickSingle(id))
+                                            .map(|action| (s.prompt, action))
                                     });
-                                    if let Some(action) = answer {
+                                    if let Some((prompt, action)) = answer {
                                         store.update(|s| s.pending_label = Some(header.clone()));
-                                        let _ =
-                                            tx.unbounded_send(ClientMessage::Submit { action });
+                                        let _ = tx.unbounded_send(ClientMessage::Submit {
+                                            prompt,
+                                            action,
+                                        });
                                     } else {
                                         leptos::logging::error!(
                                             "context menu: no live prompt names who answers it"

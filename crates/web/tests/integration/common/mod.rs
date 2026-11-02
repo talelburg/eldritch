@@ -7,7 +7,7 @@ use game_core::state::GameState;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use web::app::{self, MainColumn};
 use web::registry;
@@ -159,6 +159,7 @@ pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
     store::reduce(
         &mut client,
         ServerMessage::Hello {
+            prompt: LogPosition(0),
             state: Box::new(state),
             outcome,
             events: Vec::new(),
