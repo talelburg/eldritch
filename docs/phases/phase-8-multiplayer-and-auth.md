@@ -45,6 +45,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #581 | Seat identity on the wire: every answer names its investigator, each account gets its own messages, with #1230, PR #1297 |
 | #583 | Wire versioning: `Hello` carries the build, with #1230, PR #1297 |
 | #662 | A barricade-stranded enemy engages the investigators left at the origin, PR #1299 |
+| #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
@@ -90,7 +91,7 @@ landed, before phase 9 is scoped.
 
 **3. Rules fixes, after #1234.**
 
-- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795, #409, #1132, #1185.
+- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409, #1132, #1185.
 - Engagement: #151, card 07's tie frame.
 - ST.7: #1086 → #642 → #65. #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.

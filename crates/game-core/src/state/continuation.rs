@@ -2015,14 +2015,19 @@ pub enum PhaseStep {
 ///
 /// The rules give a tie to the lead: *"If multiple equidistant investigators
 /// meet the prey criteria, the lead investigator decides among those
-/// investigators"* (`glossary/Prey.md`). The engine does not model the lead;
-/// see `GLOSSARY.md`.
+/// investigators"* (`glossary/Prey.md`). See **Lead investigator** in
+/// `GLOSSARY.md`.
 ///
 /// Two shapes because the two choice points need different input:
-/// movement is a `PickSingle` over a prey-filtered destination set
-/// (the chosen prey doesn't persist, so picking a location is
-/// outcome-equivalent to picking an investigator-then-path); engagement
-/// on arrival is a `PickSingle` over the co-located set.
+/// movement is a `PickSingle` over a prey-filtered destination set,
+/// engagement on arrival a `PickSingle` over the co-located set. Movement
+/// offers destinations rather than investigators because a hunter able to
+/// move must move: FFG's Game Rules Specialist, on two prey-tied investigators
+/// one of whom is behind a Barricade, *"it will have to move toward the other
+/// investigator"*
+/// (<https://boardgamegeek.com/thread/3073397/exhausted-enemies-whunter-movement>).
+/// Offering the tied investigators would let the lead pick the blocked one and
+/// keep the hunter in place.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum HunterChoice {
