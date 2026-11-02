@@ -231,6 +231,7 @@ fn resume_hand_size_discard_rejects_duplicate_and_oob_indices() {
     let malformed = |selected: Vec<OptionId>| {
         ending_upkeep_with_hands(&[(1, hand("c", 10))]).apply(Action::Player(
             PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected },
             },
         ))

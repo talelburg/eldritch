@@ -14,7 +14,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
-use game_core::state::GameState;
+use game_core::state::{GameState, InvestigatorId};
 use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
 
@@ -76,6 +76,7 @@ async fn phase_5_closing_demo() {
     common::send(
         &mut actor,
         &submit(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
     )

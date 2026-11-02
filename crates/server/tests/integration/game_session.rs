@@ -164,6 +164,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
     // the whole hand — empty redraw).
     session
         .apply(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await
@@ -202,6 +203,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
     // the deck is empty (hand size 0, so any index ≥ 0 is out of bounds).
     let refused = session
         .apply(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple {
                 selected: vec![OptionId(999_999)],
             },
@@ -244,6 +246,7 @@ async fn load_replays_log_to_reproduce_live_state() {
     // Resolve the mulligan so the log has one action.
     session
         .apply(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await
@@ -278,6 +281,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     let mut session = common::create_game(&pool, "stale").await;
     session
         .apply(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickMultiple { selected: vec![] },
         })
         .await

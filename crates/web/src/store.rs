@@ -1,5 +1,6 @@
 //! Reactive client store: `ClientState` + the pure `ServerMessage` reducer.
 
+use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{ChaosToken, GameState, TokenResolution};
@@ -143,6 +144,26 @@ pub struct ClientState {
     /// submit time and taken when that batch arrives. Cleared on `Rejected`
     /// (the submit produced no batch) and `Hello`.
     pub pending_label: Option<String>,
+}
+
+impl ClientState {
+    /// The action answering the live prompt with `response`, named for the
+    /// investigator the prompt asks
+    /// ([`InputRequest::answerer`](game_core::engine::InputRequest::answerer)):
+    /// the responder's, or the picked option's. A pass in a window several
+    /// answer names the first investigator holding an option. `None` when no
+    /// prompt is live, or the prompt names nobody.
+    #[must_use]
+    pub fn answer(&self, response: InputResponse) -> Option<PlayerAction> {
+        let Some(EngineOutcome::AwaitingInput { request, .. }) = &self.outcome else {
+            return None;
+        };
+        let investigator = request.answerer(&response)?;
+        Some(PlayerAction::ResolveInput {
+            investigator,
+            response,
+        })
+    }
 }
 
 /// Fold one server message into the client state. Data only — never

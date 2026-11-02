@@ -73,6 +73,7 @@ fn end_turn(state: GameState, regs: Registries) -> GameState {
         .position(|a| *a == TurnAction::EndTurn)
         .expect("EndTurn is on the turn menu");
     let action = Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
     });
     let result = engine::apply(state, action, regs);

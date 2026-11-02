@@ -40,6 +40,7 @@ fn take_a_resource(state: &GameState) -> PlayerAction {
         .position(|a| *a == TurnAction::Resource { investigator: INV })
         .expect("taking a resource is legal at the open turn");
     PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(
             u32::try_from(idx).expect("an action index fits u32"),
         )),
@@ -56,6 +57,7 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
     let action = take_a_resource(live.state());
     let PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(picked),
+        ..
     } = action
     else {
         unreachable!("take_a_resource picks one option");
@@ -121,6 +123,7 @@ fn an_answer_the_engine_rejects_is_refused() {
 
     let refusal = live
         .submit(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickSingle(OptionId(999)),
         })
         .expect_err("no option 999 is offered");

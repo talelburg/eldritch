@@ -32,7 +32,7 @@ use crate::store::{self, ActionRow, GameRow};
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
 /// whenever either changes; a game stored under any other version is
 /// unresumable ([`UnresumableReason::Version`]).
-pub const FORMAT_VERSION: i64 = 2;
+pub const FORMAT_VERSION: i64 = 3;
 
 /// Errors from [`GameSession`] persistence operations.
 #[derive(Debug, thiserror::Error)]
@@ -435,7 +435,8 @@ impl GameSession {
 
 /// Replay one logged answer against `state`, whose last apply left `outcome`,
 /// running the four replay checks in order: the prompt is the one it answered,
-/// each pick finds its option, the engine accepts it, and the RNG stands at
+/// each pick finds its option, the engine accepts it (its responder check
+/// included, against the logged investigator), and the RNG stands at
 /// the `draws` logged after it.
 fn replay_step(
     state: GameState,
@@ -450,12 +451,8 @@ fn replay_step(
             now: None,
         });
     };
-    let response = logged_answer::replay(request, answer)?;
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput { response }),
-        registries,
-    );
+    let action = logged_answer::replay(request, answer)?;
+    let result = engine::apply(state, Action::Player(action), registries);
     if let EngineOutcome::Rejected { reason } = &result.outcome {
         return Err(ReplayFailure::Rejected(reason.to_string()));
     }

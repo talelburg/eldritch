@@ -175,12 +175,16 @@ impl LiveGame {
 
     /// Log `action` as the answer to the prompt the game awaits.
     fn record(&self, action: &PlayerAction) -> Result<LoggedAnswer, Unrecordable> {
-        let PlayerAction::ResolveInput { response } = action else {
+        let PlayerAction::ResolveInput {
+            investigator,
+            response,
+        } = action
+        else {
             return Err(Unrecordable::NotAnAnswer(action.clone()));
         };
         let EngineOutcome::AwaitingInput { request, .. } = &self.outcome else {
             return Err(Unrecordable::NoPrompt);
         };
-        logged_answer::record(request, response)
+        logged_answer::record(request, *investigator, response)
     }
 }

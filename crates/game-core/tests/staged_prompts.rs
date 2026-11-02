@@ -15,6 +15,7 @@ use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind};
+use game_core::action::InputResponse;
 use game_core::assert_event_count;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{
@@ -273,6 +274,50 @@ fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator()
 
     let session = session.pick(other);
     assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(OTHER));
+    session.assert_at_turn_menu(INV);
+}
+
+/// The lead answers a spawn's tie, so the same pick named by the other
+/// investigator is rejected and the state is left as it was (ADR 0019).
+#[test]
+fn a_spawn_engagement_answered_by_someone_other_than_the_lead_is_rejected() {
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
+        .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
+        .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
+        .session();
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+    let before = session.state().clone();
+    let other = session.state().investigators[&OTHER].card_anchor();
+    let id = session
+        .prompt()
+        .options
+        .iter()
+        .find(|o| o.target.as_ref() == Some(&other))
+        .expect("the lead's tie offers OTHER")
+        .id;
+
+    let session = session.answer_as(INV, InputResponse::PickSingle(id));
+    session.expect_rejected();
+    assert_eq!(session.state(), &before);
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+}
+
+/// The open turn's menu belongs to the investigator whose turn it is, so an
+/// action from it named by anyone else is rejected and the state is left as
+/// it was.
+#[test]
+fn a_turn_action_answered_by_someone_other_than_the_active_investigator_is_rejected() {
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
+        .session();
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
+    let before = session.state().clone();
+    let id = session.prompt().options[0].id;
+
+    let session = session.answer_as(OTHER, InputResponse::PickSingle(id));
+    session.expect_rejected();
+    assert_eq!(session.state(), &before);
     session.assert_at_turn_menu(INV);
 }
 

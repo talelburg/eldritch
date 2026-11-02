@@ -265,7 +265,8 @@ async fn its_confirm_submits_the_acknowledge() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }
@@ -343,7 +344,8 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }

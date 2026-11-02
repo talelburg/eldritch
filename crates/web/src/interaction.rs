@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 #[cfg(target_arch = "wasm32")]
-use game_core::action::{InputResponse, PlayerAction};
+use game_core::action::InputResponse;
 use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{CardCode, InvestigatorId};
 #[cfg(target_arch = "wasm32")]
@@ -180,12 +180,18 @@ pub fn ContextMenu(
                             on:click=move |ev| {
                                 ev.stop_propagation();
                                 if let Some(tx) = tx.clone() {
-                                    store.update(|s| s.pending_label = Some(header.clone()));
-                                    let _ = tx.unbounded_send(ClientMessage::Submit {
-                                        action: PlayerAction::ResolveInput {
-                                            response: InputResponse::PickSingle(id),
-                                        },
+                                    let answer = store.with_untracked(|s| {
+                                        s.answer(InputResponse::PickSingle(id))
                                     });
+                                    if let Some(action) = answer {
+                                        store.update(|s| s.pending_label = Some(header.clone()));
+                                        let _ =
+                                            tx.unbounded_send(ClientMessage::Submit { action });
+                                    } else {
+                                        leptos::logging::error!(
+                                            "context menu: no live prompt names who answers it"
+                                        );
+                                    }
                                 }
                                 open.set(None);
                             }

@@ -88,6 +88,7 @@ fn activate(scrying: CardInstanceId) -> TurnAction {
 /// Put the `position`th of the cards still to be placed next from the top.
 fn place(position: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(position)),
     })
 }

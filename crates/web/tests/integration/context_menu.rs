@@ -6,7 +6,8 @@
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
-use game_core::state::LocationId;
+use game_core::state::{InvestigatorId, LocationId};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -17,22 +18,29 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, NodeList};
 
-/// Mount a `ContextMenu` with one `Location(10)`-anchored option, a fresh store
-/// and outbound channel, and the given initial `open` state. Returns the `open`
-/// signal and the receiver for submitted frames.
+/// Mount a `ContextMenu` with one `Location(10)`-anchored option, a store whose
+/// live prompt (asked of seat 1) offers it, an outbound channel, and the given
+/// initial `open` state. Returns the `open` signal and the receiver for
+/// submitted frames.
 async fn mount(
     open_initial: bool,
 ) -> (
     RwSignal<Option<(i32, i32)>>,
     UnboundedReceiver<ClientMessage>,
 ) {
-    let store = RwSignal::new(ClientState::default());
     let open = RwSignal::new(if open_initial { Some((0, 0)) } else { None });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let options =
         vec![ChoiceOption::new(OptionId(0), "Investigate")
             .at(OptionTarget::Location(LocationId(10)))];
+    let store = RwSignal::new(ClientState::default());
+    store.update(|s| {
+        s.outcome = Some(test_support::awaiting_pick_single_with(
+            "Choose an action",
+            options.clone(),
+        ));
+    });
     mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
@@ -91,8 +99,17 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
-        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+            action:
+                PlayerAction::ResolveInput {
+                    investigator,
+                    response,
+                },
+            ..
+        } => {
+            // The fixture's prompt is asked of seat 1, so the submit names them.
+            assert_eq!(investigator, InvestigatorId(1));
+            assert_eq!(response, InputResponse::PickSingle(OptionId(0)));
+        }
         other => panic!("expected ResolveInput, got {other:?}"),
     }
     assert!(

@@ -8,6 +8,7 @@ use axum::extract::ws::close_code;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
+use game_core::state::InvestigatorId;
 use protocol::{
     ClientMessage, ServerMessage, CLOSE_GAME_NOT_FOUND, CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
 };
@@ -98,6 +99,7 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
             },
         },
@@ -138,6 +140,7 @@ async fn rejected_action_returns_rejected_to_sender_only() {
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple {
                     selected: vec![OptionId(999_999)],
                 },

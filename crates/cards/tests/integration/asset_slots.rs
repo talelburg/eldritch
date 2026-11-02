@@ -168,6 +168,7 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
     // id is the point here — the subject is the wire `ResolveInput` itself —
     // so the response is raw rather than a `pick`.
     let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(99)),
     }));
     assert!(!session.expect_rejected().is_empty());
