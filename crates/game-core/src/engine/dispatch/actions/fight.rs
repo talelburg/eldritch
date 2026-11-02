@@ -1,6 +1,6 @@
 //! The Fight basic action, its candidates and target validation, the fight
-//! primary shared with the designated Fight, its after-test damage, and the
-//! retaliate attack a failed fight provokes.
+//! primary shared with the designated Fight, its after-test damage on success
+//! and on failure, and the retaliate attack a failed fight provokes.
 
 use card_dsl::dsl::{IntExpr, RevealClause};
 
@@ -11,8 +11,8 @@ use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{
-    AbilitySource, ActionResume, Enemy, EnemyId, GameState, InvestigatorId, SkillKind,
-    SkillTestFollowUp,
+    AbilitySource, ActionResume, DamageSource, Enemy, EnemyId, GameState, InvestigatorId,
+    SkillKind, SkillTestFollowUp,
 };
 
 /// The enemies a Fight may target: every enemy at `investigator`'s location, in
@@ -179,19 +179,16 @@ pub(crate) fn perform(
     )
 }
 
-/// A fight's after-test step (RR ST.7), run on success only: deal
+/// A fight's after-test step on success (RR ST.7): deal
 /// `1 + extra_damage + bonus_attack_damage` to `enemy_id`.
 ///
-/// `extra_damage` is evaluated here, when the attack's damage is determined,
-/// not when the attack began. Its context is the ability's (`source`), with the
-/// attacked enemy bound as the chosen enemy (Machete 01020's *"If the attacked
-/// enemy is the only enemy engaged with you"*) and the test's success margin
-/// bound (Switchblade 01044's *"If you succeed by 2 or more"*), so a card
-/// committed after initiation counts towards it. A negative value deals no
-/// less than the base. An expression the evaluator can't answer (an
-/// unregistered native tag) is returned as the rejection the caller
-/// propagates, so the apply rolls back as it did when the same error surfaced
-/// at initiation.
+/// `glossary/Fight_Action.md`: *"If the test is successful, the attack
+/// succeeds and damage is dealt to the attacked enemy."* The attack's own
+/// damage is [`attack_damage`]'s; a committed skill's bonus (Vicious Blow's
+/// +1) is added on top, read off the in-flight record where it accumulated at
+/// commit time. The in-flight test is still present here — it's torn down
+/// only at the end of resolution — so the accumulator, the ability's source
+/// and the verdict are all readable.
 ///
 /// The attacked enemy is still here. An enemy that left play *before* ST.6
 /// abandons the test outright (the skill-test driver's preamble), which is
@@ -200,23 +197,91 @@ pub(crate) fn perform(
 /// post-ST.6 `SkillTestResolved` run, before this step — has no corpus card that
 /// can do it: the fast hand events are Dodge, Working a Hunch, Evidence and Mind
 /// over Matter, none of which removes an enemy.
-///
-/// A `None` `extra_damage` (the basic Fight) contributes nothing.
-///
-/// A weapon's bonus damage (.38 Special's +1) rides on `extra_damage`; a
-/// committed skill's bonus (Vicious Blow's +1) accumulates on the in-flight
-/// record at commit time. The in-flight test is still present here —
-/// it's torn down only at the end of resolution — so the accumulator, the
-/// ability's source and the verdict are all readable.
 pub(in crate::engine::dispatch) fn after_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
     extra_damage: Option<&IntExpr>,
 ) -> Result<(), EngineOutcome> {
-    let (bonus, source, resolved) = cx.state.current_skill_test().map_or((0, None, None), |t| {
-        (t.bonus_attack_damage, t.source, t.resolved)
-    });
+    let bonus = cx
+        .state
+        .current_skill_test()
+        .map_or(0, |t| t.bonus_attack_damage);
+    let damage = attack_damage(cx, investigator, enemy_id, extra_damage)?.saturating_add(bonus);
+    combat::damage_enemy(cx, enemy_id, damage, Some(investigator));
+    Ok(())
+}
+
+/// A fight's after-test step on failure (RR ST.7): deal the damage of the
+/// attack to the investigator engaged with the attacked enemy, when that is
+/// someone other than the fighter.
+///
+/// `glossary/Fight_Action.md`: *"If the test fails, no damage is dealt to the
+/// attacked enemy. However, if an investigator fails this test against an
+/// enemy that is engaged with another single investigator, the damage of the
+/// attack is dealt to the investigator engaged with that enemy."* An unengaged
+/// enemy, or one engaged with the fighter, deals nobody anything.
+///
+/// *"The damage of the attack"* is [`attack_damage`]'s, without the
+/// committed-skill accumulator the success path adds: Vicious Blow 01025's
+/// +1 is printed *"If this skill test is successful during an attack"*, and
+/// this test failed. The deal is ordinary damage through the harm adapter, so
+/// the teammate may soak it onto their assets and answers the soak prompt. Its
+/// source is [`DamageSource::Effect`], not an enemy attack, which is what keeps
+/// Guard Dog 01021's *"When an enemy attack deals damage to Guard Dog"*
+/// silent. The deal is a tail call (ADR 0003): it pushes its frame and
+/// returns its outcome, and the driver yields to that frame before the rest of
+/// ST.7. An `extra_damage` the evaluator can't answer is returned as the
+/// rejection, as on success.
+///
+/// TODO(#579): a Massive enemy is engaged with every investigator at its
+/// location, so "another single investigator" can then name several.
+pub(in crate::engine::dispatch) fn after_failed_test(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+    extra_damage: Option<&IntExpr>,
+) -> EngineOutcome {
+    let Some(engaged) = cx
+        .state
+        .enemies
+        .get(&enemy_id)
+        .and_then(|e| e.engaged_with)
+        .filter(|&engaged| engaged != investigator)
+    else {
+        return EngineOutcome::Done;
+    };
+    match attack_damage(cx, investigator, enemy_id, extra_damage) {
+        Ok(damage) => combat::deal_harm(cx, engaged, damage, 0, DamageSource::Effect, false),
+        Err(rejection) => rejection,
+    }
+}
+
+/// The damage of the attack, determined at RR ST.7: the default 1 plus the
+/// attack's own `extra_damage` (.38 Special's +1). `glossary/Fight_Action.md`:
+/// *"The default damage dealt by an attack is 1. Some weapons, spells, or
+/// other special attacks may modify this damage."*
+///
+/// `extra_damage` is evaluated here, when the attack's damage is determined,
+/// not when the attack began. Its context is the ability's (`source`), with the
+/// attacked enemy bound as the chosen enemy (Machete 01020's *"If the attacked
+/// enemy is the only enemy engaged with you"*) and the test's result bound
+/// (Switchblade 01044's *"If you succeed by 2 or more"*), so a card committed
+/// after initiation counts towards it. A negative value deals no less than the
+/// base, and a `None` (the basic Fight) contributes nothing. An expression the
+/// evaluator can't answer (an unregistered native tag) is returned as the
+/// rejection the caller propagates, so the apply rolls back as it did when the
+/// same error surfaced at initiation.
+fn attack_damage(
+    cx: &Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+    extra_damage: Option<&IntExpr>,
+) -> Result<u8, EngineOutcome> {
+    let (source, resolved) = cx
+        .state
+        .current_skill_test()
+        .map_or((None, None), |t| (t.source, t.resolved));
     let mut ctx = EvalContext::for_controller_with_optional_source(investigator, source);
     ctx.set_chosen_enemy(enemy_id);
     if let Some(resolved) = resolved {
@@ -232,14 +297,7 @@ pub(in crate::engine::dispatch) fn after_test(
         }
         None => 0,
     };
-    combat::damage_enemy(
-        cx,
-        enemy_id,
-        1u8.saturating_add(u8::try_from(extra).unwrap_or(0))
-            .saturating_add(bonus),
-        Some(investigator),
-    );
-    Ok(())
+    Ok(1u8.saturating_add(u8::try_from(extra).unwrap_or(0)))
 }
 
 /// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
@@ -264,8 +322,10 @@ pub(in crate::engine::dispatch) fn after_test(
 /// No-op unless every condition holds: the test failed; its follow-up was
 /// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
 /// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
-/// no damage, so the target can't have been defeated mid-test; this only
-/// guards against future enemy-removing commit effects.
+/// no damage to the attacked enemy (only, at most, to the investigator
+/// engaged with it: [`after_failed_test`]), so the target can't have been
+/// defeated mid-test; this only guards against future enemy-removing commit
+/// effects.
 ///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
 /// [`Done`]: crate::engine::EngineOutcome::Done

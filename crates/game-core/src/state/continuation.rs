@@ -119,7 +119,9 @@ pub enum DamageSource {
         enemy: EnemyId,
     },
     /// Every deal that isn't an enemy attack: a card/treachery `Effect::Deal`,
-    /// a card-local native's harm, or a rule's (the deck-out horror),
+    /// a card-local native's harm, or a rule's (the deck-out horror, or a
+    /// failed attack's damage dealt to the investigator engaged with the
+    /// attacked enemy — not an enemy attack, so Guard Dog 01021 stays silent),
     /// all through the one harm adapter `deal_harm` or `Effect::Deal`. Nothing
     /// in the corpus distinguishes harm from a rule from harm from a card
     /// effect, so they share the arm. Like the enemy attack's, its `Finish` is a
@@ -1796,9 +1798,12 @@ pub enum SkillTestStep {
     FireOnCommit,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
-    /// pushes its `discover_clue` effect for the drive loop (yielding);
-    /// Fight / Evade / None run synchronously. On failure the follow-up
-    /// is skipped (follow-ups are success-only). Pre-advances to
+    /// pushes its `discover_clue` effect and the Evade follow-up its
+    /// `EnemyEvaded` timing event, each yielding to the drive loop; Fight and
+    /// None run synchronously. On failure the follow-up is skipped, except a
+    /// Fight's: the attack's damage is dealt to the investigator engaged with
+    /// the attacked enemy, if that is someone other than the fighter, and the
+    /// deal's frame yields the same way. Pre-advances to
     /// [`ApplyResultEffect`](Self::ApplyResultEffect).
     ApplyFollowUp,
     /// RR ST.7 part 2 — push the success/failure card effect: `on_success`

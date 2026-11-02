@@ -481,8 +481,10 @@ pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
 /// condition with `DamagePlaced` nested in its resolve step, then the resume —
 /// so **this is a tail-position call** (ADR 0003) exactly like an emit: nothing
 /// is placed when this returns. A caller with work to do afterwards puts it on a
-/// frame beneath, and the two that do (the enemy attack's coordinator, and
-/// `Effect::Deal`'s parked effect walk) already have one. See
+/// frame beneath, and the three that do already have one: the enemy attack's
+/// coordinator, `Effect::Deal`'s parked effect walk, and a failed Fight's
+/// redirected damage, whose skill test sits beneath with its cursor already
+/// past the step that dealt it. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 ///
 /// A `direct` deal offers no asset the soak: every point lands on the

@@ -1129,8 +1129,11 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
 /// On **success** the follow-up runs: the Investigate follow-up pushes its
 /// `discover_clue` effect and the Evade follow-up its `EnemyEvaded` timing
 /// event (each yielding to the drive loop), while Fight / None mutate
-/// synchronously. On **failure** the follow-up is skipped entirely (every
-/// variant is success-only). The cursor is pre-advanced to
+/// synchronously. On **failure** the follow-up is skipped, except a Fight's:
+/// its failure path deals the attack's damage to the investigator engaged
+/// with the attacked enemy, if that is someone other than the fighter
+/// (`glossary/Fight_Action.md`), and that deal pushes its frame the way the
+/// Investigate discovery does. The cursor is pre-advanced to
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
 /// so a suspending discovery (Cover Up 01007's before-discover interrupt) or
 /// evasion (Pickpocketing 01046's after-evade reaction window) resumes at
@@ -1139,15 +1142,16 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
 /// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
-/// When the Investigate or Evade follow-up pushes its frame the `advance`
-/// loop's top-frame check yields on the next iteration (that frame is now
-/// `last()`); Fight/None push nothing and the loop `continue`s on this frame
-/// straight into `ApplyResultEffect`.
+/// When the Investigate or Evade follow-up, or a failed Fight's redirected
+/// damage, pushes its frame the `advance` loop's top-frame check yields on the
+/// next iteration (that frame is now `last()`); otherwise nothing is pushed and
+/// the loop `continue`s on this frame straight into `ApplyResultEffect`.
 ///
-/// The Fight follow-up evaluates its `extra_damage` here, and an expression
-/// the evaluator can't answer comes back as the `Err` rejection the driver
-/// returns, rolling the apply back.
-fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(), EngineOutcome> {
+/// The Fight follow-up evaluates its `extra_damage` here, on either outcome,
+/// and an expression the evaluator can't answer comes back as the rejection
+/// the driver returns, rolling the apply back. Any other outcome but `Done` is
+/// returned the same way.
+fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let follow_up = cx
         .state
         .current_skill_test()
@@ -1161,26 +1165,35 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
         .expect("the SkillTest frame was present immediately above")
         .continuation = SkillTestStep::ApplyResultEffect;
 
-    // TODO(#409): a failed Fight does nothing here, but
-    // `data/rules-reference/rules/glossary/Fight_Action.md` has *"if an
-    // investigator fails this test against an enemy that is engaged with
-    // another single investigator, the damage of the attack is dealt to the
-    // investigator engaged with that enemy."*
-    if !resolved(cx).succeeded {
-        return Ok(());
-    }
     // Each basic action owns its after-test step; the test procedure only
-    // dispatches by kind.
-    match follow_up {
-        SkillTestFollowUp::None => {}
-        SkillTestFollowUp::Investigate => investigate::after_test(cx, investigator),
-        SkillTestFollowUp::Fight {
-            enemy,
-            extra_damage,
-        } => fight::after_test(cx, investigator, enemy, extra_damage.as_ref())?,
-        SkillTestFollowUp::Evade { enemy } => evade::after_test(cx, investigator, enemy),
+    // dispatches by kind and outcome.
+    match (resolved(cx).succeeded, follow_up) {
+        (true, SkillTestFollowUp::Investigate) => investigate::after_test(cx, investigator),
+        (
+            true,
+            SkillTestFollowUp::Fight {
+                enemy,
+                extra_damage,
+            },
+        ) => {
+            if let Err(rejection) =
+                fight::after_test(cx, investigator, enemy, extra_damage.as_ref())
+            {
+                return rejection;
+            }
+        }
+        (
+            false,
+            SkillTestFollowUp::Fight {
+                enemy,
+                extra_damage,
+            },
+        ) => return fight::after_failed_test(cx, investigator, enemy, extra_damage.as_ref()),
+        (true, SkillTestFollowUp::Evade { enemy }) => evade::after_test(cx, investigator, enemy),
+        (_, SkillTestFollowUp::None)
+        | (false, SkillTestFollowUp::Investigate | SkillTestFollowUp::Evade { .. }) => {}
     }
-    Ok(())
+    EngineOutcome::Done
 }
 
 /// RR ST.5–ST.6 — the [`DetermineOutcome`](SkillTestStep::DetermineOutcome)
@@ -1790,15 +1803,17 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
-                // then applies the action follow-up (success-only). The
-                // Investigate follow-up pushes discover_clue and the Evade one
-                // its EnemyEvaded coordinator → the loop check at the top of the
-                // next iteration sees that frame on top and yields; Fight/None
-                // mutate synchronously (a Fight that
+                // then applies the action follow-up (success-only, but for a
+                // failed Fight's redirected damage). The Investigate follow-up
+                // pushes discover_clue, the Evade one its EnemyEvaded
+                // coordinator and a failed Fight its redirected deal → the loop
+                // check at the top of the next iteration sees that frame on top
+                // and yields; a successful Fight and None mutate synchronously (a Fight that
                 // defeats an enemy queues a reaction window — also a non-SkillTest
                 // top frame, also yields).
-                if let Err(rejection) = apply_follow_up_step(cx, investigator) {
-                    return rejection;
+                let outcome = apply_follow_up_step(cx, investigator);
+                if !matches!(outcome, EngineOutcome::Done) {
+                    return outcome;
                 }
             }
             SkillTestStep::ApplyResultEffect => {
