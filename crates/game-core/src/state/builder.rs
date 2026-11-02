@@ -459,6 +459,20 @@ impl GameStateBuilder {
         self
     }
 
+    /// Begin the Investigation phase: the moment after step 2.1's
+    /// `PhaseStarted { Investigation }` forced abilities have resolved.
+    ///
+    /// Sets the Investigation phase and stages its anchor at
+    /// [`AfterPhaseStartForced`](InvestigationResume::AfterPhaseStartForced),
+    /// with nobody recorded as having taken a turn, so the engine's next drive
+    /// opens the post-2.1 player window and, once it closes, runs step 2.2.
+    pub fn beginning_investigation_phase(mut self) -> Self {
+        self.phase = Phase::Investigation;
+        self.phase_anchor =
+            Some(InvestigationPhaseFrame::at(InvestigationResume::AfterPhaseStartForced).into());
+        self
+    }
+
     /// End the Enemy phase: the moment after the last investigator's attacks,
     /// when step 3.4 runs.
     ///
@@ -738,7 +752,9 @@ fn with_turns_taken(
     }
     match anchor {
         Some(Continuation::InvestigationPhase(mut frame)) => {
-            frame.turns_taken = turns_taken;
+            for investigator in turns_taken {
+                frame.record_turn(investigator);
+            }
             Some(frame.into())
         }
         other => panic!(

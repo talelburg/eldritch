@@ -15,26 +15,13 @@ use game_core::action::InputResponse;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::Responder;
 use game_core::event::Event;
-use game_core::state::{
-    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Phase, Status,
-};
+use game_core::state::{GameStateBuilder, InvestigatorId, Phase, Status};
 use game_core::test_support::{seat, Seat, TestSession, TEST_REGISTRIES};
 use game_core::{assert_event, assert_no_event};
 
 const FIRST_SEAT: InvestigatorId = InvestigatorId(1);
 const SECOND_SEAT: InvestigatorId = InvestigatorId(2);
 const THIRD_SEAT: InvestigatorId = InvestigatorId(3);
-
-/// `board` at the start of the Investigation phase: step 2.1's forced
-/// abilities have resolved, so the post-2.1 window opens next, then step 2.2.
-fn investigation_begins(board: GameStateBuilder) -> TestSession {
-    board
-        .with_phase(Phase::Investigation)
-        .with_phase_anchor(InvestigationPhaseFrame::at(
-            InvestigationResume::AfterPhaseStartForced,
-        ))
-        .session()
-}
 
 /// Two seats `[1, 2]`, seat 2 the lead.
 fn two_seats_led_by_the_second() -> GameStateBuilder {
@@ -74,7 +61,9 @@ fn offered(session: &TestSession) -> Vec<InvestigatorId> {
 
 #[test]
 fn the_lead_is_asked_who_takes_the_first_turn_and_their_pick_opens_it() {
-    let session = investigation_begins(two_seats_led_by_the_second());
+    let session = two_seats_led_by_the_second()
+        .beginning_investigation_phase()
+        .session();
 
     assert_eq!(
         session.prompt().prompt,
@@ -88,7 +77,9 @@ fn the_lead_is_asked_who_takes_the_first_turn_and_their_pick_opens_it() {
 
 #[test]
 fn the_last_investigator_waiting_takes_their_turn_unasked() {
-    let session = investigation_begins(two_seats_led_by_the_second())
+    let session = two_seats_led_by_the_second()
+        .beginning_investigation_phase()
+        .session()
         .choose_turn(FIRST_SEAT)
         .take(&TurnAction::EndTurn);
     session.assert_at_turn_menu(SECOND_SEAT);
@@ -110,7 +101,9 @@ fn the_last_investigator_waiting_takes_their_turn_unasked() {
 
 #[test]
 fn the_second_choice_offers_only_the_investigators_still_waiting() {
-    let session = investigation_begins(three_seats([seat(1), seat(2), seat(3)]));
+    let session = three_seats([seat(1), seat(2), seat(3)])
+        .beginning_investigation_phase()
+        .session();
     assert_eq!(offered(&session), [FIRST_SEAT, SECOND_SEAT, THIRD_SEAT]);
 
     let session = session.choose_turn(SECOND_SEAT).take(&TurnAction::EndTurn);
@@ -123,7 +116,9 @@ fn the_second_choice_offers_only_the_investigators_still_waiting() {
 
 #[test]
 fn an_answer_from_the_investigator_who_is_not_the_lead_is_rejected() {
-    let session = investigation_begins(two_seats_led_by_the_second());
+    let session = two_seats_led_by_the_second()
+        .beginning_investigation_phase()
+        .session();
     let anchor = session.state().investigators[&FIRST_SEAT].card_anchor();
     let option = session
         .prompt()
@@ -138,31 +133,33 @@ fn an_answer_from_the_investigator_who_is_not_the_lead_is_rejected() {
 
 #[test]
 fn a_solo_game_never_sees_the_choice() {
-    let session = investigation_begins(
-        GameStateBuilder::new()
-            .with_registries(TEST_REGISTRIES)
-            .with_seat(seat(1))
-            .with_seating([FIRST_SEAT]),
-    );
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .with_seating([FIRST_SEAT])
+        .beginning_investigation_phase()
+        .session();
     session.assert_at_turn_menu(FIRST_SEAT);
 }
 
 #[test]
 fn an_investigator_eliminated_before_their_turn_is_not_offered() {
-    let session = investigation_begins(three_seats([
-        seat(1),
-        seat(2).status(Status::Defeated),
-        seat(3),
-    ]));
+    let session = three_seats([seat(1), seat(2).status(Status::Defeated), seat(3)])
+        .beginning_investigation_phase()
+        .session();
     assert_eq!(offered(&session), [FIRST_SEAT, THIRD_SEAT]);
 }
 
 #[test]
 fn nobody_is_the_active_investigator_while_the_choice_is_pending() {
-    let session = investigation_begins(two_seats_led_by_the_second());
+    let session = two_seats_led_by_the_second()
+        .beginning_investigation_phase()
+        .session();
     assert_eq!(session.state().active_investigator, None);
 
-    let session = investigation_begins(three_seats([seat(1), seat(2), seat(3)]))
+    let session = three_seats([seat(1), seat(2), seat(3)])
+        .beginning_investigation_phase()
+        .session()
         .choose_turn(FIRST_SEAT)
         .take(&TurnAction::EndTurn);
     assert_eq!(offered(&session), [SECOND_SEAT, THIRD_SEAT]);
@@ -177,11 +174,11 @@ fn nobody_is_the_active_investigator_while_the_choice_is_pending() {
 #[should_panic(expected = "not a turn choice")]
 fn choose_turn_panics_off_a_turn_choice() {
     // A solo game rests at the turn menu, not at a turn choice.
-    let _ = investigation_begins(
-        GameStateBuilder::new()
-            .with_registries(TEST_REGISTRIES)
-            .with_seat(seat(1))
-            .with_seating([FIRST_SEAT]),
-    )
-    .choose_turn(FIRST_SEAT);
+    let _ = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .with_seating([FIRST_SEAT])
+        .beginning_investigation_phase()
+        .session()
+        .choose_turn(FIRST_SEAT);
 }

@@ -13,8 +13,8 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{
-    Continuation, EnemyId, FastWindowFrame, FastWindowKind, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
+    Continuation, EnemyId, FastWindowFrame, FastWindowKind, GameStateBuilder, InvestigatorId,
+    LocationId, PhaseStep,
 };
 use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
@@ -36,10 +36,7 @@ fn investigation_begins() -> TestSession {
         .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
         .with_seating([A, B])
         .with_enemy(test_support::enemy(GHOUL).health(3).at(HERE))
-        .with_phase(Phase::Investigation)
-        .with_phase_anchor(InvestigationPhaseFrame::at(
-            InvestigationResume::AfterPhaseStartForced,
-        ))
+        .beginning_investigation_phase()
         .session()
 }
 

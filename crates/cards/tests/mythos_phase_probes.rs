@@ -134,8 +134,9 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 
 /// Seat `seats` test investigators through `seat_and_open`, keep every opening
 /// hand at the mulligan, and end every turn, the lead choosing them in seat
-/// order while two or more are waiting — the last `EndTurn` ticks through Investigation → Enemy → Upkeep into Mythos
-/// (round 2), pausing with the encounter-draw cursor on inv1.
+/// order while two or more are waiting. The last `EndTurn` ticks through
+/// Investigation → Enemy → Upkeep into Mythos (round 2), pausing with the
+/// encounter-draw cursor on inv1.
 fn at_mythos_draw(seats: usize) -> TestSession {
     // Seating refuses one investigator twice, so the seats after the first
     // are `test_inv(2)`, `test_inv(3)`, ….
@@ -153,16 +154,18 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         registries(),
     );
     let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));
-    (1..=seats).fold(session, |s, seat| {
-        let s = if seats - seat >= 1 {
-            s.choose_turn(InvestigatorId(
-                u32::try_from(seat).expect("a seat number fits in u32"),
-            ))
-        } else {
-            s
-        };
-        s.take(&TurnAction::EndTurn)
-    })
+    let in_seat_order = (1..).map(InvestigatorId).take(seats);
+    in_seat_order
+        .enumerate()
+        .fold(session, |s, (turns_taken, investigator)| {
+            let waiting = seats - turns_taken;
+            let s = if waiting >= 2 {
+                s.choose_turn(investigator)
+            } else {
+                s
+            };
+            s.take(&TurnAction::EndTurn)
+        })
 }
 
 /// [`at_mythos_draw`] with the encounter deck then seeded to `codes`, *after*

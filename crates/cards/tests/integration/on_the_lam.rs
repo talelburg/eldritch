@@ -23,8 +23,8 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase, SkillKind,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind,
 };
 use game_core::test_support::{enemy, location, seat, Printed, Seat, StagedEnemy, TestSession};
 
@@ -192,10 +192,7 @@ fn played_after_the_turn_the_lead_chose_begins() {
     let window = study_board(skids(), vec![])
         .with_seat(seat(2).at(HERE))
         .with_seating([INV, OTHER])
-        .with_phase(Phase::Investigation)
-        .with_phase_anchor(InvestigationPhaseFrame::at(
-            InvestigationResume::AfterPhaseStartForced,
-        ))
+        .beginning_investigation_phase()
         .session()
         .choose_turn(INV);
     assert_eq!(

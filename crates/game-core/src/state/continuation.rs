@@ -2344,6 +2344,16 @@ impl InvestigationPhaseFrame {
             turns_taken: Vec::new(),
         }
     }
+
+    /// Record that `investigator`'s turn has ended this phase, at 2.2.2.
+    pub(crate) fn record_turn(&mut self, investigator: InvestigatorId) {
+        self.turns_taken.push(investigator);
+    }
+
+    /// Whether `investigator` has yet to take a turn this phase.
+    pub(crate) fn is_waiting(&self, investigator: InvestigatorId) -> bool {
+        !self.turns_taken.contains(&investigator)
+    }
 }
 
 /// The Enemy phase anchor. See [`MythosPhaseFrame`].

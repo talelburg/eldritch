@@ -396,8 +396,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
         .continuations
         .topmost_of_mut::<InvestigationPhaseFrame>()
         .expect("resume_end_turn: no InvestigationPhase anchor beneath the turn")
-        .turns_taken
-        .push(active_id);
+        .record_turn(active_id);
     next_investigator_turn(cx)
 }
 
@@ -424,9 +423,10 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
 /// Waiting means Active and not yet recorded, so an eliminated investigator is
 /// never offered a turn.
 fn next_investigator_turn(cx: &mut Cx) -> EngineOutcome {
+    // Nobody is active between turns; beginning one sets it again.
+    cx.state.active_investigator = None;
     let active = cursor::player_order(cx.state);
     if active.is_empty() {
-        cx.state.active_investigator = None;
         return EngineOutcome::Done;
     }
     let waiting = {
@@ -437,19 +437,17 @@ fn next_investigator_turn(cx: &mut Cx) -> EngineOutcome {
             .expect("next_investigator_turn: no InvestigationPhase anchor on the stack");
         active
             .into_iter()
-            .filter(|id| !anchor.turns_taken.contains(id))
+            .filter(|id| anchor.is_waiting(*id))
             .collect::<Vec<_>>()
     };
     match waiting.as_slice() {
         [] => {
-            cx.state.active_investigator = None;
             // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
             // (Enemy 3.2); propagate its outcome rather than swallowing it.
             investigation_phase_end(cx)
         }
         [only] => begin_investigator_turn(cx, *only),
         [_, _, ..] => {
-            cx.state.active_investigator = None;
             cx.state.continuations.push(TurnChoiceFrame::new(waiting));
             EngineOutcome::Done
         }
