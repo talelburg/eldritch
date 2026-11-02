@@ -516,7 +516,23 @@ pub(crate) type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// Sign in as the [`TEST_ACCOUNT`] through the dev picker, then open a
 /// websocket to a game with that session.
 pub(crate) async fn connect(addr: SocketAddr, game_id: &str) -> Client {
-    let cookie = sign_in_over_http(addr, TEST_ACCOUNT).await;
+    connect_as(addr, game_id, TEST_ACCOUNT).await
+}
+
+/// Add an account named `name` to `pool`'s allowlist, beside the
+/// [`TEST_ACCOUNT`], so a test can sign a second account in. Call it before
+/// the pool is served.
+pub(crate) async fn add_account(pool: &SqlitePool, name: &str) -> accounts::Account {
+    let email = format!("{}@example.com", name.to_lowercase());
+    accounts::add(pool, name, &[email])
+        .await
+        .unwrap_or_else(|error| panic!("add the account {name}: {error}"))
+}
+
+/// Sign in as the account named `name` through the dev picker, then open a
+/// websocket to a game with that session.
+pub(crate) async fn connect_as(addr: SocketAddr, game_id: &str, name: &str) -> Client {
+    let cookie = sign_in_over_http(addr, name).await;
     connect_with(addr, game_id, Some(&cookie)).await
 }
 

@@ -85,7 +85,8 @@ async fn confirm_submits_the_selected_options() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(
             response,
             InputResponse::PickMultiple {
@@ -104,7 +105,8 @@ async fn confirm_with_no_selection_submits_empty() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickMultiple { selected: vec![] }),
         other => panic!("expected PickMultiple, got {other:?}"),
     }
@@ -122,7 +124,8 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Skip),
         other => panic!("expected Skip, got {other:?}"),
     }
@@ -167,7 +170,8 @@ async fn confirm_holds_until_the_selection_is_the_count_asked() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(
             response,
             InputResponse::PickMultiple {
@@ -213,7 +217,8 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected Confirm, got {other:?}"),
     }
@@ -254,7 +259,8 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Skip),
         other => panic!("expected Skip, got {other:?}"),
     }
@@ -317,7 +323,8 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -346,7 +353,8 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -373,7 +381,8 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
@@ -408,7 +417,8 @@ async fn banner_renders_only_unanchored_options() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
         other => panic!("expected PickSingle, got {other:?}"),
     }

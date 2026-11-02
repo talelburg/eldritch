@@ -79,7 +79,8 @@ async fn activatable_in_play_card_opens_a_menu_and_submits() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

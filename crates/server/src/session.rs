@@ -20,9 +20,9 @@ use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
-use protocol::live::{LiveGame, Refusal};
+use protocol::live::{LiveGame, Refused};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{GameId, ServerMessage};
+use protocol::{GameId, LogPosition, ServerMessage};
 use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -68,14 +68,14 @@ pub enum SessionError {
     },
 }
 
-/// Why [`GameSession::apply`] didn't apply an action. Its `Display` is the
-/// reason the submitting client is sent.
+/// Why [`GameSession::apply`] didn't apply an action. The socket sends the
+/// submitting client the wire [`Refusal`](protocol::Refusal) it maps to.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ApplyError {
     /// The live game refused it. Nothing was stored.
     #[error(transparent)]
-    Refused(#[from] Refusal),
+    Refused(#[from] Refused),
     /// The live game accepted it, but storing it failed. Nothing was
     /// committed.
     #[error(transparent)]
@@ -274,8 +274,8 @@ impl GameSession {
         &self.live
     }
 
-    /// Submit a player action to the live game, store the answer it accepts,
-    /// then commit it. Returns the [`ServerMessage::Applied`] to send every
+    /// Submit a player action, the answer to the prompt at `prompt`, to the
+    /// live game, store the answer it accepts, then commit it. Returns the [`ServerMessage::Applied`] to send every
     /// connection.
     ///
     /// A refused action stores nothing and leaves the game unchanged, and so
@@ -287,8 +287,12 @@ impl GameSession {
     /// [`ApplyError::Refused`] if the live game refuses the action, or
     /// [`ApplyError::Session`] wrapping [`SessionError::Serde`] if the answer
     /// fails to serialize or [`SessionError::Db`] if persisting it fails.
-    pub async fn apply(&mut self, action: PlayerAction) -> Result<ServerMessage, ApplyError> {
-        let accepted = self.live.submit(action)?;
+    pub async fn apply(
+        &mut self,
+        prompt: LogPosition,
+        action: PlayerAction,
+    ) -> Result<ServerMessage, ApplyError> {
+        let accepted = self.live.submit(prompt, action)?;
         let row = ActionRow {
             answer: serde_json::to_string(accepted.answer()).map_err(SessionError::from)?,
             draws: to_sql_integer(accepted.draws()),

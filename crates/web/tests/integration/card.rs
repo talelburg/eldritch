@@ -269,7 +269,8 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }
@@ -356,7 +357,8 @@ async fn hand_card_glows_for_a_reaction_anchored_by_code() {
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

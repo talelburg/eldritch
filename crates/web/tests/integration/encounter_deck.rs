@@ -133,7 +133,8 @@ async fn draw_glows_and_submits_confirm_for_the_mythos_draw() {
     task::tick().await;
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::Confirm),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

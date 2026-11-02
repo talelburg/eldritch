@@ -82,7 +82,8 @@ fn is_disabled(el: &HtmlElement) -> bool {
 fn submitted(rx: &mut UnboundedReceiver<ClientMessage>) -> InputResponse {
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => response,
         other => panic!("expected ResolveInput, got {other:?}"),
     }

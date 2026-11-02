@@ -7,12 +7,16 @@ use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat, TEST_REGISTRIES};
-use protocol::live::{LiveGame, Refusal};
+use protocol::live::{LiveGame, Refused};
 use protocol::logged_answer::LoggedResponse;
-use protocol::ServerMessage;
+use protocol::{Applied, LogPosition, ServerMessage};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
+
+/// The position the [`at_turn_menu`] game's open turn waits at: three answers
+/// are already in its log.
+const TURN_MENU: LogPosition = LogPosition(3);
 
 /// One investigator with 3 resources and their turn open, as a live game three
 /// answers into its log.
@@ -50,18 +54,29 @@ fn resources(state: &GameState) -> u8 {
     state.investigators[&INV].resources
 }
 
+/// The payload of the `Applied` a commit hands back.
+fn applied(message: ServerMessage) -> Applied {
+    let ServerMessage::Applied(applied) = message else {
+        panic!("expected Applied, got {message:?}");
+    };
+    applied
+}
+
 #[test]
 fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
     let mut live = at_turn_menu();
     let action = take_a_resource(live.state());
     let PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(picked),
+        ..
     } = action
     else {
         unreachable!("take_a_resource picks one option");
     };
 
-    let accepted = live.submit(action).expect("the engine accepts it");
+    let accepted = live
+        .submit(TURN_MENU, action)
+        .expect("the engine accepts it");
 
     let LoggedResponse::PickSingle { option } = &accepted.answer().response else {
         panic!("logged as {:?}", accepted.answer().response);
@@ -71,13 +86,14 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
         "the logged answer names the option picked"
     );
     let draws = accepted.draws();
-    let applied = live.commit(accepted);
-    let ServerMessage::Applied { state, .. } = applied else {
-        panic!("expected Applied, got {applied:?}");
-    };
-    assert_eq!(resources(&state), 4, "the Applied holds the next state");
+    let applied = applied(live.commit(accepted));
     assert_eq!(
-        draws, state.rng.draws,
+        resources(&applied.state),
+        4,
+        "the Applied holds the next state"
+    );
+    assert_eq!(
+        draws, applied.state.rng.draws,
         "the draws checkpoint is the next state's"
     );
 }
@@ -89,50 +105,94 @@ fn submitting_changes_nothing_until_commit() {
     let outcome_before = live.outcome().clone();
 
     let _accepted = live
-        .submit(take_a_resource(live.state()))
+        .submit(TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
     assert_eq!(*live.state(), before);
     assert_eq!(*live.outcome(), outcome_before);
-    assert_eq!(live.seq(), 3);
+    assert_eq!(live.prompt(), TURN_MENU);
 }
 
 #[test]
 fn commit_advances_to_the_applied_state() {
     let mut live = at_turn_menu();
     let accepted = live
-        .submit(take_a_resource(live.state()))
+        .submit(TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = live.commit(accepted);
+    let applied = applied(live.commit(accepted));
 
-    let ServerMessage::Applied { state, outcome, .. } = applied else {
-        panic!("expected Applied, got {applied:?}");
-    };
-    assert_eq!(live.seq(), 4);
-    assert_eq!(*live.state(), *state);
-    assert_eq!(*live.outcome(), outcome);
+    assert_eq!(live.prompt(), LogPosition(4));
+    assert_eq!(*live.state(), *applied.state);
+    assert_eq!(*live.outcome(), applied.outcome);
     assert_eq!(resources(live.state()), 4);
+}
+
+#[test]
+fn an_applied_names_the_position_it_answered_and_the_next_prompt() {
+    let mut live = at_turn_menu();
+    let accepted = live
+        .submit(TURN_MENU, take_a_resource(live.state()))
+        .expect("the engine accepts it");
+
+    let applied = applied(live.commit(accepted));
+
+    assert_eq!(applied.answered, LogPosition(3));
+    assert_eq!(applied.prompt, LogPosition(4));
 }
 
 #[test]
 fn an_answer_the_engine_rejects_is_refused() {
     let live = at_turn_menu();
 
-    let refusal = live
-        .submit(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(999)),
-        })
+    let refused = live
+        .submit(
+            TURN_MENU,
+            PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(999)),
+            },
+        )
         .expect_err("no option 999 is offered");
 
-    assert!(matches!(refusal, Refusal::Engine(_)), "got {refusal:?}");
+    assert!(matches!(refused, Refused::Engine(_)), "got {refused:?}");
 }
 
 #[test]
-fn hello_carries_the_current_state_outcome_and_setup_events() {
+fn an_answer_to_an_earlier_position_is_refused_as_a_stale_prompt() {
+    let live = at_turn_menu();
+
+    let refused = live
+        .submit(LogPosition(2), take_a_resource(live.state()))
+        .expect_err("position 2 was answered already");
+
+    assert_eq!(refused, Refused::StalePrompt);
+}
+
+#[test]
+fn an_in_range_option_from_a_second_tab_on_the_old_prompt_is_refused() {
+    // Tab A takes a resource; tab B, still showing that same turn menu, then
+    // picks the same option. It is still in range on the new turn menu, so
+    // only the position tells the two prompts apart.
+    let mut live = at_turn_menu();
+    let tab_b = take_a_resource(live.state());
+    let tab_a = live
+        .submit(TURN_MENU, take_a_resource(live.state()))
+        .expect("the engine accepts tab A's answer");
+    let _ = live.commit(tab_a);
+
+    let refused = live
+        .submit(TURN_MENU, tab_b)
+        .expect_err("tab B answered the prompt tab A already answered");
+
+    assert_eq!(refused, Refused::StalePrompt);
+}
+
+#[test]
+fn hello_carries_the_current_position_state_outcome_and_setup_events() {
     let live = at_turn_menu();
 
     let ServerMessage::Hello {
+        prompt,
         state,
         outcome,
         events,
@@ -141,6 +201,7 @@ fn hello_carries_the_current_state_outcome_and_setup_events() {
         panic!("expected Hello");
     };
 
+    assert_eq!(prompt, TURN_MENU);
     assert_eq!(*state, *live.state());
     assert_eq!(outcome, *live.outcome());
     assert_eq!(events, vec![Event::ScenarioStarted]);

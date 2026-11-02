@@ -41,8 +41,9 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
         .next()
 }
 
-/// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine,
-/// recording `label` as the next `Applied` batch's event-log header.
+/// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine
+/// as the answer to the prompt the store holds, recording `label` as the next
+/// `Applied` batch's event-log header.
 ///
 /// **The one place the client sends player input.** Every surface that submits —
 /// these controls, the prompt banner's buttons, the skill-test modal's Confirm —
@@ -54,8 +55,10 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 pub fn submit(response: InputResponse, label: impl Into<String>) {
     let store = store::use_store();
     if let Some(tx) = use_context::<OutboundTx>() {
+        let prompt = store.with_untracked(|s| s.prompt);
         store.update(|s| s.pending_label = Some(label.into()));
         let _ = tx.unbounded_send(ClientMessage::Submit {
+            prompt,
             action: PlayerAction::ResolveInput { response },
         });
     }

@@ -333,7 +333,8 @@ async fn actionable_location_glows_opens_menu_and_submits() {
     let msg = board.rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

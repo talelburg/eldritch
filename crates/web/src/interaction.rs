@@ -180,8 +180,10 @@ pub fn ContextMenu(
                             on:click=move |ev| {
                                 ev.stop_propagation();
                                 if let Some(tx) = tx.clone() {
+                                    let prompt = store.with_untracked(|s| s.prompt);
                                     store.update(|s| s.pending_label = Some(header.clone()));
                                     let _ = tx.unbounded_send(ClientMessage::Submit {
+                                        prompt,
                                         action: PlayerAction::ResolveInput {
                                             response: InputResponse::PickSingle(id),
                                         },

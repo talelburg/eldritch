@@ -42,6 +42,10 @@ pub fn build_id() -> &'static str {
 pub enum ClientMessage {
     /// Submit a player action for validation and application.
     Submit {
+        /// The log position of the prompt this answers, as the last
+        /// [`ServerMessage::Hello`] or [`Applied`] named it. Any other
+        /// position is refused as [`Refusal::StalePrompt`].
+        prompt: LogPosition,
         /// The action to apply.
         action: PlayerAction,
     },
@@ -60,6 +64,9 @@ pub enum ServerMessage {
     /// current state and the outcome of the most recent apply (including
     /// any pending [`AwaitingInput`](EngineOutcome::AwaitingInput)).
     Hello {
+        /// The log position of the prompt the game awaits: what a submit
+        /// answering it sends back.
+        prompt: LogPosition,
         /// Current derived game state. Boxed to keep the enum (and the
         /// per-game broadcast ring buffer) small — `GameState` dwarfs
         /// the other variants.
@@ -74,27 +81,82 @@ pub enum ServerMessage {
         events: Vec<Event>,
     },
     /// Broadcast to every connection of a game after an accepted action.
-    Applied {
-        /// The authoritative game state after the action resolved.
-        /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
-        /// `state`: `GameState` dwarfs the other variants. The client
-        /// renders this snapshot directly (events are for log/animation,
-        /// not state reconstruction).
-        state: Box<GameState>,
-        /// Events emitted by the action's resolution.
-        events: Vec<Event>,
-        /// Outcome of the apply.
-        outcome: EngineOutcome,
-    },
-    /// Sent only to the submitting client when its action is refused
-    /// (engine rejection, a malformed frame, or a persistence error).
-    Rejected {
-        /// Human-readable reason.
-        reason: String,
-    },
+    Applied(Applied),
+    /// Sent only to the submitting client when its submit is refused.
+    Rejected(Refusal),
     /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
     /// broadcast to the room.
     Pong,
+}
+
+/// A place in a game's action log: the position the next answer will occupy,
+/// which names the prompt the game is waiting on.
+///
+/// Every prompt a client is shown carries one, and a submit sends it back, so
+/// an answer meant for an earlier prompt is refused rather than resolving the
+/// current one. Transparent over the log's `i64` row position, so it
+/// serialises as a bare JSON number. The default is the first position, the
+/// one a game with no answers awaits.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct LogPosition(pub i64);
+
+impl LogPosition {
+    /// The position after this one: where the answer after an answer at this
+    /// position goes.
+    #[must_use]
+    pub fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
+impl fmt::Display for LogPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The body of [`ServerMessage::Applied`]: one accepted answer, and the game
+/// it left.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Applied {
+    /// The log position the answer occupies.
+    pub answered: LogPosition,
+    /// The log position of the prompt the game now awaits, the one after
+    /// [`answered`](Self::answered).
+    pub prompt: LogPosition,
+    /// The authoritative game state after the action resolved.
+    /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
+    /// `state`: `GameState` dwarfs the other variants. The client
+    /// renders this snapshot directly (events are for log/animation,
+    /// not state reconstruction).
+    pub state: Box<GameState>,
+    /// Events emitted by the action's resolution.
+    pub events: Vec<Event>,
+    /// Outcome of the apply.
+    pub outcome: EngineOutcome,
+}
+
+/// Why a submit was refused: the body of [`ServerMessage::Rejected`]. Each
+/// variant tells a client how to react.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Refusal {
+    /// It answered an earlier log position than the prompt the game awaits.
+    /// The client stays quiet: it already has the newer state, or it is on
+    /// its way.
+    StalePrompt,
+    /// The engine rejected the answer, for this reason, which the client
+    /// shows the player.
+    Engine(String),
+    /// The frame didn't parse as a [`ClientMessage`]: a client bug.
+    Malformed,
+    /// The engine accepted the answer but it couldn't be saved, for this
+    /// reason: the log can't record it, or the store write failed. Nothing
+    /// changed, and the player may try again.
+    Failed(String),
 }
 
 /// Stable identifier for a persisted game.
@@ -278,6 +340,7 @@ mod tests {
             .build();
         let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
+            prompt: LogPosition(0),
             state: Box::new(state.clone()),
             outcome: EngineOutcome::Done,
             events: events.clone(),
@@ -304,17 +367,19 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
             .build();
-        let msg = ServerMessage::Applied {
+        let msg = ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            prompt: LogPosition(1),
             state: Box::new(state.clone()),
             events: Vec::new(),
             outcome: EngineOutcome::Done,
-        };
+        });
 
         let json = serde_json::to_string(&msg).expect("serialize");
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
         match back {
-            ServerMessage::Applied { state: s, .. } => assert_eq!(*s, state),
+            ServerMessage::Applied(Applied { state: s, .. }) => assert_eq!(*s, state),
             other => panic!("expected Applied, got {other:?}"),
         }
     }
@@ -328,16 +393,18 @@ mod tests {
         // ChoiceOption.target field survives the ServerMessage envelope
         // (game-core covers an anchored value directly).
         let outcome = test_support::awaiting_pick_single_input("Choose an action");
-        let msg = ServerMessage::Applied {
+        let msg = ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            prompt: LogPosition(1),
             state: Box::new(state),
             events: Vec::new(),
             outcome,
-        };
+        });
 
         let json = serde_json::to_string(&msg).expect("serialize");
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
-        let ServerMessage::Applied { outcome, .. } = back else {
+        let ServerMessage::Applied(Applied { outcome, .. }) = back else {
             panic!("expected Applied, got {back:?}");
         };
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {

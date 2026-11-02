@@ -6,7 +6,7 @@ use game_core::state::{GameStateBuilder, Phase};
 use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
-use protocol::ServerMessage;
+use protocol::{LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
@@ -28,6 +28,7 @@ async fn mount_at(phase: Phase, round: u32) {
         store::reduce(
             s,
             ServerMessage::Hello {
+                prompt: LogPosition(0),
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,
                 events: Vec::new(),

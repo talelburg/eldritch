@@ -91,7 +91,8 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {
-            action: PlayerAction::ResolveInput { response },
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other => panic!("expected ResolveInput, got {other:?}"),
     }

@@ -55,7 +55,7 @@ use game_core::state::{
 };
 use game_core::test_support::{self, enemy, location, seat, TestSession};
 use protocol::live::LiveGame;
-use protocol::ServerMessage;
+use protocol::{Applied, LogPosition, ServerMessage};
 use web::skill_test_result;
 use web::store::{self, ClientState};
 
@@ -217,10 +217,10 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
     // failure, not a hang.
     for _ in 0..16 {
         let accepted = live
-            .submit(PlayerAction::ResolveInput { response })
+            .submit(live.prompt(), PlayerAction::ResolveInput { response })
             .unwrap_or_else(|refusal| panic!("the answer is refused: {refusal}"));
         let applied = live.commit(accepted);
-        let ServerMessage::Applied { events, .. } = &applied else {
+        let ServerMessage::Applied(Applied { events, .. }) = &applied else {
             unreachable!("a commit hands back an Applied");
         };
         let test_ended = events
@@ -292,7 +292,9 @@ fn the_result_does_not_survive_the_end_of_its_own_test() {
     let mut client = ClientState::default();
     store::reduce(
         &mut client,
-        ServerMessage::Applied {
+        ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            prompt: LogPosition(1),
             state: Box::new(board(false)),
             events: vec![
                 Event::SkillTestSucceeded {
@@ -305,7 +307,7 @@ fn the_result_does_not_survive_the_end_of_its_own_test() {
                 },
             ],
             outcome: EngineOutcome::Done,
-        },
+        }),
     );
     assert!(
         skill_test_result::summarize(&client).is_none(),
