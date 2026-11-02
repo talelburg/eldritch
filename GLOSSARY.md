@@ -232,6 +232,10 @@ _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored gam
 A game as it is being played: its current state, its place in the log, and who may answer. It decides whether a submitted answer is accepted, and what each member is then told. It persists nothing and sends nothing. A stored game is what remains of it on disk, and loading one rebuilds the live game. Until the wire break (#1230) it holds no seats: it accepts an answer from any member and tells every member the same thing.
 _Avoid_: "Session" or "session core". "Session" already names the sign-in session.
 
+**Log position**:
+The place in a game's action log that the next answer will occupy. It names the prompt the game is waiting on, so a submitted answer says which prompt it answers, and an answer naming any other position is refused as stale. It also names each answer that was applied.
+_Avoid_: "Resume token" (the engine kept a placeholder by that name that nothing read). Also avoid "prompt id", which reads as something the engine assigns. And avoid "turn", which is a game concept.
+
 **Setup fingerprint**:
 The record, made when a game is created, of what setup decided: every hand, every deck's order, the encounter deck's order and the chaos bag, as card codes. A load whose re-run setup decides differently fails.
 _Avoid_: "Seed" for it. The seed is the RNG input; the fingerprint is what setup produced from it.
