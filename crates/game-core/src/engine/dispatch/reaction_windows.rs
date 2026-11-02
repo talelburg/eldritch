@@ -669,12 +669,13 @@ pub(super) fn clear_passes(cx: &mut Cx) {
     }
 }
 
-/// Why `investigator`'s option may not be picked from the window on top: they
-/// have passed it, so the prompt no longer offers it. `None` otherwise.
+/// Why `investigator`'s option `option_id` may not be picked from the window
+/// on top: they have passed it, so the prompt no longer offers it. `None`
+/// otherwise.
 pub(super) fn refuses_passed(
     cx: &Cx,
     investigator: InvestigatorId,
-    i: u32,
+    option_id: u32,
 ) -> Option<EngineOutcome> {
     let passed = cx
         .state
@@ -685,7 +686,8 @@ pub(super) fn refuses_passed(
         .contains(&investigator)
         .then(|| EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: option {i} is {investigator:?}'s, who has passed this window"
+                "ResolveInput: option {option_id} is {investigator:?}'s, who has passed this \
+                 window"
             )
             .into(),
         })

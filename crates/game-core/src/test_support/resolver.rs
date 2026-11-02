@@ -31,7 +31,8 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
-//! use game_core::state::{GameStateBuilder, InvestigatorId};
+//! use game_core::state::investigator::InvestigatorId;
+//! use game_core::state::GameStateBuilder;
 //! use game_core::test_support::TEST_REGISTRIES;
 //!
 //! // A `ResolveInput` against a bare state with no outstanding prompt

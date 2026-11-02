@@ -306,24 +306,16 @@ fn a_fast_play_clears_an_earlier_pass_in_the_window() {
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
     )
     .session();
-    let offered_to = |session: &TestSession| -> Vec<Option<InvestigatorId>> {
-        session
-            .prompt()
-            .options
-            .iter()
-            .map(|option| option.investigator)
-            .collect()
-    };
-    assert_eq!(offered_to(&window), [Some(A), Some(B)]);
+    assert_eq!(window.offered_to(), [Some(A), Some(B)]);
 
     let session = window.skip_for(A);
-    assert_eq!(offered_to(&session), [Some(B)], "A has passed");
+    assert_eq!(session.offered_to(), [Some(B)], "A has passed");
 
     let beat_cop = beat_cop(session.state());
     let session = session.pick_for(B, beat_cop);
     assert_beat_cop_fired(&session);
     assert_eq!(
-        offered_to(&session),
+        session.offered_to(),
         [Some(A)],
         "B's play cleared A's pass, so A's Beat Cop is offered again"
     );

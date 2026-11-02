@@ -537,12 +537,21 @@ impl InputRequest {
             Responder::Investigator(investigator) | Responder::Lead(investigator) => {
                 Some(investigator)
             }
-            Responder::Several => picked(response)
-                .first()
-                .and_then(|id| self.option(*id))
-                .and_then(|option| option.investigator)
+            Responder::Several => self
+                .picked_investigator(response)
                 .or_else(|| self.options.iter().find_map(|option| option.investigator)),
         }
+    }
+
+    /// The investigator the first option `response` picks is offered to.
+    /// `None` for a confirm or a pass, a pick of an option offered to no one
+    /// in particular, or an id the prompt doesn't offer.
+    #[must_use]
+    pub fn picked_investigator(&self, response: &InputResponse) -> Option<InvestigatorId> {
+        picked(response)
+            .first()
+            .and_then(|id| self.option(*id))
+            .and_then(|option| option.investigator)
     }
 
     /// Why `investigator` may not answer this prompt with `response`, or

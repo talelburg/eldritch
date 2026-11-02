@@ -830,6 +830,20 @@ impl TestSession {
         options_at(self.prompt(), target).count()
     }
 
+    /// The investigator each of the current prompt's options is offered to, in
+    /// option order: who may still pick something in a window several answer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_to(&self) -> Vec<Option<InvestigatorId>> {
+        self.prompt()
+            .options
+            .iter()
+            .map(|option| option.investigator)
+            .collect()
+    }
+
     /// Assert the session rests at `investigator`'s turn menu: the prompt
     /// anchored to their [`TurnControl`](OptionTarget::TurnControl). The state
     /// assertion for a step that returns to an open turn.

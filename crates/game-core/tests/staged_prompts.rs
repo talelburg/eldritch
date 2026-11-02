@@ -287,7 +287,6 @@ fn a_spawn_engagement_answered_by_someone_other_than_the_lead_is_rejected() {
         .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
         .session();
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
-    let before = session.state().clone();
     let other = session.state().investigators[&OTHER].card_anchor();
     let id = session
         .prompt()
@@ -297,10 +296,7 @@ fn a_spawn_engagement_answered_by_someone_other_than_the_lead_is_rejected() {
         .expect("the lead's tie offers OTHER")
         .id;
 
-    let session = session.answer_as(INV, InputResponse::PickSingle(id));
-    session.expect_rejected();
-    assert_eq!(session.state(), &before);
-    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+    session.assert_rejects(|s| s.answer_as(INV, InputResponse::PickSingle(id)));
 }
 
 /// The open turn's menu belongs to the investigator whose turn it is, so an
@@ -312,13 +308,9 @@ fn a_turn_action_answered_by_someone_other_than_the_active_investigator_is_rejec
         .open_turn(INV)
         .session();
     assert_eq!(session.prompt().responder, Responder::Investigator(INV));
-    let before = session.state().clone();
     let id = session.prompt().options[0].id;
 
-    let session = session.answer_as(OTHER, InputResponse::PickSingle(id));
-    session.expect_rejected();
-    assert_eq!(session.state(), &before);
-    session.assert_at_turn_menu(INV);
+    session.assert_rejects(|s| s.answer_as(OTHER, InputResponse::PickSingle(id)));
 }
 
 /// A slot make-room pick asks which occupier to discard, re-deriving the
