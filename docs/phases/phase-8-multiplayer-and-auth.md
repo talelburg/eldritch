@@ -45,7 +45,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #581 | Seat identity on the wire: every answer names its investigator, each account gets its own messages, with #1230, PR #1297 |
 | #583 | Wire versioning: `Hello` carries the build, with #1230, PR #1297 |
 | #662 | A barricade-stranded enemy engages the investigators left at the origin, PR #1299 |
-| #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling; the engine already did, now pinned by tests, PR #1300 |
+| #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |

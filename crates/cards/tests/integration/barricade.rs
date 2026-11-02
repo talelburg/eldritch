@@ -467,6 +467,8 @@ const BLOCKED: LocationId = LocationId(2);
 const MID: LocationId = LocationId(3);
 /// The divergence board's far end, two connections from [`HUB`].
 const FAR: LocationId = LocationId(4);
+/// The unbarricaded location beside [`BLOCKED`], one connection from [`HUB`].
+const OPEN: LocationId = LocationId(3);
 
 /// The issue's divergence scenario. The Gathering's own map is a star around
 /// the Hallway, which cannot express "two connections away", so this is a
@@ -580,7 +582,6 @@ fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
 
 #[test]
 fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
-    const OPEN: LocationId = LocationId(3);
     const TARGET: LocationId = LocationId(4);
     // Diamond: Hub(1) — Blocked(2, barricaded) — Target(4) [investigator]
     // and Hub — Open(3) — Target. Both first steps are shortest; only the
@@ -604,60 +605,54 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
     );
 }
 
-/// The prey-tie board's unbarricaded location, one connection from [`HUB`].
-const TIED_OPEN: LocationId = LocationId(3);
-
 /// Investigator 1 behind a barricade and investigator 2 in the open, each one
 /// connection from the hunter at [`HUB`], so the two tie as nearest and Swarm
 /// of Rats (no prey instructions) leaves the tie to the lead: Hub(1) —
 /// Blocked(2) [investigator 1] and Hub — Open(3) [investigator 2].
 fn prey_tie_with_barricades(barricaded: &[LocationId]) -> TestSession {
     board(
-        &[
-            (HUB, &[BLOCKED, TIED_OPEN]),
-            (BLOCKED, &[HUB]),
-            (TIED_OPEN, &[HUB]),
-        ],
-        vec![seat(1).at(BLOCKED), seat(2).at(TIED_OPEN)],
+        &[(HUB, &[BLOCKED, OPEN]), (BLOCKED, &[HUB]), (OPEN, &[HUB])],
+        vec![seat(1).at(BLOCKED), seat(2).at(OPEN)],
         hunter_at(HUB),
         barricaded,
     )
 }
 
-/// Regression for #795: of two prey-tied nearest investigators, the lead is
-/// not offered the one behind a barricade. FFG's Game Rules Specialist on this
-/// board (<https://boardgamegeek.com/thread/3073397/exhausted-enemies-whunter-movement>):
-/// *"because the hunter enemy is able to move, it must move. And because it
-/// cannot move any closer to the investigator at the location with the
-/// Barricade, it will have to move toward the other investigator."* A prompt
-/// would stop the session before the move, so arriving at Open also proves
-/// none was raised.
-#[test]
-fn a_prey_tied_hunter_moves_toward_the_unblocked_investigator_without_a_prompt() {
-    let session = end_the_investigation_phase(prey_tie_with_barricades(&[BLOCKED]), 2);
-    assert_eq!(
-        session.state().enemies[&RATS].current_location,
-        Some(TIED_OPEN),
-        "a hunter able to move must move, so the blocked direction is never offered",
-    );
-}
-
-/// With every tied direction blocked the hunter cannot move at all, so it
-/// stays, and the lead is not asked which way it fails to go: `glossary/Hunter.md`, *"If a hunter enemy would be compelled to a
-/// location to which the move is blocked by a card ability, the enemy does not
-/// move."*
-#[test]
-fn a_prey_tied_hunter_with_every_direction_blocked_does_not_move() {
-    let session = end_the_investigation_phase(prey_tie_with_barricades(&[BLOCKED, TIED_OPEN]), 2);
-    assert_eq!(session.state().enemies[&RATS].current_location, Some(HUB));
-    // A tie-break prompt would also leave the Rats at the Hub, so prove the
-    // Enemy phase ran on past step 3.2 without stopping for one.
+/// The Enemy phase ran on past step 3.2 into Upkeep, so no hunter tie-break
+/// prompt stopped it. A prompt would leave the hunter where it started, which
+/// a location assertion alone can't tell apart from "did not move".
+fn assert_step_3_2_did_not_prompt(session: &TestSession) {
     assert_event!(
         session.events(),
         Event::PhaseStarted {
             phase: game_core::state::Phase::Upkeep
         }
     );
+}
+
+/// Of two prey-tied nearest investigators, the lead is not offered the one
+/// behind a barricade: a hunter able to move must move, so it steps toward the
+/// other without a prompt.
+#[test]
+fn a_prey_tied_hunter_moves_toward_the_unblocked_investigator_without_a_prompt() {
+    let session = end_the_investigation_phase(prey_tie_with_barricades(&[BLOCKED]), 2);
+    assert_eq!(
+        session.state().enemies[&RATS].current_location,
+        Some(OPEN),
+        "the blocked direction is never offered",
+    );
+    assert_step_3_2_did_not_prompt(&session);
+}
+
+/// With every tied direction blocked the hunter cannot move at all, so it stays
+/// and the lead is not asked which way it fails to go. `glossary/Hunter.md`:
+/// *"If a hunter enemy would be compelled to a location to which the move is
+/// blocked by a card ability, the enemy does not move."*
+#[test]
+fn a_prey_tied_hunter_with_every_direction_blocked_does_not_move() {
+    let session = end_the_investigation_phase(prey_tie_with_barricades(&[BLOCKED, OPEN]), 2);
+    assert_eq!(session.state().enemies[&RATS].current_location, Some(HUB));
+    assert_step_3_2_did_not_prompt(&session);
 }
 
 /// Regression for #371: **Barricade goes to the player who played it**, not to
