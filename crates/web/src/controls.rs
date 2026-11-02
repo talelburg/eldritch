@@ -65,10 +65,10 @@ pub fn submit(response: InputResponse, label: impl Into<String>) {
     send(action, label);
 }
 
-/// [`submit`], answering as `investigator` rather than the investigator the
-/// prompt names: for a pass in a window several answer, where each holder
-/// passes separately (ADR 0019) and the response alone does not say whose
-/// pass it is.
+/// [`submit`], answering as `investigator`.
+///
+/// For a pass in a window several answer, where each holder passes separately
+/// (ADR 0019) and the response alone does not say whose pass it is.
 #[cfg(target_arch = "wasm32")]
 pub fn submit_as(investigator: InvestigatorId, response: InputResponse, label: impl Into<String>) {
     send(
