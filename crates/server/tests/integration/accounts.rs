@@ -101,10 +101,19 @@ fn one_entry_holds_several_emails_lowercased() {
 
     accounts(
         &db,
-        &["add", "--name", "User1", "User1@Work.com", "user1@gmail.com"],
+        &[
+            "add",
+            "--name",
+            "User1",
+            "User1@Work.com",
+            "user1@gmail.com",
+        ],
     );
 
-    assert_eq!(list(&db), "1\tUser1\tuser1@gmail.com, user1@work.com\tenabled\n");
+    assert_eq!(
+        list(&db),
+        "1\tUser1\tuser1@gmail.com, user1@work.com\tenabled\n"
+    );
 }
 
 #[test]
@@ -172,7 +181,10 @@ async fn removing_an_entry_ends_its_sessions() {
     );
     let mut ws = common::connect_with(addr, "g-removed", Some(&user1)).await;
     common::assert_closed_unauthenticated(&mut ws).await;
-    assert_eq!(common::me(addr, Some(&user2)).await.status(), StatusCode::OK);
+    assert_eq!(
+        common::me(addr, Some(&user2)).await.status(),
+        StatusCode::OK
+    );
 }
 
 #[test]

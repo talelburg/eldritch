@@ -273,7 +273,9 @@ async fn a_verified_address_that_cannot_be_an_email_is_listed_as_unusable() {
 async fn an_address_on_a_disabled_entry_gets_the_ask_the_host_page() {
     let pool = pool_with_user1().await;
     let user1 = EntryRef::Email(Email::parse("user1@gmail.com").expect("an email"));
-    accounts::remove(&pool, &user1).await.expect("disable User1");
+    accounts::remove(&pool, &user1)
+        .await
+        .expect("disable User1");
     let app = common::provider_app(
         pool.clone(),
         FakeProvider::reporting(&[("user1@gmail.com", true)]),
