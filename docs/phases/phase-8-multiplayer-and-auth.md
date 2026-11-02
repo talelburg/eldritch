@@ -38,19 +38,24 @@ Gathering together, and any of them can drop and reconnect mid-game.
 |---|---|
 | #371 | Location-attachment ownership, PR #984 |
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
+| #458 | Deterministic prompt ids: a prompt is named by its log position, with #1230, PR #1297 |
 | #570 | Replay integrity; not planned, superseded by #1224's label-matched replay |
 | #573 | Act clue thresholds scale per investigator; an act with no clue objective carries none, PR #1298 |
 | #580 | Room registry: each game loads once, off the global lock and the async workers, and is evicted after 10 idle minutes, PR #1285; slices #1282, #1283, #1284 |
+| #581 | Seat identity on the wire: every answer names its investigator, each account gets its own messages, with #1230, PR #1297 |
+| #583 | Wire versioning: `Hello` carries the build, with #1230, PR #1297 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
 | #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
 | #1179 | `mount_board` for the web tests, PR #1260 |
+| #1194 | Each answerer passes separately in a reaction window, with #1230, PR #1297 |
 | #1224 | A stored game is its creation inputs plus a checked action log, PR #1264; slices #1262, #1263 |
 | #1225 | Configurable bind, dist path and build id, PR #1261 |
 | #1226 | Release artifact and deploy script, PR #1267 |
 | #1227 | Nightly backups to R2, PR #1268 |
 | #1229 | The live game, one pure core behind the server and the web harnesses, PR #1280 |
+| #1230 | The wire break: prompt id, the answering investigator, the per-account message, PR #1297; slices #1291–#1296 |
 | #1233 | One integration-test binary per crate, PR #1249; slices #1246, #1247, #1248 |
 | #1234 | Board fixtures beside `Seat`, PR #1259; slices #1251–#1258 |
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
@@ -73,12 +78,12 @@ tracker, and the tracker's dependency view is authoritative.
 - **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580 (✅ PR #1285).
 - **Liveness:** #1140 (✅ PR #1290).
 
-**2. The wire break: #1229 + #1234 → #1230.** One change to the wire format.
+**2. The wire break: #1229 + #1234 → #1230 (✅ PR #1297).** One change to the wire format.
 #458, #581, #583 and #1194 close with it. Until #1239 lands, a game's creator
 holds every investigator, and any other account is a viewer.
 
-**→ The next architecture review** (#1145 step 5) runs once #1230 lands, before
-phase 9 is scoped.
+**→ The next architecture review** (#1145 step 5) is due now that #1230 has
+landed, before phase 9 is scoped.
 
 **3. Rules fixes, after #1234.**
 
