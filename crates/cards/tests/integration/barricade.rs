@@ -642,3 +642,70 @@ fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it()
             if code.as_str() == BARRICADE
     );
 }
+
+// ---------------------------------------------------------------------------
+// A stranded enemy runs the engagement rule against whoever stayed (#662).
+//
+// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
+// same location as an investigator, it engages that investigator, and is placed
+// in that investigator's threat area."* The Barricade disengage leaves the
+// enemy ready and unengaged at the origin, so an investigator still there is
+// engaged at once — never the one who just left.
+// ---------------------------------------------------------------------------
+
+/// [`engaged_map_with_barricade_at_b`] with `enemy` engaged with investigator 1
+/// at A, and a second investigator also at A; investigator 1's turn.
+fn two_at_a_with_barricade_at_b(enemy: StagedEnemy<Printed>) -> TestSession {
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).at(A))
+        .with_seat(seat(2).at(A))
+        .with_seating([INV, INV2])
+        .with_location(linked(A, &[B]))
+        .with_location(barricaded(linked(B, &[A]), ATT_INST))
+        .with_enemy(enemy)
+        .open_turn(INV)
+        .session()
+}
+
+#[test]
+fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
+    let session = two_at_a_with_barricade_at_b(engaged_ghoul(GHOUL_MINION));
+    let r = take(session, &MOVE_TO_B).finish();
+    let enemy = &r.state.enemies[&GHOUL];
+    assert_eq!(enemy.current_location, Some(A), "enemy stayed behind");
+    assert_eq!(
+        enemy.engaged_with,
+        Some(INV2),
+        "the ready, unengaged enemy engages the investigator still beside it",
+    );
+    assert_event_sequence!(
+        r.events,
+        Event::EnemyDisengaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV,
+        Event::InvestigatorMoved { investigator, .. } if *investigator == INV,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV2,
+    );
+}
+
+/// With nobody left at the origin the stranded enemy stays unengaged: it never
+/// re-engages the investigator who just moved away (pins PR #661's solo
+/// behaviour).
+#[test]
+fn a_stranded_enemy_with_nobody_left_at_the_origin_stays_unengaged() {
+    let r = take(engaged_map_with_barricade_at_b(GHOUL_MINION), &MOVE_TO_B).finish();
+    assert_eq!(r.state.enemies[&GHOUL].engaged_with, None);
+    assert_no_event!(r.events, Event::EnemyEngaged { .. });
+}
+
+/// *"An exhausted unengaged enemy does not engage"*
+/// (`glossary/Enemy_Engagement.md`), so an exhausted stranded enemy stays
+/// unengaged beside the investigator who stayed.
+#[test]
+fn an_exhausted_stranded_enemy_does_not_engage_the_investigator_who_stayed() {
+    let session = two_at_a_with_barricade_at_b(engaged_ghoul(GHOUL_MINION).exhausted());
+    let r = take(session, &MOVE_TO_B).finish();
+    let enemy = &r.state.enemies[&GHOUL];
+    assert_eq!(enemy.current_location, Some(A), "enemy stayed behind");
+    assert_eq!(enemy.engaged_with, None, "exhausted, so it engages no one");
+    assert_no_event!(r.events, Event::EnemyEngaged { .. });
+}

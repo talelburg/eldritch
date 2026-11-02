@@ -261,8 +261,9 @@ fn begin_move(
 }
 
 /// The departure's own impact: the engaged enemies that ride along (or
-/// disengage because they cannot), the investigator's location assignment, and
-/// the `InvestigatorMoved` event.
+/// disengage because they cannot), the investigator's location assignment, the
+/// `InvestigatorMoved` event, and the engagement rule run for each enemy left
+/// behind against the investigators who stayed.
 ///
 /// This is `LeftLocation`'s **resolve step** — step 2 of the
 /// sequence in `glossary/Nested_Sequences.md` — run by the timing coordinator
@@ -317,8 +318,11 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     // `EnemyMoved` to emit either (the move is the investigator's,
     // `InvestigatorMoved` below). An enemy that *cannot* follow needs the
     // funnel even less: it never arrives anywhere, staying put at `from` while
-    // the investigator leaves. The *unengaged* enemies already standing at the
-    // destination are the entered-location half's business, further down.
+    // the investigator leaves. It does, though, become a ready unengaged enemy
+    // beside whoever stayed at `from`, so once the investigator has left it runs
+    // the engagement rule against them — see the stranded pass below. The
+    // *unengaged* enemies already standing at the destination are the
+    // entered-location half's business, further down.
     let engaged: Vec<EnemyId> = cx
         .state
         .enemies
@@ -326,6 +330,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
         .filter(|(_, e)| e.engaged_with == Some(investigator))
         .map(|(id, _)| *id)
         .collect();
+    let mut stranded = Vec::new();
     for enemy_id in engaged {
         // Ids were collected from this same map with no intervening mutation,
         // so an absent entry is state corruption — surface it the way the
@@ -346,6 +351,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
                 .current_location = Some(destination);
         } else {
             engagement::disengage(cx, enemy_id);
+            stranded.push(enemy_id);
         }
     }
     cx.state
@@ -358,6 +364,19 @@ pub(in crate::engine::dispatch) fn resolve_departure(
         from,
         to: destination,
     });
+    // The stranded pass (#662). `glossary/Enemy_Engagement.md`: "Any time a
+    // ready unengaged enemy is at the same location as an investigator, it
+    // engages that investigator". An enemy left behind above is exactly that
+    // beside anyone still at `from`, so it engages one of them now — at the
+    // departure's impact rather than on arrival, so "after you leave" and
+    // "after you enter" abilities see the rule already applied. It runs after
+    // the location write so the mover is no longer a candidate: the enemy must
+    // never re-engage the investigator it just disengaged from. Disengage all,
+    // then re-engage, as elimination's step 3 does; `reengage_at_location`
+    // owns readiness, bearer-only filtering and prey.
+    for enemy_id in stranded {
+        engagement::reengage_at_location(cx, enemy_id);
+    }
 }
 
 /// The entered-location half of a Move, run when the `drive` loop re-exposes the
