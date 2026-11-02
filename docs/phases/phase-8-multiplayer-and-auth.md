@@ -92,7 +92,7 @@ landed, before phase 9 is scoped.
 
 **3. Rules fixes, after #1234.**
 
-- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132, #1185.
+- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185.
 - Engagement: #151, card 07's tie frame.
 - ST.7: #1086 → #642 → #65. #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.

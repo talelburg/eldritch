@@ -234,8 +234,10 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
         EliminationStep::RunSteps => {
             cx.state.continuations.pop_expect::<EliminationFrame>();
             // Step 0's tail — "Then, remove those weaknesses from the game" —
-            // is step 1's threat-area partition, which removes every owned
-            // weakness whether or not it fired.
+            // is step 1's threat-area partition. We read "those weaknesses" as
+            // the ones with a "when the game ends" ability (#1132; no ruling
+            // settles it). Every other owned weakness falls to step 1, and an
+            // enemy weakness, which no player controls, stays in play.
             run_elimination_steps(cx, investigator);
             check_all_eliminated(cx);
             EngineOutcome::Done
@@ -380,9 +382,14 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // Each card leaving play emits its one removal event. The out-of-play
     // areas and limbo emit none: those cards were never in play.
     //
-    // TODO(#1132): an enemy this investigator owns, such as the weakness Mob
-    // Enforcer 01101, lives in `state.enemies`, which this step doesn't
-    // touch, so it stays in play with a bearer who is gone.
+    // An enemy this investigator owns, such as the weakness Mob Enforcer
+    // 01101, stays in play: step 1's exception, *"Any card that player owns
+    // but does not control that is in play remains in play, but if that card
+    // leaves play it is removed from the game"*, and `glossary/Weakness.md`,
+    // *"Weaknesses with an encounter cardtype are, like other encounter cards,
+    // not controlled by any player."* Step 3 disengages it. When it later
+    // leaves play, the leave-play router removes it from the game into this
+    // investigator's pile, since their status is no longer Active.
     let inv = cx
         .state
         .investigators
