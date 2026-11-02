@@ -191,11 +191,12 @@ async fn a_hello_from_this_build_connects_as_before() {
 async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
     // A live prompt as well as the mismatch, so the prompt banner, an in-game
     // modal it has to cover, is actually in the DOM to be ordered against.
-    let client = ClientState {
+    let mut client = ClientState {
         status: ConnStatus::VersionMismatch,
         outcome: Some(test_support::awaiting_confirm_input("Continue")),
         ..ClientState::default()
     };
+    common::you_hold_every_investigator(&mut client);
     let handle = common::mount_board(client, &test_support::TEST_REGISTRY).await;
     let root = &handle.root;
 

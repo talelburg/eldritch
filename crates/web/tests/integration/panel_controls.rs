@@ -26,6 +26,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
+use crate::common;
+
 const INV: InvestigatorId = InvestigatorId(1);
 
 /// Mount one `AnchoredControl` for `target`, with the live prompt offering
@@ -42,6 +44,7 @@ async fn mount(
             "Choose an action",
             options,
         ));
+        common::you_hold_every_investigator(s);
     });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;

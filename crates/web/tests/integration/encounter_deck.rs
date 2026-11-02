@@ -24,6 +24,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
+use crate::common;
+
 /// A `Confirm` prompt anchored to the encounter deck — the Mythos draw.
 fn encounter_draw_prompt() -> EngineOutcome {
     let mut outcome =
@@ -42,7 +44,10 @@ async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<Cl
         .with_encounter_deck((0..deck_size).map(|i| CardCode::new(format!("_enc{i}"))))
         .build();
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+    });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {

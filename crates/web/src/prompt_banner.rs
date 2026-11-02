@@ -18,9 +18,7 @@
 use std::collections::BTreeSet;
 
 use game_core::action::InputResponse;
-use game_core::engine::{
-    ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget, PickCount, Responder,
-};
+use game_core::engine::{ChoiceOption, InputKind, OptionId, OptionTarget, PickCount, Responder};
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
@@ -44,7 +42,9 @@ pub fn PromptBanner() -> impl IntoView {
     view! {
         {move || {
             let state = store.get();
-            let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome.clone() else {
+            // Only a prompt this account answers: a viewer, or an account
+            // whose investigators the prompt doesn't ask, is offered nothing.
+            let Some(request) = state.answerable_request() else {
                 return ().into_any();
             };
             // A decision has its own modal, and that modal is its *sole*
@@ -122,9 +122,10 @@ pub fn PromptBanner() -> impl IntoView {
 
             // Pass — whenever the request is skippable. In a window several
             // answer, each investigator holding an option passes separately (ADR
-            // 0019), so two or more holders get a Pass each, labelled by name;
-            // one holder gets the plain Pass, which the prompt names them for.
-            // Until accounts land, every investigator counts.
+            // 0019), so two or more of this account's holders get a Pass each,
+            // labelled by name; one gets the plain Pass, which the store names
+            // them for. The request is already cut to this account's options,
+            // so another account's investigators get none.
             let holders = match request.responder {
                 Responder::Several => request.holders(),
                 _ => Vec::new(),

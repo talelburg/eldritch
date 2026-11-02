@@ -39,6 +39,8 @@ async fn hello_renders_state_present() {
             s,
             ServerMessage::Hello {
                 build: protocol::build_id().to_string(),
+                you: common::YOU,
+                assigned: common::you_hold(Some(&game), None),
                 prompt: LogPosition(0),
                 state: Box::new(game),
                 outcome: EngineOutcome::Done,

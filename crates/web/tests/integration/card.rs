@@ -22,6 +22,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
+use crate::common;
+
 /// Inner HTML of the last mounted `.card` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
 fn last_card_html() -> String {
@@ -217,7 +219,10 @@ async fn mount_hand(
     outcome: EngineOutcome,
 ) -> (RwSignal<BTreeSet<u32>>, UnboundedReceiver<ClientMessage>) {
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+    });
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;

@@ -18,6 +18,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, NodeList};
 
+use crate::common;
+
 /// Mount a `ContextMenu` with one `Location(10)`-anchored option, a store whose
 /// live prompt (asked of seat 1) offers it, an outbound channel, and the given
 /// initial `open` state. Returns the `open` signal and the receiver for
@@ -40,6 +42,7 @@ async fn mount(
             "Choose an action",
             options.clone(),
         ));
+        common::you_hold_every_investigator(s);
     });
     mount_to_body(move || {
         provide_context(store);

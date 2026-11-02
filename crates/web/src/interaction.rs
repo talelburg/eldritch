@@ -27,14 +27,17 @@ use crate::store::ClientState;
 #[cfg(target_arch = "wasm32")]
 use crate::transport::OutboundTx;
 
-/// The live prompt's offered options — the `AwaitingInput` request's `options`,
-/// else empty (`Done` / `Rejected` / no outcome). Pure.
+/// The live prompt's options this account may pick. Pure.
+///
+/// They are the [`answerable_request`](ClientState::answerable_request)'s
+/// `options`, else empty: `Done`, `Rejected`, no outcome, or a prompt this
+/// account doesn't answer.
 #[must_use]
 pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
-    match &state.outcome {
-        Some(EngineOutcome::AwaitingInput { request, .. }) => request.options.clone(),
-        _ => Vec::new(),
-    }
+    state
+        .answerable_request()
+        .map(|request| request.options)
+        .unwrap_or_default()
 }
 
 /// The options anchored to `target`, in offered order. Pure; a linear scan
@@ -64,7 +67,7 @@ pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
 }
 
 /// The anchor of a live **option-less** prompt — a
-/// [`Confirm`](InputKind::Confirm) — else `None`.
+/// [`Confirm`](InputKind::Confirm) — this account answers, else `None`.
 ///
 /// The request anchor is read only for option-less prompts (ADR 0011): a
 /// `PickSingle`/`PickMultiple` routes per-option. This is what tells the Mythos
@@ -72,14 +75,10 @@ pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
 /// on the wire but for this field. Pure.
 #[must_use]
 pub fn confirm_anchor(state: &ClientState) -> Option<OptionTarget> {
-    match &state.outcome {
-        Some(EngineOutcome::AwaitingInput { request, .. })
-            if request.kind == InputKind::Confirm =>
-        {
-            request.target.clone()
-        }
-        _ => None,
-    }
+    state
+        .answerable_request()
+        .filter(|request| request.kind == InputKind::Confirm)
+        .and_then(|request| request.target)
 }
 
 /// Context newtype carrying [`confirm_anchor`] as a signal, so a board surface
@@ -136,14 +135,13 @@ pub struct MultiSelect {
 }
 
 /// True iff the live outcome is an `AwaitingInput` whose kind is `PickMultiple`
-/// (mulligan / skill-test commit / hand-size discard). Pure.
+/// (mulligan / skill-test commit / hand-size discard), and this account
+/// answers it. Pure.
 #[must_use]
 pub fn is_multi_select(state: &ClientState) -> bool {
-    matches!(
-        &state.outcome,
-        Some(EngineOutcome::AwaitingInput { request, .. })
-            if matches!(request.kind, InputKind::PickMultiple(_))
-    )
+    state
+        .answerable_request()
+        .is_some_and(|request| matches!(request.kind, InputKind::PickMultiple(_)))
 }
 
 /// A popover of a board entity's offered options. When `open` is
@@ -280,7 +278,8 @@ mod tests {
                 vec![opt(0, OptionTarget::Location(LocationId(10)))],
             )),
             ..Default::default()
-        };
+        }
+        .you_hold_every_investigator();
         assert_eq!(pending_options(&state).len(), 1);
     }
 
@@ -346,7 +345,8 @@ mod tests {
                 "Acknowledge the skill-test result.",
             )),
             ..Default::default()
-        };
+        }
+        .you_hold_every_investigator();
         assert_eq!(
             confirm_anchor(&ack),
             None,
@@ -366,13 +366,19 @@ mod tests {
                 vec![opt(0, OptionTarget::EncounterDeck)],
             )),
             ..Default::default()
-        };
+        }
+        .you_hold_every_investigator();
         assert_eq!(confirm_anchor(&pick), None);
     }
 
     #[test]
     fn is_multi_select_true_only_for_pick_multiple() {
-        let mut state = ClientState::default();
+        let mut state = ClientState {
+            outcome: Some(test_support::awaiting_commit_input("Commit", &[0])),
+            ..Default::default()
+        }
+        .you_hold_every_investigator();
+        state.outcome = None;
         assert!(!is_multi_select(&state)); // no outcome
 
         state.outcome = Some(EngineOutcome::Done);

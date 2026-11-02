@@ -18,9 +18,7 @@
 #[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;
 use game_core::card_registry::CardRegistry;
-use game_core::engine::{
-    board, ChoiceOption, EngineOutcome, InputRequest, OptionTarget, PromptNature,
-};
+use game_core::engine::{board, ChoiceOption, InputRequest, OptionTarget, PromptNature};
 use game_core::state::{AdvanceDeck, GameState};
 use leptos::prelude::*;
 
@@ -59,13 +57,12 @@ pub struct Decision {
     pub source: Option<DecisionSource>,
 }
 
-/// The live prompt when it is a decision. Reads the nature the engine
-/// attached — never the prompt's shape.
-fn live_decision_request(state: &ClientState) -> Option<&InputRequest> {
-    let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
-        return None;
-    };
-    (request.nature == PromptNature::Decision).then_some(request)
+/// The live prompt when it is a decision this account answers. Reads the
+/// nature the engine attached — never the prompt's shape.
+fn live_decision_request(state: &ClientState) -> Option<InputRequest> {
+    state
+        .answerable_request()
+        .filter(|request| request.nature == PromptNature::Decision)
 }
 
 /// The live decision prompt, or `None` when the live prompt is a selection (or
@@ -77,8 +74,8 @@ fn live_decision_request(state: &ClientState) -> Option<&InputRequest> {
 pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decision> {
     let request = live_decision_request(state)?;
     Some(Decision {
-        prompt: request.prompt.clone(),
-        options: request.options.clone(),
+        prompt: request.prompt,
+        options: request.options,
         source: state
             .game
             .as_ref()
@@ -232,7 +229,7 @@ pub fn DecisionView() -> impl IntoView {
 mod tests {
     use card_dsl::card_data::SkillKind;
     use cards::{REGISTRY, TEST_REGISTRIES};
-    use game_core::engine::{InputRequest, OptionId};
+    use game_core::engine::{EngineOutcome, InputRequest, OptionId, Responder};
     use game_core::event::Event;
     use game_core::state::{
         AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode, CardInPlay, CardInstanceId,
@@ -269,13 +266,17 @@ mod tests {
         ]
     }
 
-    /// A client state whose live prompt is `request`, over `game`.
+    /// A client state whose live prompt is `request`, asked of investigator 1,
+    /// over `game`, signed in as the account holding them.
     fn awaiting(game: Option<GameState>, request: InputRequest) -> ClientState {
         ClientState {
             game,
-            outcome: Some(test_support::awaiting_request(request)),
+            outcome: Some(test_support::awaiting_request(
+                request.answered_by(Responder::Investigator(InvestigatorId(1))),
+            )),
             ..Default::default()
         }
+        .you_hold_every_investigator()
     }
 
     /// First Aid in play, so a `CardInstance` anchor resolves.

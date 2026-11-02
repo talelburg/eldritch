@@ -18,7 +18,7 @@ use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::*;
 use leptos::task;
-use protocol::ClientMessage;
+use protocol::{Assignment, ClientMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;
@@ -26,6 +26,8 @@ use web::prompt_banner::PromptBanner;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
+
+use crate::common;
 
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
@@ -40,10 +42,25 @@ async fn mount_in(
     outcome: EngineOutcome,
     preselected: &[u32],
 ) -> UnboundedReceiver<ClientMessage> {
+    mount_holding(game, outcome, preselected, None).await
+}
+
+/// [`mount_in`], signed in as an account holding only `held` when it is
+/// `Some`, or every investigator when it is `None`.
+async fn mount_holding(
+    game: Option<GameState>,
+    outcome: EngineOutcome,
+    preselected: &[u32],
+    held: Option<&[InvestigatorId]>,
+) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     store.update(|s| {
         s.game = game;
         s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+        if let Some(held) = held {
+            s.assigned = Assignment::all_to(common::YOU, held.iter().copied());
+        }
     });
     let selected = RwSignal::new(preselected.iter().copied().collect::<BTreeSet<u32>>());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
@@ -547,6 +564,58 @@ async fn a_window_one_still_answers_shows_one_plain_pass() {
         .answered_by(Responder::Several),
     );
     let mut rx = mount_in(Some(two_and_three_seated()), outcome, &[]).await;
+    let labels: Vec<String> = pass_buttons()
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels, ["Pass"]);
+    click(".pass");
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+}
+
+/// Sam's account holds nobody in the window investigators 2 and 3 answer: the
+/// banner offers him no option and no Pass, and says nothing.
+#[wasm_bindgen_test]
+async fn a_viewer_is_offered_no_option_and_no_pass() {
+    let _rx = mount_holding(
+        Some(two_and_three_seated()),
+        offered_to_two_and_three(),
+        &[],
+        Some(&[]),
+    )
+    .await;
+    assert!(
+        last_root()
+            .query_selector(".prompt-banner")
+            .expect("query")
+            .is_none(),
+        "a viewer's banner renders nothing: {}",
+        last_root().inner_html()
+    );
+}
+
+/// An account holding investigator 3, but not 2, in a window both answer gets
+/// only 3's option and a single plain Pass, which passes for 3.
+#[wasm_bindgen_test]
+async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_them() {
+    let mut rx = mount_holding(
+        Some(two_and_three_seated()),
+        offered_to_two_and_three(),
+        &[],
+        Some(&[InvestigatorId(3)]),
+    )
+    .await;
+    let options: Vec<String> = {
+        let btns = last_banner()
+            .query_selector_all(".banner-option")
+            .expect("query");
+        (0..btns.length())
+            .filter_map(|i| btns.item(i))
+            .map(|n| n.text_content().unwrap_or_default())
+            .collect()
+    };
+    assert_eq!(options, ["Three's reaction"]);
     let labels: Vec<String> = pass_buttons()
         .iter()
         .map(|b| b.text_content().unwrap_or_default())

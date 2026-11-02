@@ -229,7 +229,7 @@ What the server keeps of a game: its creation inputs (scenario, roster, lead, RN
 _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored game isn't, and **Snapshot** already names the vendored card data.
 
 **Live game**:
-A game as it is being played: its current state, its place in the log, and who may answer. It decides whether a submitted answer is accepted, and what each member is then told. It persists nothing and sends nothing. A stored game is what remains of it on disk, and loading one rebuilds the live game. Until the wire break (#1230) it holds no seats: it accepts an answer from any member and tells every member the same thing.
+A game as it is being played: its current state, its place in the log, and which account each investigator is assigned to. It decides whether a submitted answer is accepted, and refuses one from an account that doesn't hold the investigator it answers for. It builds what each account is then told, from one view of the state per account; today that view only clears the RNG state, so every account is told the same thing. It persists nothing and sends nothing. A stored game is what remains of it on disk, and loading one rebuilds the live game. Until the lobby (#1239) the creator holds every investigator, and any other account that opens the game is a viewer.
 _Avoid_: "Session" or "session core". "Session" already names the sign-in session.
 
 **Log position**:

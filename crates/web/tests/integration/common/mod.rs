@@ -2,13 +2,13 @@
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::card_registry::CardRegistry;
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, Responder};
 use game_core::event::Event;
-use game_core::state::GameState;
+use game_core::state::{GameState, InvestigatorId};
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{ClientMessage, LogPosition, ServerMessage};
+use protocol::{AccountId, Assignment, ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use web::app::{self, MainColumn};
 use web::registry;
@@ -149,18 +149,50 @@ pub(crate) async fn mount_board(
     }
 }
 
+/// The account a browser test's client is signed in as.
+pub(crate) const YOU: AccountId = AccountId(1);
+
+/// Every investigator `game` seats or `outcome` asks, held by [`YOU`].
+pub(crate) fn you_hold(game: Option<&GameState>, outcome: Option<&EngineOutcome>) -> Assignment {
+    let mut investigators: Vec<InvestigatorId> = game
+        .iter()
+        .flat_map(|game| game.investigators.keys().copied())
+        .collect();
+    if let Some(EngineOutcome::AwaitingInput { request, .. }) = outcome {
+        if let Responder::Investigator(investigator) | Responder::Lead(investigator) =
+            request.responder
+        {
+            investigators.push(investigator);
+        }
+        investigators.extend(request.holders());
+    }
+    Assignment::all_to(YOU, investigators)
+}
+
+/// Sign `client` in as [`YOU`], holding every investigator its game seats or
+/// its prompt asks: what a `Hello` seeds, for a test that sets the prompt
+/// directly. Call it once the prompt is in place.
+pub(crate) fn you_hold_every_investigator(client: &mut ClientState) {
+    client.you = Some(YOU);
+    client.assigned = you_hold(client.game.as_ref(), client.outcome.as_ref());
+}
+
 /// The client state a `Hello` carrying `state` and `outcome` leaves behind,
-/// folded through the transport's own reducer. The status is `Connected`, as
-/// the transport sets it when the `Hello` arrives, so the board takes input.
+/// folded through the transport's own reducer, signed in as [`YOU`] holding
+/// every investigator. The status is `Connected`, as the transport sets it when
+/// the `Hello` arrives, so the board takes input.
 pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
     let mut client = ClientState {
         status: ConnStatus::Connected,
         ..ClientState::default()
     };
+    let assigned = you_hold(Some(&state), Some(&outcome));
     store::reduce(
         &mut client,
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
+            you: YOU,
+            assigned,
             prompt: LogPosition(0),
             state: Box::new(state),
             outcome,
@@ -179,8 +211,11 @@ pub(crate) fn hello_frame(
     outcome: EngineOutcome,
     events: Vec<Event>,
 ) -> String {
+    let assigned = you_hold(Some(&state), Some(&outcome));
     serde_json::to_string(&ServerMessage::Hello {
         build: build.to_string(),
+        you: YOU,
+        assigned,
         prompt: LogPosition(0),
         state: Box::new(state),
         outcome,

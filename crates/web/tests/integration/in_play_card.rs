@@ -20,6 +20,8 @@ use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
+use crate::common;
+
 fn last_slot() -> Element {
     let slots = document().query_selector_all(".card-slot").expect("query");
     slots
@@ -32,7 +34,10 @@ fn last_slot() -> Element {
 /// `outcome`, a derived `PendingOptions`, and a capturing channel.
 async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.outcome = Some(outcome);
+        common::you_hold_every_investigator(s);
+    });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let inst = CardInPlay::enter_play(

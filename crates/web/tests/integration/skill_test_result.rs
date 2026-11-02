@@ -278,6 +278,7 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
                 outcome,
             }),
         );
+        common::you_hold_every_investigator(s);
     });
     task::tick().await;
 }

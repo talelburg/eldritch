@@ -56,7 +56,7 @@ use game_core::state::{
 use game_core::test_support::{self, enemy, location, seat, TestSession};
 use protocol::live::LiveGame;
 use protocol::logged_answer::LoggedResponse;
-use protocol::{Applied, LogPosition, ServerMessage};
+use protocol::{AccountId, Applied, Assignment, LogPosition, ServerMessage};
 use web::skill_test_result;
 use web::store::{self, ClientState};
 
@@ -202,11 +202,14 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         .position(|a| a == action)
         .expect("the action is legal on this board");
     let seeded = TestSession::new(state, PROBE_REGISTRIES);
+    // One account holds every investigator, as the creator does.
+    let player = AccountId(1);
     let mut live = LiveGame::new(
         seeded.state().clone(),
         test_support::awaiting_request(seeded.prompt().clone()),
         Vec::new(),
         0,
+        Assignment::all_to(player, seeded.state().investigators.keys().copied()),
         PROBE_REGISTRIES,
     );
     let mut response =
@@ -225,6 +228,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
             .expect("the prompt names who answers it");
         let accepted = live
             .submit(
+                player,
                 live.prompt(),
                 PlayerAction::ResolveInput {
                     investigator,
@@ -232,7 +236,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
                 },
             )
             .unwrap_or_else(|refusal| panic!("the answer is refused: {refusal}"));
-        let applied = live.commit(accepted);
+        let applied = live.commit(accepted).applied_for(player);
         let test_ended = applied
             .events
             .iter()

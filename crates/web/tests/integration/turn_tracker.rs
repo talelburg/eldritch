@@ -13,6 +13,8 @@ use web::store::{self, ClientState};
 use web::turn_tracker::TurnTrackerView;
 use web_sys::Element;
 
+use crate::common;
+
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
@@ -29,6 +31,8 @@ async fn mount_at(phase: Phase, round: u32) {
             s,
             ServerMessage::Hello {
                 build: protocol::build_id().to_string(),
+                you: common::YOU,
+                assigned: common::you_hold(Some(&state), None),
                 prompt: LogPosition(0),
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,

@@ -1,12 +1,14 @@
 //! Reactive client store: `ClientState` + the pure `ServerMessage` reducer.
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, OptionTarget};
+use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{ChaosToken, GameState, InvestigatorId, TokenResolution};
 use leptos::prelude::*;
 use protocol::logged_answer::LoggedResponse;
-use protocol::{Applied, LogPosition, Refusal, ServerMessage, SignInMethod, SignedIn};
+use protocol::{
+    AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage, SignInMethod, SignedIn,
+};
 
 use crate::socket_ending::SocketEnding;
 
@@ -85,7 +87,8 @@ impl ConnStatus {
 const SAVE_ERROR: &str = "Couldn't save, try again.";
 
 /// What the status bar says for a refusal that means this client has a bug
-/// ([`Refusal::Malformed`]). The detail goes to the console.
+/// ([`Refusal::Malformed`], [`Refusal::NotYours`]). The detail goes to the
+/// console.
 const CLIENT_BUG: &str = "Something went wrong. Reload if it keeps happening.";
 
 /// One applied submit's worth of events, for the event-log view.
@@ -123,6 +126,13 @@ pub struct ClientState {
     /// The account this client is signed in as, once the server has said.
     /// Set by the transport, not by `reduce`.
     pub account: Option<SignedIn>,
+    /// The account this connection answers as, from `Hello`. `None` before
+    /// the first `Hello`, when the client answers for nobody.
+    pub you: Option<AccountId>,
+    /// Which account holds each investigator, from `Hello`. The client offers
+    /// a prompt, and a Pass, only for the investigators [`you`](Self::you)
+    /// hold.
+    pub assigned: Assignment,
     pub last_rejection: Option<String>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
@@ -158,22 +168,60 @@ pub struct ClientState {
 }
 
 impl ClientState {
+    /// Whether this connection's account holds `investigator`, so answers
+    /// for them.
+    #[must_use]
+    pub fn holds(&self, investigator: InvestigatorId) -> bool {
+        self.you
+            .is_some_and(|you| self.assigned.holds(you, investigator))
+    }
+
     /// The action answering the live prompt with `response`, named for the
-    /// investigator the prompt asks
-    /// ([`InputRequest::answerer`](game_core::engine::InputRequest::answerer)):
-    /// the responder's, or the picked option's. A pass in a window several
-    /// answer names the first investigator holding an option. `None` when no
-    /// prompt is live, or the prompt names nobody.
+    /// investigator who answers it: the responder's, or in a window several
+    /// answer, the picked option's. A pass there, or a pick of an option
+    /// offered to no one in particular, names the first investigator holding
+    /// an option whom this account holds.
+    ///
+    /// `None` when no prompt is live, or when the investigator answering is
+    /// not one this account holds: the client answers only for its own
+    /// investigators.
     #[must_use]
     pub fn answer(&self, response: InputResponse) -> Option<PlayerAction> {
         let Some(EngineOutcome::AwaitingInput { request, .. }) = &self.outcome else {
             return None;
         };
-        let investigator = request.answerer(&response)?;
-        Some(PlayerAction::ResolveInput {
-            investigator,
-            response,
-        })
+        let investigator = match request.responder {
+            Responder::Several => match picked_investigator(request, &response) {
+                Some(investigator) => investigator,
+                None => request
+                    .holders()
+                    .into_iter()
+                    .find(|holder| self.holds(*holder))?,
+            },
+            _ => request.answerer(&response)?,
+        };
+        self.holds(investigator)
+            .then_some(PlayerAction::ResolveInput {
+                investigator,
+                response,
+            })
+    }
+
+    /// The live prompt as this account may answer it: its options cut to
+    /// those [`answer`](Self::answer) would send. `None` when no prompt is
+    /// live or this account answers none of it: a viewer, or an account
+    /// none of whose investigators the prompt asks. Every surface that offers
+    /// an answer reads the prompt through here.
+    #[must_use]
+    pub fn answerable_request(&self) -> Option<InputRequest> {
+        let Some(EngineOutcome::AwaitingInput { request, .. }) = &self.outcome else {
+            return None;
+        };
+        self.answer(InputResponse::Confirm)?;
+        let mut own = request.clone();
+        own.options
+            .retain(|option| self.answer(InputResponse::PickSingle(option.id)).is_some());
+        Some(own)
     }
 
     /// An investigator's name, or their seat's id if no game holding them is
@@ -185,6 +233,50 @@ impl ClientState {
             .and_then(|game| game.investigators.get(&id))
             .map_or_else(|| format!("investigator {}", id.0), |inv| inv.name.clone())
     }
+}
+
+#[cfg(test)]
+impl ClientState {
+    /// The account a unit test that never sends a `Hello` answers as.
+    pub(crate) const TEST_ACCOUNT: AccountId = AccountId(1);
+
+    /// This state, signed in as [`Self::TEST_ACCOUNT`] and holding every
+    /// investigator its game seats or its prompt names: what a `Hello` would
+    /// have seeded, for a unit test that sets the prompt directly.
+    #[must_use]
+    pub(crate) fn you_hold_every_investigator(mut self) -> Self {
+        let mut investigators: Vec<InvestigatorId> = self
+            .game
+            .iter()
+            .flat_map(|game| game.investigators.keys().copied())
+            .collect();
+        if let Some(EngineOutcome::AwaitingInput { request, .. }) = &self.outcome {
+            if let Responder::Investigator(investigator) | Responder::Lead(investigator) =
+                request.responder
+            {
+                investigators.push(investigator);
+            }
+            investigators.extend(request.holders());
+        }
+        self.you = Some(Self::TEST_ACCOUNT);
+        self.assigned = Assignment::all_to(Self::TEST_ACCOUNT, investigators);
+        self
+    }
+}
+
+/// The investigator the first option `response` picks is offered to, if it
+/// picks one offered to someone in particular.
+fn picked_investigator(request: &InputRequest, response: &InputResponse) -> Option<InvestigatorId> {
+    let first = match response {
+        InputResponse::PickSingle(id) => *id,
+        InputResponse::PickMultiple { selected } => *selected.first()?,
+        _ => return None,
+    };
+    request
+        .options
+        .iter()
+        .find(|option| option.id == first)
+        .and_then(|option| option.investigator)
 }
 
 /// What [`receive`] made of one server frame, for the transport to act on.
@@ -247,11 +339,15 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
     match msg {
         ServerMessage::Hello {
             build: _,
+            you,
+            assigned,
             prompt,
             state: s,
             outcome,
             events,
         } => {
+            state.you = Some(you);
+            state.assigned = assigned;
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.prompt = prompt;
@@ -359,6 +455,12 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     leptos::logging::error!("the server couldn't parse a frame this client sent");
                     state.last_rejection = Some(CLIENT_BUG.into());
                 }
+                Refusal::NotYours => {
+                    leptos::logging::error!(
+                        "this client answered for an investigator its account doesn't hold"
+                    );
+                    state.last_rejection = Some(CLIENT_BUG.into());
+                }
             }
         }
         // Proof of life only, which the transport counts before reducing.
@@ -422,7 +524,7 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
-    use game_core::engine::OptionId;
+    use game_core::engine::{ChoiceOption, OptionId};
     use game_core::event::FailureReason;
     use game_core::state::GameStateBuilder;
     use game_core::test_support;
@@ -480,6 +582,11 @@ mod tests {
         }
     }
 
+    /// The account Tal signs in as.
+    const TAL: AccountId = AccountId(7);
+    /// The account Sam signs in as.
+    const SAM: AccountId = AccountId(8);
+
     /// The client's state with `outcome` as the prompt it holds.
     fn holding(outcome: EngineOutcome) -> ClientState {
         ClientState {
@@ -487,6 +594,111 @@ mod tests {
             outcome: Some(outcome),
             ..Default::default()
         }
+    }
+
+    /// [`holding`] `outcome`, signed in as `you`, with Roland (seat 1) held
+    /// by Tal and Agnes (seat 2) by Sam.
+    fn signed_in_holding(you: AccountId, outcome: EngineOutcome) -> ClientState {
+        ClientState {
+            you: Some(you),
+            assigned: Assignment::from_iter([(InvestigatorId(1), TAL), (InvestigatorId(2), SAM)]),
+            ..holding(outcome)
+        }
+    }
+
+    /// A window several answer offering Roland and Agnes one reaction each,
+    /// and a third option offered to no one in particular.
+    fn offered_to_roland_and_agnes() -> EngineOutcome {
+        test_support::awaiting_request(
+            InputRequest::pick_single(
+                "You may trigger",
+                vec![
+                    ChoiceOption::new(OptionId(0), "Roland's reaction")
+                        .offered_to(InvestigatorId(1)),
+                    ChoiceOption::new(OptionId(1), "Agnes's reaction")
+                        .offered_to(InvestigatorId(2)),
+                    ChoiceOption::new(OptionId(2), "Anyone's"),
+                ],
+            )
+            .skippable()
+            .answered_by(Responder::Several),
+        )
+    }
+
+    fn answering_as(action: Option<PlayerAction>) -> Option<InvestigatorId> {
+        match action? {
+            PlayerAction::ResolveInput { investigator, .. } => Some(investigator),
+            other => panic!("expected ResolveInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hello_names_this_account_and_who_holds_each_investigator() {
+        let mut s = ClientState::default();
+        reduce(&mut s, hello_at(0, Vec::new()));
+        assert_eq!(s.you, Some(TAL));
+        assert_eq!(s.assigned.holder(InvestigatorId(1)), Some(TAL));
+        assert!(s.holds(InvestigatorId(1)));
+    }
+
+    #[test]
+    fn a_not_yours_refusal_shows_a_generic_error() {
+        let mut s = ClientState::default();
+        reduce(&mut s, ServerMessage::Rejected(Refusal::NotYours));
+        assert_eq!(
+            s.last_rejection.as_deref(),
+            Some("Something went wrong. Reload if it keeps happening.")
+        );
+    }
+
+    /// Roland's skill test asks Roland: Tal answers it, and Sam is offered
+    /// nothing.
+    #[test]
+    fn only_the_account_holding_the_responder_answers_its_prompt() {
+        let outcome = test_support::awaiting_confirm_input("Acknowledge");
+
+        let tal = signed_in_holding(TAL, outcome.clone());
+        assert_eq!(
+            answering_as(tal.answer(InputResponse::Confirm)),
+            Some(InvestigatorId(1))
+        );
+        assert!(tal.answerable_request().is_some());
+
+        let sam = signed_in_holding(SAM, outcome);
+        assert_eq!(sam.answer(InputResponse::Confirm), None);
+        assert_eq!(sam.answerable_request(), None);
+    }
+
+    #[test]
+    fn a_client_before_its_hello_answers_for_nobody() {
+        let s = holding(test_support::awaiting_confirm_input("Acknowledge"));
+        assert_eq!(s.answer(InputResponse::Confirm), None);
+        assert_eq!(s.answerable_request(), None);
+    }
+
+    /// In a window Roland and Agnes both answer, Sam is offered Agnes's
+    /// reaction and the option offered to no one, and his pass is Agnes's.
+    #[test]
+    fn in_a_window_several_answer_an_account_is_offered_only_its_own_options() {
+        let sam = signed_in_holding(SAM, offered_to_roland_and_agnes());
+
+        let offered: Vec<OptionId> = sam
+            .answerable_request()
+            .expect("Sam holds an answerer")
+            .options
+            .iter()
+            .map(|option| option.id)
+            .collect();
+        assert_eq!(offered, [OptionId(1), OptionId(2)]);
+        assert_eq!(
+            answering_as(sam.answer(InputResponse::Skip)),
+            Some(InvestigatorId(2))
+        );
+        assert_eq!(
+            answering_as(sam.answer(InputResponse::PickSingle(OptionId(2)))),
+            Some(InvestigatorId(2))
+        );
+        assert_eq!(sam.answer(InputResponse::PickSingle(OptionId(0))), None);
     }
 
     /// The header of the one batch an `Applied` logged.
@@ -500,6 +712,8 @@ mod tests {
     fn hello_at(prompt: i64, events: Vec<Event>) -> ServerMessage {
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
+            you: TAL,
+            assigned: Assignment::all_to(TAL, [InvestigatorId(1)]),
             prompt: LogPosition(prompt),
             state: Box::new(sample_state()),
             outcome: EngineOutcome::Done,
@@ -546,6 +760,8 @@ mod tests {
     fn hello_frame(build: &str, events: Vec<Event>) -> String {
         serde_json::to_string(&ServerMessage::Hello {
             build: build.to_string(),
+            you: TAL,
+            assigned: Assignment::all_to(TAL, [InvestigatorId(1)]),
             prompt: LogPosition(0),
             state: Box::new(sample_state()),
             outcome: EngineOutcome::Done,
