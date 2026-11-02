@@ -133,14 +133,17 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 
 /// A hand-size discard that must discard exactly one card, offering two.
 fn discard_exactly_one() -> EngineOutcome {
-    test_support::awaiting_request(InputRequest::pick_multiple(
-        "Choose 1 card to discard",
-        vec![
-            ChoiceOption::new(OptionId(0), "Flashlight"),
-            ChoiceOption::new(OptionId(1), "Knife"),
-        ],
-        PickCount::exactly(1),
-    ))
+    test_support::awaiting_request(
+        InputRequest::pick_multiple(
+            "Choose 1 card to discard",
+            vec![
+                ChoiceOption::new(OptionId(0), "Flashlight"),
+                ChoiceOption::new(OptionId(1), "Knife"),
+            ],
+            PickCount::exactly(1),
+        )
+        .answered_by(Responder::Investigator(InvestigatorId(1))),
+    )
 }
 
 fn confirm_disabled() -> bool {
