@@ -235,8 +235,8 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
             cx.state.continuations.pop_expect::<EliminationFrame>();
             // Step 0's tail — "Then, remove those weaknesses from the game" —
             // is step 1's threat-area partition. We read "those weaknesses" as
-            // the ones with a "when the game ends" ability (#1132; no ruling
-            // settles it). Every other owned weakness falls to step 1, and an
+            // the ones with a "when the game ends" ability; no ruling
+            // settles it. Every other owned weakness falls to step 1, and an
             // enemy weakness, which no player controls, stays in play.
             run_elimination_steps(cx, investigator);
             check_all_eliminated(cx);

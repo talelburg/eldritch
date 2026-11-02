@@ -36,10 +36,10 @@
 //! victory display. The eliminated investigator stays in the investigators map,
 //! so their pile is still there to file into.
 //!
-//! [`place_in_victory_display`] is the one exit the owner does not route: the
-//! victory display is *"an out-of-play game area shared by all players"*
-//! (`glossary/Victory_Display_Victory_Points.md`), so every card that takes it
-//! lands in the one display — save an eliminated owner's, above.
+//! [`place_in_victory_display`] is the one exit an Active owner does not
+//! route: the victory display is *"an out-of-play game area shared by all
+//! players"* (`glossary/Victory_Display_Victory_Points.md`), so every card that
+//! takes it lands in the one display.
 //!
 //! # Leaves Play's consequences
 //!
@@ -144,8 +144,8 @@ impl From<EnemyId> for LeavingCard {
 
 /// **Discard `card` from play**, wherever it sits, and file it by its owner:
 /// an investigator's card to their discard, an encounter card to the encounter
-/// discard, and a scenario-owned card out of the game (see the
-/// `leave_play` module docs). Its attachments are discarded with it, each by its own
+/// discard, and a scenario-owned card or an eliminated investigator's out of
+/// the game (see the `leave_play` module docs). Its attachments are discarded with it, each by its own
 /// owner, and its tokens go away.
 ///
 /// Returns the [`Placement`] the card left, from which a caller derives the
@@ -219,7 +219,9 @@ pub(crate) fn discard_from_play_on_elimination(
 /// **Place `card` in the victory display**, wherever it sits, worth `victory`
 /// points. The victory display is *"an out-of-play game area shared by all
 /// players"* (`glossary/Victory_Display_Victory_Points.md`), so the card goes
-/// there whoever owns it, and emits [`Event::EnteredVictoryDisplay`]. Its
+/// there whichever Active owner it has, and emits
+/// [`Event::EnteredVictoryDisplay`]; an eliminated investigator's card is
+/// removed from the game instead (see the `leave_play` module docs). Its
 /// attachments are *discarded*, each by its own owner, and its tokens go away,
 /// as for every exit.
 ///
@@ -281,7 +283,8 @@ pub(crate) fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bo
 
 /// Discard `code`, a card outside any zone of play, to its `owner`'s discard
 /// pile, and emit its [`Event::CardDiscarded`] naming `from`. Filed through the
-/// same router as the leave-play exits.
+/// same router as the leave-play exits, so an eliminated owner's card is
+/// removed from the game instead.
 ///
 /// The card never entered play, so it takes no leave-play cascade: it has no
 /// tokens and no attachments. `glossary/Discard_Piles.md`: *"Any time a card is

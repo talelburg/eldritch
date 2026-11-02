@@ -1,7 +1,8 @@
 //! Elimination teardown: an eliminated investigator stops driving
 //! the engine — their in-flight skill test is abandoned rather than resolved
-//! against the hand elimination drained, and their threat area is emptied to the
-//! right pile.
+//! against the hand elimination drained, their threat area is emptied to the
+//! right pile, and their enemy weakness stays in play until it leaves, when it
+//! is removed from the game.
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs real card
 //! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
@@ -29,14 +30,23 @@
 //! **Dissonant Voices (01165):** "<b>Revelation</b> - Put Dissonant Voices into
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
+//! **Stubborn Detective (01103):** "<b>Prey</b> - Bearer only.\nHunter.\nWhile
+//! Stubborn Detective is at your location, treat your investigator as if his or
+//! her printed text box were blank (except for [[Traits]])." Fight 3, health 2,
+//! damage 1. Ruling (<https://arkhamdb.com/card/01103>): *"His static ability
+//! affects each investigator in his location (not just the bearer)."*
+//! **Roland Banks (01001):** "[elder_sign] effect: +1 for each clue on your
+//! location." — how the blank is observed, as in `stubborn_detective.rs`.
+//! **Daisy Walker (01002):** health 5; the Detective's bearer here.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, Status, Zone,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, SkillKind, Status,
+    Zone,
 };
 use game_core::test_support::{self, clues, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -598,17 +608,7 @@ fn elimination_step_one_emits_one_removal_event_per_card_in_play() {
     assert_event_count!(r.events, 2, Event::CardRemovedFromGame { .. });
 }
 
-// ---- an eliminated investigator's enemy weakness (#1132) ----------------
-//
-// **Stubborn Detective (01103):** "<b>Prey</b> - Bearer only.\nHunter.\nWhile
-// Stubborn Detective is at your location, treat your investigator as if his or
-// her printed text box were blank (except for [[Traits]])." Fight 3, health 2,
-// damage 1. Ruling (<https://arkhamdb.com/card/01103>): *"His static ability
-// affects each investigator in his location (not just the bearer)."*
-//
-// **Roland Banks (01001):** "[elder_sign] effect: +1 for each clue on your
-// location." — how the blank is observed, as in `stubborn_detective.rs`.
-// **Daisy Walker (01002):** health 5; she is the Detective's bearer here.
+// ---- an eliminated investigator's enemy weakness -------------------------
 //
 // `glossary/Elimination.md` step 1: *"Any card that player owns but does not
 // control that is in play remains in play, but if that card leaves play it is
@@ -617,7 +617,7 @@ fn elimination_step_one_emits_one_removal_event_per_card_in_play() {
 const STUBBORN_DETECTIVE: &str = "01103";
 const ROLAND: &str = "01001";
 const DAISY: &str = "01002";
-const DETECTIVE: game_core::state::EnemyId = game_core::state::EnemyId(50);
+const DETECTIVE: EnemyId = EnemyId(50);
 /// The Detective's bearer, eliminated by his attack of opportunity.
 const BEARER: InvestigatorId = InvestigatorId(1);
 /// Roland, who survives at the same location.
@@ -676,7 +676,7 @@ fn an_eliminated_bearers_enemy_weakness_stays_in_play_unengaged() {
     assert_eq!(detective.engaged_with, None);
 
     let session = session
-        .test_skill(ROLAND_ID, game_core::state::SkillKind::Willpower, 3)
+        .test_skill(ROLAND_ID, SkillKind::Willpower, 3)
         .commit(&[]);
     assert_event!(
         session.events(),
@@ -684,7 +684,7 @@ fn an_eliminated_bearers_enemy_weakness_stays_in_play_unengaged() {
     );
 }
 
-/// **Defeated later, he is removed from the game**, into his eliminated
+/// Regression for #1132: **defeated later, he is removed from the game**, into his eliminated
 /// bearer's own removed-from-game pile, with one `CardRemovedFromGame` — never
 /// into her discard pile, which step 1 has already removed from the game.
 #[test]
