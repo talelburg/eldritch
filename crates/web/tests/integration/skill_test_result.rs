@@ -17,6 +17,7 @@ use game_core::state::{
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
+use protocol::logged_answer::LoggedResponse;
 use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -67,6 +68,8 @@ async fn renders_token_total_and_outcome_after_resolution() {
             s,
             ServerMessage::Applied(Applied {
                 answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: LogPosition(1),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
@@ -86,6 +89,8 @@ async fn renders_token_total_and_outcome_after_resolution() {
             s,
             ServerMessage::Applied(Applied {
                 answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: LogPosition(2),
                 state: Box::new(base_game()),
                 events: vec![
@@ -127,6 +132,8 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
             s,
             ServerMessage::Applied(Applied {
                 answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: LogPosition(1),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
@@ -143,6 +150,8 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
             s,
             ServerMessage::Applied(Applied {
                 answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: LogPosition(2),
                 state: Box::new(base_game()),
                 events: vec![Event::ChaosTokenRevealed {
@@ -157,6 +166,8 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
             s,
             ServerMessage::Applied(Applied {
                 answered: LogPosition(2),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: LogPosition(3),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestFailed {
@@ -233,6 +244,8 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
             s,
             ServerMessage::Applied(Applied {
                 answered,
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: answered.next(),
                 state: Box::new(base_game()),
                 events: vec![Event::SkillTestStarted {
@@ -247,6 +260,8 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
             s,
             ServerMessage::Applied(Applied {
                 answered: answered.next(),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
                 prompt: answered.next().next(),
                 state: Box::new(base_game()),
                 events: vec![

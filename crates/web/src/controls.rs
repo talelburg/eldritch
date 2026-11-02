@@ -42,8 +42,10 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 }
 
 /// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine
-/// as the answer to the prompt the store holds, recording `label` as the next
-/// `Applied` batch's event-log header.
+/// as the answer to the prompt the store holds.
+///
+/// The event-log header comes back with the `Applied` that answer produces,
+/// built from who answered and what.
 ///
 /// The answer is named for the investigator the live prompt asks
 /// ([`ClientState::answer`](crate::store::ClientState::answer)). With no live
@@ -56,7 +58,7 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 /// from context and absent in render-only mounts, so a missing one is a no-op
 /// rather than a panic.
 #[cfg(target_arch = "wasm32")]
-pub fn submit(response: InputResponse, label: impl Into<String>) {
+pub fn submit(response: InputResponse) {
     let store = store::use_store();
     if let Some(tx) = use_context::<OutboundTx>() {
         let Some(action) = store.with_untracked(|s| s.answer(response)) else {
@@ -64,7 +66,6 @@ pub fn submit(response: InputResponse, label: impl Into<String>) {
             return;
         };
         let prompt = store.with_untracked(|s| s.prompt);
-        store.update(|s| s.pending_label = Some(label.into()));
         let _ = tx.unbounded_send(ClientMessage::Submit { prompt, action });
     }
 }
@@ -81,7 +82,7 @@ pub fn submit(response: InputResponse, label: impl Into<String>) {
 )]
 #[component]
 pub fn AnchoredControl(
-    /// The button's text — also the event-log header for the submitted batch.
+    /// The button's text.
     label: String,
     /// Stable class for this control, independent of its live/dead state.
     class: &'static str,
@@ -91,12 +92,9 @@ pub fn AnchoredControl(
     let option = live_option(&target);
     let live = option.is_some();
     #[cfg(target_arch = "wasm32")]
-    let on_click = {
-        let label = label.clone();
-        move |_| {
-            if let Some(opt) = option.clone() {
-                submit(InputResponse::PickSingle(opt.id), label.clone());
-            }
+    let on_click = move |_| {
+        if let Some(opt) = option.clone() {
+            submit(InputResponse::PickSingle(opt.id));
         }
     };
     // The host build renders the same markup inert — `option` is consumed above
@@ -167,7 +165,7 @@ pub fn encounter_deck_view(game: &GameState) -> impl IntoView {
                     {
                         move |_| {
                             if live {
-                                submit(InputResponse::Confirm, "Draw encounter card");
+                                submit(InputResponse::Confirm);
                             }
                         }
                     }

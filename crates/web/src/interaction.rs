@@ -173,7 +173,6 @@ pub fn ContextMenu(
                 .map(|opt| {
                     let ChoiceOption { id, label, .. } = opt;
                     let tx = tx.clone();
-                    let header = label.clone();
                     view! {
                         <button
                             class="menu-item"
@@ -185,7 +184,6 @@ pub fn ContextMenu(
                                             .map(|action| (s.prompt, action))
                                     });
                                     if let Some((prompt, action)) = answer {
-                                        store.update(|s| s.pending_label = Some(header.clone()));
                                         let _ = tx.unbounded_send(ClientMessage::Submit {
                                             prompt,
                                             action,

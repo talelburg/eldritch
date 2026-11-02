@@ -197,12 +197,7 @@ pub fn SkillTestResultView() -> impl IntoView {
                         on:click={
                             #[cfg(target_arch = "wasm32")]
                             {
-                                move |_| {
-                                    controls::submit(
-                                        InputResponse::Confirm,
-                                        "Confirm",
-                                    );
-                                }
+                                move |_| controls::submit(InputResponse::Confirm)
                             }
                             #[cfg(not(target_arch = "wasm32"))]
                             { |_| () }

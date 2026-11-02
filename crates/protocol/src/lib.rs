@@ -13,11 +13,14 @@ use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
+use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 use serde::{Deserialize, Serialize};
 
 pub mod live;
 pub mod logged_answer;
+
+use logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -130,6 +133,12 @@ impl fmt::Display for LogPosition {
 pub struct Applied {
     /// The log position the answer occupies.
     pub answered: LogPosition,
+    /// The investigator who answered.
+    pub by: InvestigatorId,
+    /// What they answered, as the action log recorded it: each picked
+    /// option's label, target and investigator, so every connection can say
+    /// what was decided rather than what it last clicked.
+    pub response: LoggedResponse,
     /// The log position of the prompt the game now awaits, the one after
     /// [`answered`](Self::answered).
     pub prompt: LogPosition,
@@ -378,6 +387,8 @@ mod tests {
             .build();
         let msg = ServerMessage::Applied(Applied {
             answered: LogPosition(0),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Confirm,
             prompt: LogPosition(1),
             state: Box::new(state.clone()),
             events: Vec::new(),
@@ -388,7 +399,16 @@ mod tests {
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
         match back {
-            ServerMessage::Applied(Applied { state: s, .. }) => assert_eq!(*s, state),
+            ServerMessage::Applied(Applied {
+                by,
+                response,
+                state: s,
+                ..
+            }) => {
+                assert_eq!(*s, state);
+                assert_eq!(by, InvestigatorId(1));
+                assert_eq!(response, LoggedResponse::Confirm);
+            }
             other => panic!("expected Applied, got {other:?}"),
         }
     }
@@ -404,6 +424,8 @@ mod tests {
         let outcome = test_support::awaiting_pick_single_input("Choose an action");
         let msg = ServerMessage::Applied(Applied {
             answered: LogPosition(0),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Skip,
             prompt: LogPosition(1),
             state: Box::new(state),
             events: Vec::new(),

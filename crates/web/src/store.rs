@@ -1,10 +1,11 @@
 //! Reactive client store: `ClientState` + the pure `ServerMessage` reducer.
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{ChaosToken, GameState, TokenResolution};
+use game_core::state::{ChaosToken, GameState, InvestigatorId, TokenResolution};
 use leptos::prelude::*;
+use protocol::logged_answer::LoggedResponse;
 use protocol::{Applied, LogPosition, Refusal, ServerMessage, SignInMethod, SignedIn};
 
 use crate::socket_ending::SocketEnding;
@@ -90,8 +91,8 @@ const CLIENT_BUG: &str = "Something went wrong. Reload if it keeps happening.";
 /// One applied submit's worth of events, for the event-log view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogBatch {
-    /// Human label of the menu choice that produced this batch
-    /// (e.g. "Play 01059 from hand"); a generic fallback when unknown.
+    /// Who answered and what, e.g. "Agnes Baker: Fight: Ghoul Priest", or
+    /// "Setup" for the batch a `Hello` carries.
     pub header: String,
     /// The events emitted by that submit, in order.
     pub events: Vec<Event>,
@@ -154,10 +155,6 @@ pub struct ClientState {
     /// Full accumulated event history, grouped per applied submit, oldest
     /// first. Cleared by `Hello`. The event-log panel renders this.
     pub log: Vec<LogBatch>,
-    /// Header label for the *next* `Applied` batch, set by the input view at
-    /// submit time and taken when that batch arrives. Cleared on `Rejected`
-    /// (the submit produced no batch) and `Hello`.
-    pub pending_label: Option<String>,
 }
 
 impl ClientState {
@@ -253,7 +250,6 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_revealed_token = None;
             state.last_skill_test_result = None;
             state.log = Vec::new();
-            state.pending_label = None;
             if !events.is_empty() {
                 state.log.push(LogBatch {
                     header: "Setup".to_string(),
@@ -266,12 +262,17 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         // already includes.
         ServerMessage::Applied(Applied { answered, .. }) if answered < state.prompt => {}
         ServerMessage::Applied(Applied {
+            by,
+            response,
             prompt,
             state: s,
             events,
             outcome,
             ..
         }) => {
+            // The prompt still held here is the one this answers: an earlier
+            // position was dropped above, and the server answers in order.
+            let header = batch_header(&s, state.outcome.as_ref(), by, &response);
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.prompt = prompt;
@@ -333,15 +334,9 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     _ => {}
                 }
             }
-            let header = state
-                .pending_label
-                .take()
-                .unwrap_or_else(|| "(action)".into());
             state.log.push(LogBatch { header, events });
         }
         ServerMessage::Rejected(refusal) => {
-            // A refused submit produced no batch, so its label labels nothing.
-            state.pending_label = None;
             match refusal {
                 // The newer state is already here, or on its way.
                 Refusal::StalePrompt => {}
@@ -359,6 +354,39 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
     }
+}
+
+/// The event-log header for an answer `by` gave with `response`, to the prompt
+/// `answered` (the outcome the client held before the answer applied), named
+/// from `game`: who answered, then what they answered.
+///
+/// A pick names its option. A `Confirm` carries nothing, so it is named by the
+/// prompt it confirmed: the Mythos draw is the `Confirm` anchored to the
+/// encounter deck (ADR 0011).
+fn batch_header(
+    game: &GameState,
+    answered: Option<&EngineOutcome>,
+    by: InvestigatorId,
+    response: &LoggedResponse,
+) -> String {
+    let what = match response {
+        LoggedResponse::PickSingle { option } => option.label.clone(),
+        LoggedResponse::PickMultiple { options } => format!("Commit {} card(s)", options.len()),
+        LoggedResponse::Skip => "Pass".into(),
+        LoggedResponse::Confirm => match answered {
+            Some(EngineOutcome::AwaitingInput { request, .. })
+                if request.target == Some(OptionTarget::EncounterDeck) =>
+            {
+                "Draw encounter card".into()
+            }
+            _ => "Confirm".into(),
+        },
+    };
+    let who = game
+        .investigators
+        .get(&by)
+        .map_or_else(|| format!("Investigator {}", by.0), |i| i.name.clone());
+    format!("{who}: {what}")
 }
 
 /// The single reactive store handed through Leptos context.
@@ -384,22 +412,77 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
+    use game_core::engine::OptionId;
     use game_core::event::FailureReason;
-    use game_core::state::{GameStateBuilder, InvestigatorId};
+    use game_core::state::GameStateBuilder;
     use game_core::test_support;
+    use protocol::logged_answer::LoggedOption;
 
     use super::*;
 
     /// An `Applied` frame answering the prompt at log position `answered`,
-    /// carrying `events` and nothing else of interest.
+    /// carrying `events` and nothing else of interest: seat 1 confirmed.
     fn applied_at(answered: i64, events: Vec<Event>) -> ServerMessage {
         ServerMessage::Applied(Applied {
             answered: LogPosition(answered),
+            by: InvestigatorId(1),
+            response: LoggedResponse::Confirm,
             prompt: LogPosition(answered + 1),
             state: Box::new(sample_state()),
             events,
             outcome: EngineOutcome::Done,
         })
+    }
+
+    /// An `Applied` frame for the prompt at log position 0, answered by `by`
+    /// with `response`, on the [`two_seats`] board.
+    fn applied_by(by: u32, response: LoggedResponse) -> ServerMessage {
+        ServerMessage::Applied(Applied {
+            answered: LogPosition(0),
+            by: InvestigatorId(by),
+            response,
+            prompt: LogPosition(1),
+            state: Box::new(two_seats()),
+            events: Vec::new(),
+            outcome: EngineOutcome::Done,
+        })
+    }
+
+    /// Seat 1 is Roland Banks, seat 2 is Agnes Baker.
+    fn two_seats() -> GameState {
+        let mut roland = test_support::test_investigator(1);
+        roland.name = "Roland Banks".into();
+        let mut agnes = test_support::test_investigator(2);
+        agnes.name = "Agnes Baker".into();
+        GameStateBuilder::new()
+            .with_investigator(roland)
+            .with_investigator(agnes)
+            .build()
+    }
+
+    /// A picked option labelled `label`, anchored nowhere.
+    fn option(id: u32, label: &str) -> LoggedOption {
+        LoggedOption {
+            id: OptionId(id),
+            label: label.into(),
+            target: None,
+            investigator: None,
+        }
+    }
+
+    /// The client's state with `outcome` as the prompt it holds.
+    fn holding(outcome: EngineOutcome) -> ClientState {
+        ClientState {
+            game: Some(two_seats()),
+            outcome: Some(outcome),
+            ..Default::default()
+        }
+    }
+
+    /// The header of the one batch an `Applied` logged.
+    fn only_header(s: &ClientState) -> &str {
+        assert_eq!(s.log.len(), 1, "one batch logged");
+        &s.log[0].header
     }
 
     /// A `Hello` naming the prompt at log position `prompt`, carrying setup's
@@ -851,65 +934,101 @@ mod tests {
         assert_eq!(s, before, "the Applied for position 2 is dropped");
     }
 
+    /// Sam plays Agnes and picks "Fight: Ghoul Priest". Tal's tab, whose own
+    /// last click was something else, heads the batch with Agnes's pick.
     #[test]
-    fn applied_pushes_a_log_batch_using_pending_label() {
-        let mut s = ClientState {
-            pending_label: Some("Move to Cellar".into()),
-            ..Default::default()
-        };
-        reduce(&mut s, applied_at(0, vec![Event::ScenarioStarted]));
-        assert_eq!(s.log.len(), 1);
-        assert_eq!(s.log[0].header, "Move to Cellar");
-        assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
-        assert_eq!(s.pending_label, None, "pending_label is consumed");
+    fn another_investigators_pick_is_logged_under_their_name_and_label() {
+        let mut s = holding(test_support::awaiting_pick_single_input("Choose"));
+        reduce(
+            &mut s,
+            applied_by(
+                2,
+                LoggedResponse::PickSingle {
+                    option: option(3, "Fight: Ghoul Priest"),
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Agnes Baker: Fight: Ghoul Priest");
     }
 
     #[test]
-    fn applied_without_pending_label_uses_generic_header() {
+    fn a_multi_pick_is_logged_with_how_many_it_committed() {
+        let mut s = holding(test_support::awaiting_commit_input("Commit", &[0, 1]));
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts"), option(1, "Overpower")],
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Roland Banks: Commit 2 card(s)");
+    }
+
+    #[test]
+    fn a_pass_is_logged() {
+        let mut s = holding(test_support::awaiting_skippable_pick_single_input("React?"));
+        reduce(&mut s, applied_by(2, LoggedResponse::Skip));
+        assert_eq!(only_header(&s), "Agnes Baker: Pass");
+    }
+
+    #[test]
+    fn a_confirm_is_logged() {
+        let mut s = holding(test_support::awaiting_confirm_input("Acknowledge"));
+        reduce(&mut s, applied_by(1, LoggedResponse::Confirm));
+        assert_eq!(only_header(&s), "Roland Banks: Confirm");
+    }
+
+    /// The Mythos draw is an option-less `Confirm`: only the prompt the client
+    /// held, anchored to the encounter deck, says what was confirmed.
+    #[test]
+    fn a_confirm_of_the_encounter_draw_is_logged_as_the_draw() {
+        let mut outcome = test_support::awaiting_confirm_input("Mythos step 1.4");
+        if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
+            request.target = Some(OptionTarget::EncounterDeck);
+        }
+        let mut s = holding(outcome);
+        reduce(&mut s, applied_by(1, LoggedResponse::Confirm));
+        assert_eq!(only_header(&s), "Roland Banks: Draw encounter card");
+    }
+
+    #[test]
+    fn applied_logs_its_events_under_the_header() {
         let mut s = ClientState::default();
-        reduce(&mut s, applied_at(0, Vec::new()));
+        reduce(&mut s, applied_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1);
-        assert_eq!(s.log[0].header, "(action)");
+        assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
     }
 
     #[test]
     fn consecutive_applied_accumulate_in_order() {
         let mut s = ClientState::default();
-        for (answered, label) in [(0, "first"), (1, "second")] {
-            s.pending_label = Some(label.to_string());
-            reduce(&mut s, applied_at(answered, Vec::new()));
-        }
-        let headers: Vec<&str> = s.log.iter().map(|b| b.header.as_str()).collect();
-        assert_eq!(headers, vec!["first", "second"]);
+        reduce(&mut s, applied_at(0, vec![Event::ScenarioStarted]));
+        reduce(&mut s, applied_at(1, Vec::new()));
+        let events: Vec<usize> = s.log.iter().map(|b| b.events.len()).collect();
+        assert_eq!(events, vec![1, 0]);
     }
 
     #[test]
-    fn rejected_clears_pending_label_without_pushing_a_batch() {
-        let mut s = ClientState {
-            pending_label: Some("Move to Cellar".into()),
-            ..Default::default()
-        };
+    fn rejected_pushes_no_batch() {
+        let mut s = ClientState::default();
         reduce(
             &mut s,
             ServerMessage::Rejected(Refusal::Engine("nope".into())),
         );
         assert!(s.log.is_empty(), "rejection pushes no batch");
-        assert_eq!(s.pending_label, None, "rejection clears the stale label");
     }
 
     #[test]
-    fn hello_clears_log_and_pending_label() {
-        let mut s = ClientState {
-            pending_label: Some("stale".into()),
-            ..Default::default()
-        };
+    fn hello_clears_log() {
+        let mut s = ClientState::default();
         s.log.push(LogBatch {
             header: "old".into(),
             events: Vec::new(),
         });
         reduce(&mut s, hello_at(0, Vec::new()));
         assert!(s.log.is_empty());
-        assert_eq!(s.pending_label, None);
     }
 
     #[test]

@@ -22,7 +22,7 @@ use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
 use protocol::live::{LiveGame, Refused};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{GameId, LogPosition, ServerMessage};
+use protocol::{Applied, GameId, LogPosition};
 use sqlx::SqlitePool;
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -275,8 +275,8 @@ impl GameSession {
     }
 
     /// Submit a player action, the answer to the prompt at `prompt`, to the
-    /// live game, store the answer it accepts, then commit it. Returns the [`ServerMessage::Applied`] to send every
-    /// connection.
+    /// live game, store the answer it accepts, then commit it. Returns the
+    /// [`Applied`] to send every connection.
     ///
     /// A refused action stores nothing and leaves the game unchanged, and so
     /// does a failed write: the live game is committed only once the row is
@@ -291,7 +291,7 @@ impl GameSession {
         &mut self,
         prompt: LogPosition,
         action: PlayerAction,
-    ) -> Result<ServerMessage, ApplyError> {
+    ) -> Result<Applied, ApplyError> {
         let accepted = self.live.submit(prompt, action)?;
         let row = ActionRow {
             answer: serde_json::to_string(accepted.answer()).map_err(SessionError::from)?,

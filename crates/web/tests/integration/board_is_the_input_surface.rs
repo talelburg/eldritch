@@ -24,7 +24,7 @@ use game_core::test_support::{self, location, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
-use protocol::ClientMessage;
+use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store;
@@ -77,7 +77,7 @@ impl Harness {
         });
         let applied = self.live.commit(accepted);
         let store = self.board.store;
-        store.update(|s| store::reduce(s, applied));
+        store.update(|s| store::reduce(s, ServerMessage::Applied(applied)));
         task::tick().await;
     }
 

@@ -6,7 +6,7 @@
 //! without changing anything, and [`LiveGame::commit`] advances the game by an
 //! answer it accepted. It persists nothing and sends nothing: a host stores
 //! the [`Accepted`] answer's logged form, then commits it and sends the
-//! [`ServerMessage::Applied`] that comes back.
+//! [`Applied`] that comes back.
 //!
 //! Every answer names the [`LogPosition`] of the prompt it answers, and
 //! [`LiveGame::submit`] refuses any position but the current one before the
@@ -188,21 +188,24 @@ impl LiveGame {
     }
 
     /// Advance the game by an answer [`submit`](Self::submit) accepted, and
-    /// hand back the [`ServerMessage::Applied`] every connection is sent. A
-    /// host that persists the log commits only once the answer is stored.
+    /// hand back the [`Applied`] every connection is sent, as
+    /// [`ServerMessage::Applied`]. A host that persists the log commits only
+    /// once the answer is stored.
     ///
     /// `accepted` must come from `submit` on this game in its current state:
     /// the type can't tie the two together, so committing a stale answer
     /// installs that answer's state.
-    pub fn commit(&mut self, accepted: Accepted) -> ServerMessage {
+    pub fn commit(&mut self, accepted: Accepted) -> Applied {
         let answered = self.prompt();
-        let applied = ServerMessage::Applied(Applied {
+        let applied = Applied {
             answered,
+            by: accepted.answer.investigator,
+            response: accepted.answer.response,
             prompt: answered.next(),
             state: Box::new(accepted.state.clone()),
             events: accepted.events,
             outcome: accepted.outcome.clone(),
-        });
+        };
         self.state = accepted.state;
         self.outcome = accepted.outcome;
         self.seq += 1;
