@@ -535,9 +535,9 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(INERT, CANCEL),
         ),
         (
-            Continuation::InvestigationPhase(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            }),
+            Continuation::InvestigationPhase(InvestigationPhaseFrame::at(
+                InvestigationResume::TurnBegins,
+            )),
             profile(INERT, CANCEL),
         ),
         (

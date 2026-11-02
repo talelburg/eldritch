@@ -311,6 +311,7 @@ fn in_the_enemy_phase_it_hunts_its_bearer_past_the_investigator_beside_it() {
                 .owner(Owner::Investigator(bearer))
                 .at(HERE),
         )
+        .turns_taken([bearer])
         .open_turn(other)
         .session()
         .take(&TurnAction::EndTurn);

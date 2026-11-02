@@ -403,7 +403,8 @@ fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
 }
 
 /// The line `HERE - THERE - C - D`, the Detective ready at THERE beside the
-/// other investigator, his bearer two steps away at D.
+/// other investigator, his bearer two steps away at D. The other investigator
+/// has the round's last turn open, the bearer having taken theirs.
 fn hunting(bearer: Seat, other: Seat) -> TestSession {
     GameStateBuilder::new()
         .with_registries(REGISTRIES)
@@ -415,6 +416,7 @@ fn hunting(bearer: Seat, other: Seat) -> TestSession {
         .with_seat(other.at(THERE).deck([FILLER, FILLER]))
         .with_seating([INV, OTHER])
         .with_enemy(the_detective(THERE, INV))
+        .turns_taken([INV])
         .open_turn(OTHER)
         .session()
 }

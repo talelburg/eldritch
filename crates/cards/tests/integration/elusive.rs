@@ -233,9 +233,7 @@ fn not_playable_in_another_investigators_turn() {
         .with_seating([INV, other])
         .with_phase(Phase::Investigation)
         .with_active_investigator(other)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
+        .with_phase_anchor(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins))
         .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
         .session();
     let glass = OptionTarget::HandCard {

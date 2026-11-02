@@ -2285,10 +2285,30 @@ pub struct MythosPhaseFrame {
 
 /// The Investigation phase anchor. See
 /// [`MythosPhaseFrame`].
+///
+/// It also records who has taken a turn this phase, the record Appendix II
+/// 2.2.2 reads: *"If an investigator has not yet taken a turn this phase,
+/// return to 2.2. If each investigator has taken a turn this phase, proceed to
+/// 2.3."* A fresh anchor is pushed each phase, so the record needs no reset.
+/// Build one with [`at`](Self::at).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvestigationPhaseFrame {
     /// Which child-pop boundary the anchor resumes at.
     pub resume: InvestigationResume,
+    /// The investigators whose turn has ended this phase, at 2.2.2, in the
+    /// order their turns ended. A turn ended by elimination counts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) turns_taken: Vec<InvestigatorId>,
+}
+
+impl InvestigationPhaseFrame {
+    /// The anchor at `resume`, with nobody recorded as having taken a turn.
+    pub fn at(resume: InvestigationResume) -> Self {
+        Self {
+            resume,
+            turns_taken: Vec::new(),
+        }
+    }
 }
 
 /// The Enemy phase anchor. See [`MythosPhaseFrame`].

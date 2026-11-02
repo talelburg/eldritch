@@ -388,11 +388,19 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
         "resume_end_turn: the turn on top is not the active investigator's",
     );
 
-    // 2.2.2 decision: "return to 2.2" for the next investigator in player
-    // order (a stand-in for the investigators' choice; TODO(#1185): let them
-    // choose), or proceed to 2.3. `next_in_player_order` skips eliminated investigators (Rules
-    // Reference p.10) — the same shared helper the Enemy phase uses.
-    if let Some(next_id) = cursor::next_in_player_order(cx.state, active_id) {
+    // 2.2.2 Investigator's turn ends: "If an investigator has not yet taken a
+    // turn this phase, return to 2.2. If each investigator has taken a turn
+    // this phase, proceed to 2.3." Record the turn on the phase anchor — an
+    // elimination ends the turn here too — then hand the next turn to the first
+    // investigator in player order still waiting (a stand-in for the
+    // investigators' choice; TODO(#1185): let them choose).
+    cx.state
+        .continuations
+        .topmost_of_mut::<InvestigationPhaseFrame>()
+        .expect("resume_end_turn: no InvestigationPhase anchor beneath the turn")
+        .turns_taken
+        .push(active_id);
+    if let Some(next_id) = first_waiting(cx.state) {
         begin_investigator_turn(cx, next_id)
     } else {
         cx.state.active_investigator = None;
@@ -400,6 +408,20 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
         // (Enemy 3.2); propagate its outcome rather than swallowing it.
         investigation_phase_end(cx)
     }
+}
+
+/// The first Active investigator in player order who has not yet taken a turn
+/// this phase, by the Investigation phase anchor's record; `None` once each
+/// has. Player order holds Active investigators only, so an eliminated
+/// investigator is never offered a turn.
+fn first_waiting(state: &GameState) -> Option<InvestigatorId> {
+    let anchor = state
+        .continuations
+        .topmost_of::<InvestigationPhaseFrame>()
+        .expect("first_waiting: no InvestigationPhase anchor on the stack");
+    cursor::player_order(state)
+        .into_iter()
+        .find(|id| !anchor.turns_taken.contains(id))
 }
 
 /// Entered by [`advance_phase_entry`] on any-to-Investigation transition, and
@@ -426,9 +448,9 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // above the step-2.1 forced abilities the emit had just queued, and the
     // rotation to the first investigator would follow them rather than the
     // milestone.
-    cx.state.continuations.push(InvestigationPhaseFrame {
-        resume: InvestigationResume::AfterPhaseStartForced,
-    });
+    cx.state.continuations.push(InvestigationPhaseFrame::at(
+        InvestigationResume::AfterPhaseStartForced,
+    ));
     emit::queue_event(
         cx,
         &TimingEvent::PhaseStarted {
@@ -489,8 +511,7 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// the emit, so the window cannot be pushed above what the emit queues.
 ///
 /// `who` must be an `Active` investigator in `seating`; callers
-/// resolve it as the first in [`cursor::player_order`] or via
-/// [`cursor::next_in_player_order`].
+/// resolve it with [`first_waiting`].
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
@@ -675,9 +696,9 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
         Phase::Mythos => Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::Entry,
         }),
-        Phase::Investigation => Continuation::InvestigationPhase(InvestigationPhaseFrame {
-            resume: InvestigationResume::Entry,
-        }),
+        Phase::Investigation => Continuation::InvestigationPhase(InvestigationPhaseFrame::at(
+            InvestigationResume::Entry,
+        )),
         Phase::Enemy => Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::Entry,
         }),
@@ -919,9 +940,9 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
 fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     cx.state.continuations.pop_expect::<MythosPhaseFrame>();
     cx.state.phase = Phase::Investigation;
-    cx.state.continuations.push(InvestigationPhaseFrame {
-        resume: InvestigationResume::Entry,
-    });
+    cx.state
+        .continuations
+        .push(InvestigationPhaseFrame::at(InvestigationResume::Entry));
     EngineOutcome::Done
 }
 
@@ -941,6 +962,7 @@ fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<Eng
         }
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::Entry,
+            ..
         })) => {
             cx.state
                 .continuations
@@ -1104,22 +1126,26 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         // window.
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::AfterPhaseStartForced,
+            ..
         })) => investigation_after_phase_start(cx),
         // Step 2.3's queued `PhaseEnded { Investigation }` forced abilities have
         // resolved, re-exposing this anchor: transition to Enemy.
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::AfterPhaseEndForced,
+            ..
         })) => investigation_phase_end_transition(cx),
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::Begins,
+            ..
         })) => {
             // Post-2.1 window closed; start the first investigator's turn
             // (step 2.2). No skill-test-in-flight guard: runs at phase start
             // (no test in flight) and does not transition phase.
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
-            // site). See the former anchor_on_child_pop arm.
-            match cursor::player_order(cx.state).first().copied() {
+            // site). See the former anchor_on_child_pop arm. Nobody has taken a
+            // turn yet, so this is the first investigator in player order.
+            match first_waiting(cx.state) {
                 Some(id) => begin_investigator_turn(cx, id),
                 None => EngineOutcome::Done,
             }
@@ -1128,9 +1154,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         // anchor: open the post-2.2 window.
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::AfterTurnBegan,
+            ..
         })) => investigation_after_turn_began(cx),
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
+            ..
         })) => {
             // 2.2.1 — push the InvestigatorTurn frame above the anchor. The
             // anchor stays at TurnBegins beneath it; the frame

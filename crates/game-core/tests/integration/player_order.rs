@@ -89,6 +89,7 @@ fn enemy_attacks_start_at_the_lead() {
         lead_on_the_second_seat()
             .with_enemy(enemy(1).attack_damage(1).engaged_with(FIRST_SEAT))
             .with_enemy(enemy(2).attack_damage(1).engaged_with(LEAD))
+            .turns_taken([LEAD])
             .open_turn(FIRST_SEAT),
     )
     .take(&TurnAction::EndTurn);
@@ -104,8 +105,12 @@ fn enemy_attacks_start_at_the_lead() {
 /// in player order.
 #[test]
 fn upkeep_draws_and_resources_start_at_the_lead() {
-    let session =
-        session(lead_on_the_second_seat().open_turn(FIRST_SEAT)).take(&TurnAction::EndTurn);
+    let session = session(
+        lead_on_the_second_seat()
+            .turns_taken([LEAD])
+            .open_turn(FIRST_SEAT),
+    )
+    .take(&TurnAction::EndTurn);
 
     let drew = in_order(session.events(), |e| match e {
         Event::CardsDrawn { investigator, .. } => Some(*investigator),

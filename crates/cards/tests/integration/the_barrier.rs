@@ -61,8 +61,8 @@ const LITA: &str = "01117";
 /// Hallway and the Attic in play with the Parlor unrevealed beside them, and
 /// the Ghoul Priest and Lita Chantler set aside for the reverse. Each seat gets
 /// a spare deck card for Upkeep 4.4's draw. `lead` holds the lead; `last` has
-/// the round's last turn open, so ending it runs on to the round end, where
-/// the act's objective is offered.
+/// the round's last turn open, every other seat having taken theirs, so ending
+/// it runs on to the round end, where the act's objective is offered.
 fn barrier_table(
     seats: Vec<Seat<AnyKind>>,
     seating: &[InvestigatorId],
@@ -79,6 +79,7 @@ fn barrier_table(
         .with_location(location(ATTIC).as_card("01113"))
         .with_seating(seating.iter().copied())
         .with_lead(lead)
+        .turns_taken(seating.iter().copied().filter(|id| *id != last))
         .open_turn(last)
         .with_act_deck(["01109", "01110"])
         .build();

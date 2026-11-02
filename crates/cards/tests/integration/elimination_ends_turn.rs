@@ -121,7 +121,7 @@ fn a_defeated_investigator_is_never_prompted_for_an_action() {
 fn defeat_on_the_last_turn_of_the_round_ends_the_investigation_phase() {
     // The survivor has already taken their turn (they come first in
     // player order), so 2.2.2 finds nobody left and proceeds to 2.3 → Enemy.
-    let session = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]));
+    let session = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]).turns_taken([SURVIVOR]));
 
     assert_eq!(
         session.state().investigators[&DYING].status,

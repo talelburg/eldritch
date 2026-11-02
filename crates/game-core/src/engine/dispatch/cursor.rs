@@ -78,8 +78,9 @@ pub fn the_lead(state: &GameState) -> Option<InvestigatorId> {
 /// when no Active investigator follows them before the rotation ends, or when
 /// `current` is not seated.
 ///
-/// Advances a per-investigator loop's cursor: the Investigation turns, Enemy
-/// 3.3's attacks, Upkeep 4.4's draws. `current` may itself have been
+/// Advances a per-investigator loop's cursor: Enemy 3.3's attacks, Upkeep
+/// 4.4's draws. (The Investigation turns read the phase anchor's record of who
+/// has taken a turn instead.) `current` may itself have been
 /// eliminated mid-loop (defeated by an attack in Enemy 3.3); indexing the
 /// whole seating rather than the Active list finds their successor anyway. The
 /// rotation is taken at the *stored* lead, which never changes, so eliminating

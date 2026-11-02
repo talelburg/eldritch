@@ -8,11 +8,11 @@
 //! Synthetic probes only (ADR 0016): the stock test investigator, location and
 //! enemy, none of which stands in for a printed card.
 
-use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{self, seat, TEST_REGISTRIES};
+use game_core::{assert_event, assert_event_sequence};
 
 const MINE: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -64,6 +64,35 @@ fn open_turn_respects_a_seating_already_set() {
         .take(&TurnAction::EndTurn);
 
     session.assert_at_turn_menu(OTHER);
+}
+
+/// `turns_taken` stages who has already taken a turn this phase, before or
+/// after `open_turn`. With the first seat recorded, ending the second seat's
+/// turn leaves nobody waiting, so the phase ends rather than handing the turn
+/// back to the first seat (Appendix II 2.2.2: *"If each investigator has taken
+/// a turn this phase, proceed to 2.3."*).
+#[test]
+fn turns_taken_composes_with_open_turn_in_either_order() {
+    let board = || {
+        GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(seat(1).at(HERE))
+            .with_seat(seat(2).at(HERE))
+            .with_location(test_support::location(HERE))
+            .with_seating([MINE, OTHER])
+    };
+    for builder in [
+        board().turns_taken([MINE]).open_turn(OTHER),
+        board().open_turn(OTHER).turns_taken([MINE]),
+    ] {
+        let session = builder.session().take(&TurnAction::EndTurn);
+        assert_event!(
+            session.events(),
+            Event::PhaseEnded {
+                phase: Phase::Investigation
+            }
+        );
+    }
 }
 
 /// An investigator engaged with one ready enemy, at a location the enemy was

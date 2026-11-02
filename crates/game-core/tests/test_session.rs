@@ -124,9 +124,7 @@ fn turn_begins_window_with(code: &str) -> GameStateBuilder {
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_seating([INV])
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
+        .with_phase_anchor(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins))
         .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
 }
 
@@ -239,9 +237,7 @@ fn settling_a_fixture_parked_on_a_frame_that_is_not_a_prompt_panics() {
     let _ = GameStateBuilder::new()
         .with_registries(registries())
         .with_phase(Phase::Investigation)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::Begins,
-        })
+        .with_phase_anchor(InvestigationPhaseFrame::at(InvestigationResume::Begins))
         .session();
 }
 
