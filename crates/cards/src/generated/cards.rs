@@ -1204,7 +1204,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game.".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "01109".to_owned(),
@@ -1215,7 +1215,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("The barrier blocking passage into the parlor has vanished. Reveal the Parlor.\nPut the set-aside Lita Chantler into play in the Parlor.\nSpawn the set-aside Ghoul Priest in the Hallway.".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(3), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(3)), victory: None },
         },
         CardMetadata {
             code: "01110".to_owned(),
@@ -1226,7 +1226,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("The lead investigator must decide (choose one):\n- It was never much of a home. Burn it down! <b>(→R1)</b>\n- This hell-pit is my home! No way are we burning it! <b>(→R2)</b>".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "01111".to_owned(),
@@ -1369,7 +1369,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "01124".to_owned(),
@@ -1611,7 +1611,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put the set-aside Ritual Site into play if it is not already in play.\nSearch the collection for each enemy recorded in your Campaign Log under \"Cultists Who Got Away,\" and spawn those enemies at the Main Path.".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(3), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(3)), victory: None },
         },
         CardMetadata {
             code: "01147".to_owned(),
@@ -1622,7 +1622,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Shuffle the encounter discard pile into the encounter deck. Discard cards from the top of the encounter deck until 1 enemy is discarded (2 enemies instead if there are 3 or more players in the game). Spawn each discarded enemy at the Ritual Site.".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "01148".to_owned(),
@@ -1633,7 +1633,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "core".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "01149".to_owned(),
@@ -2491,7 +2491,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Shuffle the encounter discard pile and the set-aside \"Jazz\" Mulligan into the encounter deck.".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(3), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(3)), victory: None },
         },
         CardMetadata {
             code: "02046".to_owned(),
@@ -2502,7 +2502,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("If the Alchemy Labs location is not in play, put it into play. If you are at Agenda 1 or 2, spawn The Experiment in the Alchemy Labs.\nIf you have completed The House Always Wins, put the set-aside Alchemical Concoction into play underneath the Alchemy Labs. If Extracurricular Activity is the first scenario of the campaign, remove the set-aside Alchemical Concoction from the game, instead.".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02047".to_owned(),
@@ -2513,7 +2513,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R3)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02048".to_owned(),
@@ -2711,7 +2711,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put the set-aside Darkened Hall into play.\nIf it is Agenda 1, discard cards from the top of the encounter deck until a [[Criminal]] enemy is discarded, and spawn that enemy in the Darkened Hall.".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(4), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(4)), victory: None },
         },
         CardMetadata {
             code: "02067".to_owned(),
@@ -2722,7 +2722,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>If the players have not yet completed Extracurricular Activity:</b><blockquote><i>You find Dr. Morgan gambling in one of the VIP rooms... but he appears to be playing cards with two unconscious bodies, his pupils dilated as though in a trance. He can't seem to stop laughing, smiling, and chatting with the other \"players.\"</i></blockquote>Put the set-aside Dr. Morgan into play in the VIP Area. Advance to Act 3a - \"All In.\"\n<hr><b>If the players have completed Extracurricular Activity:</b><blockquote><em>The VIP rooms are filled with the mangled and bloody bodies of unfortunate patrons. There doesn't appear to be any trace of Dr. Morgan. You hear screaming and gunfire from the main area of the club.</em></blockquote>Put the set-aside Peter Clover into play in the Clover Club Bar. Search the encounter deck (or out of play) for an [[Abomination]] enemy, and spawn it in the Clover Club Bar. Advance to Act 3a - \"Fold.\"".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "02068".to_owned(),
@@ -2733,7 +2733,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("- If an investigator resigned with Dr. Francis Morgan under his or her control, <b>(→R2)</b>\n- Otherwise, <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02069".to_owned(),
@@ -2744,7 +2744,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("- If an investigator resigned with Peter Clover under his or her control, <b>(→R3)</b>\n- Otherwise, <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02070".to_owned(),
@@ -3316,7 +3316,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>If you spent clues to advance:\n</b><blockquote><i>You find the window nearest to the guard and tap it loud enough to get his attention. He gives a startled jump, then shifts open the window. “What do you want?” he asks timidly. You explain the situation to him and tell him he is in grave danger. He warily opens the front door to the Museum, shaking his head. “I wasn’t even supposed to be here today...”</i></blockquote>Choose an investigator to take control of the set-aside Adam Lynch asset. Reveal the Museum Halls. Advance to Act 2a - \"Night at the Museum.\"\n<hr><b>If you successfully performed the [action] ability on the Museum Halls to advance:\n</b><blockquote><i>With great strength, you break down the door to the Museum, making considerable noise as you do. The security guard sees you enter, cries out in fear, and rushes toward the back of the museum.</i></blockquote>The door leading into the Museum Halls is broken. Reveal the Museum Halls. Advance to Act 2a - \"Breaking and Entering.\"".to_owned()),
             pack_code: "tmm".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::Fixed(2)), victory: None },
         },
         CardMetadata {
             code: "02123".to_owned(),
@@ -3327,7 +3327,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Search the encounter deck, discard pile, the void, and all play areas for Hunting Horror, and place it in the Exhibit Hall (<i>Restricted Hall</i>), ready.\nAdvance to Act 3a.".to_owned()),
             pack_code: "tmm".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02124".to_owned(),
@@ -3338,7 +3338,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Choose an investigator to take control of the set-aside Harold Walsted asset. \nSearch the encounter deck, discard pile, the void, and all play areas for Hunting Horror, and place it in the Exhibit Hall (<i>Restricted Hall</i>), ready.\nAdvance to Act 3a.".to_owned()),
             pack_code: "tmm".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02125".to_owned(),
@@ -3349,7 +3349,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("The investigators must decide (choose one):\n- It's too dangerous to keep around. We must destroy it. <b>(→R1)</b>\n- It's too valuable to destroy. We must keep it safe.<b>(→R2)</b>".to_owned()),
             pack_code: "tmm".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02126".to_owned(),
@@ -3778,7 +3778,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>The investigator entering the Engine Car reads the following (out loud):\n</b><blockquote><i>A tender car filled with coal blocks your way to the engine cab. Swallowing your fear, you climb out of the nearby window and clamber onto the roof of the train, making your way across the tender car. The steady backward motion of the train makes it difficult for you to keep your footing. As you get close, a winged creature swoops down from above, its body composed of piping hot steam.</i></blockquote>You must decide (choose one):\n- Test [agility] (3) to attempt to dodge the creature. If you fail, you leap too far and barely grip the side of the train, hanging on for dear life. Although you manage to pull yourself up, the experience is terrifying. You suffer 1 mental trauma.\n- Test [combat] (3) to attempt to endure the creature's extreme heat. If you fail, the creature flies through you and the heat burns you. You suffer 1 physical trauma.".to_owned()),
             pack_code: "tece".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02166".to_owned(),
@@ -3789,7 +3789,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(&rarr;R1)</b>".to_owned()),
             pack_code: "tece".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02167".to_owned(),
@@ -4141,7 +4141,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Reveal each unrevealed location. \nMove all clues in play (including those on each investigator) to The Hidden Chamber.\nSpawn the set-aside Silas Bishop enemy in The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02200".to_owned(),
@@ -4152,7 +4152,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("If The Necronomicon is in play: <b>(→R2)\n</b>Otherwise: <b>(→R3)</b>".to_owned()),
             pack_code: "bota".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02201".to_owned(),
@@ -4581,7 +4581,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>Check Campaign Log. If Dr. Armitage survived The Dunwich Legacy:</b><blockquote><i>\"There!\" Armitage sighs a breath of relief, jotting down the last phrases of the formula. \"I have translated the last of it.\" He shudders as he hands you the script, the words conjuring forth memories of his battle with the creature. \"I hope this is the last time I'll have to read it,\" he admits. \"But if we do nothing, the end result will be much, much worse.\"</i></blockquote>Each investigator puts into play 1 set-aside Esoteric Formula.\n<b>If Dr. Armitage is listed under \"Sacrificed to Yog-Sothoth\":</b><blockquote><i>Using the information contained within the ruins of the Whateley homestead, you are able to transcribe the remainder of the formula previously used by Dr. Armitage to destroy the beast that plagued Dunwich. However, the endeavor sets you back several hours.</i></blockquote>Each investigator puts into play 1 set-aside Esoteric Formula. Place 1 doom on the current agenda.".to_owned()),
             pack_code: "uau".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "02241".to_owned(),
@@ -4592,7 +4592,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R2)</b>".to_owned()),
             pack_code: "uau".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02242".to_owned(),
@@ -4977,7 +4977,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Remove all clues from each location in play. The arcane presence masking the path further up the hill has faded. Reveal Ascending Path.".to_owned()),
             pack_code: "wda".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "02278".to_owned(),
@@ -4988,7 +4988,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Remove the set-aside Seth Bishop enemy from the game.".to_owned()),
             pack_code: "wda".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02279".to_owned(),
@@ -4999,7 +4999,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put the set-aside Seth Bishop enemy into play at Sentinel Peak.".to_owned()),
             pack_code: "wda".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02280".to_owned(),
@@ -5010,7 +5010,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put the set-aside Seth Bishop enemy into play at Sentinel Peak, with 1 [per_investigator] damage on him.".to_owned()),
             pack_code: "wda".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02281".to_owned(),
@@ -5021,7 +5021,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "wda".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "02282".to_owned(),
@@ -5395,7 +5395,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Put the set-aside The Edge of the Universe location into play.".to_owned()),
             pack_code: "litas".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(2), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(2)), victory: None },
         },
         CardMetadata {
             code: "02317".to_owned(),
@@ -5406,7 +5406,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "litas".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02318".to_owned(),
@@ -5417,7 +5417,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("Remove the Edge of the Universe from the game.\nPut the set-aside Tear Through Time location into play.".to_owned()),
             pack_code: "litas".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: Some(3), victory: None },
+            kind: CardKind::Act { printed_clues: Some(ClueValue::PerInvestigator(3)), victory: None },
         },
         CardMetadata {
             code: "02319".to_owned(),
@@ -5428,7 +5428,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "litas".to_owned(),
             weakness: None,
-            kind: CardKind::Act { clue_threshold: None, victory: None },
+            kind: CardKind::Act { printed_clues: None, victory: None },
         },
         CardMetadata {
             code: "02320".to_owned(),

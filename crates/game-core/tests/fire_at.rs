@@ -23,7 +23,9 @@ use game_core::engine::{EngineOutcome, InputKind, OptionTarget, Registries, Timi
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioRegistry};
 use game_core::state::{GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support::{act, seat, BoardLookup as _, MockRegistry, Seat, TestSession};
+use game_core::test_support::{
+    objective_act, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
+};
 use game_core::{assert_event, assert_event_sequence};
 
 /// `Forced - At the end of the round: mark 1.`
@@ -271,7 +273,7 @@ fn acting(act_code: &str, held: &[&str], builder: GameStateBuilder) -> TestSessi
         .with_registries(registries())
         .with_seat(holding(held))
         .with_seating([INV])
-        .with_act_deck([act(act_code, 0)])
+        .with_act_deck([objective_act(act_code)])
         .build();
     TestSession::new(state, registries())
 }

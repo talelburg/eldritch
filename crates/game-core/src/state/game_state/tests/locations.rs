@@ -108,7 +108,7 @@ fn add_location_panics_on_non_location_metadata() {
         pack_code: "core".to_string(),
         weakness: None,
         kind: CardKind::Act {
-            clue_threshold: Some(2),
+            printed_clues: Some(ClueValue::PerInvestigator(2)),
             victory: None,
         },
     };

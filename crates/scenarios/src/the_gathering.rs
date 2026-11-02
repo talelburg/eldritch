@@ -241,7 +241,7 @@ pub fn setup() -> GameState {
     // the round ends, investigators in the hallway may, as a group, spend the
     // requisite number of clues to advance."* 01110 advances via its Forced
     // EnemyDefeated objective (01116; in cards::what_have_you_done), not a
-    // clue spend — its printed clue threshold is null, which reads as 0. It
+    // clue spend — it prints no clue value, so it carries none. It
     // is terminal because it is last here; its reverse — *"The lead
     // investigator must decide (choose one):"* between R1 and R2 — is an
     // ability on the card (cards::what_have_you_done).
@@ -327,8 +327,16 @@ mod tests {
             [3, 7, 10],
             "agenda doom thresholds from corpus",
         );
-        assert_eq!(s.act_deck[0].clue_threshold, 2, "act 01108 from corpus");
-        assert_eq!(s.act_deck[1].clue_threshold, 3, "act 01109 from corpus");
+        assert_eq!(
+            s.act_deck[0].printed_clues,
+            Some(ClueValue::PerInvestigator(2)),
+            "act 01108 from corpus"
+        );
+        assert_eq!(
+            s.act_deck[1].printed_clues,
+            Some(ClueValue::PerInvestigator(3)),
+            "act 01109 from corpus"
+        );
     }
 
     #[test]
@@ -378,7 +386,7 @@ mod tests {
         let s = setup();
         assert_eq!(s.act_deck[2].code.as_str(), "01110");
         assert_eq!(
-            s.act_deck[2].clue_threshold, 0,
+            s.act_deck[2].printed_clues, None,
             "01110 advances on Ghoul-Priest-defeat, not clues"
         );
         assert_eq!(
@@ -393,8 +401,14 @@ mod tests {
         let s = setup();
         let act_codes: Vec<_> = s.act_deck.iter().map(|a| a.code.as_str()).collect();
         assert_eq!(act_codes, ["01108", "01109", "01110"]);
-        assert_eq!(s.act_deck[0].clue_threshold, 2);
-        assert_eq!(s.act_deck[1].clue_threshold, 3);
+        assert_eq!(
+            s.act_deck[0].printed_clues,
+            Some(ClueValue::PerInvestigator(2))
+        );
+        assert_eq!(
+            s.act_deck[1].printed_clues,
+            Some(ClueValue::PerInvestigator(3))
+        );
         // 01110 is last, which is the only thing that makes it terminal
         // (ADR 0013). Which resolution point its reverse reaches — the campaign
         // guide's Resolution 1, the house burning — is the card's own assertion,

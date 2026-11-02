@@ -29,8 +29,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{self, CardCode, EmitStep, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, act, seat, MockRegistry, TestSession};
+use game_core::state::{self, EmitStep, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{
+    self, act, objective_act, seat, MockRegistry, StagedAct, TestSession,
+};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.
@@ -112,11 +114,11 @@ fn lead_alone() -> GameStateBuilder {
         .with_seating([INV])
 }
 
-/// Build `board` with `code` the current act — the card whose declared timing
-/// is on trial (the `PhaseEnded` / `RoundEnded` forced scans read the current
-/// act).
-fn with_act(board: GameStateBuilder, code: impl Into<CardCode>, clue_threshold: u8) -> GameState {
-    board.with_act_deck([act(code, clue_threshold)]).build()
+/// Build `board` with `current` the current act — the card whose declared
+/// timing is on trial (the `PhaseEnded` / `RoundEnded` forced scans read the
+/// current act).
+fn with_act(board: GameStateBuilder, current: StagedAct) -> GameState {
+    board.with_act_deck([current]).build()
 }
 
 /// The end of the Upkeep phase, and with it the round, staged with
@@ -126,7 +128,7 @@ fn with_act(board: GameStateBuilder, code: impl Into<CardCode>, clue_threshold: 
 /// the walk been rejected.
 fn end_the_upkeep_phase(act: &str) -> TestSession {
     let session = TestSession::new(
-        with_act(lead_alone().ending_upkeep_phase(), act, 0),
+        with_act(lead_alone().ending_upkeep_phase(), objective_act(act)),
         registries(),
     );
     assert_event!(
@@ -155,7 +157,7 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
     // phase end is reached by the step that really gets there: ending the
     // last turn runs the Investigation, Enemy and Upkeep phases to step 4.6.
     let session = TestSession::new(
-        with_act(lead_alone().open_turn(INV), WHEN_ACT, 0),
+        with_act(lead_alone().open_turn(INV), objective_act(WHEN_ACT)),
         registries(),
     )
     .take(&TurnAction::EndTurn);
@@ -223,7 +225,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
         .with_seating([INV])
         .open_turn(INV);
     let session = TestSession::new(
-        with_act(board, test_support::terminal_code(1), 1),
+        with_act(board, act(test_support::terminal_code(1), 1)),
         registries(),
     )
     .take(&TurnAction::AdvanceAct { investigator: INV });

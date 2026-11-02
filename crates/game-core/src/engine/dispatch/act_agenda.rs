@@ -148,24 +148,22 @@ pub(crate) fn check_advance_act(
                 .into(),
         );
     }
-    let threshold = state.act_deck[state.act_index].clue_threshold;
     // The AdvanceAct action is the deliberate clue-spend advance, which is only
-    // meaningful for an act that advances by spending clues (threshold >= 1). A
-    // zero threshold (corpus `null`) marks a non-clue objective — e.g. The
-    // Gathering's Act 3 (01110), which advances via its Forced EnemyDefeated on
-    // the Ghoul Priest. Offering the action there would let the player "spend 0
-    // clues to advance", bypassing the objective (an instant win on a
-    // terminal-Won act). Unlike `act_advances_at_round_end` (registry-based, so
-    // it silently fails open for an act the registry doesn't know), this is a
-    // self-contained invariant. Act 01109's round-end objective carries a positive threshold and
-    // stays excluded by `act_advances_at_round_end` above.
-    if threshold == 0 {
+    // meaningful for an act that prints a clue value. An act with none advances
+    // on a non-clue objective — e.g. The Gathering's Act 3 (01110), which
+    // advances via its Forced EnemyDefeated on the Ghoul Priest. Offering the
+    // action there would let the player bypass the objective (an instant win on
+    // a terminal-Won act). Unlike `act_advances_at_round_end` (registry-based,
+    // so it silently fails open for an act the registry doesn't know), this is
+    // a self-contained invariant. Act 01109's round-end objective prints a clue
+    // value and stays excluded by `act_advances_at_round_end` above.
+    let Some(threshold) = state.act_deck[state.act_index].clues_to_advance(state) else {
         return Err(
             "this act advances on a non-clue objective, not via the AdvanceAct \
                     action"
                 .into(),
         );
-    }
+    };
     let total_clues: u32 = clue_contributors(state, investigator)
         .into_iter()
         .filter_map(|id| state.investigators.get(&id))
@@ -263,20 +261,22 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
 
 /// Whether the current act's round-end group clue-spend advance is affordable:
 /// investigators at `contributor_location_code` hold at least the current act's
-/// `clue_threshold`.
+/// [`clues_to_advance`](crate::state::Act::clues_to_advance).
 ///
 /// Shared by the offer-side eligibility condition (act 01109's
 /// `01109:can-advance`) and the resolve-side
 /// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance),
-/// so the two can't drift. `false` when there is no current act or the location
-/// isn't in play (the "investigators in the Hallway" condition is subsumed — 0
-/// contributors ⇒ 0 clues ⇒ not affordable).
+/// so the two can't drift. `false` when there is no current act, the act has no
+/// clue objective, or the location isn't in play (the "investigators in the
+/// Hallway" condition is subsumed — 0 contributors ⇒ 0 clues ⇒ not affordable).
 #[must_use]
 pub fn round_end_advance_affordable(state: &GameState, contributor_location_code: &str) -> bool {
     let Some(act) = state.act_deck.get(state.act_index) else {
         return false;
     };
-    let threshold = act.clue_threshold;
+    let Some(threshold) = act.clues_to_advance(state) else {
+        return false;
+    };
     let Some(loc) = evaluator::location_id_by_code(state, contributor_location_code) else {
         return false;
     };
@@ -287,7 +287,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// 01109's "investigators in the Hallway may, as a group, spend the requisite
 /// number of clues to advance" (the only card-specific datum is the contributor
 /// location, passed in). If [`round_end_advance_affordable`], spends the act's
-/// `clue_threshold` from the contributors (player order) and advances the act.
+/// [`clues_to_advance`](crate::state::Act::clues_to_advance) from the contributors (player order) and advances the act.
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
 /// eligibility condition (which calls [`round_end_advance_affordable`]), so the
@@ -308,7 +308,9 @@ pub(crate) fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) ->
             reason: "round_end_advance: contributors no longer hold enough clues".into(),
         };
     }
-    let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
+    let threshold = cx.state.act_deck[cx.state.act_index]
+        .clues_to_advance(cx.state)
+        .expect("affordable ⇒ the act has a clue objective");
     let loc = evaluator::location_id_by_code(cx.state, contributor_location_code)
         .expect("affordable ⇒ contributor location in play");
     let contributors = investigators_at(cx.state, loc);
@@ -516,7 +518,9 @@ mod advance_act_tests {
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
-    use crate::test_support::{self, act, location, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
+    use crate::test_support::{
+        self, act, location, objective_act, TestSession, TEST_REGISTRIES, TEST_REGISTRY,
+    };
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
@@ -551,6 +555,22 @@ mod advance_act_tests {
     }
 
     #[test]
+    fn round_end_advance_is_unaffordable_for_an_act_with_no_clue_objective() {
+        let hall = location(1).code(CardCode("HALL".into()));
+        let state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_location(hall)
+            .with_seat(test_support::seat(1).at(LocationId(1)).clues(5))
+            .with_seating([InvestigatorId(1)])
+            .with_act_deck([objective_act("_objective_act")])
+            .build();
+        assert!(
+            !round_end_advance_affordable(&state, "HALL"),
+            "no clue objective → no round-end spend, however many clues"
+        );
+    }
+
+    #[test]
     fn advance_act_rejects_when_clues_insufficient() {
         let inv = InvestigatorId(1);
         let state = GameStateBuilder::new()
@@ -570,11 +590,11 @@ mod advance_act_tests {
     }
 
     #[test]
-    fn advance_act_action_rejected_for_zero_clue_threshold_objective() {
-        // A non-clue-objective act (clue_threshold 0 — e.g. The Gathering's
+    fn advance_act_action_rejected_for_an_act_with_no_clue_objective() {
+        // A non-clue-objective act (no printed clue value — e.g. The Gathering's
         // Act 3 01110, which advances when the Ghoul Priest is defeated). The
-        // deliberate clue-spend AdvanceAct action is nonsensical here ("spend 0
-        // clues to advance" / "spend 0 clues to instantly win"), so it must be
+        // deliberate clue-spend AdvanceAct action is nonsensical here (it would
+        // skip the objective, or instantly win), so it must be
         // neither offered nor accepted — even with no forced ability served for
         // it (the game-core test registry knows nothing of the objective act).
         let inv = InvestigatorId(1);
@@ -583,14 +603,14 @@ mod advance_act_tests {
             // Plenty of clues — the reject must be the objective, not affordability.
             .with_seat(test_support::seat(1).clues(5))
             .open_turn(inv)
-            .with_act_deck([act("_objective_act", 0)])
+            .with_act_deck([objective_act("_objective_act")])
             .build();
 
         assert!(
             !enumerate::legal_actions(&state, &TEST_REGISTRY)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
-            "AdvanceAct must not be offered for a zero-threshold objective act"
+            "AdvanceAct must not be offered for an act with no clue objective"
         );
         // Bypass the legality menu (the assert above already proves it's not
         // offered) to confirm the handler itself rejects, leaving state unchanged.

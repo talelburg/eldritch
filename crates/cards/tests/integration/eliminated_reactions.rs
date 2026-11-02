@@ -73,14 +73,14 @@ fn an_eliminated_investigator_is_offered_no_reaction() {
 
 /// The Barrier (01109) is the current act, and seat 2 stands in the Hallway
 /// (01112) holding the act's clue threshold, in their turn. Seat 1 has been
-/// eliminated. 01109: *"Objective - When the round ends, investigators in the
+/// eliminated, and still counts toward the threshold's 3 per investigator. 01109: *"Objective - When the round ends, investigators in the
 /// hallway may, as a group, spend the requisite number of clues to advance."*
 fn barrier_table_with_seat_1_eliminated() -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).status(Status::Defeated))
         // A spare deck card so Upkeep step 4.4's draw has something to take.
-        .with_seat(seat(2).at(HALLWAY).clues(3).deck(["01088"]))
+        .with_seat(seat(2).at(HALLWAY).clues(6).deck(["01088"]))
         .with_location(location(HALLWAY).as_card("01112"))
         .with_seating([SEAT_1, SEAT_2])
         .open_turn(SEAT_2)

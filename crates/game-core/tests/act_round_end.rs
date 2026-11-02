@@ -16,7 +16,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{act, location, seat, MockRegistry, TestSession};
+use game_core::test_support::{act, location, objective_act, seat, MockRegistry, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// The location where the investigator stands.
@@ -63,7 +63,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
         .with_seating([INV])
         .ending_upkeep_phase()
         .with_location(location(HERE).code(HALLWAY))
-        .with_act_deck([act(ACT_2, 3), act(ACT_3, 0)])
+        .with_act_deck([act(ACT_2, 3), objective_act(ACT_3)])
         .build()
 }
 

@@ -19,13 +19,15 @@
 //!     .with_agenda_deck([agenda("_agenda", 4)])
 //!     .with_agenda_doom(1)
 //!     .build();
-//! assert_eq!(state.act_deck[1].clue_threshold, 3);
+//! assert_eq!(state.act_deck[1].clues_to_advance(&state), Some(3));
 //! assert_eq!(state.agenda_doom, 1);
 //! ```
 //!
 //! [`with_act_deck`]: GameStateBuilder::with_act_deck
 //! [`with_agenda_deck`]: GameStateBuilder::with_agenda_deck
 //! [`build`]: GameStateBuilder::build
+
+use card_dsl::card_data::ClueValue;
 
 use crate::state::staged::Staged;
 use crate::state::{Act, Agenda, CardCode, GameStateBuilder};
@@ -43,17 +45,45 @@ pub struct StagedAct(Staged<Act>);
 #[must_use = "a staged agenda does nothing until it is passed to with_agenda_deck"]
 pub struct StagedAgenda(Staged<Agenda>);
 
-/// A stock act: the synthetic `code` (for a registry's ability lookup), with
-/// the clue threshold `clue_threshold`.
+/// A stock act: the synthetic `code` (for a registry's ability lookup),
+/// advanced by spending a fixed `clues`, whatever the investigator count.
+///
+/// # Panics
+///
+/// If `code` has the shape of a printed `ArkhamDB` code: stage that card by
+/// its code, which reads its printed threshold. If `clues` is 0: an act with
+/// no clue objective is [`objective_act`].
+pub fn act(code: impl Into<CardCode>, clues: u8) -> StagedAct {
+    let code = code.into();
+    assert!(
+        clues != 0,
+        "act({code}, 0): an act with no clue objective is `objective_act(\"{code}\")`, \
+         not a 0-clue act"
+    );
+    stock_act(
+        &format!("act({code}, {clues})"),
+        code,
+        Some(ClueValue::Fixed(clues)),
+    )
+}
+
+/// A stock act with no clue objective: the synthetic `code` (for a registry's
+/// ability lookup), advanced only by an effect, never by spending clues.
 ///
 /// # Panics
 ///
 /// If `code` has the shape of a printed `ArkhamDB` code: stage that card by
 /// its code, which reads its printed threshold.
-pub fn act(code: impl Into<CardCode>, clue_threshold: u8) -> StagedAct {
+pub fn objective_act(code: impl Into<CardCode>) -> StagedAct {
     let code = code.into();
+    stock_act(&format!("objective_act({code})"), code, None)
+}
+
+/// The stock act `code` with `printed_clues`; `call` names the helper for
+/// [`synthetic_code`]'s panic.
+fn stock_act(call: &str, code: CardCode, printed_clues: Option<ClueValue>) -> StagedAct {
     let code = synthetic_code(
-        &format!("act({code}, {clue_threshold})"),
+        call,
         code.clone(),
         &format!(
             "Stage the card by its code, `with_act_deck([\"{code}\"])`, which reads its \
@@ -62,7 +92,7 @@ pub fn act(code: impl Into<CardCode>, clue_threshold: u8) -> StagedAct {
     );
     StagedAct(Staged::stock(Act {
         code,
-        clue_threshold,
+        printed_clues,
     }))
 }
 
@@ -96,7 +126,7 @@ impl From<CardCode> for StagedAct {
         Self(Staged {
             piece: Act {
                 code: code.clone(),
-                clue_threshold: 0,
+                printed_clues: None,
             },
             printed: Some(code),
         })

@@ -4,10 +4,11 @@
 //! and agenda render as cards — name + ability text from the corpus by `code`,
 //! thresholds from the `Act`/`Agenda` structs. The act has no running clue
 //! counter (clues sit on locations/investigators), so it shows `clues to
-//! advance: N` rather than a fake `0/N`. Both cards glow + open a context menu
+//! advance: N` rather than a fake `0/N` ([`clue_line`]). Both cards glow + open a context menu
 //! when the live prompt anchors an option to them
 //! (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
+use card_dsl::card_data::ClueValue;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionTarget;
 use game_core::state::{
@@ -86,18 +87,34 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
     )
 }
 
+/// The act's front-face clue line: `clues to advance: 2 per investigator (4)`
+/// for a per-investigator value, with the effective total for `game`'s
+/// investigators in parentheses; `clues to advance: 2` for a fixed one; `None`
+/// for an act that advances on a non-clue objective.
+#[must_use]
+pub fn clue_line(act: &Act, game: &GameState) -> Option<String> {
+    let total = act.clues_to_advance(game)?;
+    Some(match act.printed_clues? {
+        ClueValue::PerInvestigator(n) => {
+            format!("clues to advance: {n} per investigator ({total})")
+        }
+        ClueValue::Fixed(n) => format!("clues to advance: {n}"),
+    })
+}
+
 /// The current act as a card. Glows and opens an "Advance act" context menu when
 /// the live prompt anchors an option to the act (`OptionTarget::Act`) — both the
 /// open-turn Advance action and the round-end advance reaction. The
-/// agenda has the parallel [`AgendaCard`].
+/// agenda has the parallel [`AgendaCard`]. Its front-face `clue_text` arrives
+/// as a prop, [`clue_line`] computed by the caller, since the total reads the
+/// investigator count from `GameState`, not the `Act`.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "Leptos `#[component]` takes `act` by value into its owned props struct"
 )]
 #[component]
-pub fn ActCard(act: Act, face: Face) -> impl IntoView {
+pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView {
     let (name, text) = name_and_text(&act.code, face);
-    let threshold = act.clue_threshold;
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
@@ -122,10 +139,10 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
             {
                 // Thresholds belong to the front face only — the reverse ("1b")
                 // side prints the on-advance effect, not the advance cost.
-                (face == Face::Front).then(|| {
+                clue_text.filter(|_| face == Face::Front).map(|line| {
                     view! {
                         <div class="threshold-stats">
-                            <span>{format!("clues to advance: {threshold}")}</span>
+                            <span>{line}</span>
                         </div>
                     }
                 })
@@ -199,11 +216,10 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
 /// (fixtures may carry neither).
 pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     let act_face = deck_face(game, AdvanceDeck::Act);
-    let act = game
-        .act_deck
-        .get(game.act_index)
-        .cloned()
-        .map(|act| view! { <ActCard act=act face=act_face/> });
+    let act = game.act_deck.get(game.act_index).cloned().map(|act| {
+        let clue_text = clue_line(&act, game);
+        view! { <ActCard act=act clue_text=clue_text face=act_face/> }
+    });
     let doom = game.agenda_doom;
     let agenda_face = deck_face(game, AdvanceDeck::Agenda);
     let agenda = game

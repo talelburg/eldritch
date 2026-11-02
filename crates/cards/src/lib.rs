@@ -197,7 +197,7 @@ fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::card_data::{CardType, Class};
+    use card_dsl::card_data::{CardType, Class, ClueValue};
     use std::collections::HashSet;
     use std::fs;
     use std::path::Path;
@@ -230,6 +230,21 @@ mod tests {
         assert_eq!(mag.name, "Magnifying Glass");
         assert_eq!(mag.class(), Some(Class::Seeker));
         assert_eq!(mag.card_type(), CardType::Asset);
+    }
+
+    #[test]
+    fn an_act_reads_its_clue_value_as_per_investigator_fixed_or_absent() {
+        // Trapped (01108) prints 2 per investigator, Finding A Way Inside
+        // (02122) a fixed 2 (`clues_fixed`), and What Have You Done? (01110)
+        // no clue value: it advances when the Ghoul Priest is defeated.
+        let printed = |code| {
+            game_core::state::Act::from_metadata(by_code(code).expect("act in corpus"))
+                .expect("an act card")
+                .printed_clues
+        };
+        assert_eq!(printed("01108"), Some(ClueValue::PerInvestigator(2)));
+        assert_eq!(printed("02122"), Some(ClueValue::Fixed(2)));
+        assert_eq!(printed("01110"), None);
     }
 
     #[test]

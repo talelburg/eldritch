@@ -661,8 +661,9 @@ struct NormalizedCard {
     commit_limit: Option<u8>,
     /// "Commit only to a skill test you are performing." Skill-only in scope.
     commit_only_to_own_test: bool,
-    // Encounter-card stats. `clues` is a location's starting clues AND an
-    // act's advance threshold (same JSON field); consumer interprets by kind.
+    // Encounter-card stats. `clues` (with `clues_fixed`) is a location's
+    // starting clues AND an act's advance threshold (same JSON fields);
+    // consumer interprets by kind.
     shroud: Option<u8>,
     clues: Option<u8>,
     clues_fixed: bool,
@@ -1095,8 +1096,8 @@ fn render_kind(c: &NormalizedCard) -> String {
             opt_u8(c.victory),
         ),
         "Act" => format!(
-            "CardKind::Act {{ clue_threshold: {}, victory: {} }}",
-            opt_u8(c.clues),
+            "CardKind::Act {{ printed_clues: {}, victory: {} }}",
+            opt_clue_value_lit(c.clues, c.clues_fixed),
             opt_u8(c.victory),
         ),
         "Agenda" => format!(
@@ -1149,12 +1150,21 @@ fn uses_lit(uses: Option<(u8, &'static str, bool)>) -> String {
     }
 }
 
-/// Emit the `ClueValue` literal for a location's clues.
+/// Emit the `ClueValue` literal for a location's or an act's clues.
 fn clue_value_lit(clues: u8, fixed: bool) -> String {
     if fixed {
         format!("ClueValue::Fixed({clues})")
     } else {
         format!("ClueValue::PerInvestigator({clues})")
+    }
+}
+
+/// Emit the `Option<ClueValue>` literal for an act's clues: `None` when the
+/// act prints no clue value (it advances on a non-clue objective).
+fn opt_clue_value_lit(clues: Option<u8>, fixed: bool) -> String {
+    match clues {
+        Some(n) => format!("Some({})", clue_value_lit(n, fixed)),
+        None => "None".into(),
     }
 }
 

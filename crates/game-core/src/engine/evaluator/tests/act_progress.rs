@@ -5,7 +5,7 @@ use crate::test_support::TEST_REGISTRIES;
 fn advance_current_act_non_terminal_bumps_cursor() {
     let mut state = GameStateBuilder::new()
         .with_seating([InvestigatorId(1)])
-        .with_act_deck([act("a1", 0), act("a2", 0)])
+        .with_act_deck([objective_act("a1"), objective_act("a2")])
         .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
@@ -32,7 +32,7 @@ fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seating([InvestigatorId(1)])
-        .with_act_deck([act(test_support::terminal_code(1), 0)])
+        .with_act_deck([objective_act(test_support::terminal_code(1))])
         .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);

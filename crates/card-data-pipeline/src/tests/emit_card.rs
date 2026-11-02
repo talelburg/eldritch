@@ -88,6 +88,28 @@ fn location_clue_value_reflects_clues_fixed() {
 }
 
 #[test]
+fn emitted_act_clue_value_is_per_investigator_fixed_or_absent() {
+    let mut trapped = normalized("01108", "Trapped", "Act");
+    trapped.clues = Some(2);
+    let mut inside = normalized("02122", "Finding A Way Inside", "Act");
+    inside.clues = Some(2);
+    inside.clues_fixed = true;
+    let done = normalized("01110", "What Have You Done?", "Act");
+    for (card, expected) in [
+        (
+            &trapped,
+            "printed_clues: Some(ClueValue::PerInvestigator(2))",
+        ),
+        (&inside, "printed_clues: Some(ClueValue::Fixed(2))"),
+        (&done, "printed_clues: None"),
+    ] {
+        let mut buf = String::new();
+        emit_card(&mut buf, card);
+        assert!(buf.contains(expected), "{}: got:\n{buf}", card.code);
+    }
+}
+
+#[test]
 fn emitted_enemy_renders_combat_stats() {
     let mut c = normalized("01116", "Ghoul Priest", "Enemy");
     c.enemy_fight = Some(4);

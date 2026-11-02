@@ -131,9 +131,9 @@ fn defeating_other_enemy_does_not_advance_act_3() {
 }
 
 /// Regression for #486: Act 01110 ("What Have You Done?") advances only via its
-/// Forced `EnemyDefeated` objective (the Ghoul Priest), so its corpus clue
-/// threshold is `null` -> 0. The deliberate clue-spend `AdvanceAct` action is
-/// rejected for it — otherwise the player could "spend 0 clues to advance" and
+/// Forced `EnemyDefeated` objective (the Ghoul Priest), so it prints no clue
+/// value. The deliberate clue-spend `AdvanceAct` action is rejected for it —
+/// otherwise the player could advance it without the fight, and
 /// instantly latch the terminal Won resolution, bypassing the Ghoul Priest fight.
 /// The legitimate defeat path stays covered by
 /// `defeating_ghoul_priest_advances_act_3_to_won` above.

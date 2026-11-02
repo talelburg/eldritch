@@ -115,11 +115,12 @@ fn clues(session: &TestSession, id: InvestigatorId) -> u8 {
 #[test]
 fn with_the_lead_outside_the_hallway_the_hallway_investigator_is_offered_it() {
     // Seat 1 (Daisy) leads from the Attic; seat 2 (Roland) holds the
-    // threshold in the Hallway. Seat 2's turn is the round's last.
+    // threshold, 3 per investigator for two, in the Hallway. Seat 2's turn is
+    // the round's last.
     let window = barrier_table(
         vec![
             seat(1).as_card("01002").at(ATTIC).clues(1).into(),
-            seat(2).as_card("01001").at(HALLWAY).clues(3).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(6).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_1,
@@ -141,12 +142,13 @@ fn with_the_lead_outside_the_hallway_the_hallway_investigator_is_offered_it() {
 fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first() {
     // Seat 2 leads from the Attic, so player order is 2, 3, 1. Seats 3
     // (Daisy) and 1 (Roland) are in the Hallway: seat 3 comes first, though
-    // seat 1 is first in seating. Seat 1's turn is the round's last.
+    // seat 1 is first in seating. Seat 1's turn is the round's last. The
+    // threshold is 3 per investigator for three: 9.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01001").at(HALLWAY).clues(2).into(),
+            seat(1).as_card("01001").at(HALLWAY).clues(5).into(),
             seat(2).at(ATTIC).into(),
-            seat(3).as_card("01002").at(HALLWAY).clues(2).into(),
+            seat(3).as_card("01002").at(HALLWAY).clues(5).into(),
         ],
         &[SEAT_1, SEAT_2, SEAT_3],
         SEAT_2,
@@ -160,7 +162,7 @@ fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first
     assert_eq!(
         (clues(&advanced, SEAT_3), clues(&advanced, SEAT_1)),
         (0, 1),
-        "the group spends in player order: seat 3's two, then one of seat 1's",
+        "the group spends in player order: seat 3's five, then four of seat 1's",
     );
 }
 
@@ -170,8 +172,8 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
     // first in seating but second in player order.
     let window = barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(2).into(),
-            seat(2).as_card("01001").at(HALLWAY).clues(2).into(),
+            seat(1).as_card("01002").at(HALLWAY).clues(3).into(),
+            seat(2).as_card("01001").at(HALLWAY).clues(3).into(),
         ],
         &[SEAT_1, SEAT_2],
         SEAT_2,
@@ -183,13 +185,13 @@ fn with_the_lead_in_the_hallway_the_lead_is_offered_it() {
 
 // ---- the engagement tie --------------------------------------------------
 
-/// Daisy Walker and Agnes Baker tied in the Hallway, Daisy holding the act's 3
-/// clues, with `lead` the lead investigator. It is the round's last turn, the
+/// Daisy Walker and Agnes Baker tied in the Hallway, Daisy holding the act's 6
+/// clues (3 per investigator), with `lead` the lead investigator. It is the round's last turn, the
 /// one after the lead's.
 fn two_tied_in_the_hallway_led_by(lead: InvestigatorId) -> TestSession {
     barrier_table(
         vec![
-            seat(1).as_card("01002").at(HALLWAY).clues(3).into(),
+            seat(1).as_card("01002").at(HALLWAY).clues(6).into(),
             seat(2).as_card("01004").at(HALLWAY).into(),
         ],
         &[DAISY, AGNES],

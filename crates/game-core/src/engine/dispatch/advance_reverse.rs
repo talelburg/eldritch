@@ -185,7 +185,9 @@ mod tests {
         AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, act, agenda, StagedAgenda, TestSession, TEST_REGISTRIES};
+    use crate::test_support::{
+        self, act, agenda, objective_act, StagedAgenda, TestSession, TEST_REGISTRIES,
+    };
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         state_advancing_agenda_from([agenda("_a1", 1), agenda("_a2", 3)], interactive)
@@ -323,7 +325,7 @@ mod tests {
             // one. The frame is pushed as 01110's forced advance would push
             // it: the real trigger (the Ghoul Priest's defeat) is scenario
             // content this crate cannot reach.
-            .with_act_deck([act(test_support::terminal_code(1), 0)])
+            .with_act_deck([objective_act(test_support::terminal_code(1))])
             .build();
         state.interactive_acknowledge = true;
         state.continuations.push(AdvanceReverseFrame {

@@ -173,8 +173,8 @@ fn can_advance(state: &GameState, ctx: &EvalContext) -> bool {
         && engine::round_end_advance_affordable(state, HALLWAY)
 }
 
-/// Front-objective native: spend the act's `clue_threshold` from Hallway
-/// (01112) investigators, then advance the act. Synchronous — the player's
+/// Front-objective native: spend the act's clues to advance (3 per
+/// investigator) from Hallway (01112) investigators, then advance the act. Synchronous — the player's
 /// choice was the round-end `When` window's `PickSingle`. Delegates to the
 /// engine's generic group-spend entry, passing the printed contributor location.
 fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {

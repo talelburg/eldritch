@@ -5,6 +5,7 @@
 //! binary: the mock's tables live in one process-wide `OnceLock`, so a second
 //! mock in the same process panics.
 
+mod act_clues_per_investigator;
 mod issue_476_fast_window;
 mod issue_482_advance;
 mod test_registries;

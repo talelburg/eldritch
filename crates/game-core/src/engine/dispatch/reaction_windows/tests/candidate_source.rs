@@ -1,7 +1,7 @@
 use super::*;
 use crate::state::{CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner};
 use crate::test_support::{
-    self, act, agenda, enemy, location, BoardLookup as _, MockRegistry, TEST_REGISTRIES,
+    self, agenda, enemy, location, objective_act, BoardLookup as _, MockRegistry, TEST_REGISTRIES,
 };
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Effect};
@@ -97,7 +97,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
         GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_act_deck([act(SOME_CODE, 0), act("_next_act", 0)])
+            .with_act_deck([objective_act(SOME_CODE), objective_act("_next_act")])
     };
     let state = board().build();
     let cand = ResolutionCandidate::new(
