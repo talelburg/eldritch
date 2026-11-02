@@ -151,6 +151,7 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
         let result = engine::apply(
             state.clone(),
             Action::Player(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickSingle(OptionId(
                     u32::try_from(i).expect("action index fits u32"),
                 )),
@@ -186,6 +187,7 @@ fn resolve_input_optionid_dispatches_enumerated_turn_action() {
     let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickSingle(OptionId(
                 u32::try_from(idx).expect("action index fits u32"),
             )),

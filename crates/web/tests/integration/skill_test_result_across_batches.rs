@@ -216,8 +216,20 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
     // Generous bound: the longest path here is four applies. A runaway loop is a
     // failure, not a hang.
     for _ in 0..16 {
+        let EngineOutcome::AwaitingInput { request, .. } = live.outcome() else {
+            unreachable!("the loop submits only at a prompt");
+        };
+        let investigator = request
+            .answerer(&response)
+            .expect("the prompt names who answers it");
         let accepted = live
-            .submit(live.prompt(), PlayerAction::ResolveInput { response })
+            .submit(
+                live.prompt(),
+                PlayerAction::ResolveInput {
+                    investigator,
+                    response,
+                },
+            )
             .unwrap_or_else(|refusal| panic!("the answer is refused: {refusal}"));
         let applied = live.commit(accepted);
         let ServerMessage::Applied(Applied { events, .. }) = &applied else {

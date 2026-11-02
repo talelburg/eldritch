@@ -82,6 +82,7 @@ fn board(investigator: impl Into<Seat<AnyKind>>) -> TestSession {
 /// a deck, with no board anchor a session step could name.
 fn take_searched(position: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(position)),
     })
 }

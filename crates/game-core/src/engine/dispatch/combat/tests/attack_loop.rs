@@ -292,6 +292,7 @@ fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
     // Out-of-range option (only 0, 1 valid): a malformed wire response no
     // step can name, so the raw `ResolveInput` is sent as is.
     let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickSingle(OptionId(9)),
     }));
     session.expect_rejected();

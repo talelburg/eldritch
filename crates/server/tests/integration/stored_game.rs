@@ -22,6 +22,7 @@ use crate::common;
 
 fn keep_opening_hand() -> PlayerAction {
     PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickMultiple { selected: vec![] },
     }
 }
@@ -161,8 +162,9 @@ async fn a_game_whose_setup_no_longer_runs_is_unresumable() {
 
 #[tokio::test]
 async fn a_game_stored_in_another_format_version_is_a_version_error() {
-    // 1 is the format before a logged answer named what it answered.
-    for version in [0_i64, 1, 99] {
+    // 1 is the format before a logged answer named what it answered, and 2
+    // the format before it named the investigator answering.
+    for version in [0_i64, 1, 2, 99] {
         let pool = common::memory_pool().await;
         let mut session = common::create_game(&pool, "versioned").await;
         session
@@ -294,6 +296,46 @@ async fn an_answer_to_a_changed_prompt_is_unresumable() {
 }
 
 #[tokio::test]
+async fn an_answer_logged_for_an_investigator_the_prompt_doesnt_ask_is_unresumable() {
+    let pool = common::memory_pool().await;
+    let mut session = common::create_game(&pool, "misattributed").await;
+    session
+        .apply(session.live().prompt(), keep_opening_hand())
+        .await
+        .expect("accepted");
+    session
+        .apply(
+            session.live().prompt(),
+            pick(turn_option(&session, "Gain resource")),
+        )
+        .await
+        .expect("accepted");
+    // As if the answer had been logged for someone whose turn it isn't.
+    common::set_logged(
+        &pool,
+        "misattributed",
+        1,
+        "$.investigator",
+        InvestigatorId(99),
+    )
+    .await;
+
+    let reason = expect_unresumable(&pool, "misattributed").await;
+
+    assert!(
+        matches!(
+            &reason,
+            UnresumableReason::Replay {
+                seq: 1,
+                reason: ReplayFailure::Rejected(_),
+            }
+        ),
+        "the engine rejects the answer at seq 1, got {reason:?}",
+    );
+    assert_eq!(common::stored_rows(&pool, "misattributed").await, (1, 2));
+}
+
+#[tokio::test]
 async fn an_action_that_now_draws_differently_is_unresumable() {
     let pool = common::memory_pool().await;
     let mut session = common::create_game(&pool, "redrawn").await;
@@ -344,6 +386,7 @@ async fn an_unknown_game_is_absent_not_unresumable() {
 
 fn pick(option: OptionId) -> PlayerAction {
     PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickSingle(option),
     }
 }

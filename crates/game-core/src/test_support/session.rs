@@ -14,7 +14,7 @@ use crate::state::{
     GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
-    card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
+    self, card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
     resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 
@@ -702,6 +702,16 @@ impl TestSession {
         self.respond(InputResponse::Skip)
     }
 
+    /// Step: answer the current prompt with `response`, naming `investigator`
+    /// as the one answering, then drain. For a test of who may answer (ADR
+    /// 0019); every other step names the investigator the prompt asks.
+    pub fn answer_as(self, investigator: InvestigatorId, response: InputResponse) -> Self {
+        self.apply(Action::Player(PlayerAction::ResolveInput {
+            investigator,
+            response,
+        }))
+    }
+
     /// The prompt the session rests at.
     ///
     /// # Panics
@@ -870,8 +880,11 @@ impl TestSession {
         matches!(&self.rest, EngineOutcome::AwaitingInput { request, .. } if is_turn_menu(request))
     }
 
+    /// Answer the current prompt with `response`, named for the investigator
+    /// the prompt says answers it (`resolver::answer`), then drain.
     fn respond(self, response: InputResponse) -> Self {
-        self.apply(Action::Player(PlayerAction::ResolveInput { response }))
+        let action = resolver::answer(self.prompt(), response);
+        self.apply(action)
     }
 }
 

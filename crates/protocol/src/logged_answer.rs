@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 /// answered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoggedAnswer {
+    /// The investigator who answered. Replay names them again, so the engine's
+    /// responder check (ADR 0019) runs on replay as it did live.
+    pub investigator: InvestigatorId,
     /// What the player answered.
     pub response: LoggedResponse,
     /// The prompt it answered.
@@ -150,13 +153,14 @@ pub fn answered_options<'a>(
         .collect()
 }
 
-/// Log `response` as the answer to `request`.
+/// Log `response` as `investigator`'s answer to `request`.
 ///
 /// # Errors
 ///
 /// As [`answered_options`].
 pub fn record(
     request: &InputRequest,
+    investigator: InvestigatorId,
     response: &InputResponse,
 ) -> Result<LoggedAnswer, Unrecordable> {
     let mut picked = answered_options(request, response)?
@@ -174,6 +178,7 @@ pub fn record(
         },
     };
     Ok(LoggedAnswer {
+        investigator,
         response,
         prompt: PromptIdentity::of(request),
     })
@@ -232,8 +237,12 @@ impl fmt::Display for ReplayFailure {
     }
 }
 
-/// The response that gives `answer` to `request`, the prompt the engine asks
+/// The action that gives `answer` to `request`, the prompt the engine asks
 /// now.
+///
+/// It is a [`ResolveInput`](PlayerAction::ResolveInput) naming the logged
+/// investigator, so the engine checks them against the prompt's responder as
+/// it did when the answer was given.
 ///
 /// Checks the prompt is the one `answer` was logged against, then finds each
 /// logged pick among `request`'s options and answers with the id it has now.
@@ -246,7 +255,7 @@ impl fmt::Display for ReplayFailure {
 pub fn replay(
     request: &InputRequest,
     answer: &LoggedAnswer,
-) -> Result<InputResponse, ReplayFailure> {
+) -> Result<PlayerAction, ReplayFailure> {
     let now = PromptIdentity::of(request);
     if now != answer.prompt {
         return Err(ReplayFailure::PromptChanged {
@@ -254,7 +263,7 @@ pub fn replay(
             now: Some(now),
         });
     }
-    Ok(match &answer.response {
+    let response = match &answer.response {
         LoggedResponse::Confirm => InputResponse::Confirm,
         LoggedResponse::Skip => InputResponse::Skip,
         LoggedResponse::PickSingle { option } => {
@@ -266,6 +275,10 @@ pub fn replay(
                 .map(|option| find(&request.options, option))
                 .collect::<Result<_, _>>()?,
         },
+    };
+    Ok(PlayerAction::ResolveInput {
+        investigator: answer.investigator,
+        response,
     })
 }
 
@@ -301,6 +314,7 @@ mod tests {
         .answered_by(Responder::Several);
         // Logged when investigator 2's option sat first.
         let answer = LoggedAnswer {
+            investigator: InvestigatorId(2),
             response: LoggedResponse::PickSingle {
                 option: LoggedOption {
                     id: OptionId(0),
@@ -318,7 +332,10 @@ mod tests {
 
         assert_eq!(
             replay(&request, &answer),
-            Ok(InputResponse::PickSingle(OptionId(1))),
+            Ok(PlayerAction::ResolveInput {
+                investigator: InvestigatorId(2),
+                response: InputResponse::PickSingle(OptionId(1)),
+            }),
         );
     }
 }

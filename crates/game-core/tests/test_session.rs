@@ -780,6 +780,7 @@ fn a_rejected_step_reads_back_and_leaves_the_prompt_standing() {
             .open_turn(INV)
             .session()
             .apply(Action::Player(PlayerAction::ResolveInput {
+                investigator: INV,
                 response: InputResponse::Confirm,
             }));
 
@@ -841,6 +842,7 @@ fn expect_rejected_on_an_accepted_step_panics() {
 fn apply_takes_a_raw_action() {
     let session = activating(board().open_turn(INV).session(), DECIDE).apply(Action::Player(
         PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickSingle(OptionId(1)),
         },
     ));
@@ -907,6 +909,7 @@ fn rejection_reads_the_reason_or_none() {
     assert_eq!(accepted.rejection(), None);
 
     let rejected = accepted.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::Confirm,
     }));
     assert_eq!(rejected.rejection(), Some(rejected.expect_rejected()));

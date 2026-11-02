@@ -63,6 +63,7 @@ fn librarian(session: &TestSession) -> OptionTarget {
 /// name one, so the pick is positional.
 fn take_searched(position: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(position)),
     })
 }

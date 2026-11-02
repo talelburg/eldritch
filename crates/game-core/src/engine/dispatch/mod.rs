@@ -14,7 +14,7 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{enumerate, evaluator, native_tail, Cx};
 use crate::state::{
     ActionResolutionFrame, ActionResume, Continuation, EffectFrame, FastWindowFrame, FrameActivity,
-    GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
+    GameState, InvestigatorId, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -154,7 +154,10 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
 /// it needs no window and nests where it fires.
 pub(crate) fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
     let outcome = match action {
-        PlayerAction::ResolveInput { response } => resolve_input(cx, response),
+        PlayerAction::ResolveInput {
+            investigator,
+            response,
+        } => resolve_input(cx, *investigator, response),
     };
 
     // The mulligan loop drains through `ResolveInput`, and `resume_mulligan`
@@ -634,7 +637,11 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// a play *opportunity*: `InputResponse::Skip` closes it via
 /// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
 /// Fast plays have been made and the player is done.
-pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+pub(crate) fn resolve_input(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    response: &InputResponse,
+) -> EngineOutcome {
     // Top-frame dispatch: every suspension is a
     // `Continuation` frame, and the frame awaiting input is always the top of
     // the stack (each suspension pushes above whatever it suspended within — a
@@ -653,6 +660,16 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                  {top:?})"
             )
             .into(),
+        };
+    }
+    // The responder check (ADR 0019): the prompt this frame asks names who
+    // answers it, and an answer from anyone else is rejected before the
+    // frame's resume runs.
+    if let Some(reason) = prompt::request(top, cx.state, cx.cards)
+        .and_then(|request| request.refuses(investigator, response))
+    {
+        return EngineOutcome::Rejected {
+            reason: reason.into(),
         };
     }
     // Past the gate, a kind whose profile splits on its value is at its Prompt

@@ -17,7 +17,7 @@
 //! wasm-gated (they submit through the wasm-only `OutboundTx`).
 
 #[cfg(target_arch = "wasm32")]
-use game_core::action::{InputResponse, PlayerAction};
+use game_core::action::InputResponse;
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{GameState, InvestigatorId};
 use leptos::prelude::*;
@@ -45,6 +45,10 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 /// as the answer to the prompt the store holds, recording `label` as the next
 /// `Applied` batch's event-log header.
 ///
+/// The answer is named for the investigator the live prompt asks
+/// ([`ClientState::answer`](crate::store::ClientState::answer)). With no live
+/// prompt to name one, it logs an error and sends nothing.
+///
 /// **The one place the client sends player input.** Every surface that submits —
 /// these controls, the prompt banner's buttons, the skill-test modal's Confirm —
 /// goes through it, so the store update and the frame can't drift apart at one
@@ -55,12 +59,13 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 pub fn submit(response: InputResponse, label: impl Into<String>) {
     let store = store::use_store();
     if let Some(tx) = use_context::<OutboundTx>() {
+        let Some(action) = store.with_untracked(|s| s.answer(response)) else {
+            leptos::logging::error!("submit: no live prompt names who answers it");
+            return;
+        };
         let prompt = store.with_untracked(|s| s.prompt);
         store.update(|s| s.pending_label = Some(label.into()));
-        let _ = tx.unbounded_send(ClientMessage::Submit {
-            prompt,
-            action: PlayerAction::ResolveInput { response },
-        });
+        let _ = tx.unbounded_send(ClientMessage::Submit { prompt, action });
     }
 }
 

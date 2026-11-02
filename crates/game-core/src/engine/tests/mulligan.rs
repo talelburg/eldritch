@@ -9,6 +9,7 @@ use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 /// `choose_from_hand`.
 fn mulligan_resolve(indices: &[u32]) -> Action {
     Action::Player(PlayerAction::ResolveInput {
+        investigator: InvestigatorId(1),
         response: InputResponse::PickMultiple {
             selected: indices.iter().copied().map(OptionId).collect(),
         },

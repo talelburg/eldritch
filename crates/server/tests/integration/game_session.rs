@@ -166,6 +166,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
         .apply(
             session.live().prompt(),
             PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
             },
         )
@@ -207,6 +208,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
         .apply(
             session.live().prompt(),
             PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple {
                     selected: vec![OptionId(999_999)],
                 },
@@ -252,6 +254,7 @@ async fn load_replays_log_to_reproduce_live_state() {
         .apply(
             session.live().prompt(),
             PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
             },
         )
@@ -289,6 +292,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         .apply(
             session.live().prompt(),
             PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
             },
         )

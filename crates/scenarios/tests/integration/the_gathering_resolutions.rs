@@ -717,6 +717,7 @@ fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> 
         .position(|a| a == action)
         .unwrap_or_else(|| panic!("logged_turn: {action:?} is not legal; offered: {legal:?}"));
     let wire = Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(
             u32::try_from(idx).expect("action index fits u32"),
         )),
@@ -736,11 +737,13 @@ fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> 
 fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     let commit_nothing = || {
         Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickMultiple { selected: vec![] },
         })
     };
     let confirm = || {
         Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::Confirm,
         })
     };
@@ -764,6 +767,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     state = apply_logged(
         state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickSingle(OptionId(0)),
         }),
         &mut log,
@@ -807,6 +811,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     state = apply_logged(
         ended.state,
         Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickSingle(OptionId(1)),
         }),
         &mut log,

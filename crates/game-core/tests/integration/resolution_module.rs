@@ -125,6 +125,7 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
     // stray wire action itself, so it is sent raw.
     let second = session
         .apply(Action::Player(PlayerAction::ResolveInput {
+            investigator: INV,
             response: InputResponse::PickSingle(OptionId(0)),
         }))
         .finish();
@@ -146,6 +147,7 @@ fn resolution_skipped_on_rejected_outcome() {
     // skip the resolution hook (no ScenarioResolved fires). The subject is
     // that malformed wire action itself, so it is sent raw.
     let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(u32::try_from(legal.len()).unwrap())),
     }));
     session.expect_rejected();

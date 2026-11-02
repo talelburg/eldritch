@@ -11,6 +11,7 @@
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
+use game_core::state::InvestigatorId;
 use protocol::{Applied, ClientMessage, LogPosition, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
@@ -100,6 +101,7 @@ async fn resolve_input_resumes_and_completes() {
         &ClientMessage::Submit {
             prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple { selected: vec![] },
             },
         },
@@ -133,6 +135,7 @@ async fn invalid_mulligan_response_is_rejected() {
         &ClientMessage::Submit {
             prompt: LogPosition(0),
             action: PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
                 response: InputResponse::PickMultiple {
                     selected: vec![OptionId(999_999)],
                 },

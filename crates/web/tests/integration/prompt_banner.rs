@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount,
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
 use game_core::state::InvestigatorId;
 use game_core::test_support;
@@ -133,14 +133,17 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 
 /// A hand-size discard that must discard exactly one card, offering two.
 fn discard_exactly_one() -> EngineOutcome {
-    test_support::awaiting_request(InputRequest::pick_multiple(
-        "Choose 1 card to discard",
-        vec![
-            ChoiceOption::new(OptionId(0), "Flashlight"),
-            ChoiceOption::new(OptionId(1), "Knife"),
-        ],
-        PickCount::exactly(1),
-    ))
+    test_support::awaiting_request(
+        InputRequest::pick_multiple(
+            "Choose 1 card to discard",
+            vec![
+                ChoiceOption::new(OptionId(0), "Flashlight"),
+                ChoiceOption::new(OptionId(1), "Knife"),
+            ],
+            PickCount::exactly(1),
+        )
+        .answered_by(Responder::Investigator(InvestigatorId(1))),
+    )
 }
 
 fn confirm_disabled() -> bool {
@@ -422,4 +425,64 @@ async fn banner_renders_only_unanchored_options() {
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
         other => panic!("expected PickSingle, got {other:?}"),
     }
+}
+
+/// A window several answer, offering investigator 2 and investigator 3 one
+/// un-anchored reaction each.
+fn offered_to_two_and_three() -> EngineOutcome {
+    test_support::awaiting_request(
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![
+                ChoiceOption::new(OptionId(0), "Two's reaction").offered_to(InvestigatorId(2)),
+                ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3)),
+            ],
+        )
+        .skippable()
+        .answered_by(Responder::Several),
+    )
+}
+
+/// The investigator a submitted frame names as answering.
+fn answering(rx: &mut UnboundedReceiver<ClientMessage>) -> (InvestigatorId, InputResponse) {
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action:
+                PlayerAction::ResolveInput {
+                    investigator,
+                    response,
+                },
+            ..
+        } => (investigator, response),
+        other => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+/// In a window several answer, a pick names the investigator its option is
+/// offered to.
+#[wasm_bindgen_test]
+async fn a_pick_in_a_window_several_answer_names_its_options_investigator() {
+    let mut rx = mount(offered_to_two_and_three(), &[]).await;
+    let btns = last_banner()
+        .query_selector_all(".banner-option")
+        .expect("query");
+    btns.item(1)
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("investigator 3's option")
+        .click();
+    task::tick().await;
+    assert_eq!(
+        answering(&mut rx),
+        (InvestigatorId(3), InputResponse::PickSingle(OptionId(1)))
+    );
+}
+
+/// A pass in a window several answer names the first investigator holding an
+/// option.
+#[wasm_bindgen_test]
+async fn a_pass_in_a_window_several_answer_names_the_first_holder() {
+    let mut rx = mount(offered_to_two_and_three(), &[]).await;
+    click(".pass");
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(2), InputResponse::Skip));
 }

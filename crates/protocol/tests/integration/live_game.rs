@@ -44,6 +44,7 @@ fn take_a_resource(state: &GameState) -> PlayerAction {
         .position(|a| *a == TurnAction::Resource { investigator: INV })
         .expect("taking a resource is legal at the open turn");
     PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(OptionId(
             u32::try_from(idx).expect("an action index fits u32"),
         )),
@@ -149,6 +150,7 @@ fn an_answer_the_engine_rejects_is_refused() {
         .submit(
             TURN_MENU,
             PlayerAction::ResolveInput {
+                investigator: INV,
                 response: InputResponse::PickSingle(OptionId(999)),
             },
         )

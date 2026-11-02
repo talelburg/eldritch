@@ -55,6 +55,7 @@ fn the_amulets_menu_entry_plays_the_top_event() {
     let resources = s.state().investigators[&INV].resources;
 
     let s = s.apply(Action::Player(PlayerAction::ResolveInput {
+        investigator: INV,
         response: InputResponse::PickSingle(entry.id),
     }));
 

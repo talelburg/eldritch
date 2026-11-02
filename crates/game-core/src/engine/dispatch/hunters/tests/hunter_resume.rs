@@ -72,6 +72,7 @@ fn hunter_move_tie_rejects_invalid_pick() {
         // Option id 99 is out of the candidate range -> rejected. A malformed
         // wire response no step can name, so the raw `ResolveInput` is sent.
         .apply(Action::Player(PlayerAction::ResolveInput {
+            investigator: InvestigatorId(1),
             response: InputResponse::PickSingle(OptionId(99)),
         }));
     session.expect_rejected();
