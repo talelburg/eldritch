@@ -318,10 +318,8 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     // `EnemyMoved` to emit either (the move is the investigator's,
     // `InvestigatorMoved` below). An enemy that *cannot* follow needs the
     // funnel even less: it never arrives anywhere, staying put at `from` while
-    // the investigator leaves. It does, though, become a ready unengaged enemy
-    // beside whoever stayed at `from`, so once the investigator has left it runs
-    // the engagement rule against them — see the stranded pass below. The
-    // *unengaged* enemies already standing at the destination are the
+    // the investigator leaves (though it does engage whoever stayed there; see
+    // the stranded pass below). The *unengaged* enemies already standing at the destination are the
     // entered-location half's business, further down.
     let engaged: Vec<EnemyId> = cx
         .state
@@ -364,7 +362,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
         from,
         to: destination,
     });
-    // The stranded pass (#662). `glossary/Enemy_Engagement.md`: "Any time a
+    // The stranded pass. `glossary/Enemy_Engagement.md`: "Any time a
     // ready unengaged enemy is at the same location as an investigator, it
     // engages that investigator". An enemy left behind above is exactly that
     // beside anyone still at `from`, so it engages one of them now — at the

@@ -404,17 +404,17 @@ fn hunter_at(at: LocationId) -> StagedEnemy<Printed> {
 }
 
 /// Assemble a board out of locations (each an id and its connections) /
-/// seated investigators / one hunter, on the first investigator's turn,
+/// seated investigators / one enemy, on the first investigator's turn,
 /// attaching a Barricade at each of `barricaded`.
 fn board(
     locations: &[(LocationId, &[LocationId])],
     investigators: Vec<Seat>,
-    hunter: StagedEnemy<Printed>,
+    enemy: StagedEnemy<Printed>,
     barricaded: &[LocationId],
 ) -> TestSession {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_enemy(hunter);
+        .with_enemy(enemy);
     let mut next_barricade = ATT_INST.0;
     for &(id, connections) in locations {
         let loc = linked(id, connections);
@@ -644,7 +644,7 @@ fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it()
 }
 
 // ---------------------------------------------------------------------------
-// A stranded enemy runs the engagement rule against whoever stayed (#662).
+// A stranded enemy runs the engagement rule against whoever stayed.
 //
 // `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
 // same location as an investigator, it engages that investigator, and is placed
@@ -653,21 +653,20 @@ fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it()
 // engaged at once — never the one who just left.
 // ---------------------------------------------------------------------------
 
-/// [`engaged_map_with_barricade_at_b`] with `enemy` engaged with investigator 1
-/// at A, and a second investigator also at A; investigator 1's turn.
+/// [`engaged_map_with_barricade_at_b`] with a second investigator also at A;
+/// investigator 1's turn.
 fn two_at_a_with_barricade_at_b(enemy: StagedEnemy<Printed>) -> TestSession {
-    GameStateBuilder::new()
-        .with_registries(TEST_REGISTRIES)
-        .with_seat(seat(1).at(A))
-        .with_seat(seat(2).at(A))
-        .with_seating([INV, INV2])
-        .with_location(linked(A, &[B]))
-        .with_location(barricaded(linked(B, &[A]), ATT_INST))
-        .with_enemy(enemy)
-        .open_turn(INV)
-        .session()
+    board(
+        &[(A, &[B]), (B, &[A])],
+        vec![seat(1).at(A), seat(2).at(A)],
+        enemy,
+        &[B],
+    )
 }
 
+/// Regression for #662: an engaged non-Elite enemy left behind by a move into
+/// a Barricaded location engages the investigator still at the origin, after
+/// the move lands.
 #[test]
 fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
     let session = two_at_a_with_barricade_at_b(engaged_ghoul(GHOUL_MINION));
@@ -688,8 +687,7 @@ fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
 }
 
 /// With nobody left at the origin the stranded enemy stays unengaged: it never
-/// re-engages the investigator who just moved away (pins PR #661's solo
-/// behaviour).
+/// re-engages the investigator who just moved away.
 #[test]
 fn a_stranded_enemy_with_nobody_left_at_the_origin_stays_unengaged() {
     let r = take(engaged_map_with_barricade_at_b(GHOUL_MINION), &MOVE_TO_B).finish();
