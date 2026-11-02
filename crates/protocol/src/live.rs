@@ -27,7 +27,7 @@ use game_core::rng::RngState;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 
-use crate::logged_answer::{self, LoggedAnswer, LoggedResponse, Unrecordable};
+use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
 use crate::{AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage};
 
 /// A game as it is being played: its current state, its place in the log, who
@@ -40,9 +40,9 @@ pub struct LiveGame {
     outcome: EngineOutcome,
     /// The events scenario setup emitted, carried in every `Hello`.
     setup_events: Vec<Event>,
-    /// The number of answers in the log, which is the position the next one
-    /// is stored at.
-    seq: i64,
+    /// The log position of the prompt the game awaits: the number of answers
+    /// in the log, which is where the next one is stored.
+    prompt: LogPosition,
     /// The account answering for each investigator.
     assignment: Assignment,
     registries: Registries,
@@ -110,14 +110,14 @@ impl From<Refused> for Refusal {
 
 impl LiveGame {
     /// The live game at `state`, whose last apply (or setup) left `outcome`,
-    /// with `seq` answers already in its log, and each investigator answered
-    /// for by the account `assignment` gives them to.
+    /// awaiting the answer at log position `prompt`, and each investigator
+    /// answered for by the account `assignment` gives them to.
     #[must_use]
     pub fn new(
         state: GameState,
         outcome: EngineOutcome,
         setup_events: Vec<Event>,
-        seq: i64,
+        prompt: LogPosition,
         assignment: Assignment,
         registries: Registries,
     ) -> Self {
@@ -125,7 +125,7 @@ impl LiveGame {
             state,
             outcome,
             setup_events,
-            seq,
+            prompt,
             assignment,
             registries,
         }
@@ -149,18 +149,11 @@ impl LiveGame {
         &self.setup_events
     }
 
-    /// The number of answers in the log, which is the position the next
-    /// accepted answer is stored at.
-    #[must_use]
-    pub fn seq(&self) -> i64 {
-        self.seq
-    }
-
     /// The log position of the prompt the game awaits: the one a submit must
-    /// name.
+    /// name, and where the next accepted answer is stored.
     #[must_use]
     pub fn prompt(&self) -> LogPosition {
-        LogPosition(self.seq)
+        self.prompt
     }
 
     /// The account answering for each investigator.
@@ -178,7 +171,7 @@ impl LiveGame {
             you: account,
             assigned: self.assignment.clone(),
             prompt: self.prompt(),
-            state: Box::new(view_for(account, &self.state)),
+            state: Box::new(view_for(account, self.state.clone())),
             outcome: self.outcome.clone(),
             events: self.setup_events.clone(),
         }
@@ -233,19 +226,19 @@ impl LiveGame {
     /// the type can't tie the two together, so committing a stale answer
     /// installs that answer's state.
     pub fn commit(&mut self, accepted: Accepted) -> Committed {
-        let answered = self.prompt();
-        let committed = Committed {
+        let answered = self.prompt;
+        self.prompt = answered.next();
+        self.state = accepted.state.clone();
+        self.outcome = accepted.outcome.clone();
+        Committed(Applied {
             answered,
             by: accepted.answer.investigator,
             response: accepted.answer.response,
-            state: accepted.state.clone(),
+            prompt: self.prompt,
+            state: Box::new(accepted.state),
             events: accepted.events,
-            outcome: accepted.outcome.clone(),
-        };
-        self.state = accepted.state;
-        self.outcome = accepted.outcome;
-        self.seq += 1;
-        committed
+            outcome: accepted.outcome,
+        })
     }
 
     /// Log `action` as the answer to the prompt the game awaits.
@@ -267,29 +260,18 @@ impl LiveGame {
 /// An answer [`LiveGame::commit`] installed, the same for every account: a host
 /// shares one among its connections, and each sends
 /// [`applied_for`](Self::applied_for) its own account.
+///
+/// It holds the [`Applied`] before any account's view is cut from its state.
 #[derive(Debug)]
-pub struct Committed {
-    answered: LogPosition,
-    by: InvestigatorId,
-    response: LoggedResponse,
-    state: GameState,
-    events: Vec<Event>,
-    outcome: EngineOutcome,
-}
+pub struct Committed(Applied);
 
 impl Committed {
     /// The [`Applied`] a connection signed in as `account` is sent.
     #[must_use]
     pub fn applied_for(&self, account: AccountId) -> Applied {
-        Applied {
-            answered: self.answered,
-            by: self.by,
-            response: self.response.clone(),
-            prompt: self.answered.next(),
-            state: Box::new(view_for(account, &self.state)),
-            events: self.events.clone(),
-            outcome: self.outcome.clone(),
-        }
+        let mut applied = self.0.clone();
+        applied.state = Box::new(view_for(account, *applied.state));
+        applied
     }
 }
 
@@ -302,14 +284,12 @@ fn answering(action: &PlayerAction) -> Option<InvestigatorId> {
 }
 
 /// `state` as `account` may see it: the one place a message for an account
-/// is cut down from the game, so hidden information (#1216) has one place to
-/// change.
+/// is cut down from the game, so hidden information has one place to change.
 ///
 /// Today it clears the RNG state, which would let a client predict every
 /// chaos-token pull and shuffle, and nothing else, so every account sees the
 /// same state.
-fn view_for(_account: AccountId, state: &GameState) -> GameState {
-    let mut view = state.clone();
-    view.rng = RngState::new(0);
-    view
+fn view_for(_account: AccountId, mut state: GameState) -> GameState {
+    state.rng = RngState::new(0);
+    state
 }

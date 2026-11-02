@@ -4,8 +4,8 @@
 //! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
 //! the `interactive_acknowledge` flag) plus an ordered log of its answers
 //! (ADR 0022), and the account that created it, which holds every
-//! investigator until the lobby (#1239) stores an assignment. No engine state
-//! is stored. The session keeps the live game in
+//! investigator (TODO(#1239): until the lobby stores an assignment). No
+//! engine state is stored. The session keeps the live game in
 //! memory and appends each answer it accepts to the log as a [`LoggedAnswer`]
 //! with the RNG checkpoint after it, before committing it; [`GameSession::load`]
 //! re-runs setup from the inputs, checks it against the stored
@@ -209,8 +209,8 @@ impl CreationInputs {
 }
 
 /// The interim assignment: `creator` holds every investigator seated in
-/// `state`. The lobby (#1239) replaces where an assignment comes from, not its
-/// shape.
+/// `state`. TODO(#1239): the lobby replaces where an assignment comes from,
+/// not its shape.
 fn creator_holds_everyone(creator: AccountId, state: &GameState) -> Assignment {
     Assignment::all_to(creator, state.investigators.keys().copied())
 }
@@ -289,7 +289,7 @@ impl GameSession {
                 opened.state,
                 opened.outcome,
                 opened.events,
-                0,
+                LogPosition::default(),
                 assignment,
                 registries,
             ),
@@ -331,7 +331,7 @@ impl GameSession {
         store::insert_action(
             &self.db,
             &self.game_id,
-            self.live.seq(),
+            self.live.prompt().0,
             &row,
             unix_millis(),
         )
@@ -466,7 +466,14 @@ impl GameSession {
 
         Ok(Self {
             game_id,
-            live: LiveGame::new(state, outcome, opened.events, seq, assignment, registries),
+            live: LiveGame::new(
+                state,
+                outcome,
+                opened.events,
+                LogPosition(seq),
+                assignment,
+                registries,
+            ),
             db,
         })
     }

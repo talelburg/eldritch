@@ -208,7 +208,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         seeded.state().clone(),
         test_support::awaiting_request(seeded.prompt().clone()),
         Vec::new(),
-        0,
+        LogPosition::default(),
         Assignment::all_to(player, seeded.state().investigators.keys().copied()),
         PROBE_REGISTRIES,
     );

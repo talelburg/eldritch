@@ -235,9 +235,9 @@ impl fmt::Display for AccountId {
 /// for them.
 ///
 /// A live game is built with one, and refuses an answer from any account but
-/// the investigator's holder. Until the lobby (#1239) the creator holds every
-/// investigator, so any other account is a viewer. Serialises as a JSON
-/// object from investigator id to account id.
+/// the investigator's holder. TODO(#1239): until the lobby stores an
+/// assignment, the creator holds every investigator, so any other account is
+/// a viewer. Serialises as a JSON object from investigator id to account id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Assignment(BTreeMap<InvestigatorId, AccountId>);

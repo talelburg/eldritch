@@ -16,21 +16,21 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
 /// The account holding [`INV`].
-const TAL: AccountId = AccountId(7);
+const HOLDER: AccountId = AccountId(7);
 /// An account holding no investigator: a viewer.
-const SAM: AccountId = AccountId(8);
+const VIEWER: AccountId = AccountId(8);
 
 /// The position the [`at_turn_menu`] game's open turn waits at: three answers
 /// are already in its log.
 const TURN_MENU: LogPosition = LogPosition(3);
 
-/// [`INV`] assigned to [`TAL`], and [`SAM`] holding nobody.
-fn tal_holds_inv() -> Assignment {
-    Assignment::from_iter([(INV, TAL)])
+/// [`INV`] assigned to [`HOLDER`], and [`VIEWER`] holding nobody.
+fn holder_holds_inv() -> Assignment {
+    Assignment::from_iter([(INV, HOLDER)])
 }
 
 /// One investigator with 3 resources and their turn open, as a live game three
-/// answers into its log, with [`INV`] held by [`TAL`] and the RNG partway
+/// answers into its log, with [`INV`] held by [`HOLDER`] and the RNG partway
 /// through its stream.
 fn at_turn_menu() -> LiveGame {
     let session = GameStateBuilder::new()
@@ -45,8 +45,8 @@ fn at_turn_menu() -> LiveGame {
         session.state().clone(),
         outcome,
         vec![Event::ScenarioStarted],
-        3,
-        tal_holds_inv(),
+        TURN_MENU,
+        holder_holds_inv(),
         TEST_REGISTRIES,
     )
 }
@@ -82,7 +82,7 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
     };
 
     let accepted = live
-        .submit(TAL, TURN_MENU, action)
+        .submit(HOLDER, TURN_MENU, action)
         .expect("the engine accepts it");
 
     let LoggedResponse::PickSingle { option } = &accepted.answer().response else {
@@ -93,7 +93,7 @@ fn a_legal_answer_is_accepted_with_its_logged_answer_and_applied() {
         "the logged answer names the option picked"
     );
     let draws = accepted.draws();
-    let applied = live.commit(accepted).applied_for(TAL);
+    let applied = live.commit(accepted).applied_for(HOLDER);
     assert_eq!(
         resources(&applied.state),
         4,
@@ -113,7 +113,7 @@ fn submitting_changes_nothing_until_commit() {
     let outcome_before = live.outcome().clone();
 
     let _accepted = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
     assert_eq!(*live.state(), before);
@@ -125,10 +125,10 @@ fn submitting_changes_nothing_until_commit() {
 fn commit_advances_to_the_applied_state() {
     let mut live = at_turn_menu();
     let accepted = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = live.commit(accepted).applied_for(TAL);
+    let applied = live.commit(accepted).applied_for(HOLDER);
 
     assert_eq!(live.prompt(), LogPosition(4));
     assert_eq!(*live.outcome(), applied.outcome);
@@ -140,10 +140,10 @@ fn commit_advances_to_the_applied_state() {
 fn an_applied_names_the_position_it_answered_and_the_next_prompt() {
     let mut live = at_turn_menu();
     let accepted = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = live.commit(accepted).applied_for(TAL);
+    let applied = live.commit(accepted).applied_for(HOLDER);
 
     assert_eq!(applied.answered, LogPosition(3));
     assert_eq!(applied.prompt, LogPosition(4));
@@ -153,10 +153,10 @@ fn an_applied_names_the_position_it_answered_and_the_next_prompt() {
 fn an_applied_says_who_answered_and_what_they_picked() {
     let mut live = at_turn_menu();
     let accepted = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
 
-    let applied = live.commit(accepted).applied_for(SAM);
+    let applied = live.commit(accepted).applied_for(VIEWER);
 
     assert_eq!(applied.by, INV);
     let LoggedResponse::PickSingle { option } = &applied.response else {
@@ -170,7 +170,7 @@ fn an_applied_says_who_answered_and_what_they_picked() {
 fn an_applied_carries_no_rng_state() {
     let mut live = at_turn_menu();
     let accepted = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts it");
     let committed = live.commit(accepted);
     assert_ne!(
@@ -179,7 +179,7 @@ fn an_applied_carries_no_rng_state() {
         "the live game holds a real RNG state"
     );
 
-    for account in [TAL, SAM] {
+    for account in [HOLDER, VIEWER] {
         assert_eq!(
             committed.applied_for(account).state.rng,
             RngState::new(0),
@@ -194,7 +194,7 @@ fn an_answer_the_engine_rejects_is_refused() {
 
     let refused = live
         .submit(
-            TAL,
+            HOLDER,
             TURN_MENU,
             PlayerAction::ResolveInput {
                 investigator: INV,
@@ -211,7 +211,7 @@ fn an_answer_to_an_earlier_position_is_refused_as_a_stale_prompt() {
     let live = at_turn_menu();
 
     let refused = live
-        .submit(TAL, LogPosition(2), take_a_resource(live.state()))
+        .submit(HOLDER, LogPosition(2), take_a_resource(live.state()))
         .expect_err("position 2 was answered already");
 
     assert_eq!(refused, Refused::StalePrompt);
@@ -225,12 +225,12 @@ fn an_in_range_option_from_a_second_tab_on_the_old_prompt_is_refused() {
     let mut live = at_turn_menu();
     let tab_b = take_a_resource(live.state());
     let tab_a = live
-        .submit(TAL, TURN_MENU, take_a_resource(live.state()))
+        .submit(HOLDER, TURN_MENU, take_a_resource(live.state()))
         .expect("the engine accepts tab A's answer");
     let _ = live.commit(tab_a);
 
     let refused = live
-        .submit(TAL, TURN_MENU, tab_b)
+        .submit(HOLDER, TURN_MENU, tab_b)
         .expect_err("tab B answered the prompt tab A already answered");
 
     assert_eq!(refused, Refused::StalePrompt);
@@ -241,8 +241,8 @@ fn an_account_answering_for_an_investigator_it_does_not_hold_is_refused_as_not_y
     let live = at_turn_menu();
 
     let refused = live
-        .submit(SAM, TURN_MENU, take_a_resource(live.state()))
-        .expect_err("Sam holds no investigator");
+        .submit(VIEWER, TURN_MENU, take_a_resource(live.state()))
+        .expect_err("the viewer holds no investigator");
 
     assert_eq!(refused, Refused::NotYours);
 }
@@ -254,7 +254,7 @@ fn a_stale_answer_for_another_accounts_investigator_is_refused_as_stale() {
     let live = at_turn_menu();
 
     let refused = live
-        .submit(SAM, LogPosition(2), take_a_resource(live.state()))
+        .submit(VIEWER, LogPosition(2), take_a_resource(live.state()))
         .expect_err("position 2 was answered already");
 
     assert_eq!(refused, Refused::StalePrompt);
@@ -268,14 +268,14 @@ fn an_answer_for_an_investigator_not_yours_is_refused_before_the_engine_runs() {
 
     let refused = live
         .submit(
-            SAM,
+            VIEWER,
             TURN_MENU,
             PlayerAction::ResolveInput {
                 investigator: INV,
                 response: InputResponse::PickSingle(OptionId(999)),
             },
         )
-        .expect_err("Sam holds no investigator");
+        .expect_err("the viewer holds no investigator");
 
     assert_eq!(refused, Refused::NotYours);
 }
@@ -297,15 +297,15 @@ fn hello_carries_the_build_account_assignment_position_outcome_and_setup_events(
         state,
         outcome,
         events,
-    } = live.hello_for(SAM)
+    } = live.hello_for(VIEWER)
     else {
         panic!("expected Hello");
     };
 
     assert_eq!(build, protocol::build_id());
-    assert_eq!(you, SAM);
-    assert_eq!(assigned, tal_holds_inv());
-    assert_eq!(assigned.holder(INV), Some(TAL));
+    assert_eq!(you, VIEWER);
+    assert_eq!(assigned, holder_holds_inv());
+    assert_eq!(assigned.holder(INV), Some(HOLDER));
     assert_eq!(prompt, TURN_MENU);
     assert_eq!(resources(&state), 3);
     assert_eq!(state.rng, RngState::new(0), "Hello carries no RNG state");

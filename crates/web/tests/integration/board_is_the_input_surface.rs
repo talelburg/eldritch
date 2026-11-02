@@ -24,7 +24,7 @@ use game_core::test_support::{self, location, seat, Printed, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store;
@@ -60,7 +60,7 @@ impl Harness {
                 state.clone(),
                 outcome.clone(),
                 Vec::new(),
-                0,
+                LogPosition::default(),
                 common::you_hold(Some(&state), Some(&outcome)),
                 cards::TEST_REGISTRIES,
             ),
