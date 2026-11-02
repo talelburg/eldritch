@@ -49,6 +49,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
+| #1132 | An eliminated investigator's card that later leaves play is removed from the game into their own pile, PR #1302 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
 | #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
 | #1179 | `mount_board` for the web tests, PR #1260 |
