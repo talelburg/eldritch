@@ -56,6 +56,7 @@ mod enemy_spawn_no_location;
 mod enemy_spawn_unrepresented;
 mod enumerate_actions;
 mod evidence;
+mod failed_fight_redirect;
 mod fast_play;
 mod fearless;
 mod first_aid;

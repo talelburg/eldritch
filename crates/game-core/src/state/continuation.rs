@@ -119,7 +119,9 @@ pub enum DamageSource {
         enemy: EnemyId,
     },
     /// Every deal that isn't an enemy attack: a card/treachery `Effect::Deal`,
-    /// a card-local native's harm, or a rule's (the deck-out horror),
+    /// a card-local native's harm, or a rule's (the deck-out horror, or a
+    /// failed attack's damage dealt to the investigator engaged with the
+    /// attacked enemy — not an enemy attack, so Guard Dog 01021 stays silent),
     /// all through the one harm adapter `deal_harm` or `Effect::Deal`. Nothing
     /// in the corpus distinguishes harm from a rule from harm from a card
     /// effect, so they share the arm. Like the enemy attack's, its `Finish` is a
