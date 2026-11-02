@@ -327,8 +327,8 @@ impl PickCount {
 /// A host shows who the game is waiting on from this, without matching over
 /// engine frames. The engine also checks every answer against it: an answer
 /// from an investigator it doesn't ask is rejected before dispatch. Which
-/// *account* may answer for that investigator is the live game's check, not
-/// the engine's (TODO(#1296): the live game's account check).
+/// *account* may answer for that investigator is the live game's check
+/// (`protocol::live`), not the engine's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Responder {

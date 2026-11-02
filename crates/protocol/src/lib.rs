@@ -6,6 +6,7 @@
 //! and [`logged_answer`] is the form the action log records it in. Both are
 //! I/O-free, so the web crate's tests run the server's exact submit path.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
@@ -73,6 +74,11 @@ pub enum ServerMessage {
         /// deserialize for it. So the `"hello"` tag and this `"build"` key
         /// keep their names in every build.
         build: String,
+        /// The account this connection is signed in as.
+        you: AccountId,
+        /// Which account holds each investigator: the client offers a prompt,
+        /// and a Pass, only for the investigators `you` holds.
+        assigned: Assignment,
         /// The log position of the prompt the game awaits: what a submit
         /// answering it sends back.
         prompt: LogPosition,
@@ -163,6 +169,10 @@ pub enum Refusal {
     /// The client stays quiet: it already has the newer state, or it is on
     /// its way.
     StalePrompt,
+    /// It answered for an investigator the submitting account doesn't hold.
+    /// A client offers only its own investigators' prompts, so this is a
+    /// client bug.
+    NotYours,
     /// The engine rejected the answer, for this reason, which the client
     /// shows the player.
     Engine(String),
@@ -218,6 +228,48 @@ pub struct AccountId(pub i64);
 impl fmt::Display for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Which account holds each investigator in a game: the account that answers
+/// for them.
+///
+/// A live game is built with one, and refuses an answer from any account but
+/// the investigator's holder. Until the lobby (#1239) the creator holds every
+/// investigator, so any other account is a viewer. Serialises as a JSON
+/// object from investigator id to account id.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Assignment(BTreeMap<InvestigatorId, AccountId>);
+
+impl Assignment {
+    /// Every investigator in `investigators` held by `account`.
+    pub fn all_to(
+        account: AccountId,
+        investigators: impl IntoIterator<Item = InvestigatorId>,
+    ) -> Self {
+        investigators
+            .into_iter()
+            .map(|investigator| (investigator, account))
+            .collect()
+    }
+
+    /// The account holding `investigator`, if any does.
+    #[must_use]
+    pub fn holder(&self, investigator: InvestigatorId) -> Option<AccountId> {
+        self.0.get(&investigator).copied()
+    }
+
+    /// Whether `account` holds `investigator`.
+    #[must_use]
+    pub fn holds(&self, account: AccountId, investigator: InvestigatorId) -> bool {
+        self.holder(investigator) == Some(account)
+    }
+}
+
+impl FromIterator<(InvestigatorId, AccountId)> for Assignment {
+    fn from_iter<I: IntoIterator<Item = (InvestigatorId, AccountId)>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
@@ -354,8 +406,11 @@ mod tests {
             .with_seat(test_support::seat(1))
             .build();
         let events = vec![Event::ScenarioStarted];
+        let assigned = Assignment::all_to(AccountId(7), [InvestigatorId(1)]);
         let msg = ServerMessage::Hello {
             build: "a1b2c3".to_string(),
+            you: AccountId(8),
+            assigned: assigned.clone(),
             prompt: LogPosition(0),
             state: Box::new(state.clone()),
             outcome: EngineOutcome::Done,
@@ -368,11 +423,15 @@ mod tests {
         match back {
             ServerMessage::Hello {
                 build,
+                you,
+                assigned: a,
                 state: s,
                 events: e,
                 ..
             } => {
                 assert_eq!(build, "a1b2c3");
+                assert_eq!(you, AccountId(8));
+                assert_eq!(a, assigned, "the assignment round-trips through JSON");
                 assert_eq!(*s, state);
                 assert_eq!(e, events, "events round-trip through JSON");
             }
