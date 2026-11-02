@@ -288,6 +288,47 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
     assert_beat_cop_fired(&session);
 }
 
+/// In a framework Fast window each investigator passes separately, and a play
+/// clears the passes made before it (ADR 0019): A passes, B discards Beat Cop
+/// to deal 1 damage to the Ghoul, and A is offered their own Beat Cop again,
+/// since the board changed after A passed.
+#[test]
+fn a_fast_play_clears_an_earlier_pass_in_the_window() {
+    let enemy = test_support::enemy(GHOUL).health(3).at(HERE);
+    let window = mythos_after_draws_window(
+        GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(seat(1).at(HERE).in_play([BEAT_COP]))
+            .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
+            .with_seating([A, B])
+            .with_location(test_support::location(HERE))
+            .with_enemy(enemy)
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
+    )
+    .session();
+    let offered_to = |session: &TestSession| -> Vec<Option<InvestigatorId>> {
+        session
+            .prompt()
+            .options
+            .iter()
+            .map(|option| option.investigator)
+            .collect()
+    };
+    assert_eq!(offered_to(&window), [Some(A), Some(B)]);
+
+    let session = window.skip_for(A);
+    assert_eq!(offered_to(&session), [Some(B)], "A has passed");
+
+    let beat_cop = beat_cop(session.state());
+    let session = session.pick_for(B, beat_cop);
+    assert_beat_cop_fired(&session);
+    assert_eq!(
+        offered_to(&session),
+        [Some(A)],
+        "B's play cleared A's pass, so A's Beat Cop is offered again"
+    );
+}
+
 #[test]
 fn fast_activated_ability_rejected_when_no_permissive_window() {
     // Same board, no open window: B is not the active investigator, so

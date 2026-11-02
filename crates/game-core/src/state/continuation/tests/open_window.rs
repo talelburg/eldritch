@@ -8,6 +8,7 @@ fn open_window_serde_roundtrip() {
     let window = Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+        passed: Vec::new(),
     });
     let json = serde_json::to_string(&window).expect("serialize");
     let back: Continuation = serde_json::from_str(&json).expect("deserialize");

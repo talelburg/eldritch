@@ -10,7 +10,8 @@
 //!
 //! It stays the home for the controls that belong nowhere on the board: a live
 //! prompt's **un-anchored** options, a `PickMultiple` commit's Confirm (submitting
-//! the `MultiSelect` selection), any skippable window's Pass, and a fallback
+//! the `MultiSelect` selection), any skippable window's Pass (one per
+//! investigator still holding an option, when several do), and a fallback
 //! Confirm for an un-anchored `Confirm` the skill-test result modal is not already
 //! carrying. wasm-only — submits via `OutboundTx`.
 
@@ -18,7 +19,7 @@ use std::collections::BTreeSet;
 
 use game_core::action::InputResponse;
 use game_core::engine::{
-    ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget, PickCount,
+    ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget, PickCount, Responder,
 };
 use leptos::prelude::*;
 
@@ -119,11 +120,32 @@ pub fn PromptBanner() -> impl IntoView {
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
 
-            // Pass — whenever the request is skippable.
-            let pass_btn = request.skippable.then(|| {
+            // Pass — whenever the request is skippable. In a window several
+            // answer, each investigator holding an option passes separately (ADR
+            // 0019), so two or more holders get a Pass each, labelled by name;
+            // one holder gets the plain Pass, which the prompt names them for.
+            // Until accounts land, every investigator counts.
+            let holders = match request.responder {
+                Responder::Several => request.holders(),
+                _ => Vec::new(),
+            };
+            let pass_btns: Vec<_> = if !request.skippable {
+                Vec::new()
+            } else if holders.len() > 1 {
+                holders
+                    .into_iter()
+                    .map(|investigator| {
+                        let label = format!("Pass ({})", state.investigator_name(investigator));
+                        let pass = move |_| {
+                            controls::submit_as(investigator, InputResponse::Skip);
+                        };
+                        view! { <button class="pass" on:click=pass>{label}</button> }.into_any()
+                    })
+                    .collect()
+            } else {
                 let pass = move |_| controls::submit(InputResponse::Skip);
-                view! { <button class="pass" on:click=pass>"Pass"</button> }
-            });
+                vec![view! { <button class="pass" on:click=pass>"Pass"</button> }.into_any()]
+            };
 
             // Nothing to say and nothing to offer — the ordinary open turn, where
             // every option sits on a board surface. Render no bar at all rather
@@ -132,7 +154,7 @@ pub fn PromptBanner() -> impl IntoView {
                 && option_btns.is_empty()
                 && confirm_btn.is_none()
                 && confirm_fallback.is_none()
-                && pass_btn.is_none()
+                && pass_btns.is_empty()
             {
                 return ().into_any();
             }
@@ -144,7 +166,7 @@ pub fn PromptBanner() -> impl IntoView {
                     {option_btns}
                     {confirm_btn}
                     {confirm_fallback}
-                    {pass_btn}
+                    {pass_btns}
                 </div>
             }
             .into_any()

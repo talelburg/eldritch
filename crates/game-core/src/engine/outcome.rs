@@ -507,6 +507,22 @@ impl InputRequest {
         self
     }
 
+    /// Each investigator the prompt offers an option to, once, in the order
+    /// their first option appears. In a window [several
+    /// answer](Responder::Several), these are the investigators who may still
+    /// pick or pass (ADR 0019): one who has passed holds nothing until an
+    /// option resolves there.
+    #[must_use]
+    pub fn holders(&self) -> Vec<InvestigatorId> {
+        let mut holders = Vec::new();
+        for investigator in self.options.iter().filter_map(|option| option.investigator) {
+            if !holders.contains(&investigator) {
+                holders.push(investigator);
+            }
+        }
+        holders
+    }
+
     /// Who answers this prompt with `response`: the
     /// [`responder`](Self::responder)'s investigator, or in a prompt
     /// [answered by several](Responder::Several), the investigator the picked

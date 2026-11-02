@@ -634,6 +634,7 @@ fn a_staged_reaction_window_offers_its_candidate_to_its_controller() {
                 AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::InPlay(card)),
             )],
+            passed: Vec::new(),
         })
         .session();
     assert_reads_as_a_game(&session);
@@ -673,6 +674,7 @@ fn a_staged_forced_run_asks_the_lead_to_order_it() {
         bucket: EventTiming::When,
         mode: TimingMode::Forced,
         candidates: vec![candidate(INV, mine), candidate(OTHER, theirs)],
+        passed: Vec::new(),
     })
     .session();
     assert_eq!(session.prompt().options.len(), 2, "{:?}", session.prompt());

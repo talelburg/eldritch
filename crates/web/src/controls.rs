@@ -17,7 +17,7 @@
 //! wasm-gated (they submit through the wasm-only `OutboundTx`).
 
 #[cfg(target_arch = "wasm32")]
-use game_core::action::InputResponse;
+use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{GameState, InvestigatorId};
 use leptos::prelude::*;
@@ -60,11 +60,31 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 #[cfg(target_arch = "wasm32")]
 pub fn submit(response: InputResponse) {
     let store = store::use_store();
+    let Some(action) = store.with_untracked(|s| s.answer(response)) else {
+        leptos::logging::error!("submit: no live prompt names who answers it");
+        return;
+    };
+    send(action);
+}
+
+/// [`submit`], answering as `investigator`.
+///
+/// For a pass in a window several answer, where each holder passes separately
+/// (ADR 0019) and the response alone does not say whose pass it is.
+#[cfg(target_arch = "wasm32")]
+pub fn submit_as(investigator: InvestigatorId, response: InputResponse) {
+    send(PlayerAction::ResolveInput {
+        investigator,
+        response,
+    });
+}
+
+/// Send `action` as the answer to the prompt the store holds, if a transport
+/// is mounted.
+#[cfg(target_arch = "wasm32")]
+fn send(action: PlayerAction) {
     if let Some(tx) = use_context::<OutboundTx>() {
-        let Some(action) = store.with_untracked(|s| s.answer(response)) else {
-            leptos::logging::error!("submit: no live prompt names who answers it");
-            return;
-        };
+        let store = store::use_store();
         let prompt = store.with_untracked(|s| s.prompt);
         let _ = tx.unbounded_send(ClientMessage::Submit { prompt, action });
     }

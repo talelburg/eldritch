@@ -694,12 +694,62 @@ impl TestSession {
 
     /// Step: answer the current prompt with [`InputResponse::Skip`], then drain.
     ///
+    /// In a window [several answer](Responder::Several), each investigator
+    /// passes separately (ADR 0019), so this passes for every investigator
+    /// holding an option, in turn, and the window closes. The passes are
+    /// applied back to back and drained once, after the last: the window
+    /// re-asks between them, and the reply policy must not answer that re-ask
+    /// with a reply queued for a later prompt. To pass for one investigator,
+    /// use [`skip_for`](Self::skip_for).
+    ///
     /// # Panics
     ///
     /// Panics at the turn menu (take a turn action with [`take`](Self::take)).
     pub fn skip(self) -> Self {
         self.assert_off_turn_menu("skip");
-        self.respond(InputResponse::Skip)
+        let request = self.prompt();
+        if request.responder != Responder::Several {
+            return self.respond(InputResponse::Skip);
+        }
+        let holders = request.holders();
+        let registries = self.registries;
+        self.advance(|mut state| {
+            let mut events = Vec::new();
+            let mut outcome = EngineOutcome::Done;
+            for investigator in holders {
+                let result = engine::apply(
+                    state,
+                    Action::Player(PlayerAction::ResolveInput {
+                        investigator,
+                        response: InputResponse::Skip,
+                    }),
+                    registries,
+                );
+                state = result.state;
+                events.extend(result.events);
+                outcome = result.outcome;
+                if !matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    break;
+                }
+            }
+            ApplyResult {
+                state,
+                events,
+                outcome,
+            }
+        })
+    }
+
+    /// Step: pass for `investigator` alone, then drain. In a window several
+    /// answer, the others keep their options; elsewhere it is a pass named for
+    /// `investigator`.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu (take a turn action with [`take`](Self::take)).
+    pub fn skip_for(self, investigator: InvestigatorId) -> Self {
+        self.assert_off_turn_menu("skip_for");
+        self.answer_as(investigator, InputResponse::Skip)
     }
 
     /// Step: answer the current prompt with `response`, naming `investigator`

@@ -104,7 +104,7 @@ fn table(
         // each option belongs to the investigator it is offered to.
         Continuation::FastWindow(FastWindowFrame { candidates, .. }) => Some((
             if candidates.is_empty() {
-                reaction_windows::fast_window_request(state, cards)
+                reaction_windows::fast_window_request(state, cards, frame)
             } else {
                 reaction_windows::resolution_request(state, cards, frame, candidates)
             },

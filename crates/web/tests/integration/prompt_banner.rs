@@ -14,8 +14,8 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
-use game_core::state::InvestigatorId;
-use game_core::test_support;
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -30,8 +30,21 @@ use web_sys::{Element, HtmlElement};
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
 async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {
+    mount_in(None, outcome, preselected).await
+}
+
+/// [`mount`], with the store also holding `game`, so the banner can name
+/// investigators.
+async fn mount_in(
+    game: Option<GameState>,
+    outcome: EngineOutcome,
+    preselected: &[u32],
+) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(outcome));
+    store.update(|s| {
+        s.game = game;
+        s.outcome = Some(outcome);
+    });
     let selected = RwSignal::new(preselected.iter().copied().collect::<BTreeSet<u32>>());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
@@ -477,12 +490,69 @@ async fn a_pick_in_a_window_several_answer_names_its_options_investigator() {
     );
 }
 
-/// A pass in a window several answer names the first investigator holding an
-/// option.
+/// The game [`offered_to_two_and_three`] is asked in: investigators 2 and 3
+/// seated.
+fn two_and_three_seated() -> GameState {
+    GameStateBuilder::new()
+        .with_seat(seat(2))
+        .with_seat(seat(3))
+        .with_seating([InvestigatorId(2), InvestigatorId(3)])
+        .build()
+}
+
+/// The `.pass` buttons the last banner renders, in order.
+fn pass_buttons() -> Vec<HtmlElement> {
+    let btns = last_banner().query_selector_all(".pass").expect("query");
+    (0..btns.length())
+        .filter_map(|i| btns.item(i))
+        .filter_map(|n| n.dyn_into::<HtmlElement>().ok())
+        .collect()
+}
+
+/// In a window several answer, each investigator holding an option passes
+/// separately (ADR 0019): one Pass each, labelled by name, and each passes
+/// for its investigator.
 #[wasm_bindgen_test]
-async fn a_pass_in_a_window_several_answer_names_the_first_holder() {
-    let mut rx = mount(offered_to_two_and_three(), &[]).await;
+async fn a_window_two_answer_shows_a_labelled_pass_for_each() {
+    let game = two_and_three_seated();
+    let names = [
+        game.name_of(InvestigatorId(2)),
+        game.name_of(InvestigatorId(3)),
+    ];
+    let mut rx = mount_in(Some(game), offered_to_two_and_three(), &[]).await;
+    let passes = pass_buttons();
+    let labels: Vec<String> = passes
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    for (label, name) in labels.iter().zip(&names) {
+        assert!(label.contains(name.as_str()), "{label} names {name}");
+    }
+    passes[1].click();
+    task::tick().await;
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+}
+
+/// When only one investigator in a window several answer still holds an
+/// option, the banner shows a single plain Pass, which passes for them.
+#[wasm_bindgen_test]
+async fn a_window_one_still_answers_shows_one_plain_pass() {
+    let outcome = test_support::awaiting_request(
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3))],
+        )
+        .skippable()
+        .answered_by(Responder::Several),
+    );
+    let mut rx = mount_in(Some(two_and_three_seated()), outcome, &[]).await;
+    let labels: Vec<String> = pass_buttons()
+        .iter()
+        .map(|b| b.text_content().unwrap_or_default())
+        .collect();
+    assert_eq!(labels, ["Pass"]);
     click(".pass");
     task::tick().await;
-    assert_eq!(answering(&mut rx), (InvestigatorId(2), InputResponse::Skip));
+    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
 }
