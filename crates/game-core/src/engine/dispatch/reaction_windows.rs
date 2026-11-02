@@ -49,6 +49,7 @@ fn push_reaction_window(
         bucket,
         mode: TimingMode::Reaction,
         candidates,
+        passed: Vec::new(),
     });
 }
 
@@ -113,6 +114,7 @@ pub(super) fn open_forced_resolution(
         bucket,
         mode: TimingMode::Forced,
         candidates,
+        passed: Vec::new(),
     });
     open_queued_reaction_window(cx)
 }
@@ -142,8 +144,9 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
 
 /// Build the structured option list for a resolution frame: one
 /// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
-/// `OptionId(i)` is the index into the returned list — the convention
-/// shared with [`super::choice`]. The label distinguishes a hand Fast-event
+/// `OptionId(i)` is the index into `candidates`, so it stays the candidate's
+/// index once [`without_passes`] has left out a passed investigator's options.
+/// The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`] in a reaction window) from an in-play
 /// reaction, and from a `forced` run's ability on a card in hand, which fires
 /// without being played (Dark Memory 01013). A play from the top of the
@@ -602,12 +605,90 @@ pub(super) fn resolution_request(
         "Choose one to resolve, or pass."
     };
     let options = build_resolution_options(state, cards, candidates, window.is_forced());
-    let request = InputRequest::pick_single(text, options);
+    let request = InputRequest::pick_single(text, without_passes(options, window));
     if window.is_forced() {
         request
     } else {
         request.skippable()
     }
+}
+
+/// `options` less every option offered to an investigator who has passed
+/// `window` (ADR 0019). The rest keep their ids, so an id still indexes the
+/// window's candidates (or its fast plays) and a pass leaves gaps.
+fn without_passes(mut options: Vec<ChoiceOption>, window: &Continuation) -> Vec<ChoiceOption> {
+    let passed = window.window_passes().unwrap_or_default();
+    options.retain(|option| option.investigator.is_none_or(|i| !passed.contains(&i)));
+    options
+}
+
+/// `investigator` passes the window on top: their options leave the prompt,
+/// and the window closes (running its continuation) once no investigator who
+/// has not passed holds an option. Until then it re-asks the others.
+///
+/// The rules leave open what a pass means once the board moves on.
+/// `glossary/Reaction_Opportunities.md` says only *"It is only after all
+/// investigators have passed their reaction opportunity that the game moves
+/// forward."* Here a pass means "done unless something changes": any option
+/// resolved in the window clears every pass ([`clear_passes`]).
+pub(super) fn pass(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let passed = cx
+        .state
+        .continuations
+        .top_frame_mut()
+        .and_then(Continuation::window_passes_mut)
+        .expect("pass: the top frame is an open window");
+    if !passed.contains(&investigator) {
+        passed.push(investigator);
+    }
+    let top = cx
+        .state
+        .continuations
+        .top()
+        .expect("pass: the top frame is an open window");
+    let anyone_holds =
+        prompt::request(top, cx.state, cx.cards).is_some_and(|request| !request.options.is_empty());
+    if anyone_holds {
+        prompt::suspend(cx.state, cx.cards)
+    } else {
+        close_reaction_window(cx)
+    }
+}
+
+/// An option is resolving in the window on top: every pass recorded there is
+/// cleared, since the board the passes were made on has changed (see
+/// [`pass`]).
+pub(super) fn clear_passes(cx: &mut Cx) {
+    if let Some(passed) = cx
+        .state
+        .continuations
+        .top_frame_mut()
+        .and_then(Continuation::window_passes_mut)
+    {
+        passed.clear();
+    }
+}
+
+/// Why `investigator`'s option may not be picked from the window on top: they
+/// have passed it, so the prompt no longer offers it. `None` otherwise.
+pub(super) fn refuses_passed(
+    cx: &Cx,
+    investigator: InvestigatorId,
+    i: u32,
+) -> Option<EngineOutcome> {
+    let passed = cx
+        .state
+        .continuations
+        .top()
+        .and_then(Continuation::window_passes)?;
+    passed
+        .contains(&investigator)
+        .then(|| EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: option {i} is {investigator:?}'s, who has passed this window"
+            )
+            .into(),
+        })
 }
 
 /// Resume an open reaction window with the player's response.
@@ -616,13 +697,18 @@ pub(super) fn resolution_request(
 ///   trigger via the evaluator. After firing, removes the entry. If pending
 ///   triggers remain, re-emits [`AwaitingInput`]; else closes the
 ///   window.
-/// - [`InputResponse::Skip`]: closes the window provided no forced
-///   triggers remain. Rejects when forced triggers are still pending.
+/// - [`InputResponse::Skip`]: `investigator` passes; the window closes once
+///   nobody who has not passed holds an option ([`pass`]). Rejects in the
+///   forced run, which cannot be passed.
 /// - Other variants reject; the window stays open.
 ///
 /// Closing the window pops the top entry from
 /// [`GameState::open_windows`] and returns [`Done`].
-pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+pub(super) fn resume_reaction_window(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    response: &InputResponse,
+) -> EngineOutcome {
     match response {
         // `OptionId(i)` indexes the single `pending_triggers` list (see
         // `build_resolution_options`); `fire_pending_trigger` dispatches on
@@ -645,7 +731,7 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
                         .into(),
                 };
             }
-            close_reaction_window(cx)
+            pass(cx, investigator)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
@@ -702,6 +788,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             .clone();
         (candidates[idx].clone(), idx, event, window.is_forced())
     };
+    // A passed investigator's option is left out of the prompt, but keeps
+    // its id; picking it by that id is refused, not fired.
+    if !forced {
+        if let Some(refusal) = refuses_passed(cx, trigger.controller, i) {
+            return refusal;
+        }
+    }
 
     // The initiation gate, at initiation. Both prompt sites withdraw
     // lapsed options before offering the list, so a pick taken from the prompt
@@ -736,6 +829,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             .and_then(Continuation::pending_candidates_mut)
             .expect("fire_pending_trigger: top frame is an open window/run")
             .remove(pending_idx);
+        clear_passes(cx);
         return play_fast_event(cx, &trigger, &event);
     }
 
@@ -784,6 +878,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .and_then(Continuation::pending_candidates_mut)
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
+    clear_passes(cx);
 
     // The one firing path a lone forced hit shares: resolve, bind from
     // the window's timing event, record the use, pay a reaction's costs, push.
@@ -956,9 +1051,10 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// continuation the loop dispatches whatever frame the close exposed (a
 /// mid-resolution `SkillTest`, an `EncounterCard`, a forced run, …).
 pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
-    // Reaction windows are all-optional, so `Skip` always closes them. The
-    // "forced abilities are mandatory" rule lives in the forced resolution
-    // run (its frame has `mode: Forced`), not here.
+    // Reaction windows are all-optional, so they close once every
+    // investigator holding an option has passed (`pass`). The "forced
+    // abilities are mandatory" rule lives in the forced resolution run (its
+    // frame has `mode: Forced`), not here.
     let removed = cx
         .state
         .continuations
@@ -1081,9 +1177,11 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     let candidates = Vec::new();
-    cx.state
-        .continuations
-        .push(FastWindowFrame { candidates, kind });
+    cx.state.continuations.push(FastWindowFrame {
+        candidates,
+        kind,
+        passed: Vec::new(),
+    });
 
     let has_pending = !cx
         .state
@@ -1138,7 +1236,11 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// What a framework Fast window without reaction candidates asks: which of the
 /// currently eligible fast plays to make, or pass. One of the
 /// [prompt table](prompt::request)'s helpers.
-pub(super) fn fast_window_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
+pub(super) fn fast_window_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    window: &Continuation,
+) -> InputRequest {
     let options = enumerate_fast_plays(state, cards)
         .iter()
         .enumerate()
@@ -1154,7 +1256,11 @@ pub(super) fn fast_window_request(state: &GameState, cards: &CardRegistry) -> In
             option
         })
         .collect::<Vec<_>>();
-    InputRequest::pick_single("Fast window — play a card or pass", options).skippable()
+    InputRequest::pick_single(
+        "Fast window — play a card or pass",
+        without_passes(options, window),
+    )
+    .skippable()
 }
 
 /// Collect every fast play currently eligible across all investigators: Fast

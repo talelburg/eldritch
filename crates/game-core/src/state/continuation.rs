@@ -863,6 +863,27 @@ impl Continuation {
         }
     }
 
+    /// The investigators who have passed an open window or framework Fast
+    /// window since an option last resolved in it (ADR 0019). `None` for any
+    /// other frame.
+    #[must_use]
+    pub fn window_passes(&self) -> Option<&[InvestigatorId]> {
+        match self {
+            Continuation::TimingPointWindow(TimingPointWindowFrame { passed, .. })
+            | Continuation::FastWindow(FastWindowFrame { passed, .. }) => Some(passed),
+            _ => None,
+        }
+    }
+
+    /// Mutable counterpart to [`Self::window_passes`].
+    pub fn window_passes_mut(&mut self) -> Option<&mut Vec<InvestigatorId>> {
+        match self {
+            Continuation::TimingPointWindow(TimingPointWindowFrame { passed, .. })
+            | Continuation::FastWindow(FastWindowFrame { passed, .. }) => Some(passed),
+            _ => None,
+        }
+    }
+
     /// The card this frame holds mid-play, with its controller, if any.
     ///
     /// Between Rules Reference Appendix I steps 3 and 4 a played card is in **no
@@ -2576,6 +2597,10 @@ pub struct TimingPointWindowFrame {
     /// Candidates in resolution order (lead-ordered for the forced run;
     /// active-investigator-first for a reaction window).
     pub candidates: Vec<ResolutionCandidate>,
+    /// The investigators who have passed since an option last resolved here,
+    /// in the order they passed. Their options are left out of the prompt
+    /// (ADR 0019). Always empty for the forced run, which cannot be passed.
+    pub passed: Vec<InvestigatorId>,
 }
 
 /// A framework "red-box" player window — a Rules-Reference timing step
@@ -2593,6 +2618,10 @@ pub struct FastWindowFrame {
     pub candidates: Vec<ResolutionCandidate>,
     /// The framework step this window gates (and its event-payload kind).
     pub kind: FastWindowKind,
+    /// The investigators who have passed since a play last resolved here, in
+    /// the order they passed. Their plays are left out of the prompt
+    /// (ADR 0019).
+    pub passed: Vec<InvestigatorId>,
 }
 
 /// A no-choice forced ability is about to resolve and the game is in

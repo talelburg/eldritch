@@ -702,6 +702,84 @@ fn a_reaction_offered_to_another_investigator_cannot_be_picked() {
     assert_eq!(session.prompt().responder, Responder::Several);
 }
 
+/// In a window offering each investigator their own reaction, each passes
+/// separately (ADR 0019): ONE's pass leaves TWO's reaction open, and the window
+/// closes once TWO passes too.
+#[test]
+fn each_investigator_passes_a_reaction_window_separately() {
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        location(STUDY).code(REACT_ON_DEFEAT),
+        location(HALLWAY),
+    )
+    .open_turn(ONE)
+    .build();
+
+    let session = window(state, defeat(None)).skip_for(ONE);
+    let offered_to: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.investigator)
+        .collect();
+    assert_eq!(offered_to, [Some(TWO)], "ONE has passed; TWO has not");
+    assert_eq!(session.prompt().responder, Responder::Several);
+
+    let session = session.skip_for(TWO);
+    session.assert_at_turn_menu(ONE);
+    assert_eq!(
+        (horror(session.state(), ONE), horror(session.state(), TWO)),
+        (0, 0)
+    );
+}
+
+/// A passed investigator's option leaves the prompt but keeps its id, and
+/// picking it by that id is refused: TWO cannot fire ONE's reaction after ONE
+/// has passed, and the state is left as it was.
+#[test]
+fn a_passed_investigators_option_cannot_be_picked_by_its_old_id() {
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        location(STUDY).code(REACT_ON_DEFEAT),
+        location(HALLWAY),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = window(state, defeat(None));
+    let ones = session
+        .prompt()
+        .options
+        .iter()
+        .find(|o| o.investigator == Some(ONE))
+        .expect("the window offers ONE a reaction")
+        .id;
+    let session = session.skip_for(ONE);
+    let before = session.state().clone();
+
+    let session = session.answer_as(TWO, InputResponse::PickSingle(ones));
+    session.expect_rejected();
+    assert_eq!(session.state(), &before);
+}
+
+/// [`TestSession::skip`] passes for every investigator holding an option, so
+/// it closes a window two answer in one step.
+#[test]
+fn skip_closes_a_reaction_window_two_answer() {
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        location(STUDY).code(REACT_ON_DEFEAT),
+        location(HALLWAY),
+    )
+    .open_turn(ONE)
+    .build();
+
+    let session = window(state, defeat(None)).skip();
+    session.assert_at_turn_menu(ONE);
+}
+
 #[test]
 fn a_reaction_on_a_location_nobody_stands_at_is_not_offered() {
     let state = board(

@@ -35,6 +35,7 @@ fn cancel_effect_flags_the_condition_in_its_when_cell() {
         bucket: EventTiming::When,
         mode: TimingMode::Reaction,
         candidates: Vec::new(),
+        passed: Vec::new(),
     });
     let mut events = Vec::new();
     let outcome = run(

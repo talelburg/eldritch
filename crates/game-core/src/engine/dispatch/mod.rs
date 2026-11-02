@@ -550,12 +550,17 @@ pub(super) enum PlayDestination {
 }
 
 /// Resume the open window at the top of the stack: drive its reaction
-/// triggers if any are pending, else close the pure-Fast window on `Skip`.
-fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+/// triggers if any are pending, else play from or pass the pure-Fast window.
+/// A `Skip` is `investigator`'s pass alone (ADR 0019).
+fn resume_window(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    response: &InputResponse,
+) -> EngineOutcome {
     // The top frame is the window the player is acting on (resolve_input routed
     // here for a `TimingPointWindow`/`FastWindow` on top). If it has pending
     // candidates, drive it; otherwise it is a pure-Fast gate (empty candidates)
-    // that `Skip` closes.
+    // that each investigator plays from or passes.
     let has_candidates = cx
         .state
         .continuations
@@ -563,14 +568,16 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
         .and_then(Continuation::pending_candidates)
         .is_some_and(|c| !c.is_empty());
     if has_candidates {
-        return reaction_windows::resume_reaction_window(cx, response);
+        return reaction_windows::resume_reaction_window(cx, investigator, response);
     }
     // A framework Fast window (no reaction candidates): the player either plays an
     // eligible fast card / ability (PickSingle into the re-enumerated list) or
     // passes (Skip). After a pick, dispatch the play and return — the `drive` loop
     // re-examines the still-top FastWindow and re-emits (play another) or closes.
+    // A pass is the answering investigator's alone; the window closes once
+    // nobody who has not passed holds a play.
     match response {
-        InputResponse::Skip => reaction_windows::close_reaction_window(cx),
+        InputResponse::Skip => reaction_windows::pass(cx, investigator),
         InputResponse::PickSingle(opt) => {
             let i = opt.0;
             let plays = reaction_windows::enumerate_fast_plays(cx.state, cx.cards);
@@ -583,6 +590,16 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
                     .into(),
                 };
             };
+            if let Some(refusal) = action
+                .investigator()
+                .and_then(|holder| reaction_windows::refuses_passed(cx, holder, i))
+            {
+                return refusal;
+            }
+            // The play resolves in the window, so the passes made before it
+            // lapse (`reaction_windows::pass`). A play the dispatch then
+            // rejects is rolled back with them by `apply_via`.
+            reaction_windows::clear_passes(cx);
             dispatch_turn_action(cx, &action)
         }
         other => EngineOutcome::Rejected {
@@ -634,9 +651,10 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// A window on top resolves via [`resume_window`]; a mid-test reaction window
 /// closes, returns `Done`, and the loop re-dispatches the now-top `SkillTest`.
 /// A pure-Fast window (pushed by [`open_fast_window`], no candidates) on top is
-/// a play *opportunity*: `InputResponse::Skip` closes it via
+/// a play *opportunity*: `InputResponse::Skip` is the answering investigator's
+/// pass, and once nobody who has not passed holds a play it closes via
 /// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
-/// Fast plays have been made and the player is done.
+/// Fast plays have been made and every player is done.
 pub(crate) fn resolve_input(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -683,7 +701,7 @@ pub(crate) fn resolve_input(
         // window driver — it reads candidates/mode through the frame-agnostic
         // accessors.
         Continuation::TimingPointWindow(_) | Continuation::FastWindow(_) => {
-            resume_window(cx, response)
+            resume_window(cx, investigator, response)
         }
         // An effect node suspended in place for a controller pick: the
         // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its

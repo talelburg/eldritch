@@ -383,6 +383,7 @@ impl GameStateBuilder {
             FastWindowFrame {
                 candidates: Vec::new(),
                 kind,
+                passed: Vec::new(),
             }
             .into(),
         );

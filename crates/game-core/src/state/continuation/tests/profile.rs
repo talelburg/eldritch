@@ -17,6 +17,7 @@ fn timing_point_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
         bucket: EventTiming::After,
         mode: TimingMode::Reaction,
         candidates,
+        passed: Vec::new(),
     })
 }
 
@@ -24,6 +25,7 @@ fn fast_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
     Continuation::FastWindow(FastWindowFrame {
         candidates,
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+        passed: Vec::new(),
     })
 }
 
@@ -222,6 +224,7 @@ fn a_reaction_window_cancels_and_its_forced_run_twin_completes() {
             bucket: EventTiming::After,
             mode,
             candidates: vec![candidate()],
+            passed: Vec::new(),
         })
     };
     assert_eq!(window(TimingMode::Reaction).profile().scenario_end, CANCEL);
@@ -267,6 +270,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
                 bucket: EventTiming::When,
                 mode: TimingMode::Forced,
                 candidates: vec![candidate(), candidate()],
+                passed: Vec::new(),
             }),
             profile(PROMPT, COMPLETE),
         ),

@@ -17,6 +17,7 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+        passed: Vec::new(),
     })
     .awaits_input());
     // Suspensions awaiting `ResolveInput`.
@@ -251,6 +252,7 @@ fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
             bucket: EventTiming::After,
             mode,
             candidates: Vec::new(),
+            passed: Vec::new(),
         })
     };
     assert!(
