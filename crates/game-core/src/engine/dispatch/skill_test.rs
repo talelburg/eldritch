@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, ResultContribution, RevealClause, SkillTestKind, Stat,
-    TestOutcome, TokenOutcome, Trigger,
+    Determination, Effect, IntExpr, ResultContribution, ResultController, RevealClause,
+    SkillTestKind, Stat, TestOutcome, TokenOutcome, Trigger,
 };
 
 use crate::action::InputResponse;
@@ -1145,7 +1145,7 @@ fn apply_result_modifiers_step(
     let effects: Vec<Effect> =
         collect_result_contributions(cx.cards, committed, succeeded, ResultContribution::Modifies)
             .into_iter()
-            .map(|(_, effect)| effect)
+            .map(|(_, effect, _)| effect)
             .collect();
     cx.state
         .current_skill_test_mut()
@@ -1613,7 +1613,7 @@ fn result_option(
                     ResultContribution::Adds,
                 )
                 .get(index.to_usize())
-                .map(|&(card, _)| card)
+                .map(|&(card, _, _)| card)
             });
             let target = card.map(|index| OptionTarget::CommittedCard { index });
             let label = target.as_ref().map_or_else(
@@ -1785,13 +1785,15 @@ fn apply_result(
         )
         .into_iter()
         .nth(index.to_usize())
-        .map(|(card_index, effect)| {
-            // TODO(#65): bind the investigator who committed the card, not the
-            // performer. Overpower 01091's ruling
-            // (https://arkhamdb.com/card/01091): *"If you commit this card to
-            // another player's skill test, and the test is successful, you draw
-            // a card (not the other player)."*
-            let mut ctx = EvalContext::for_controller(investigator);
+        .map(|(card_index, effect, controller)| {
+            // Overpower 01091's ruling (https://arkhamdb.com/card/01091): *"If
+            // you commit this card to another player's skill test, and the test
+            // is successful, you draw a card (not the other player)."*
+            let controller = match controller {
+                ResultController::Committer => committed[card_index.to_usize()].committer,
+                ResultController::Performer => investigator,
+            };
+            let mut ctx = EvalContext::for_controller(controller);
             ctx.set_committed_card(card_index.0);
             (effect, ctx)
         }),
@@ -2686,7 +2688,10 @@ fn discard_committed_cards(cx: &mut Cx, committed: &[CommittedCard]) {
 /// resolves cleanly.
 ///
 /// Each effect comes paired with its card's position in `committed`, which
-/// `ApplyResults` binds for the effect to name its own card.
+/// `ApplyResults` binds for the effect to name its own card, and with the
+/// ability's [`ResultController`], which `ApplyResults` reads for whose "you"
+/// an addition is. Modifiers are evaluated for the performer, the controller
+/// every `modifies_result` declares.
 ///
 /// No abilities for the codes → empty list: engine-only tests that don't touch
 /// card data never reach a committed card's ability. Silent skip mirrors
@@ -2696,7 +2701,7 @@ fn collect_result_contributions(
     committed: &[CommittedCard],
     succeeded: bool,
     contribution: ResultContribution,
-) -> Vec<(CommittedIndex, Effect)> {
+) -> Vec<(CommittedIndex, Effect, ResultController)> {
     let outcome_now = if succeeded {
         TestOutcome::Success
     } else {
@@ -2716,6 +2721,7 @@ fn collect_result_contributions(
             let Trigger::OnSkillTestResolution {
                 outcome,
                 contributes,
+                controller,
             } = ability.trigger
             else {
                 continue;
@@ -2723,7 +2729,7 @@ fn collect_result_contributions(
             if outcome != outcome_now || contributes != contribution {
                 continue;
             }
-            effects.push((index, ability.effect));
+            effects.push((index, ability.effect, controller));
         }
     }
     effects

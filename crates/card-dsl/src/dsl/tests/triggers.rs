@@ -1,17 +1,18 @@
 use super::*;
 
-/// `modifies_result` and `adds_result` build the same outcome-gated trigger,
-/// differing only in the contribution they declare, and accept
-/// `TestedLocation`-targeted effects.
+/// `modifies_result`, `adds_result` and `adds_result_for_performer` build
+/// the same outcome-gated trigger, differing only in the contribution and the
+/// controller they declare, and accept `TestedLocation`-targeted effects.
 #[test]
-fn result_builders_declare_their_contribution() {
-    for (ability, contributes) in [
+fn result_builders_declare_their_contribution_and_controller() {
+    for (ability, contributes, controller) in [
         (
             modifies_result(
                 TestOutcome::Success,
                 discover_clue(LocationTarget::TestedLocation, 1),
             ),
             ResultContribution::Modifies,
+            ResultController::Performer,
         ),
         (
             adds_result(
@@ -19,6 +20,15 @@ fn result_builders_declare_their_contribution() {
                 discover_clue(LocationTarget::TestedLocation, 1),
             ),
             ResultContribution::Adds,
+            ResultController::Committer,
+        ),
+        (
+            adds_result_for_performer(
+                TestOutcome::Success,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            ),
+            ResultContribution::Adds,
+            ResultController::Performer,
         ),
     ] {
         assert_eq!(
@@ -26,6 +36,7 @@ fn result_builders_declare_their_contribution() {
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
                 contributes,
+                controller,
             },
         );
         assert!(matches!(
