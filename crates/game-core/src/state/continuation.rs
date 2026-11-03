@@ -1515,10 +1515,11 @@ pub struct InFlightSkillTest {
     /// (2). If you succeed, heal 1 damage from that investigator."*). `None`
     /// for every test not started under one.
     ///
-    /// It is the only part of the starting eval-context besides the source
-    /// that crosses the test: a `Chosen` pick, a discovery, an enemy attack and
-    /// a Revelation each belong to a moment that ends before ST.7, so carrying
-    /// them over would revive a closed binding.
+    /// It is the only part of the starting [`EvalContext`] besides the source
+    /// that crosses the test. ST.7 builds the `on_success` / `on_fail` context
+    /// fresh, so every other binding on it is gone by construction: each
+    /// belongs to a moment that ends before ST.7, and carrying one over would
+    /// revive a closed binding.
     pub kept_investigator: Option<InvestigatorId>,
     /// Where the resolution driver should resume on the next call to
     /// `advance`. Initialized to

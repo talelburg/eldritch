@@ -230,13 +230,9 @@ pub struct EvalContext {
     /// `ChooseInvestigator` still grounds as its own choice rather than
     /// silently reusing this pick.
     ///
-    /// It is the only field besides
-    /// [`ability_source`](Self::ability_source) that crosses a skill test: the
-    /// test parks it, and the context ST.7 rebuilds for the test's own
-    /// `on_success` / `on_fail` gets it back, so *"that investigator"* in a
-    /// result branch is the one picked before the test. Every other binding
-    /// here is gone after the test by construction, since that context starts
-    /// fresh.
+    /// A skill test parks it and gives it back to its `on_success` /
+    /// `on_fail`; [`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator)
+    /// says why it is the one binding besides the source that crosses.
     pub kept_investigator: Option<InvestigatorId>,
 }
 
@@ -1313,12 +1309,11 @@ fn step_choose_one(
 /// The leaf's pick index is cleared before `then` is pushed, so a native first
 /// in `then` does not read it as its own pick. The kept investigator rides in
 /// every frame `then` pushes, since each frame parks its whole context, so it
-/// survives a suspend anywhere inside `then`. A skill test in `then` is the one
-/// place a fresh context is built: the test parks the pick beside its source
-/// ([`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator))
-/// and ST.7 puts it back for `on_success` / `on_fail`. It is kept apart from the
-/// `*::Chosen` picks, so a `Chosen` target nested in `then` still grounds as
-/// its own choice.
+/// survives a suspend anywhere inside `then`. A skill test in `then` carries
+/// it across ST.7 too
+/// ([`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator)).
+/// It is kept apart from the `*::Chosen` picks, so a `Chosen` target nested in
+/// `then` still grounds as its own choice.
 fn step_choose_investigator(
     cx: &mut Cx,
     scope: LocationSet,
@@ -1327,25 +1322,18 @@ fn step_choose_investigator(
     node: &Effect,
 ) -> EngineOutcome {
     let candidates = investigator_candidates(cx.state, eval_ctx.controller, scope);
-    let picked = picked_or_reject(
-        choice::resolve_grounded_choice(
-            cx.state,
-            cx.cards,
-            &eval_ctx,
-            &candidates,
-            "Choose an investigator",
-            |id| cx.state.investigators[id].card_anchor(),
-        ),
+    let picked = pick_investigator(
+        cx,
+        eval_ctx,
+        &candidates,
         "ChooseInvestigator: no investigator in scope",
+        EvalContext::set_kept_investigator,
     );
-    let id = match picked {
-        Ok(id) => id,
+    let ctx = match picked {
+        Ok(ctx) => ctx,
         Err(Unbound::Stop(outcome)) => return outcome,
         Err(Unbound::Ask(prompt)) => return suspend_leaf_in_place(cx, node, eval_ctx, prompt),
     };
-    let mut ctx = eval_ctx;
-    ctx.set_kept_investigator(id);
-    ctx.set_chosen_option(None);
     cx.state
         .continuations
         .push(Continuation::Effect(frame_of(then, ctx)));
@@ -2542,19 +2530,41 @@ fn ground_investigator_choice(
     if candidates.is_empty() && !in_scope.is_empty() {
         return Err(Unbound::Stop(EngineOutcome::Done));
     }
+    pick_investigator(
+        cx,
+        eval_ctx,
+        &candidates,
+        "Chosen investigator: no candidate in scope",
+        EvalContext::set_chosen_investigator,
+    )
+}
+
+/// Pick one of `candidates` on a selection anchored on each investigator card,
+/// then return `eval_ctx` with the pick stored by `bind` and the leaf's pick
+/// index cleared, so the next native does not read it as its own pick. Shared
+/// by [`step_choose_investigator`] and [`ground_investigator_choice`], which
+/// differ only in where the pick is kept. An empty `candidates` rejects with
+/// `empty_reason`.
+fn pick_investigator(
+    cx: &Cx,
+    eval_ctx: EvalContext,
+    candidates: &[InvestigatorId],
+    empty_reason: &'static str,
+    bind: fn(&mut EvalContext, InvestigatorId),
+) -> Result<EvalContext, Unbound> {
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
             cx.cards,
             &eval_ctx,
-            &candidates,
+            candidates,
             "Choose an investigator",
             |id| cx.state.investigators[id].card_anchor(),
         ),
-        "Chosen investigator: no candidate in scope",
+        empty_reason,
     )?;
     let mut ctx = eval_ctx;
-    ctx.set_chosen_investigator(id);
+    bind(&mut ctx, id);
     ctx.set_chosen_option(None);
     Ok(ctx)
 }

@@ -27,7 +27,7 @@ use card_dsl::card_data::UseKind;
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget, PromptNature};
+use game_core::engine::{OptionId, PromptNature};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
     LocationId, Status,
@@ -50,9 +50,8 @@ const CRYPT_CHILL: &str = "01167";
 const OBSCURING_FOG: &str = "01168";
 const ROTTING_REMAINS: &str = "01163";
 
-/// The deck decision's branches, in printed order. The investigator-deck
-/// branch is the seer's own deck whenever the seer is alone.
-const YOUR_DECK: usize = 0;
+/// The deck decision's branches, in printed order.
+const INVESTIGATOR_DECK: usize = 0;
 const ENCOUNTER_DECK: usize = 1;
 
 /// Investigator 1 at `HERE` with a fully charged Scrying in play and `deck`
@@ -116,7 +115,7 @@ fn reordering_your_deck_puts_the_chosen_order_on_top() {
     let session = board(seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION, OVERPOWER]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     let card = s.state().investigators[&INV]
         .cards_in_play
         .iter()
@@ -183,7 +182,7 @@ fn a_deck_of_two_cards_takes_one_pick() {
     let session = board(seer(&[GUTS, PERCEPTION]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     assert_eq!(labels(&s), ["Guts", "Perception"]);
     let s = s.apply(place(1));
 
@@ -209,10 +208,6 @@ fn board_with(seer: Seat, other: Seat) -> TestSession {
         .session()
 }
 
-fn card_anchor(session: &TestSession, investigator: InvestigatorId) -> OptionTarget {
-    session.state().investigators[&investigator].card_anchor()
-}
-
 /// On the investigator-deck branch the seer is asked which investigator's
 /// deck, a selection anchored on each investigator card, and every
 /// investigator is offered, the seer included.
@@ -224,13 +219,16 @@ fn the_investigator_deck_branch_asks_which_investigator() {
     );
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
 
     assert_eq!(s.prompt().prompt, "Choose an investigator");
     assert_eq!(s.prompt().nature, PromptNature::Selection);
     assert_eq!(
         s.offered_targets(),
-        [Some(card_anchor(&s, INV)), Some(card_anchor(&s, ROLAND))],
+        [
+            Some(s.state().investigator_card(INV)),
+            Some(s.state().investigator_card(ROLAND))
+        ],
     );
 }
 
@@ -246,8 +244,8 @@ fn reordering_another_investigators_deck_leaves_yours_untouched() {
     );
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
-    let roland = card_anchor(&s, ROLAND);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+    let roland = s.state().investigator_card(ROLAND);
     let s = s.pick(roland);
     assert_eq!(
         labels(&s),
@@ -282,8 +280,8 @@ fn picking_yourself_reorders_your_own_deck() {
     );
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
-    let seer = card_anchor(&s, INV);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+    let seer = s.state().investigator_card(INV);
     let s = s.pick(seer);
     assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
 
@@ -318,7 +316,7 @@ fn an_eliminated_investigator_is_not_offered() {
     );
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
 
     assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
 }
@@ -328,7 +326,7 @@ fn a_deck_of_one_card_takes_no_pick() {
     let session = board(seer(&[GUTS]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
 
     s.assert_at_turn_menu(INV);
     assert_eq!(s.state().investigators[&INV].deck, codes([GUTS]));

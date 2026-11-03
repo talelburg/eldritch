@@ -20,7 +20,7 @@ use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, OptionTarget, PromptNature};
+use game_core::engine::{EngineOutcome, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
@@ -162,10 +162,6 @@ fn activate_only(session: TestSession) -> TestSession {
     })
 }
 
-fn card_anchor(session: &TestSession, investigator: InvestigatorId) -> OptionTarget {
-    session.state().investigators[&investigator].card_anchor()
-}
-
 /// *"Choose an investigator at your location and test"*: the target is
 /// chosen before the test starts, so before anyone commits a card. Picking
 /// Agnes and failing deals the damage to her, and the failure asks nothing
@@ -183,7 +179,7 @@ fn the_target_is_chosen_before_the_test_and_a_failure_damages_it() {
         "no test has started while the target is being chosen",
     );
 
-    let agnes = card_anchor(&session, AGNES);
+    let agnes = session.state().investigator_card(AGNES);
     let session = session.pick(agnes).commit(&[]);
 
     session.assert_at_turn_menu(INV);
@@ -207,7 +203,7 @@ fn the_target_is_chosen_before_the_test_and_a_failure_damages_it() {
 #[test]
 fn a_success_heals_the_chosen_investigator() {
     let session = activate_only(board_with(3, seat(2).at(HERE).harm(2, 0)));
-    let agnes = card_anchor(&session, AGNES);
+    let agnes = session.state().investigator_card(AGNES);
     let session = session.pick(agnes).commit(&[]);
 
     session.assert_at_turn_menu(INV);
@@ -228,8 +224,8 @@ fn with_nobody_damaged_every_investigator_here_is_offered() {
     assert_eq!(
         session.offered_targets(),
         [
-            Some(card_anchor(&session, INV)),
-            Some(card_anchor(&session, AGNES)),
+            Some(session.state().investigator_card(INV)),
+            Some(session.state().investigator_card(AGNES)),
         ],
     );
 }

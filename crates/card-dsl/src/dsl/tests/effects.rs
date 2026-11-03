@@ -67,13 +67,13 @@ fn for_each_over_an_enemy_set_is_an_enemy_fan_out() {
 /// deck"*).
 #[test]
 fn choose_investigator_keeps_the_pick_for_its_then() {
-    let effect = choose_investigator(LocationSet::Anywhere, native("01061:probe"));
+    let effect = choose_investigator(LocationSet::Anywhere, native("x:in-choose-investigator"));
     assert_eq!(
         effect,
         Effect::ChooseInvestigator {
             scope: LocationSet::Anywhere,
             then: Box::new(Effect::Native {
-                tag: "01061:probe".into()
+                tag: "x:in-choose-investigator".into()
             }),
         }
     );

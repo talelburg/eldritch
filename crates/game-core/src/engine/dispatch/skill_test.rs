@@ -1760,12 +1760,9 @@ pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> Engi
 ///   across the suspend/resume boundary and a `ChooseOne` in either branch
 ///   keeps the anchor the activation gave it. The parked
 ///   [`kept_investigator`](InFlightSkillTest::kept_investigator) is put back
-///   too, so *"that investigator"* in either branch is the one picked before
-///   the test. Nothing else from the starting context crosses: the rebuilt
-///   context is fresh, so a `Chosen` pick, a discovery, an enemy attack or a
-///   Revelation binding made before the test is gone by construction, and so
-///   is any `ForEach` binding. Only this arm restores the kept pick; the token
-///   and addition arms build their own contexts without it.
+///   too; that field's doc says why nothing else crosses. Only this arm
+///   restores the kept pick; the token and addition arms build their own
+///   contexts without it.
 /// - [`St7Result::Token`]: the revealed token's part, looked up again through
 ///   [`chaos_symbol_effect`] from the token on
 ///   [`revealed`](InFlightSkillTest::revealed), the way the committed cards'
