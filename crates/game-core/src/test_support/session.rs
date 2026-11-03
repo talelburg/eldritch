@@ -901,6 +901,20 @@ impl TestSession {
             .collect()
     }
 
+    /// The anchor of each of the current prompt's options, in option order:
+    /// where each one renders, `None` for an un-anchored option.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_targets(&self) -> Vec<Option<OptionTarget>> {
+        self.prompt()
+            .options
+            .iter()
+            .map(|option| option.target.clone())
+            .collect()
+    }
+
     /// Assert the session rests at `investigator`'s turn menu: the prompt
     /// anchored to their [`TurnControl`](OptionTarget::TurnControl). The state
     /// assertion for a step that returns to an open turn.

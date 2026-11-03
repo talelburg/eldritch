@@ -402,14 +402,8 @@ fn the_elder_signs_result_is_offered_on_his_card_beside_frozen_in_fears() {
     let state = session.state();
     let frozen = state.card(INV, FROZEN_IN_FEAR);
     let card = state.investigators[&INV].card_anchor();
-    let offered: Vec<_> = session
-        .prompt()
-        .options
-        .iter()
-        .map(|option| option.target.clone())
-        .collect();
     assert_eq!(
-        offered,
+        session.offered_targets(),
         [Some(frozen), Some(card)],
         "{:?}",
         session.prompt()
@@ -459,26 +453,22 @@ const ENEMY: EnemyId = EnemyId(5);
 /// performing the test applies those results in the order of his or her
 /// choice."* Returns the session at that prompt.
 fn fighting_with_overpower_on_the_elder_sign() -> TestSession {
-    GameStateBuilder::new()
-        .with_registries(TEST_REGISTRIES)
-        .with_seat(
-            skids()
-                .hand([OVERPOWER])
-                .deck([PARANOIA, HOLY_ROSARY, HOLY_ROSARY]),
-        )
-        .with_location(location(HERE))
-        .with_enemy(enemy(5).fight(3).health(3).at(HERE).engaged_with(INV))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .open_turn(INV)
-        .session()
-        .take(&TurnAction::Fight {
-            investigator: INV,
-            enemy: ENEMY,
-        })
-        // His `[fast]` ability keeps the test's player windows open: pass them.
-        .skip()
-        .commit(&[OVERPOWER])
-        .skip()
+    staged(
+        skids()
+            .hand([OVERPOWER])
+            .deck([PARANOIA, HOLY_ROSARY, HOLY_ROSARY]),
+    )
+    .with_enemy(enemy(ENEMY).fight(3).health(3).at(HERE).engaged_with(INV))
+    .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+    .session()
+    .take(&TurnAction::Fight {
+        investigator: INV,
+        enemy: ENEMY,
+    })
+    // His `[fast]` ability keeps the test's player windows open: pass them.
+    .skip()
+    .commit(&[OVERPOWER])
+    .skip()
 }
 
 /// The attack's damage lands before he is asked, and the prompt offers the
@@ -489,14 +479,8 @@ fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
     let session = fighting_with_overpower_on_the_elder_sign();
     assert_eq!(session.state().enemies[&ENEMY].damage, 1);
     assert_eq!(resources(session.state()), 5, "nothing is applied yet");
-    let offered: Vec<_> = session
-        .prompt()
-        .options
-        .iter()
-        .map(|option| option.target.clone())
-        .collect();
     assert_eq!(
-        offered,
+        session.offered_targets(),
         [
             Some(session.state().investigators[&INV].card_anchor()),
             Some(OptionTarget::CommittedCard {

@@ -18,8 +18,8 @@ use game_core::engine::{InputKind, OptionId, PromptNature, Responder};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume,
-    Phase, SkillKind,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    MythosResume, Phase, SkillKind,
 };
 use game_core::test_support::{location, seat, TestSession};
 use scenarios::the_gathering;
@@ -40,7 +40,7 @@ const TOKEN_RESULT: &str = "Result of the Cultist token";
 /// 2 horror and the token result 1, and the two orders are told apart by the
 /// order of the horror events.
 fn drawing_rotting_remains(token: ChaosToken) -> TestSession {
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_registries(scenarios::TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).skill(SkillKind::Willpower, 2))
         .with_location(location(HERE))
@@ -52,8 +52,8 @@ fn drawing_rotting_remains(token: ChaosToken) -> TestSession {
         .with_mythos_draw_remaining([INV])
         .with_encounter_deck([ROTTING_REMAINS])
         .with_scenario_id(ScenarioId::new(the_gathering::ID))
+        .with_chaos_bag(ChaosBag::new([token]))
         .build();
-    state.chaos_bag.tokens = vec![token];
     TestSession::new(state, scenarios::TEST_REGISTRIES)
 }
 

@@ -81,22 +81,8 @@ fn two_fearless_committed() -> TestSession {
 #[test]
 fn two_identical_copies_are_two_distinct_options() {
     let session = two_fearless_committed();
-    let keys: Vec<_> = session
-        .prompt()
-        .options
-        .iter()
-        .map(|option| {
-            (
-                option.label.clone(),
-                option.target.clone(),
-                option.investigator,
-            )
-        })
-        .collect();
     assert_eq!(
-        keys.iter()
-            .map(|(_, target, _)| target.clone())
-            .collect::<Vec<_>>(),
+        session.offered_targets(),
         [
             Some(OptionTarget::CommittedCard {
                 index: CommittedIndex(0)
@@ -108,7 +94,6 @@ fn two_identical_copies_are_two_distinct_options() {
         "{:?}",
         session.prompt()
     );
-    assert_ne!(keys[0], keys[1]);
 }
 
 /// Either copy first, both heal: 2 horror becomes 0, and the second applies
