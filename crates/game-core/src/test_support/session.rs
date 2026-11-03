@@ -368,9 +368,9 @@ impl TestSession {
     }
 
     /// Step: answer a skill test's commit window by committing the cards
-    /// `codes` from the tested investigator's hand, then drain. Each code is
-    /// matched to the first hand card with that code not already claimed, left
-    /// to right — the translation
+    /// `codes` from the hand of the investigator it asks (a helper, or the
+    /// performer), then drain. Each code is matched to the first hand card
+    /// with that code not already claimed, left to right — the translation
     /// [`ScriptedResolver::commit_cards`] makes. `commit(&[])` commits nothing.
     ///
     /// # Panics

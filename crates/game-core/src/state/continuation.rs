@@ -1696,7 +1696,10 @@ impl ResolvedTest {
 /// Variants:
 ///
 /// - [`PreCommitWindow`](Self::PreCommitWindow) — initial state; `advance` opens
-///   the ST.1→ST.2 player window, then pre-advances to `AwaitingCommit`.
+///   the ST.1→ST.2 player window, then pre-advances to `NextHelper`.
+/// - [`NextHelper`](Self::NextHelper) /
+///   [`AwaitingHelperCommit`](Self::AwaitingHelperCommit) — ST.2's commit
+///   queue: each co-located helper, in player order, commits at most one card.
 /// - [`AwaitingCommit`](Self::AwaitingCommit) — `advance`'s `AwaitingCommit` arm
 ///   emits the commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
@@ -1732,10 +1735,51 @@ impl ResolvedTest {
 pub enum SkillTestStep {
     /// The RR p.26 player window after ST.1 (skill determined) and before ST.2
     /// (commit). The initial state at skill-test start. `advance` opens the
-    /// window here, pre-advancing to [`AwaitingCommit`](Self::AwaitingCommit).
+    /// window here, pre-advancing to
+    /// [`NextHelper { after: None }`](Self::NextHelper).
     PreCommitWindow,
-    /// Initial state: waiting on the commit-window
-    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
+    /// RR ST.2's **commit queue**: find the next helper to ask, after `after`
+    /// (`None`: from the start). Appendix II, ST.2: *"Each other investigator
+    /// at the same location as the investigator performing the skill test may
+    /// commit one card with an appropriate skill icon to this test."* A
+    /// **helper** is such an investigator, Active, holding at least one card
+    /// they could commit. Helpers are asked one at a time in player order
+    /// (`glossary/In_Player_Order.md`: *"the lead investigator performs his
+    /// or her part of the sequence first, followed by the other players in
+    /// clockwise order"*), and the performer last, at
+    /// [`AwaitingCommit`](Self::AwaitingCommit), so they spend their own cards
+    /// knowing what help has come. The rules don't order ST.2's two
+    /// permissions.
+    ///
+    /// The queue is not stored. Each visit walks player order past `after`
+    /// and re-checks each investigator's candidates now, so a helper whose
+    /// candidates an earlier commit emptied is skipped rather than asked.
+    /// `advance` sets [`AwaitingHelperCommit`](Self::AwaitingHelperCommit) for
+    /// the first one found, or `AwaitingCommit` when none is left.
+    ///
+    /// The follow-up, if playtests show the fixed order getting in the way, is
+    /// a **shared commit window**: every eligible investigator answers once,
+    /// in any order, under
+    /// [`Responder::Several`](crate::engine::Responder::Several). It is not
+    /// built because it needs a several-answerer `PickMultiple` with a
+    /// different limit per answerer ("any number" for the performer, "one"
+    /// for a helper), and a request's single
+    /// [`PickCount`](crate::engine::PickCount) can't say that.
+    NextHelper {
+        /// The helper last asked, or `None` before the first.
+        after: Option<InvestigatorId>,
+    },
+    /// Waiting on `helper`'s commit of at most one card: a
+    /// [`PickMultiple`](crate::action::InputResponse::PickMultiple) addressed
+    /// to them alone. The answer appends the card to the test's committed
+    /// list and sets [`NextHelper`](Self::NextHelper) after them.
+    AwaitingHelperCommit {
+        /// The helper being asked.
+        helper: InvestigatorId,
+    },
+    /// Waiting on the performer's commit-window
+    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput), after
+    /// every helper has answered.
     AwaitingCommit,
     /// The RR p.26 player window after ST.2 (commit) and before ST.3 (reveal
     /// chaos token). Set by `finish_skill_test` once the commit is stored;

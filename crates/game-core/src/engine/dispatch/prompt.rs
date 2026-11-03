@@ -117,7 +117,15 @@ fn table(
             forced_triggers::acknowledge_request(cards, acknowledge),
             Responder::Investigator(acknowledge.candidate.controller),
         )),
+        // A helper's commit is the helper's; every other question a skill test
+        // asks is the performer's.
         Continuation::SkillTest(test) => match test.continuation {
+            SkillTestStep::AwaitingHelperCommit { helper } => {
+                return Some((
+                    skill_test::helper_commit_request(state, cards, helper),
+                    Responder::Investigator(helper),
+                ));
+            }
             SkillTestStep::AwaitingCommit => Some(skill_test::commit_request(state, cards)),
             SkillTestStep::AcknowledgeOutcome if state.interactive_acknowledge => {
                 Some(skill_test::acknowledge_request())
@@ -127,6 +135,7 @@ fn table(
             }
             SkillTestStep::AcknowledgeOutcome
             | SkillTestStep::PreCommitWindow
+            | SkillTestStep::NextHelper { .. }
             | SkillTestStep::PreTokenWindow
             | SkillTestStep::Resolving
             | SkillTestStep::DetermineOutcome

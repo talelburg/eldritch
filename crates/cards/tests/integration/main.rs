@@ -67,6 +67,7 @@ mod guard_dog_soak;
 mod hard_knocks;
 mod haunted;
 mod heirloom_of_hyperborea;
+mod helper_commits;
 mod holy_rosary;
 mod hospital_debts;
 mod hyperawareness;

@@ -614,8 +614,8 @@ fn resume_window(
     }
 }
 
-/// Resume a skill test parked at one of its three suspension points: the commit
-/// window (the active investigator submits their commit list via
+/// Resume a skill test parked at one of its three suspension points: a commit
+/// prompt (each helper in turn, then the performer, submits a commit list via
 /// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) one
 /// of the hand cards the window offered), the acknowledgment pause (the player dismisses the result
 /// with [`InputResponse::Confirm`]), or the ST.7 result-order pick (the performer
