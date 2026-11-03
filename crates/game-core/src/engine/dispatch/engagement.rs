@@ -154,9 +154,9 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
 /// interactive choice.
 ///
 /// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
-/// a move's departure (for an enemy stranded by a block on the destination),
-/// and [`engage_ready_enemies`]. Relocation and a hunter's arrival use
-/// [`engage_or_report_tie`] instead, which leaves a tie to the lead.
+/// and a move's departure (for an enemy stranded by a block on the
+/// destination). Relocation, a hunter's arrival and [`engage_ready_enemies`]
+/// use [`engage_or_report_tie`] instead, which leaves a tie to the lead.
 ///
 /// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
 /// would be re-targeted through [`engage`], which is not what any of the rule's
@@ -291,7 +291,12 @@ fn tie_head(frame: &EngagementTieFrame) -> &TiedEngagement {
 
 /// Apply the engagement rule to the whole board: every ready, unengaged enemy
 /// at a location with an investigator engages one there, in enemy-id order,
-/// through [`reengage_at_location`] (so its prey picks among several).
+/// through [`engage_or_report_tie`] (so its prey picks among several). The
+/// ties left over are collected in the same enemy-id order and pushed as one
+/// [`EngagementTie`](crate::state::Continuation::EngagementTie) frame for the
+/// lead (`glossary/Prey.md`: *"if multiple investigators are tied in meeting
+/// these instructions, the lead investigator may decide among them"*), so
+/// anything a native runs after this waits for the answers (ADR 0020).
 ///
 /// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
 /// same location as an investigator, it engages that investigator."* The engine
@@ -308,9 +313,11 @@ pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
         .filter(|(_, e)| !e.exhausted && e.engaged_with.is_none() && e.current_location.is_some())
         .map(|(id, _)| *id)
         .collect();
-    for enemy_id in unengaged {
-        reengage_at_location(cx, enemy_id);
-    }
+    let ties = unengaged
+        .into_iter()
+        .filter_map(|enemy_id| engage_or_report_tie(cx, enemy_id))
+        .collect();
+    push_engagement_ties(cx, ties);
 }
 
 /// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged

@@ -18,7 +18,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
-use game_core::engine::OptionTarget;
+use game_core::engine::{InputKind, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, EnemyId, FastWindowKind, GameStateBuilder,
@@ -341,4 +341,89 @@ fn the_disengaged_enemy_engages_whoever_stays_before_the_attics_horror() {
         Event::EnemyEngaged { enemy, investigator } if *enemy == ghoul && *investigator == INV2,
         Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
     );
+}
+
+// ---------------------------------------------------------------------------
+// The engagement tie when you stay beside another investigator
+// ---------------------------------------------------------------------------
+
+/// `INV` (the lead) and `INV2` at `HERE`, the only location, with `engaged`
+/// engaged with `INV`: Elusive has *"no legal place to move to"*
+/// (<https://arkhamdb.com/card/01050>), so `INV` stays, and each disengaged
+/// enemy is ready and unengaged beside both. With no Prey they tie:
+/// `glossary/Prey.md`, *"if multiple investigators are tied in meeting these
+/// instructions, the lead investigator may decide among them"*.
+fn staying_beside_inv2_with(engaged: &[EnemyId]) -> TestSession {
+    session(
+        board([], engaged.iter().map(|id| enemy(id.0)))
+            .with_seat(seat(2).at(HERE))
+            .with_seating([INV, INV2]),
+    )
+    .take(&PLAY)
+}
+
+/// The tie asks the lead, offering exactly the two investigators' cards.
+fn assert_lead_offered_both(session: &TestSession) {
+    let inv = session.state().investigators[&INV].card_anchor();
+    let inv2 = session.state().investigators[&INV2].card_anchor();
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
+    assert_eq!(prompt.responder, Responder::Lead(INV));
+    assert_eq!(
+        (
+            session.offered_at(&inv),
+            session.offered_at(&inv2),
+            prompt.options.len()
+        ),
+        (1, 1, 2),
+        "the tie offers both investigators: {prompt:?}",
+    );
+}
+
+#[test]
+fn with_no_destination_beside_another_investigator_the_lead_picks_whom_the_enemy_engages() {
+    let ghoul = EnemyId(100);
+    let session = staying_beside_inv2_with(&[ghoul]);
+
+    assert_eq!(location_of(&session), Some(HERE), "nowhere to move: no move");
+    assert_eq!(session.state().enemies[&ghoul].engaged_with, None);
+    assert_lead_offered_both(&session);
+
+    let inv2 = session.state().investigators[&INV2].card_anchor();
+    let session = session.pick(inv2);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&ghoul].engaged_with, Some(INV2));
+    assert_event!(
+        session.events(),
+        Event::EnemyEngaged { enemy, investigator } if *enemy == ghoul && *investigator == INV2
+    );
+}
+
+/// Two enemies disengaged by one play are asked about one after the other, in
+/// enemy-id order, each answer engaging its own enemy.
+#[test]
+fn two_disengaged_enemies_are_asked_about_in_enemy_id_order() {
+    let (a, b) = (EnemyId(100), EnemyId(101));
+    let session = staying_beside_inv2_with(&[b, a]);
+    let inv = session.state().investigators[&INV].card_anchor();
+    let inv2 = session.state().investigators[&INV2].card_anchor();
+
+    assert_lead_offered_both(&session);
+    let session = session.pick(inv2);
+    assert_eq!(
+        (
+            session.state().enemies[&a].engaged_with,
+            session.state().enemies[&b].engaged_with
+        ),
+        (Some(INV2), None),
+        "the lower enemy id is asked about first"
+    );
+
+    assert_lead_offered_both(&session);
+    let session = session.pick(inv);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&a].engaged_with, Some(INV2));
+    assert_eq!(session.state().enemies[&b].engaged_with, Some(INV));
 }
