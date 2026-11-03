@@ -640,9 +640,13 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
     // considered to be in any investigator's hand").
     //
     // Snapshot in the order the player submitted the indices — that is the
-    // order the ST.7 result modifiers and additions apply in, and
-    // the order ST.8 discards in, so it is the player's to choose. The drain
-    // then walks descending, which keeps the still-pending positions stable.
+    // order the ST.7 result modifiers apply in, and the order ST.8 discards
+    // in, so it is the player's to choose. The additions are not tied to it:
+    // RR ST.7, *"If there are multiple results to be applied during this
+    // step, the investigator performing the test applies those results in
+    // the order of his or her choice"*, so the performer picks them one at a
+    // time, each named by its card's position in this list. The drain then
+    // walks descending, which keeps the still-pending positions stable.
     // Both steps are index-safe: `hand_pick::picked` proved every index unique
     // and one the window offered from this same, so-far-unmutated hand.
     //
@@ -1464,22 +1468,19 @@ fn collect_results_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[
 ///
 /// RR ST.7: *"If there are multiple results to be applied during this step,
 /// the investigator performing the test applies those results in the order of
-/// his or her choice."* So while two or more of the results the performer
-/// orders ([`PendingResults::ordered`]: the card result and the token result)
-/// are pending, this step applies none: it parks the cursor at
+/// his or her choice."* So while two or more results are pending, this step
+/// applies none: it parks the cursor at
 /// [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) and suspends on
 /// the "which next" prompt ([`result_order_request`]), which
-/// [`resume_result_order`] answers. Otherwise the next result is the first
-/// pending one, so the last ordered result applies without asking. The
-/// additions are not ordered yet, TODO(#642): they come after the card and
-/// token results, in committed-card order.
+/// [`resume_result_order`] answers. With one pending, it applies without
+/// asking.
 fn apply_results_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
     committed: &[CommittedCard],
     pending: PendingResults,
 ) -> Option<EngineOutcome> {
-    if pending.ordered().nth(1).is_some() {
+    if pending.iter().nth(1).is_some() {
         cx.state
             .current_skill_test_mut()
             .expect("the SkillTest frame must persist across driver steps")
@@ -1505,7 +1506,7 @@ fn apply_results_step(
 /// What a skill test at its result-order pick asks (the
 /// [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) step): which
 /// pending ST.7 result applies next, one option per
-/// [ordered](PendingResults::ordered) result, in that order. One of the
+/// [pending](PendingResults::iter) result, in that order. One of the
 /// [prompt table](super::prompt::request)'s helpers; the performer answers it.
 ///
 /// A `PickSingle` [`Selection`](crate::engine::PromptNature::Selection), not
@@ -1518,7 +1519,10 @@ fn apply_results_step(
 ///   encounter card resolving beneath the test;
 /// - the elder sign's token result, to the performer's investigator card,
 ///   which prints it. A scenario token's (the Cultist's horror) is label-only:
-///   the scenario reference card is not on the board.
+///   the scenario reference card is not on the board;
+/// - a committed card's result addition, to that card's position in the
+///   committed list ([`OptionTarget::CommittedCard`]): a committed card has no
+///   instance id during the test, and the position keeps two copies apart.
 ///
 /// # Panics
 ///
@@ -1531,7 +1535,7 @@ pub(super) fn result_order_request(state: &GameState, cards: &CardRegistry) -> I
         unreachable!("result_order_request: the prompt table asks only at AwaitingResultOrder")
     };
     let options = pending
-        .ordered()
+        .iter()
         .zip(0u32..)
         .map(|(result, i)| {
             let (label, target) = result_option(state, cards, test, result);
@@ -1585,8 +1589,25 @@ fn result_option(
             );
             (label, target)
         }
-        St7Result::Addition { .. } => {
-            unreachable!("result_option: additions are not ordered yet (TODO(#642))")
+        St7Result::Addition { index } => {
+            // `index` counts the matching additions, not the committed cards:
+            // map it to the position of the card that prints it.
+            let card = test.resolved.and_then(|resolved| {
+                collect_result_contributions(
+                    cards,
+                    &test.committed_by_active,
+                    resolved.succeeded,
+                    ResultContribution::Adds,
+                )
+                .get(usize::from(index))
+                .map(|&(card, _)| card)
+            });
+            let target = card.map(|index| OptionTarget::CommittedCard { index });
+            let label = target.as_ref().map_or_else(
+                || "Result of a committed card".to_owned(),
+                |target| format!("Result of {}", choice::anchor_label(state, cards, target)),
+            );
+            (label, target)
         }
     }
 }
@@ -1638,7 +1659,7 @@ fn token_symbol_name(token: ChaosToken) -> &'static str {
 /// without the picked result, **before** pushing its effect (as
 /// [`apply_results_step`] does), and returns `Done`: the drive loop resolves
 /// the effect and re-enters [`advance`], which asks again while two or more
-/// ordered results remain.
+/// results remain.
 pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let Some(t) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
@@ -1663,14 +1684,11 @@ pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> Engi
             .into(),
         };
     };
-    let Some(result) = usize::try_from(*i)
-        .ok()
-        .and_then(|i| pending.ordered().nth(i))
-    else {
+    let Some(result) = usize::try_from(*i).ok().and_then(|i| pending.iter().nth(i)) else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: result-order option {i} out of range (0..{})",
-                pending.ordered().count(),
+                pending.iter().count(),
             )
             .into(),
         };
@@ -2471,7 +2489,8 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// [`CollectResults`](SkillTestStep::CollectResults) counts the
 /// [`Adds`](ResultContribution::Adds) list as pending ST.7 results, and
 /// [`ApplyResults`](SkillTestStep::ApplyResults) indexes into it, pushing one
-/// effect per visit so they cursor-sequence (no LIFO). At collection time the committed cards are in
+/// effect per visit, in the order the performer picks, so they
+/// cursor-sequence (no LIFO). At collection time the committed cards are in
 /// limbo on the in-flight record (discard happens at teardown), which also
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.

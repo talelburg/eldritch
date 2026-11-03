@@ -449,6 +449,45 @@ async fn banner_renders_only_unanchored_options() {
     }
 }
 
+/// The ST.7 result-order prompt anchors a committed card's result to its place
+/// in the committed list, which no board surface renders yet (#1242), so the
+/// banner homes it, labelled with the card's name (ADR 0011: an option anchored
+/// to a surface the client does not render is unreachable).
+#[wasm_bindgen_test]
+async fn a_committed_cards_option_renders_on_the_banner() {
+    let outcome = test_support::awaiting_pick_single_with(
+        "Choose which result of the skill test to apply next.",
+        vec![
+            // Anchored to a board surface, so not the banner's.
+            ChoiceOption::new(OptionId(0), "Result of the act").at(OptionTarget::Act),
+            ChoiceOption::new(OptionId(1), "Result of Overpower")
+                .at(OptionTarget::CommittedCard { index: 0 }),
+        ],
+    );
+    let mut rx = mount(outcome, &[]).await;
+    let btns = last_banner()
+        .query_selector_all(".banner-option")
+        .expect("query");
+    assert_eq!(btns.length(), 1, "only the committed card's option");
+    let btn = btns
+        .item(0)
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("the one banner button");
+    assert_eq!(
+        btn.text_content().unwrap_or_default(),
+        "Result of Overpower"
+    );
+    btn.click();
+    task::tick().await;
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
+        other => panic!("expected PickSingle, got {other:?}"),
+    }
+}
+
 /// A window several answer, offering investigator 2 and investigator 3 one
 /// un-anchored reaction each.
 fn offered_to_two_and_three() -> EngineOutcome {

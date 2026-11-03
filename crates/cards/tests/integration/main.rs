@@ -122,6 +122,7 @@ mod skill_test_target_leaves_play;
 mod sneak_attack;
 mod soak_distribution;
 mod spawn_engaged_with_drawer;
+mod st7_result_order;
 mod stray_cat;
 mod stubborn_detective;
 mod survival_instinct;

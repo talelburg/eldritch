@@ -17,10 +17,10 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
@@ -439,4 +439,100 @@ fn both_orders_discard_frozen_in_fear_and_gain_two() {
             Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV
         );
     }
+}
+
+/// Overpower 01091: *"Max 1 committed per skill test. If this test is
+/// successful, draw 1 card."*
+const OVERPOWER: &str = "01091";
+/// Paranoia 01097: *"**Revelation** - Discard all your resources."*
+const PARANOIA: &str = "01097";
+/// Holy Rosary 01059, deck filler under Paranoia.
+const HOLY_ROSARY: &str = "01059";
+const ENEMY: EnemyId = EnemyId(5);
+
+/// Skids, with his stock 5 resources, fighting an enemy engaged with him with
+/// Overpower committed, on the elder sign, and Paranoia on top of his deck.
+/// Combat 3 + Overpower's 2 icons + 2 succeeds against fight 3, so two ST.7
+/// results are pending once the attack's damage lands: the elder sign's *"If
+/// you succeed, gain 2 resources."* and Overpower's draw. RR ST.7: *"If there
+/// are multiple results to be applied during this step, the investigator
+/// performing the test applies those results in the order of his or her
+/// choice."* Returns the session at that prompt.
+fn fighting_with_overpower_on_the_elder_sign() -> TestSession {
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(
+            skids()
+                .hand([OVERPOWER])
+                .deck([PARANOIA, HOLY_ROSARY, HOLY_ROSARY]),
+        )
+        .with_location(location(HERE))
+        .with_enemy(enemy(5).fight(3).health(3).at(HERE).engaged_with(INV))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: ENEMY,
+        })
+        // His `[fast]` ability keeps the test's player windows open: pass them.
+        .skip()
+        .commit(&[OVERPOWER])
+        .skip()
+}
+
+/// The attack's damage lands before he is asked, and the prompt offers the
+/// elder sign's result on his investigator card and Overpower's on the
+/// committed card.
+#[test]
+fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
+    let session = fighting_with_overpower_on_the_elder_sign();
+    assert_eq!(session.state().enemies[&ENEMY].damage, 1);
+    assert_eq!(resources(session.state()), 5, "nothing is applied yet");
+    let offered: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|option| option.target.clone())
+        .collect();
+    assert_eq!(
+        offered,
+        [
+            Some(session.state().investigators[&INV].card_anchor()),
+            Some(OptionTarget::CommittedCard { index: 0 }),
+        ],
+        "{:?}",
+        session.prompt()
+    );
+}
+
+/// Drawing first, Paranoia discards the 5 he has, and the elder sign's 2 then
+/// apply with no further prompt: he ends at 2.
+#[test]
+fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
+    let session =
+        fighting_with_overpower_on_the_elder_sign().pick(OptionTarget::CommittedCard { index: 0 });
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesDiscarded { investigator, amount: 5 } if *investigator == INV,
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 2);
+}
+
+/// Gaining first, he has 7 when Overpower's draw applies with no further
+/// prompt, and Paranoia discards them all: he ends at 0.
+#[test]
+fn gaining_the_elder_signs_resources_before_drawing_paranoia_loses_them() {
+    let session = fighting_with_overpower_on_the_elder_sign();
+    let card = session.state().investigators[&INV].card_anchor();
+    let session = session.pick(card);
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+        Event::ResourcesDiscarded { investigator, amount: 7 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 0);
 }

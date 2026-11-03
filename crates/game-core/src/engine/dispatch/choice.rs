@@ -265,7 +265,8 @@ pub(super) fn candidate_options<T>(
 
 /// The player-facing name of the board surface `anchor` names, for an option's
 /// label. A location or enemy reads as its name. A card (in play, in a
-/// threat area, an investigator card, in hand, the current act or agenda) reads
+/// threat area, an investigator card, in hand, committed to the in-flight skill
+/// test, the current act or agenda) reads
 /// as its card's name via [`card_name`]. An investigator's panel affordances
 /// read as the investigator's name.
 ///
@@ -305,6 +306,10 @@ pub(crate) fn anchor_label(
         | OptionTarget::ResourcePool(id)
         | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
         OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
+        OptionTarget::CommittedCard { index } => state
+            .current_skill_test()
+            .and_then(|test| test.committed_by_active.get(usize::from(*index)))
+            .map(|committed| card_name(cards, &committed.code)),
     };
     found.unwrap_or_else(|| {
         debug_assert!(

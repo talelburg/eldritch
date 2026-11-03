@@ -518,9 +518,13 @@ pub enum Trigger {
     ///   Blow 01025's +1 attack damage and Deduction 01039's additional clue
     ///   are modifiers by their rulings; see **Result modifier** in
     ///   `GLOSSARY.md`.
-    /// - [`Adds`](ResultContribution::Adds) applies after the follow-up and the
-    ///   card and token results, one effect at a time in committed-card order.
-    ///   Guts 01089's *"draw 1 card"* is one.
+    /// - [`Adds`](ResultContribution::Adds) applies after the follow-up, as
+    ///   one of the test's ST.7 results alongside the card result and the
+    ///   token result. Guts 01089's *"draw 1 card"* is one. ST.7: *"If there
+    ///   are multiple results to be applied during this step, the
+    ///   investigator performing the test applies those results in the order
+    ///   of his or her choice."* So with two or more pending, the performer
+    ///   picks which applies next, one at a time.
     ///
     /// Both apply before the committed cards discard at ST.8, so the
     /// committed card is still in limbo on the in-flight test record and
