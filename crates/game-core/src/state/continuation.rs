@@ -3261,8 +3261,7 @@ pub struct ClueAllocationFrame {
 
 impl ClueAllocationFrame {
     /// The allocation of `threshold` clues among `contributors`, in asking
-    /// order, with nothing settled yet. The constructor for code outside the
-    /// crate, where `#[non_exhaustive]` blocks the struct literal.
+    /// order, with nothing settled yet.
     #[must_use]
     pub fn new(contributors: Vec<InvestigatorId>, threshold: u8) -> Self {
         Self {

@@ -40,15 +40,6 @@ fn advance(threshold: u8, acting: u8, other: u8) -> TestSession {
         })
 }
 
-fn labels(session: &TestSession) -> Vec<&str> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.label.as_str())
-        .collect()
-}
-
 fn clues(session: &TestSession, investigator: InvestigatorId) -> u8 {
     session.state().investigators[&investigator].clues
 }
@@ -67,7 +58,7 @@ fn the_other_investigator_is_asked_for_their_share_on_the_act() {
     // At least 1, since the acting investigator's 3 can't cover all 4; at
     // most the other investigator's 3.
     assert_eq!(
-        labels(&session),
+        session.offered_labels(),
         [
             "Contribute 1 clue",
             "Contribute 2 clues",
@@ -164,7 +155,7 @@ fn the_others_are_asked_in_player_order_before_the_acting_investigator() {
     assert_eq!(session.prompt().responder, Responder::Investigator(ACTING));
     // THIRD and OTHER after them hold 4, so ACTING may put in nothing.
     assert_eq!(
-        labels(&session),
+        session.offered_labels(),
         [
             "Contribute 0 clues",
             "Contribute 1 clue",
@@ -175,7 +166,7 @@ fn the_others_are_asked_in_player_order_before_the_acting_investigator() {
     assert_eq!(session.prompt().responder, Responder::Investigator(THIRD));
     // 3 still needed, and OTHER after them holds 2.
     assert_eq!(
-        labels(&session),
+        session.offered_labels(),
         ["Contribute 1 clue", "Contribute 2 clues"]
     );
     let session = session.pick_nth(0);

@@ -686,7 +686,7 @@ mod advance_act_tests {
         });
         let prompt = session.prompt();
         assert_eq!(prompt.responder, Responder::Investigator(other));
-        let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+        let labels = session.offered_labels();
         assert_eq!(labels, ["Contribute 1 clue", "Contribute 2 clues"]);
 
         // Picks 1: the acting investigator's 1 covers the rest.

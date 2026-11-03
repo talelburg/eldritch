@@ -37,7 +37,7 @@ _None open — all deliverables and follow-ups are in the Closed table below._
 | # | Title | New home |
 |---|---|---|
 | `#75` | campaign log + `Fact` enum + scenario sequencing | Phase 9. Phase 4's `apply_resolution` returns a typed `Resolution` and applies XP/trauma directly; the `Fact` log and `next_scenario` orchestration land alongside Night of the Zealot. |
-| `#153` | player-chosen clue allocation on act-advance surplus | Phase 8. Multiplayer-only — `AdvanceAct`'s deterministic acting-investigator-first spend (`clue_contributors` / `spend_clues`) is outcome-equivalent single-player; the `AwaitingInput` allocation prompt (RR p.3 "any or all investigators may contribute any number of clues") only matters with 2+ players. Sits with the Phase-8 interactive-choice deferrals (`#146`, `#151`). In-source `TODO(#153)`. |
+| `#153` | player-chosen clue allocation on act-advance surplus | ✅ Landed in phase 8, PR #1327. Phase 8. Multiplayer-only — `AdvanceAct`'s deterministic acting-investigator-first spend (`clue_contributors` / `spend_clues`) is outcome-equivalent single-player; the `AwaitingInput` allocation prompt (RR p.3 "any or all investigators may contribute any number of clues") only matters with 2+ players. Sits with the Phase-8 interactive-choice deferrals (`#146`, `#151`). In-source `TODO(#153)`. |
 
 ### Still unmilestoned (concrete-consumer-first)
 

@@ -14,7 +14,7 @@
 //! [`ClueAllocationFrame`]. The contributors are asked in player order with the
 //! investigator who started the advance (the **initiator**) last. Each is
 //! offered only the amounts that keep the advance affordable for those asked
-//! after them ([`range`]), and one with a single such amount is not asked. So
+//! after them ([`share_range`]), and one with a single such amount is not asked. So
 //! the initiator, with nobody after them, always covers the remainder unasked,
 //! and a solo game or a group holding exactly the threshold asks nobody.
 //! Nothing is spent until every share is settled; then the clues come off
@@ -58,7 +58,7 @@ pub(super) fn start(
 pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     loop {
         let frame = cx.state.continuations.top_expect::<ClueAllocationFrame>();
-        let Some(range) = range(cx.state, frame) else {
+        let Some(range) = share_range(cx.state, frame) else {
             return finish(cx);
         };
         if range.start() < range.end() {
@@ -82,7 +82,7 @@ pub(super) fn request(
     cards: &CardRegistry,
     frame: &ClueAllocationFrame,
 ) -> Option<(InputRequest, InvestigatorId)> {
-    let range = range(state, frame).filter(|r| r.start() < r.end())?;
+    let range = share_range(state, frame).filter(|r| r.start() < r.end())?;
     let contributor = frame.contributors[frame.shares.len()];
     let act = choice::card_name(cards, &state.act_deck[state.act_index].code);
     let options = range
@@ -117,7 +117,7 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
         };
     };
     let frame = cx.state.continuations.top_expect::<ClueAllocationFrame>();
-    let Some(range) = range(cx.state, frame) else {
+    let Some(range) = share_range(cx.state, frame) else {
         unreachable!("a clue allocation with every share settled is never at rest");
     };
     let Some(amount) = u8::try_from(*i)
@@ -145,19 +145,16 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 /// share is settled.
 ///
 /// For the contributor at position *k* with *remaining* clues still to settle:
-/// at most `min(their clues, remaining)`, and at least what those asked after
-/// them can't cover, `remaining − their clues`, never below 0. The spend site
+/// at most `min(k's clues, remaining)`, and at least what those asked after k
+/// can't cover, `remaining − (their clues)`, never below 0. The spend site
 /// validated affordability, and no clue moves while the frame is open, so the
 /// range is never empty.
-fn range(state: &GameState, frame: &ClueAllocationFrame) -> Option<RangeInclusive<u8>> {
+fn share_range(state: &GameState, frame: &ClueAllocationFrame) -> Option<RangeInclusive<u8>> {
     let next = frame.shares.len();
     let contributor = *frame.contributors.get(next)?;
     let remaining = remaining(frame);
     let held = clues_of(state, contributor);
-    let held_after: u32 = frame.contributors[next + 1..]
-        .iter()
-        .map(|id| u32::from(clues_of(state, *id)))
-        .sum();
+    let held_after = act_agenda::clues_held(state, &frame.contributors[next + 1..]);
     let max = held.min(remaining);
     let min = u8::try_from(u32::from(remaining).saturating_sub(held_after))
         .expect("bounded by `remaining`, a u8");

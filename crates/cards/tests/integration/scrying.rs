@@ -95,15 +95,6 @@ fn place(position: u32) -> Action {
     })
 }
 
-fn labels(session: &TestSession) -> Vec<&str> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.label.as_str())
-        .collect()
-}
-
 fn codes(deck: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<CardCode> {
     deck.into_iter()
         .map(|c| CardCode::new(c.as_ref()))
@@ -128,14 +119,14 @@ fn reordering_your_deck_puts_the_chosen_order_on_top() {
         "spending 1 charge is a cost",
     );
     assert_eq!(
-        labels(&s),
+        s.offered_labels(),
         ["Emergency Cache", "Guts", "Perception"],
         "the top 3 cards are looked at, and only those",
     );
 
     // Perception goes on top, then Emergency Cache; Guts is left third.
     let s = s.apply(place(2));
-    assert_eq!(labels(&s), ["Emergency Cache", "Guts"]);
+    assert_eq!(s.offered_labels(), ["Emergency Cache", "Guts"]);
     let s = s.apply(place(0));
 
     s.assert_at_turn_menu(INV);
@@ -156,13 +147,13 @@ fn reordering_the_encounter_deck_works_the_same() {
 
     let s = session.take(&activate(scrying)).pick_nth(ENCOUNTER_DECK);
     assert_eq!(
-        labels(&s),
+        s.offered_labels(),
         ["Ancient Evils", "Crypt Chill", "Obscuring Fog"]
     );
 
     // Crypt Chill on top, then Obscuring Fog; Ancient Evils is left third.
     let s = s.apply(place(1));
-    assert_eq!(labels(&s), ["Ancient Evils", "Obscuring Fog"]);
+    assert_eq!(s.offered_labels(), ["Ancient Evils", "Obscuring Fog"]);
     let s = s.apply(place(1));
 
     s.assert_at_turn_menu(INV);
@@ -183,7 +174,7 @@ fn a_deck_of_two_cards_takes_one_pick() {
     let scrying = scrying(&session);
 
     let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
-    assert_eq!(labels(&s), ["Guts", "Perception"]);
+    assert_eq!(s.offered_labels(), ["Guts", "Perception"]);
     let s = s.apply(place(1));
 
     s.assert_at_turn_menu(INV);
@@ -248,14 +239,14 @@ fn reordering_another_investigators_deck_leaves_yours_untouched() {
     let roland = s.state().investigator_card(ROLAND);
     let s = s.pick(roland);
     assert_eq!(
-        labels(&s),
+        s.offered_labels(),
         ["Overpower", "Guts", "Perception"],
         "Roland's top 3 are looked at",
     );
 
     // Perception goes on top, then Overpower; Guts is left third.
     let s = s.apply(place(2));
-    assert_eq!(labels(&s), ["Overpower", "Guts"]);
+    assert_eq!(s.offered_labels(), ["Overpower", "Guts"]);
     let s = s.apply(place(0));
 
     s.assert_at_turn_menu(INV);
@@ -283,7 +274,10 @@ fn picking_yourself_reorders_your_own_deck() {
     let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     let seer = s.state().investigator_card(INV);
     let s = s.pick(seer);
-    assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
+    assert_eq!(
+        s.offered_labels(),
+        ["Emergency Cache", "Guts", "Perception"]
+    );
 
     // Guts on top, then Perception; Emergency Cache is left third.
     let s = s.apply(place(1));
@@ -318,7 +312,10 @@ fn an_eliminated_investigator_is_not_offered() {
 
     let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
 
-    assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
+    assert_eq!(
+        s.offered_labels(),
+        ["Emergency Cache", "Guts", "Perception"]
+    );
 }
 
 #[test]

@@ -51,6 +51,7 @@ use crate::test_support::resolver::{
 ///   [`state`](Self::state), [`events`](Self::events),
 ///   [`offered_at`](Self::offered_at), [`offered_to`](Self::offered_to),
 ///   [`offered_targets`](Self::offered_targets),
+///   [`offered_labels`](Self::offered_labels),
 ///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
 ///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) and
 ///   [`assert_lead_asked_between`](Self::assert_lead_asked_between) — look at the
@@ -899,6 +900,20 @@ impl TestSession {
             .options
             .iter()
             .map(|option| option.investigator)
+            .collect()
+    }
+
+    /// The label of each of the current prompt's options, in option order:
+    /// what a Decision's alternatives read, whose order is their meaning.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_labels(&self) -> Vec<&str> {
+        self.prompt()
+            .options
+            .iter()
+            .map(|option| option.label.as_str())
             .collect()
     }
 

@@ -132,7 +132,7 @@ fn the_round_end_spend_asks_the_other_hallway_investigator_first() {
     let session = TestSession::new(state, registries()).pick_for(INV, OptionTarget::Act);
     let prompt = session.prompt();
     assert_eq!(prompt.responder, Responder::Investigator(INV_2));
-    let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+    let labels = session.offered_labels();
     // [`INV`]'s 3 can cover it all, so [`INV_2`] may put in nothing.
     assert_eq!(
         labels,

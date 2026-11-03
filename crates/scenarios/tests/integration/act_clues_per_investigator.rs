@@ -113,7 +113,7 @@ fn daisy_chooses_her_share_of_trapped_and_roland_covers_the_rest() {
         });
     assert_eq!(session.prompt().responder, Responder::Investigator(DAISY));
     assert_eq!(
-        labels(&session),
+        session.offered_labels(),
         [
             "Contribute 1 clue",
             "Contribute 2 clues",
@@ -154,7 +154,7 @@ fn daisy_chooses_her_share_of_the_barrier_at_round_end() {
         .pick_for(ROLAND, OptionTarget::Act);
     assert_eq!(session.prompt().responder, Responder::Investigator(DAISY));
     assert_eq!(
-        labels(&session),
+        session.offered_labels(),
         [
             "Contribute 2 clues",
             "Contribute 3 clues",
@@ -172,15 +172,6 @@ fn daisy_chooses_her_share_of_the_barrier_at_round_end() {
         "The Barrier advanced"
     );
     assert_eq!(clues(&session, ROLAND, DAISY), (0, 2));
-}
-
-fn labels(session: &TestSession) -> Vec<&str> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.label.as_str())
-        .collect()
 }
 
 fn clues(session: &TestSession, a: InvestigatorId, b: InvestigatorId) -> (u8, u8) {

@@ -140,7 +140,7 @@ fn with_the_lead_outside_the_hallway_the_hallway_investigator_is_offered_it() {
 }
 
 #[test]
-fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first() {
+fn the_first_hallway_investigator_in_player_order_is_offered_it_and_covers_the_rest() {
     // Seat 2 leads from the Attic, so player order is 2, 3, 1. Seats 3
     // (Daisy) and 1 (Roland) are in the Hallway: seat 3 comes first, though
     // seat 1 is first in seating. Seat 1's turn is the round's last. The
@@ -158,12 +158,21 @@ fn the_first_hallway_investigator_in_player_order_is_offered_it_and_spends_first
     .take(&TurnAction::EndTurn);
     assert_eq!(offered_to(&window), SEAT_3);
 
-    let advanced = window.pick(OptionTarget::Act);
+    // Seat 3 started the spend, so seat 1 is asked for a share first: at
+    // least 4, since seat 3's five can't cover all nine.
+    let asked = window.pick(OptionTarget::Act);
+    assert_eq!(asked.prompt().responder, Responder::Investigator(SEAT_1));
+    assert_eq!(
+        asked.offered_labels(),
+        ["Contribute 4 clues", "Contribute 5 clues"]
+    );
+
+    let advanced = asked.pick_nth(0);
     assert_eq!(advanced.state().act_index, 1, "The Barrier advanced");
     assert_eq!(
         (clues(&advanced, SEAT_3), clues(&advanced, SEAT_1)),
         (0, 1),
-        "the group spends in player order: seat 3's five, then four of seat 1's",
+        "seat 1 put in four, and seat 3 covered the other five",
     );
 }
 
