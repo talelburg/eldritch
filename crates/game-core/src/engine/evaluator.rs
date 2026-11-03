@@ -229,6 +229,14 @@ pub struct EvalContext {
     /// `*::Chosen` targets, so a `Chosen` target nested under a
     /// `ChooseInvestigator` still grounds as its own choice rather than
     /// silently reusing this pick.
+    ///
+    /// It is the only field besides
+    /// [`ability_source`](Self::ability_source) that crosses a skill test: the
+    /// test parks it, and the context ST.7 rebuilds for the test's own
+    /// `on_success` / `on_fail` gets it back, so *"that investigator"* in a
+    /// result branch is the one picked before the test. Every other binding
+    /// here is gone after the test by construction, since that context starts
+    /// fresh.
     pub kept_investigator: Option<InvestigatorId>,
 }
 
@@ -1086,6 +1094,9 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 difficulty: i8::try_from(*difficulty).unwrap_or(i8::MAX),
                 on_success: on_success.as_ref().map(|b| (**b).clone()),
                 on_fail: on_fail.as_ref().map(|b| (**b).clone()),
+                // The one binding that crosses the test: a pick kept by an
+                // enclosing `ChooseInvestigator` ("that investigator").
+                kept_investigator: eval_ctx.kept_investigator(),
             },
             eval_ctx.ability_source,
         ),
@@ -1302,7 +1313,10 @@ fn step_choose_one(
 /// The leaf's pick index is cleared before `then` is pushed, so a native first
 /// in `then` does not read it as its own pick. The kept investigator rides in
 /// every frame `then` pushes, since each frame parks its whole context, so it
-/// survives a suspend anywhere inside `then`. It is kept apart from the
+/// survives a suspend anywhere inside `then`. A skill test in `then` is the one
+/// place a fresh context is built: the test parks the pick beside its source
+/// ([`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator))
+/// and ST.7 puts it back for `on_success` / `on_fail`. It is kept apart from the
 /// `*::Chosen` picks, so a `Chosen` target nested in `then` still grounds as
 /// its own choice.
 fn step_choose_investigator(
@@ -2506,9 +2520,9 @@ fn picked_or_reject<T>(grounded: Grounded<T>, empty_reason: &'static str) -> Res
 /// unsatisfiable target requirement a bar on *initiation* — which is
 /// `check_activate_ability`'s gate, upstream of here. Reaching resolution with
 /// every in-scope candidate ineligible means the ability was legitimately
-/// initiated and only this sub-effect has nowhere to land: Medical Texts 01035
-/// passes its intellect(2) test with nobody at the location damaged, and its
-/// `on_success` heal finds no target. Rejecting there would unwind the whole
+/// initiated and only this sub-effect has nowhere to land: a skill test whose
+/// `on_success` heals a `Chosen` investigator passes with nobody in scope
+/// damaged, and the heal finds no target. Rejecting there would unwind the whole
 /// action — chaos draw included — via `apply_via`'s snapshot restore, so the
 /// effect is skipped (`Err(Unbound::Stop(EngineOutcome::Done))`, which `step_leaf` returns
 /// after having already popped the leaf) instead. An *empty scope* still
@@ -2731,6 +2745,9 @@ fn resolve_investigator_target(
         InvestigatorTarget::Each => ctx
             .each_investigator()
             .ok_or("InvestigatorTarget::Each outside a ForEach body over investigators"),
+        InvestigatorTarget::That => ctx
+            .kept_investigator()
+            .ok_or("InvestigatorTarget::That outside a ChooseInvestigator"),
     }
 }
 

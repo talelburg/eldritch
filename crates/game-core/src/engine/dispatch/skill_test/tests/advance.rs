@@ -47,6 +47,7 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
             difficulty: 2,
             on_success: Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
             on_fail: None,
+            kept_investigator: None,
         },
         None,
     );
@@ -271,6 +272,7 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
             difficulty: 2,
             on_success: None,
             on_fail: None,
+            kept_investigator: None,
         },
         None,
     );

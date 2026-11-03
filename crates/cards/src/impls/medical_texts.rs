@@ -6,36 +6,32 @@
 //!   1 damage to that investigator.
 //! ```
 //!
-//! One `[action]` ability (no exhaust, no uses): an
-//! [`Effect::SkillTest`](card_dsl::dsl::Effect::SkillTest) against
-//! intellect (2), branching on the controller's result —
-//! `on_success` heals 1 damage, `on_fail` deals 1 damage, each to the chosen
-//! investigator at the controller's location
-//! ([`InvestigatorTarget::chosen_at_your_location`]). Composed entirely
-//! from existing primitives — no native effect, no engine work. A test
-//! initiated from an *activated* ability suspends at the commit window and
-//! resumes through the same `advance` path as one from a Revelation or a
-//! forced effect.
+//! No rulings: 01035 is listed in `data/arkhamdb-faq/no-rulings.txt`.
 //!
-//! # The target is chosen *inside* the post-test branch — exact in solo
+//! One `[action]` ability (no exhaust, no uses), composed entirely from DSL
+//! primitives. An [`Effect::ChooseInvestigator`](card_dsl::dsl::Effect::ChooseInvestigator)
+//! over the controller's location picks the target first, then an
+//! [`Effect::SkillTest`](card_dsl::dsl::Effect::SkillTest) against intellect
+//! (2) branches on the result: `on_success` heals 1 damage from, and `on_fail`
+//! deals 1 damage to, [`InvestigatorTarget::That`], the investigator picked.
 //!
-//! The printed card chooses the target **before** the test ("Choose … and
-//! test"); this impl chooses inside whichever branch runs (`on_success` /
-//! `on_fail`). **Exact under today's solo engine:** with one investigator at
-//! your location the `Chosen` choice auto-binds (count 1, no suspend), so
-//! choosing before vs. after the test is indistinguishable. The divergence
-//! only appears with 2+ investigators at your location (multiplayer), where a
-//! post-test choice would let the player pick the target after seeing the
-//! result — strictly more information than the card grants.
+//! # The target is chosen before the test
 //!
-//! # Module gap
+//! The printed card chooses, then tests, so the pick is made before anyone
+//! commits a card or reveals a token, and the result branch reads the same
+//! pick without asking again. Every investigator at the location is offered,
+//! the controller included, damaged or not: a failure deals damage, so any of
+//! them can have their state changed (Rules Reference, *Target*: *"A card is
+//! not an eligible target for an ability if the resolution of that ability's
+//! effect could not change the target's state."*). A success on an undamaged
+//! investigator heals nothing, and the test still resolves.
 //!
-//! TODO(#359): bind the chosen investigator before the test (needs the
-//! binding to survive the `Effect::SkillTest` suspend/resume) once
-//! multiplayer makes the ordering observable.
+//! Solo, the one investigator at the location is picked without a prompt
+//! outside interactive play; under `interactive_acknowledge` the lone pick
+//! surfaces as a one-option prompt, like every other lone pick.
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{self, Ability, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget, LocationSet};
 
 use crate::impls::CardRecord;
 
@@ -45,24 +41,22 @@ pub const CODE: &str = "01035";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// Medical Texts' `[action]` intellect(2) test: heal 1 damage on success,
-/// deal 1 damage on failure, to a chosen investigator at your location.
+/// Medical Texts' `[action]`: choose an investigator at your location, then
+/// an intellect(2) test that heals 1 damage from them on success and deals
+/// them 1 damage on failure.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::activated(
         1,
         vec![],
-        dsl::skill_test(
-            SkillKind::Intellect,
-            2,
-            Some(dsl::heal_damage(
-                InvestigatorTarget::chosen_at_your_location(),
-                1,
-            )),
-            Some(dsl::deal_damage(
-                InvestigatorTarget::chosen_at_your_location(),
-                1u8,
-            )),
+        dsl::choose_investigator(
+            LocationSet::Here,
+            dsl::skill_test(
+                SkillKind::Intellect,
+                2,
+                Some(dsl::heal_damage(InvestigatorTarget::That, 1)),
+                Some(dsl::deal_damage(InvestigatorTarget::That, 1u8)),
+            ),
         ),
     )]
 }
@@ -74,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_action_intellect_test_branching_heal_or_damage() {
+    fn one_action_choosing_a_target_here_then_an_intellect_test() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
         assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 },);
@@ -84,28 +78,31 @@ mod tests {
             "Medical Texts' action has no exhaust/uses cost",
         );
 
+        let Effect::ChooseInvestigator { scope, then } = &abilities[0].effect else {
+            panic!("expected Effect::ChooseInvestigator");
+        };
+        assert_eq!(*scope, LocationSet::Here, "an investigator at your location");
         let Effect::SkillTest {
             skill,
             difficulty,
             on_success,
             on_fail,
-        } = &abilities[0].effect
+        } = then.as_ref()
         else {
-            panic!("expected Effect::SkillTest");
+            panic!("expected Effect::SkillTest under the choice");
         };
         assert_eq!(*skill, SkillKind::Intellect);
         assert_eq!(*difficulty, 2);
 
-        let target = InvestigatorTarget::chosen_at_your_location();
         assert_eq!(
             on_success.as_deref(),
-            Some(&dsl::heal_damage(target, 1)),
-            "success heals 1 damage from the chosen investigator",
+            Some(&dsl::heal_damage(InvestigatorTarget::That, 1)),
+            "success heals 1 damage from that investigator",
         );
         assert_eq!(
             on_fail.as_deref(),
-            Some(&dsl::deal_damage(target, 1u8)),
-            "failure deals 1 damage to the chosen investigator",
+            Some(&dsl::deal_damage(InvestigatorTarget::That, 1u8)),
+            "failure deals 1 damage to that investigator",
         );
     }
 }
