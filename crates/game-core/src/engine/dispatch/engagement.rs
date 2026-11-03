@@ -199,9 +199,9 @@ pub(super) fn engage_each_or_push_ties(
         .into_iter()
         .filter_map(|enemy_id| engage_or_report_tie(cx, enemy_id))
         .collect();
-    let tied = !ties.is_empty();
+    let pushed = !ties.is_empty();
     push_engagement_ties(cx, ties);
-    tied
+    pushed
 }
 
 /// Push one [`EngagementTie`](crate::state::Continuation::EngagementTie) frame
