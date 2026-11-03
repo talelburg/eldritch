@@ -890,7 +890,7 @@ impl GameState {
     /// `remaining[0]` — the continuation stack is the single source of truth
     /// for "an encounter draw is pending". Topmost (not the top) because the
     /// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain frame — and a
-    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) above it while a
+    /// mid-chain [`EngagementTie`](Continuation::EngagementTie) above it while a
     /// spawn-engagement tie is resolved — sit above the loop frame.
     #[must_use]
     pub fn current_encounter_drawer(&self) -> Option<InvestigatorId> {

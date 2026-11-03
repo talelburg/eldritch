@@ -6,7 +6,6 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
-use crate::card_registry::CardRegistry;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
@@ -18,9 +17,9 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
-    FastWindowKind, GameState, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame,
-    SpawnEngagePending, Status, Zone,
+    CardCode, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy, FastWindowKind,
+    GameState, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame, Status,
+    TiedEngagement, Zone,
 };
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
@@ -108,12 +107,12 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// enemy spawn) for an already-drawn encounter card. Called by
 /// `encounter_card_revealed` (the `EngineRecord::EncounterCardRevealed` path),
 /// by the Mythos draw chain (`draw_encounter_card_into_frame`, driven by the
-/// [`PlayerDraw`](Continuation::PlayerDraw) frame), and by card effects that
+/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) frame), and by card effects that
 /// draw from the encounter deck (agenda 01106's reverse, Drawn to the Flame
 /// 01064).
 ///
 /// Body: emits [`Event::CardRevealed`], pushes a
-/// [`Continuation::EncounterCard`] disposition frame (treachery → `Discard`,
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) disposition frame (treachery → `Discard`,
 /// enemy → `Spawn`), then announces the draw,
 /// [`TimingEvent::EncounterCardDrawn`], in tail position (ADR 0003). The
 /// revelation is that condition's resolve step ([`resolve_revelation`]),
@@ -311,14 +310,13 @@ pub(super) fn push_revelation(
 /// A `Specific` spawn routes through the shared [`resolve_prey`] resolver:
 /// the co-located set is narrowed by the enemy's
 /// prey. `None`/`One` resolve inline (no engagement, or engage the
-/// sole/best candidate); `Tie` pushes a
-/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) frame and returns
-/// `Done`, and the `drive` loop surfaces its tie-break `PickSingle`, which the
-/// rules give the lead investigator (**Lead investigator** in `GLOSSARY.md`);
-/// the request carries no recipient. When the spawn happens inside a Mythos
-/// encounter-draw chain, [`resume_spawn_engage`] continues the drawer's
-/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain after the pick
-/// resolves.
+/// sole/best candidate); `Tie` pushes an
+/// [`EngagementTie`](crate::state::Continuation::EngagementTie) frame of one and
+/// returns `Done`, and the `drive` loop surfaces its `PickSingle`, which the
+/// rules give the lead investigator (**Lead investigator** in `GLOSSARY.md`).
+/// When the spawn happens inside a Mythos encounter-draw chain, the drawer's
+/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain beneath
+/// continues once the lead has answered.
 ///
 /// # Stats
 ///
@@ -340,9 +338,10 @@ pub(super) fn push_revelation(
 /// no drawing-investigator location → `Rejected` with `state`/`events`
 /// unchanged (a state-corruption invariant, not the RR "no legal location"
 /// case). Engagement resolution never rejects: it either resolves inline or
-/// pushes its tie-break prompt and returns `Done`, with the enemy already minted
-/// into `state.enemies` and `Event::EnemySpawned` pushed (the pending choice
-/// carries the rest of the work to [`resume_spawn_engage`]).
+/// pushes the lead's engagement prompt and returns `Done`, with the enemy
+/// already minted into `state.enemies` and `Event::EnemySpawned` pushed (the
+/// pending choice carries the rest of the work to the engagement tie's
+/// resume).
 ///
 /// # Unmodelled spawn instructions block the draw
 ///
@@ -528,7 +527,7 @@ fn spawn_enemy_engaging(
 
     // Resolve engagement-on-spawn. A drawer is engaged outright. Otherwise the
     // co-located set is narrowed by the enemy's `prey`; with `Prey::Default` a
-    // 2+ set ties and suspends for a tie-break `PickSingle`.
+    // 2+ set ties and suspends for the lead's `PickSingle`.
     let resolution = match engages {
         SpawnEngagement::Drawer(drawer) => PreyResolution::One(drawer),
         SpawnEngagement::Prey => {
@@ -536,8 +535,8 @@ fn spawn_enemy_engaging(
             hunters::resolve_prey(cx.state, cx.cards, prey, &candidates)
         }
     };
-    // The spawn is logged before the engagement or the tie-break suspension
-    // that follows it.
+    // The spawn is logged before the engagement or the engagement tie that
+    // follows it.
     let engaged_with = match &resolution {
         PreyResolution::One(target) => Some(*target),
         PreyResolution::None | PreyResolution::Tie(_) => None,
@@ -556,41 +555,15 @@ fn spawn_enemy_engaging(
         }
         PreyResolution::Tie(tied) => {
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
-            // beneath; this frame holds only the engagement pick.
-            // `resume_spawn_engage` engages + pops, and the loop continues the
-            // chain through the exposed `PlayerDraw`. Pushed and returned from:
-            // the `drive` loop surfaces it, so a native whose exit spawned the
-            // enemy just returns and the prompt follows it.
-            cx.state
-                .continuations
-                .push(Continuation::SpawnEngage(SpawnEngagePending {
-                    enemy: enemy_id,
-                    candidates: tied,
-                }));
+            // beneath; this frame holds only the engagement pick. Its resume
+            // engages + pops, and the loop continues the chain through the
+            // exposed `PlayerDraw`. Pushed and returned from: the `drive` loop
+            // surfaces it, so a native whose exit spawned the enemy just
+            // returns and the prompt follows it.
+            engagement::push_engagement_ties(cx, vec![TiedEngagement::new(enemy_id, tied)]);
             EngineOutcome::Done
         }
     }
-}
-
-/// What a [`SpawnEngage`](Continuation::SpawnEngage) frame asks: whom the
-/// spawned enemy engages among its tied candidates, each anchored to the
-/// investigator's card. One of the [prompt table](prompt::request)'s helpers.
-pub(super) fn spawn_engage_request(
-    state: &GameState,
-    cards: &CardRegistry,
-    pending: &SpawnEngagePending,
-) -> InputRequest {
-    let SpawnEngagePending {
-        enemy: enemy_id,
-        candidates: tied,
-    } = pending;
-    InputRequest::pick_single(
-        format!(
-            "The lead investigator chooses whom {} engages.",
-            choice::enemy_name(state, *enemy_id),
-        ),
-        choice::candidate_options(state, cards, tied, |i| state.investigators[i].card_anchor()),
-    )
 }
 
 /// Fisher-Yates shuffle of the shared encounter deck using the
@@ -662,7 +635,7 @@ pub(crate) fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 
-/// What the topmost [`Continuation::EncounterDraw`] frame asks of its current
+/// What the topmost [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw) frame asks of its current
 /// drawer (`remaining[0]`): a binary [`Confirm`](InputResponse::Confirm) (the
 /// draw carries no choice). One of the [prompt table](prompt::request)'s
 /// helpers.
@@ -681,17 +654,17 @@ pub(super) fn encounter_draw_request(state: &GameState) -> InputRequest {
 }
 
 /// Resume the Mythos step-1.4 encounter-draw loop, driving the topmost
-/// [`Continuation::EncounterDraw`] frame.
+/// [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw) frame.
 ///
 /// The acting drawer is the frame's `remaining[0]` (Rules Reference p.24
 /// player order) — the response is a binary [`Confirm`](InputResponse::Confirm)
 /// (the draw carries no choice). On `Confirm`, pushes a fresh
-/// [`PlayerDraw`](Continuation::PlayerDraw) frame *above* the loop frame for that
+/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) frame *above* the loop frame for that
 /// drawer's surge chain and returns [`EngineOutcome::Done`]; the `drive` loop's
 /// `PlayerDraw` arm then draws the first card. The chain may suspend on a
-/// mid-chain spawn-engagement tie (pushing a
-/// [`SpawnEngage`](Continuation::SpawnEngage) frame above the `PlayerDraw`),
-/// resumed by [`resume_spawn_engage`](super::hunters::resume_spawn_engage). When
+/// mid-chain spawn-engagement tie (pushing an
+/// [`EngagementTie`](crate::state::Continuation::EngagementTie) frame above the `PlayerDraw`),
+/// resumed by [`resume_engagement_tie`](super::engagement::resume_engagement_tie). When
 /// the chain ends, the `PlayerDraw` frame pops and [`advance_encounter_draw`]
 /// re-prompts the next drawer, or — when drained — pops the loop frame and opens
 /// the post-1.4 `MythosAfterDraws` window. Rejections leave state untouched.
@@ -720,7 +693,7 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     EngineOutcome::Done
 }
 
-/// Drive one step of the topmost [`Continuation::PlayerDraw`] frame (the
+/// Drive one step of the topmost [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw) frame (the
 /// `drive` loop's `PlayerDraw` arm). The frame owns one drawer's Mythos surge
 /// chain:
 ///
@@ -729,13 +702,13 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
 ///   — which bumps `chain_count`, enforces [`MAX_SURGE_CHAIN`], runs the peril
 ///   check, records `surge_pending` for the next step, and pushes the card's
 ///   disposition + Revelation frames for the loop to resolve. The
-///   [`EncounterCard`](Continuation::EncounterCard) disposal re-exposes this
+///   [`EncounterCard`](crate::state::Continuation::EncounterCard) disposal re-exposes this
 ///   `PlayerDraw` frame, so the chain continues here.
 /// - Otherwise (resumed, no pending surge) the chain is over: pop this frame and
 ///   [`advance_encounter_draw`] moves the loop to the next drawer / opens the
 ///   post-1.4 window.
 ///
-/// Never awaits input itself (mirrors [`Continuation::EncounterCard`]); a draw
+/// Never awaits input itself (mirrors [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard)); a draw
 /// may suspend on a spawn-engagement tie or reject — propagated to the caller.
 pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
     let PlayerDrawFrame {
@@ -752,10 +725,10 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// Draw one card into an [`Continuation::EncounterCard`] frame for the global
+/// Draw one card into an [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) frame for the global
 /// `drive` loop to resolve. The shared per-card prelude of
 /// the Mythos surge chain: bump the topmost
-/// [`Continuation::PlayerDraw`] frame's `chain_count`, enforce
+/// [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw) frame's `chain_count`, enforce
 /// [`MAX_SURGE_CHAIN`], [`draw_encounter_top`], run the peril check, record the
 /// drawn card's `surge` bit back onto the `PlayerDraw` frame (so the next
 /// [`drive_player_draw`] step knows whether to draw again), then push the card's
@@ -842,7 +815,7 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
 }
 
 /// Advance the encounter-draw loop after a completed chain: drop the just-finished
-/// drawer from the topmost [`Continuation::EncounterDraw`] frame, then skip any
+/// drawer from the topmost [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw) frame, then skip any
 /// now-eliminated investigators (an encounter card may have eliminated a later
 /// drawer — Rules Reference p.10: eliminated investigators do not draw,
 /// mirroring `next_in_player_order`'s skip). When a drawer remains,
@@ -897,7 +870,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// If the top continuation frame is a [`Continuation::EncounterCard`], dispose
+/// If the top continuation frame is a [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard), dispose
 /// of its card per its [`EncounterDisposition`] and pop the frame. A no-op
 /// when no such frame is on top; returns
 /// [`EngineOutcome::Done`] unless an enemy spawn suspends / rejects (propagated
@@ -922,16 +895,16 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 ///   case the loop continues past the (already-popped) frame as usual.
 ///
 /// A frame whose card elimination has taken (a drawn weakness whose bearer was
-/// defeated mid-resolution, [`Continuation::take_resolving_weakness`]) is
+/// defeated mid-resolution, [`Continuation::take_resolving_weakness`](crate::state::Continuation::take_resolving_weakness)) is
 /// popped with nothing disposed of: the card is already removed from the game.
 ///
 /// After disposal the frame is gone and the loop re-dispatches whatever is
-/// beneath: a [`PlayerDraw`](Continuation::PlayerDraw) frame (Mythos chain →
+/// beneath: a [`PlayerDraw`](crate::state::Continuation::PlayerDraw) frame (Mythos chain →
 /// `drive_player_draw` continues / ends it), or nothing / another frame
 /// (engine-record reveal, agenda reverse-draw → done). The `while` keeps
 /// draining any further stacked `EncounterCard` frames.
 ///
-/// Called from the `drive` loop's [`Continuation::EncounterCard`] arm once a
+/// Called from the `drive` loop's [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) arm once a
 /// Revelation's whole sub-resolution completes and the frame is top again.
 pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
     while cx
@@ -975,12 +948,12 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
                             .into(),
                     };
                 };
-                // An engagement tie pushes its `SpawnEngage` frame and returns
-                // `Done`: the loop guard then finds it on top rather than an
-                // `EncounterCard`, so the loop ends and the `drive` loop
-                // surfaces the tie. A mid-Mythos tie sits above the drawer's
-                // `PlayerDraw`, and `resume_spawn_engage` continues the chain
-                // after the pick. A reject propagates.
+                // An engagement tie pushes its `EngagementTie` frame and
+                // returns `Done`: the loop guard then finds it on top rather
+                // than an `EncounterCard`, so the loop ends and the `drive`
+                // loop surfaces the tie. A mid-Mythos tie sits above the
+                // drawer's `PlayerDraw`, which continues the chain once the
+                // frame pops after the pick. A reject propagates.
                 match spawn_enemy(cx, investigator, card, metadata, owner) {
                     EngineOutcome::Done => {}
                     other => return other,

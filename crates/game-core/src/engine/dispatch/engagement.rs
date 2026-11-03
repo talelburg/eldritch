@@ -24,11 +24,17 @@
 
 use card_dsl::card_data::Prey;
 
-use crate::engine::dispatch::cursor;
+use crate::action::InputResponse;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::hunters::{self, PreyResolution};
+use crate::engine::dispatch::{choice, cursor};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId};
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{Enemy, EnemyId, GameState, InvestigatorId, LocationId, Owner};
+use crate::state::{
+    Enemy, EnemyId, EngagementTieFrame, GameState, InvestigatorId, LocationId, Owner,
+    TiedEngagement,
+};
 
 /// Engage `enemy_id` with `investigator`, logging [`Event::EnemyEngaged`].
 ///
@@ -148,8 +154,9 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
 /// interactive choice.
 ///
 /// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
-/// relocation, a move's departure (for an enemy stranded by a block on the
-/// destination), and [`engage_ready_enemies`].
+/// a move's departure (for an enemy stranded by a block on the destination),
+/// and [`engage_ready_enemies`]. Relocation and a hunter's arrival use
+/// [`engage_or_report_tie`] instead, which leaves a tie to the lead.
 ///
 /// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
 /// would be re-targeted through [`engage`], which is not what any of the rule's
@@ -166,6 +173,120 @@ pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
         PreyResolution::One(target) => engage(cx, enemy_id, target),
         PreyResolution::Tie(tied) => engage(cx, enemy_id, tied[0]),
     }
+}
+
+/// Engage a ready, unengaged enemy with the investigator its prey picks where
+/// it stands, or report the tie for the lead instead: the general engagement
+/// rule (`glossary/Enemy_Engagement.md`), as [`reengage_at_location`] applies
+/// it, but without resolving an engagement tie itself.
+///
+/// No-op returning `None` when the enemy is exhausted (*"An exhausted
+/// unengaged enemy does not engage"*), has no location, or has no one to
+/// engage. With exactly one investigator left after its prey (a bearer-only
+/// enemy's bearer included, through [`candidates`]), engages them and returns
+/// `None`. On a tie it engages no one and returns the [`TiedEngagement`],
+/// candidates in player order, for the caller to [push](push_engagement_ties)
+/// with the others it collects: `glossary/Prey.md`, *"if multiple
+/// investigators are tied in meeting these instructions, the lead investigator
+/// may decide among them"*.
+///
+/// Precondition: `enemy.engaged_with` is `None` on entry, as for
+/// [`reengage_at_location`].
+#[must_use = "a reported engagement tie must be pushed for the lead to answer"]
+pub(super) fn engage_or_report_tie(cx: &mut Cx, enemy_id: EnemyId) -> Option<TiedEngagement> {
+    let enemy = &cx.state.enemies[&enemy_id];
+    if enemy.exhausted || enemy.current_location.is_none() {
+        return None;
+    }
+    let prey = enemy.prey;
+    let candidates = candidates(cx.state, enemy_id);
+    match hunters::resolve_prey(cx.state, cx.cards, prey, &candidates) {
+        PreyResolution::None => None,
+        PreyResolution::One(target) => {
+            engage(cx, enemy_id, target);
+            None
+        }
+        PreyResolution::Tie(tied) => Some(TiedEngagement::new(enemy_id, tied)),
+    }
+}
+
+/// Push one [`EngagementTie`](crate::state::Continuation::EngagementTie) frame
+/// holding `ties`, answered in the order given, or nothing when `ties` is
+/// empty. A caller that handles several enemies collects their ties in enemy-id
+/// order first, so one step leaves one frame.
+///
+/// Pushed and returned from: the `drive` loop surfaces the prompt, and the
+/// frame beneath continues once the last tie is answered.
+pub(super) fn push_engagement_ties(cx: &mut Cx, ties: Vec<TiedEngagement>) {
+    if !ties.is_empty() {
+        cx.state.continuations.push(EngagementTieFrame::new(ties));
+    }
+}
+
+/// What an [`EngagementTie`](crate::state::Continuation::EngagementTie) frame
+/// asks: whom its head enemy engages among the tied candidates, each anchored
+/// to the investigator's card. One of the [prompt table](super::prompt::request)'s
+/// helpers; the responder is the lead.
+pub(super) fn engagement_tie_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &EngagementTieFrame,
+) -> InputRequest {
+    let head = tie_head(frame);
+    InputRequest::pick_single(
+        format!(
+            "The lead investigator chooses whom {} engages.",
+            choice::enemy_name(state, head.enemy),
+        ),
+        choice::candidate_options(state, cards, &head.candidates, |i| {
+            state.investigators[i].card_anchor()
+        }),
+    )
+}
+
+/// Answer the head of the top [`EngagementTie`](crate::state::Continuation::EngagementTie)
+/// frame with the lead's `PickSingle`: engage the chosen investigator and drop
+/// the head, popping the frame once the queue is empty so the frame beneath
+/// continues. A remaining tie stays on top for the `drive` loop to ask next.
+///
+/// Validate-first: a response that is not a `PickSingle`, or an index outside
+/// the head's candidates, is rejected and leaves the frame as it was, so the
+/// client can retry.
+pub(super) fn resume_engagement_tie(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let head = tie_head(cx.state.continuations.top_expect::<EngagementTieFrame>()).clone();
+    let InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: an engagement tie expects InputResponse::PickSingle, got {response:?}"
+            )
+            .into(),
+        };
+    };
+    let Some(&who) = head.candidates.get(*i as usize) else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: engagement tie option {i} out of range (0..{})",
+                head.candidates.len()
+            )
+            .into(),
+        };
+    };
+    let frame = cx.state.continuations.top_mut::<EngagementTieFrame>();
+    frame.ties.remove(0);
+    if frame.ties.is_empty() {
+        cx.state.continuations.pop_expect::<EngagementTieFrame>();
+    }
+    engage(cx, head.enemy, who);
+    EngineOutcome::Done
+}
+
+/// The tie an [`EngagementTieFrame`] asks next. The frame is never on the stack
+/// empty: [`push_engagement_ties`] pushes none for no ties, and
+/// [`resume_engagement_tie`] pops it with its last.
+fn tie_head(frame: &EngagementTieFrame) -> &TiedEngagement {
+    frame.ties.first().unwrap_or_else(|| {
+        unreachable!("an EngagementTie frame is on the stack with no tie; state corruption")
+    })
 }
 
 /// Apply the engagement rule to the whole board: every ready, unengaged enemy

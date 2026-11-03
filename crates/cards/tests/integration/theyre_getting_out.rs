@@ -15,10 +15,15 @@
 //! `scenarios/tests/integration/the_gathering_resolutions.rs`'s job; this is the seam that
 //! carries the *multi-investigator* claims the solo end-to-end cannot: the fan-out
 //! order, and the investigator it must leave alone.
+//!
+//! And the **engagement tie** a moved Ghoul leaves on arrival beside two
+//! investigators: the lead answers it, and the agenda's next Ghoul moves only
+//! after she has.
 
 use cards::TEST_REGISTRIES;
+use game_core::action::InputResponse;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
+use game_core::engine::{InputKind, OptionId, OptionTarget, Responder};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
@@ -456,6 +461,147 @@ fn agenda_01107_reverse_at_act_3_resolves_the_whole_elimination_before_the_traum
         Event::TraumaSuffered {
             kind: TraumaKind::Mental,
             ..
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The engagement tie on arrival
+// ---------------------------------------------------------------------------
+
+/// Daisy Walker 01002, in the first seat and the lead.
+const DAISY: InvestigatorId = InvestigatorId(1);
+/// Agnes Baker 01004, in the second seat.
+const AGNES: InvestigatorId = InvestigatorId(2);
+/// The Cellar 01114, a second room one step from the Hallway.
+const CELLAR: LocationId = LocationId(4);
+
+/// The Enemy phase ending with Daisy (the lead) and Agnes in the Hallway, and
+/// a Ghoul Minion 01160 at each of `origins`, so 01107's *"Each unengaged
+/// [[Ghoul]] enemy moves 1 location towards the Parlor."* walks each of them
+/// into the Hallway beside both. Ghoul Minion prints no Prey, so the two tie:
+/// `glossary/Prey.md`, *"if multiple investigators are tied in meeting these
+/// instructions, the lead investigator may decide among them"*. 01107's one
+/// ruling is that it *"can move exhausted (evaded) enemies"*
+/// (<https://arkhamdb.com/card/01107>); 01160 has none.
+fn daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(origins: &[LocationId]) -> TestSession {
+    let mut builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .ending_enemy_phase()
+        .with_seat(seat(1).as_card("01002").at(HALLWAY).deck(["01088"]))
+        .with_seat(seat(2).as_card("01004").at(HALLWAY).deck(["01088"]))
+        .with_seating([DAISY, AGNES])
+        .with_lead(DAISY)
+        .with_location(
+            location(HALLWAY)
+                .as_card("01112")
+                .connections([PARLOR, ATTIC, CELLAR]),
+        )
+        .with_location(location(PARLOR).as_card("01115").connections([HALLWAY]))
+        .with_location(location(ATTIC).as_card("01113").connections([HALLWAY]))
+        .with_location(location(CELLAR).as_card("01114").connections([HALLWAY]))
+        .with_agenda_deck(["01107"])
+        .with_encounter_deck(["01168", "01168"]);
+    for (id, origin) in [GHOUL, SECOND_GHOUL].into_iter().zip(origins) {
+        builder = builder.with_enemy(enemy(id).as_card(GHOUL_MINION).at(*origin));
+    }
+    TestSession::new(builder.build(), TEST_REGISTRIES)
+}
+
+/// A Ghoul the agenda walks in beside two tied investigators asks the lead
+/// whom it engages, and offers exactly the two of them, each on their
+/// investigator card.
+#[test]
+fn a_ghoul_moved_beside_two_tied_investigators_asks_the_lead_whom_it_engages() {
+    let session = daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC]);
+    let daisy = session.state().investigators[&DAISY].card_anchor();
+    let agnes = session.state().investigators[&AGNES].card_anchor();
+
+    let ghoul = &session.state().enemies[&GHOUL];
+    assert_eq!(
+        (ghoul.current_location, ghoul.engaged_with),
+        (Some(HALLWAY), None)
+    );
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
+    assert_eq!(prompt.responder, Responder::Lead(DAISY));
+    assert_eq!(
+        (
+            session.offered_at(&daisy),
+            session.offered_at(&agnes),
+            prompt.options.len()
+        ),
+        (1, 1, 2),
+        "the tie offers Daisy and Agnes: {prompt:?}",
+    );
+}
+
+/// The lead's answer engages the investigator she chose, and the round goes on
+/// into Upkeep.
+#[test]
+fn the_answer_engages_the_chosen_investigator_and_the_round_continues() {
+    let session = daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC]);
+    let agnes = session.state().investigators[&AGNES].card_anchor();
+
+    let session = session.pick(agnes);
+
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(AGNES));
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyEngaged {
+            enemy: GHOUL,
+            investigator: AGNES
+        },
+        Event::PhaseStarted {
+            phase: Phase::Upkeep
+        },
+    );
+}
+
+/// A response that is not a pick, or a pick past the two tied investigators,
+/// is rejected and leaves the board and the prompt as they were.
+#[test]
+fn a_wrong_answer_to_the_ghouls_tie_is_rejected_and_changes_nothing() {
+    daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC])
+        .assert_rejects(TestSession::skip);
+    daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC])
+        .assert_rejects(|s| s.answer_as(DAISY, InputResponse::PickSingle(OptionId(2))));
+}
+
+/// The agenda moves its Ghouls one at a time: the second Ghoul is still in the
+/// Cellar while the lead is asked about the first, and moves only once she
+/// answers (ADR 0020).
+#[test]
+fn a_second_ghoul_moves_only_after_the_first_ghouls_tie_is_answered() {
+    let session = daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC, CELLAR]);
+    let daisy = session.state().investigators[&DAISY].card_anchor();
+    let agnes = session.state().investigators[&AGNES].card_anchor();
+
+    assert_eq!(
+        session.state().enemies[&SECOND_GHOUL].current_location,
+        Some(CELLAR),
+        "the second Ghoul waits for the first tie's answer"
+    );
+
+    let session = session.pick(agnes);
+    let second = &session.state().enemies[&SECOND_GHOUL];
+    assert_eq!(
+        (second.current_location, second.engaged_with),
+        (Some(HALLWAY), None),
+        "the second Ghoul moves in, and its own tie is asked in turn"
+    );
+    assert_eq!(session.prompt().responder, Responder::Lead(DAISY));
+
+    let session = session.pick(daisy);
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(AGNES));
+    assert_eq!(
+        session.state().enemies[&SECOND_GHOUL].engaged_with,
+        Some(DAISY)
+    );
+    assert_event!(
+        session.events(),
+        Event::PhaseStarted {
+            phase: Phase::Upkeep
         }
     );
 }

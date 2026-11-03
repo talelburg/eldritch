@@ -257,11 +257,15 @@
     }
   },
   {
-    "SpawnEngage": {
-      "enemy": 2,
-      "candidates": [
-        1,
-        2
+    "EngagementTie": {
+      "ties": [
+        {
+          "enemy": 2,
+          "candidates": [
+            1,
+            2
+          ]
+        }
       ]
     }
   },
@@ -475,7 +479,9 @@
   },
   {
     "EnemyPhase": {
-      "resume": "HuntersMoving"
+      "resume": {
+        "HuntersAfter": 1
+      }
     }
   },
   {

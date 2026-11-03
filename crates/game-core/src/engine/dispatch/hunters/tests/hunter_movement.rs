@@ -21,14 +21,15 @@ const OTHER: InvestigatorId = InvestigatorId(2);
 /// The bearer-only hunter.
 const HUNTER: EnemyId = EnemyId(1);
 
-/// Hunter movement finished without a tie for the lead to break. A tie pushes
-/// its `HunterMove` prompt and returns `Done` too, so the outcome alone does
-/// not say so; the frame on top does.
+/// Hunter movement finished without a choice for the lead. A direction tie
+/// pushes its `HunterMove` prompt, and an engagement tie on arrival its
+/// `EngagementTie` prompt, and both return `Done` too, so the outcome alone
+/// does not say so; the frame on top does.
 #[track_caller]
 fn assert_no_tie(state: &GameState, outcome: &EngineOutcome) {
     assert_eq!(*outcome, EngineOutcome::Done);
     assert!(
-        state.continuations.top_of::<HunterChoice>().is_none(),
+        !choice_pending(state),
         "no hunter tie is pending: {:?}",
         state.continuations.top(),
     );
@@ -52,7 +53,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         .with_enemy(ghoul)
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(B));
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
@@ -76,7 +77,7 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(B));
     assert_eq!(
         state.enemies[&EnemyId(1)].engaged_with,
@@ -100,7 +101,7 @@ fn hunter_with_no_path_does_not_move() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(ISLAND));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -120,7 +121,7 @@ fn exhausted_hunter_is_skipped() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -140,7 +141,7 @@ fn non_hunter_enemy_does_not_move() {
         .with_enemy(e)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -162,7 +163,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_eq!(
@@ -215,7 +216,7 @@ fn hunt(enemy: StagedEnemy, bearer_at: LocationId, other_at: LocationId) -> Game
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_no_tie(&state, &outcome);
     state
 }
@@ -248,7 +249,7 @@ fn bearer_only_hunter_arriving_engages_its_bearer_not_the_lead() {
         .with_enemy(bearer_only_hunter(B))
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&HUNTER].engaged_with, Some(BEARER));
 }
@@ -270,7 +271,7 @@ fn bearer_only_hunter_ignores_everyone_else() {
         .with_enemy(bearer_only_hunter(B))
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events), None);
     assert_eq!(state.enemies[&HUNTER].current_location, Some(B));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }

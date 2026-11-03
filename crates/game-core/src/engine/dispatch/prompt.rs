@@ -22,8 +22,8 @@
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::{
-    advance_reverse, cards, choice, combat, cursor, encounter, forced_triggers, hand_discard_cost,
-    hunters, phases, reaction_windows, skill_test, slots,
+    advance_reverse, cards, choice, combat, cursor, encounter, engagement, forced_triggers,
+    hand_discard_cost, hunters, phases, reaction_windows, skill_test, slots,
 };
 use crate::engine::enumerate;
 use crate::engine::outcome::{
@@ -143,8 +143,10 @@ fn table(
         Continuation::HunterMove(choice) => {
             Some((hunters::choice_request(state, cards, choice), lead(state)))
         }
-        Continuation::SpawnEngage(pending) => Some((
-            encounter::spawn_engage_request(state, cards, pending),
+        // Whom an enemy engages among investigators its prey leaves tied is the
+        // lead's (`glossary/Prey.md`).
+        Continuation::EngagementTie(frame) => Some((
+            engagement::engagement_tie_request(state, cards, frame),
             lead(state),
         )),
         // Who takes the next Investigation turn is a group decision, so the

@@ -2,7 +2,9 @@ use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, Spaw
 
 use super::*;
 use crate::engine::outcome::OptionId;
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
+use crate::state::{
+    CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
+};
 use crate::test_support::{location, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -486,9 +488,9 @@ fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
     assert!(
         !matches!(
             state.continuations.top(),
-            Some(Continuation::SpawnEngage(_))
+            Some(Continuation::EngagementTie(_))
         ),
-        "no spawn-engage pick is pending",
+        "no engagement tie is pending",
     );
     let spawned = state.enemies.values().next().expect("one enemy");
     assert_eq!(spawned.current_location, Some(HALL));
@@ -529,7 +531,7 @@ fn spawn_tie_suspends_for_lead_pick() {
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(matches!(
         state.continuations.top(),
-        Some(Continuation::SpawnEngage(_))
+        Some(Continuation::EngagementTie(_))
     ));
     let spawned = state.enemies.values().next().expect("one enemy");
     assert_eq!(spawned.engaged_with, None);
@@ -538,7 +540,7 @@ fn spawn_tie_suspends_for_lead_pick() {
 #[test]
 fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     // Validate-first: a pick outside the stored candidate set rejects
-    // and leaves the SpawnEngage frame intact for retry, with the
+    // and leaves the EngagementTie frame intact for retry, with the
     // enemy still unengaged.
     let loc = location(HALL).code(CardCode("_loc".into()));
     let mut state = GameStateBuilder::new()
@@ -565,13 +567,13 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     );
     assert!(matches!(
         state.continuations.top(),
-        Some(Continuation::SpawnEngage(_))
+        Some(Continuation::EngagementTie(_))
     ));
 
     // Option id 99 is out of the co-located candidate range. The subject is
     // a malformed response no step can name, so the resume handler is called
     // with it raw.
-    let outcome = hunters::resume_spawn_engage(
+    let outcome = engagement::resume_engagement_tie(
         &mut Cx::for_test(&mut state, &mut events),
         &InputResponse::PickSingle(OptionId(99)),
     );
@@ -582,7 +584,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     assert!(
         matches!(
             state.continuations.top(),
-            Some(Continuation::SpawnEngage(_))
+            Some(Continuation::EngagementTie(_))
         ),
         "pending must survive a rejected pick for retry",
     );

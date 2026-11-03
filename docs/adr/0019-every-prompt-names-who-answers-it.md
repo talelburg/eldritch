@@ -13,7 +13,7 @@ Each prompt kind names one of three responders, read from its frame:
 | Responder | Prompt kinds |
 |---|---|
 | **One named investigator** | the open turn; a substitution; a slot make-room discard; an additional-action choice; a damage distribution; an attack-order pick; a hand-discard cost; an effect's choice (its controller); a forced acknowledge (its candidate's controller); the skill test's commit window and result pause (the tester); the head of the mulligan, hand-size and encounter-draw queues |
-| **The lead** | hunter-move ties; spawn-engage ties; the turn choice; the advance acknowledge; the order of a 2+ forced run |
+| **The lead** | hunter direction ties; engagement ties; the turn choice; the advance acknowledge; the order of a 2+ forced run |
 | **Several answerers** | reaction windows and framework Fast windows. Each option names the investigator it is offered to. |
 
 **The engine checks every answer against its responder.** An answer names the investigator answering. One named investigator or the lead accepts only that investigator, several answerers accept an investigator holding an offered option, and a pick may name only options offered to the investigator answering or to no one in particular. Anything else is rejected before the frame resumes, on replay as live. Which account may answer for an investigator is the live game's check, not the engine's.
