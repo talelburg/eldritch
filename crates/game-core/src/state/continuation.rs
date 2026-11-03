@@ -762,14 +762,15 @@ impl Continuation {
                 FrameActivity::Prompt,
                 ScenarioEndDisposition::Cancel,
             ),
-            // The open turn surfaces its legal-action menu; once
-            // `ending`, it is the rotation tail the loop drives after a
-            // suspending `EndOfTurn` forced resolved.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending, .. }) => {
-                let activity = if *ending {
-                    FrameActivity::Driven
-                } else {
+            // The open turn surfaces its legal-action menu. Once an action
+            // was taken, it is driven instead: the loop reopens the turn's
+            // player window above it. Once `ending`, it is the rotation tail
+            // the loop drives after a suspending `EndOfTurn` forced resolved.
+            Continuation::InvestigatorTurn(turn) => {
+                let activity = if turn.awaits_menu() {
                     FrameActivity::Prompt
+                } else {
+                    FrameActivity::Driven
                 };
                 (activity, ScenarioEndDisposition::Cancel)
             }
@@ -2221,12 +2222,20 @@ pub enum PhaseStep {
     /// addressable and so step 2.2's rotation runs in this window's
     /// continuation (preserving the printed 2.1 → window → 2.2 order).
     InvestigationBegins,
-    /// The player window opened at the start of each investigator's
-    /// turn (Rules Reference p.24 step 2.2, the "previous player window"
-    /// that actions return to during step 2.2.1). Bare variant. One per
-    /// investigator turn. Continuation is a no-op: the engine then waits
-    /// for the active investigator's player-driven actions.
-    InvestigatorTurnBegins,
+    /// The turn's player window: the window that opens after Rules
+    /// Reference p.24 step 2.2 (next investigator's turn begins), and the
+    /// "previous player window" that step 2.2.1 returns to after each
+    /// action (`Appendix_II_Timing_and_Gameplay.md`):
+    ///
+    /// > 2.2.1 Active investigator may take an action, if able. If an
+    /// > action was taken, return to previous player window. If no action
+    /// > was taken, proceed to 2.2.2.
+    ///
+    /// Bare variant. Its continuation depends on what lies beneath it. After
+    /// 2.2 that is the Investigation phase anchor, which pushes the open turn.
+    /// After an action it is the open turn itself, which comes back as the
+    /// active investigator's menu, or as the rotation if the turn is ending.
+    TurnPlayerWindow,
 }
 
 /// A suspended Hunter-movement choice awaiting input during Enemy-phase step
@@ -2598,12 +2607,12 @@ pub struct UpkeepPhaseFrame {
 /// The active investigator's open turn — Rules Reference step 2.2.1.
 ///
 /// Pushed *above* the [`Continuation::InvestigationPhase`]
-/// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
+/// anchor once the `TurnPlayerWindow` closes; the anchor spans the
 /// whole phase beneath it. The player takes basic actions (each a typed
 /// `PlayerAction`) while
 /// it is on top; `EndTurn` pops it via
 /// [`resume_end_turn`](crate::engine). A prompt while open, and driven once
-/// `ending` (see [`Continuation::profile`]).
+/// `ending` or `player_window_owed` (see [`Continuation::profile`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvestigatorTurnFrame {
     /// Whose turn this is. Mirrors [`GameState::active_investigator`](crate::state::game_state::GameState::active_investigator) while on
@@ -2615,6 +2624,36 @@ pub struct InvestigatorTurnFrame {
     /// to decide the resolved test triggers rotation; an ordinary mid-turn
     /// test leaves it `false`.
     pub ending: bool,
+    /// `true` while the turn owes its player window: from the moment an action
+    /// is paid for (taking an action, see `GLOSSARY.md`) until the turn is back
+    /// on top with that action fully resolved. The drive loop then clears it
+    /// and reopens the turn's player window ([`PhaseStep::TurnPlayerWindow`])
+    /// above the turn, as step 2.2.1's *"If an action was taken, return to
+    /// previous player window"* asks.
+    ///
+    /// Left out of the wire when unset and defaulted on read, so a stack
+    /// serialized before the field existed reads back unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub player_window_owed: bool,
+}
+
+impl InvestigatorTurnFrame {
+    /// `investigator`'s turn as it opens: not ending, no player window owed.
+    #[must_use]
+    pub fn open(investigator: InvestigatorId) -> Self {
+        Self {
+            investigator,
+            ending: false,
+            player_window_owed: false,
+        }
+    }
+
+    /// Whether the turn, on top, surfaces its legal-action menu: it is neither
+    /// ending nor owed a player window. Otherwise the drive loop drives it.
+    #[must_use]
+    pub fn awaits_menu(&self) -> bool {
+        !self.ending && !self.player_window_owed
+    }
 }
 
 /// An action or an activated ability paused over something that must resolve

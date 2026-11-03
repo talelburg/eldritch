@@ -267,10 +267,14 @@ fn losing_actions_takes_the_standard_ones_first() {
 /// last standard action and the additional one.
 #[test]
 fn an_action_costing_two_spends_the_additional_action_and_a_standard_one() {
+    // His `[fast]` ability keeps the turn's player window open after each
+    // action (step 2.2.1): pass it.
     let session = staged(skids().threat_area([FROZEN_IN_FEAR]))
         .session()
         .take(&RESOURCE)
-        .take(&RESOURCE);
+        .skip()
+        .take(&RESOURCE)
+        .skip();
     assert_eq!(actions(session.state()), 1);
     let move_there = TurnAction::Move {
         investigator: INV,
@@ -343,9 +347,11 @@ fn investigate_on_the_elder_sign(shroud: u8) -> TestSession {
         .open_turn(INV)
         .session()
         .take(&TurnAction::Investigate { investigator: INV })
-        // His `[fast]` ability keeps the test's player windows open: pass them.
+        // His `[fast]` ability keeps the test's player windows open, and the
+        // turn's player window after the action (step 2.2.1): pass them.
         .skip()
         .commit(&[])
+        .skip()
         .skip()
 }
 
@@ -503,6 +509,9 @@ fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
     let session = fighting_on_the_elder_sign(&[OVERPOWER]).pick(OptionTarget::CommittedCard {
         index: CommittedIndex(0),
     });
+    // His 2 resources pay for his `[fast]` ability, so the turn's player window
+    // after the Fight (step 2.2.1) offers it: pass.
+    let session = session.skip();
     session.assert_at_turn_menu(INV);
     assert_event_sequence!(
         session.events(),
@@ -547,7 +556,9 @@ fn an_addition_behind_a_card_with_none_anchors_to_its_committed_place() {
         "{:?}",
         session.prompt()
     );
-    let session = session.pick(overpower);
+    // His 2 resources pay for his `[fast]` ability, so the turn's player window
+    // after the Fight (step 2.2.1) offers it: pass.
+    let session = session.pick(overpower).skip();
     session.assert_at_turn_menu(INV);
     assert_event_sequence!(
         session.events(),

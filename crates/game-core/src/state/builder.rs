@@ -519,7 +519,7 @@ impl GameStateBuilder {
     /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame
     /// on top of the staged `*Phase` anchor — the realistic
     /// invariant for a state constructed mid-turn (the real driver pushes it once
-    /// the `InvestigatorTurnBegins` window closes).
+    /// the `TurnPlayerWindow` closes).
     ///
     /// Private: a turn frame without its phase anchor is a state the engine
     /// never rests in, so [`open_turn`](Self::open_turn) is the only public way
@@ -672,10 +672,7 @@ impl GameStateBuilder {
         // A staged open turn sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
-            continuations.push(InvestigatorTurnFrame {
-                investigator,
-                ending: false,
-            });
+            continuations.push(InvestigatorTurnFrame::open(investigator));
         }
         for window in self.open_windows {
             continuations.push(window);
@@ -818,7 +815,7 @@ mod with_open_window_tests {
         let state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
-            .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
+            .with_open_window(FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
             .build();
         assert_eq!(state.open_windows().len(), 1);
         assert!(matches!(
@@ -837,13 +834,13 @@ mod with_open_window_tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(FastWindowKind::Phase(PhaseStep::MythosAfterDraws))
-            .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
+            .with_open_window(FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
             .build();
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
             state.open_windows()[1],
             Continuation::FastWindow(FastWindowFrame {
-                kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+                kind: FastWindowKind::Phase(PhaseStep::TurnPlayerWindow),
                 ..
             })
         ));

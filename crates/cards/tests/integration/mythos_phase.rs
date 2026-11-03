@@ -39,7 +39,7 @@
 //! `check_play_card`'s turn gate. A Fast **asset** is scoped to
 //! `owner_is_active && permissive_window`, and Mythos has no active
 //! investigator — which is why `issue_476_fast_window.rs` (Magnifying Glass
-//! 01030) proves the property at `InvestigatorTurnBegins` and cannot prove it
+//! 01030) proves the property at `TurnPlayerWindow` and cannot prove it
 //! here. The 0-action activated ability is the other half of
 //! `enumerate_fast_plays`, and it is not turn-gated.
 //!

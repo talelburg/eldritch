@@ -3,7 +3,7 @@
 //! Real registries, Roland (01001), Rotting Remains (01163) on the encounter
 //! deck, a forced Cultist bag, and Magnifying Glass (01030, a Fast asset) in
 //! hand. After the Mythos draw + failed willpower test resolve, the
-//! `InvestigatorTurnBegins` Fast window finds a fast play eligible and surfaces
+//! `TurnPlayerWindow` Fast window finds a fast play eligible and surfaces
 //! a SKIPPABLE `PickSingle` (not a `Done`-idle strand). Skipping reaches the
 //! open turn; picking the option plays the asset.
 
@@ -19,7 +19,7 @@ const MAGNIFYING_GLASS: &str = "01030";
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,
 /// fails the Rotting Remains willpower test (Cultist -1), and the
-/// `InvestigatorTurnBegins` fast window prompts. Returns the session there.
+/// `TurnPlayerWindow` fast window prompts. Returns the session there.
 fn to_fast_window() -> TestSession {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),

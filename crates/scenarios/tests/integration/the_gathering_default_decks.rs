@@ -173,18 +173,23 @@ fn resolves_on_the_first_bullet(defeated: TestSession) {
     );
 }
 
-/// Play Knife from the hand, then fight with its discard ability:
+/// Play Knife from the hand, answer the turn's player window that follows the
+/// play with `after_play` (step 2.2.1: playing it is an action), then fight with
+/// its discard ability:
 ///
 /// > [action] Discard Knife: **Fight.** You get +2 [combat] for this attack.
 /// > This attack deals +1 damage.
 ///
 /// The session is left at the fight's commit window.
-fn fight_with_a_discarded_knife(session: TestSession) -> TestSession {
+fn fight_with_a_discarded_knife(
+    session: TestSession,
+    after_play: impl FnOnce(TestSession) -> TestSession,
+) -> TestSession {
     let knife = hand_index(&session, KNIFE);
-    let armed = session.take(&TurnAction::PlayCard {
+    let armed = after_play(session.take(&TurnAction::PlayCard {
         investigator: INV,
         source: PlaySource::Hand(knife),
-    });
+    }));
     armed.assert_at_turn_menu(INV);
     let knife = armed.state().in_play(INV, KNIFE);
     let fighting = armed.take(&TurnAction::ActivateAbility {
@@ -237,7 +242,8 @@ fn daisy_with_her_default_deck_plays_the_gathering_to_a_resolution() {
     assert_eq!(investigation.state().round, 2);
 
     let investigation = investigation.edit_state(|state| priest_engaged_with(state, 2));
-    let defeated = fight_with_a_discarded_knife(investigation).commit(&[]);
+    // Nobody holds a fast play, so no window follows the play.
+    let defeated = fight_with_a_discarded_knife(investigation, |armed| armed).commit(&[]);
     assert_event!(defeated.events(), Event::EnemyDamaged { amount: 2, .. });
     resolves_on_the_first_bullet(defeated);
 }
@@ -259,10 +265,14 @@ fn skids_with_his_default_deck_plays_the_gathering_to_a_resolution() {
     investigation.assert_at_turn_menu(INV);
     assert_eq!(investigation.state().round, 2);
 
-    // His ability keeps the fight's player windows open, before his commit and
-    // after it, as in his own card tests: pass them.
+    // His ability keeps the turn's player window open after the Knife's play,
+    // and the fight's player windows before his commit and after it, as in his
+    // own card tests: pass them.
     let investigation = investigation.edit_state(|state| priest_engaged_with(state, 2));
-    let fighting = pass_his_ability(fight_with_a_discarded_knife(investigation));
+    let fighting = pass_his_ability(fight_with_a_discarded_knife(
+        investigation,
+        pass_his_ability,
+    ));
     let defeated = pass_his_ability(fighting.commit(&[]));
     assert_event!(defeated.events(), Event::EnemyDamaged { amount: 2, .. });
     resolves_on_the_first_bullet(defeated);

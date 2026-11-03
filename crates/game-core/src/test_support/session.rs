@@ -11,7 +11,8 @@ use crate::engine::{
 use crate::event::Event;
 use crate::state::{
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
-    GameState, GameStateBuilder, InvestigatorId, SkillKind,
+    FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigatorId, PhaseStep,
+    SkillKind,
 };
 use crate::test_support::resolver::{
     self, card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
@@ -949,6 +950,35 @@ impl TestSession {
                  session rests at {other:?}"
             ),
         }
+    }
+
+    /// Assert the session rests at the framework player window for `step`
+    /// (Appendix II's *"player window"* after it): the phase's fast window on
+    /// top, prompting every investigator holding an eligible fast play, any of
+    /// whom may pass.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests anywhere else — another window, a prompt
+    /// one investigator answers, or `Done`.
+    #[track_caller]
+    pub fn assert_at_player_window(&self, step: PhaseStep) {
+        assert!(
+            matches!(
+                self.state.continuations.top(),
+                Some(Continuation::FastWindow(FastWindowFrame { kind, .. }))
+                    if *kind == FastWindowKind::Phase(step)
+            ),
+            "TestSession::assert_at_player_window: expected the {step:?} window; the session \
+             rests at {:?}",
+            self.rest,
+        );
+        let prompt = self.prompt();
+        assert!(
+            prompt.responder == Responder::Several && prompt.skippable,
+            "TestSession::assert_at_player_window: expected a prompt several may pass; the \
+             session rests at {prompt:?}",
+        );
     }
 
     /// Assert the session rests at a `PickSingle` the lead `lead` answers,

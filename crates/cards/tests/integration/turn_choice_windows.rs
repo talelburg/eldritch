@@ -12,10 +12,7 @@
 //! test can see which one is open.
 
 use cards::TEST_REGISTRIES;
-use game_core::state::{
-    Continuation, EnemyId, FastWindowFrame, FastWindowKind, GameStateBuilder, InvestigatorId,
-    LocationId, PhaseStep,
-};
+use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, PhaseStep};
 use game_core::test_support::{self, seat, BoardLookup as _, TestSession};
 
 /// Beat Cop 01018.
@@ -40,26 +37,11 @@ fn investigation_begins() -> TestSession {
         .session()
 }
 
-/// Assert `session` rests at the framework player window for `step`, offering
-/// B's Beat Cop.
-#[track_caller]
-fn assert_at_window(session: &TestSession, step: PhaseStep) {
-    assert!(
-        matches!(
-            session.state().continuations.top(),
-            Some(Continuation::FastWindow(FastWindowFrame { kind, .. }))
-                if *kind == FastWindowKind::Phase(step)
-        ),
-        "expected the {step:?} window; the top frame is {:?}",
-        session.state().continuations.top(),
-    );
-    assert_eq!(session.offered_at(&session.state().card(B, BEAT_COP)), 1);
-}
-
 #[test]
 fn the_post_2_1_window_comes_before_the_first_choice() {
     let session = investigation_begins();
-    assert_at_window(&session, PhaseStep::InvestigationBegins);
+    session.assert_at_player_window(PhaseStep::InvestigationBegins);
+    assert_eq!(session.offered_at(&session.state().card(B, BEAT_COP)), 1);
     assert_eq!(session.state().active_investigator, None);
 
     session.skip().choose_turn(B).skip().assert_at_turn_menu(B);
@@ -68,7 +50,8 @@ fn the_post_2_1_window_comes_before_the_first_choice() {
 #[test]
 fn the_post_2_2_window_opens_after_the_chosen_turn_begins() {
     let session = investigation_begins().skip().choose_turn(B);
-    assert_at_window(&session, PhaseStep::InvestigatorTurnBegins);
+    session.assert_at_player_window(PhaseStep::TurnPlayerWindow);
+    assert_eq!(session.offered_at(&session.state().card(B, BEAT_COP)), 1);
     assert_eq!(session.state().active_investigator, Some(B));
 
     session.skip().assert_at_turn_menu(B);

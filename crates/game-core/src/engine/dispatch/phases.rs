@@ -352,15 +352,16 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `queue_event` pushes
     // the forced/reaction abilities (Frozen in Fear 01164's willpower test, a 2+
     // forced run) as frames; the `drive` loop drives them and, once they pop,
-    // re-dispatches the `InvestigatorTurn { ending: true }` frame → `resume_end_turn`
+    // re-dispatches the turn frame → `drive_open_turn` → `resume_end_turn`
     // for the rotation (RR p.24 step 2.2.2). Uniform whether the forced run is
     // empty, completes immediately, or suspends — there is no inline-resume branch.
     // A `Rejected` from `queue_event` rolls back the armed flag with the rest of
     // the apply (transactional snapshot).
-    let ending = cursor::turn_frame_ending_mut(cx.state, active_id).unwrap_or_else(|| {
-        unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
-    });
-    *ending = true;
+    cursor::turn_frame_mut(cx.state, active_id)
+        .unwrap_or_else(|| {
+            unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
+        })
+        .ending = true;
     emit::queue_event(
         cx,
         &TimingEvent::EndOfTurn {
@@ -371,12 +372,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 
 /// Run the post-`EndOfTurn`-forced portion of [`end_turn`] (Rules
 /// Reference p.24 step 2.2.2): record the turn, then return to step 2.2
-/// ([`next_investigator_turn`]). Reached uniformly through the `drive` loop's
-/// `InvestigatorTurn { ending: true }` arm: `end_turn` arms
-/// that flag and emits `EndOfTurn`, whose forced/reaction effects (Frozen in
-/// Fear 01164's willpower test) the loop drives as frames; once they pop, the
-/// re-exposed turn frame runs this rotation — whether the forced run was empty,
-/// completed immediately, or suspended.
+/// ([`next_investigator_turn`]). Reached uniformly through
+/// [`drive_open_turn`], the `drive` loop's arm for a driven turn frame:
+/// `end_turn` arms `ending` and emits `EndOfTurn`, whose forced/reaction
+/// effects (Frozen in Fear 01164's willpower test) the loop drives as frames;
+/// once they pop, the re-exposed turn frame runs this rotation — whether the
+/// forced run was empty, completed immediately, or suspended.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
     // The turn is over: pop the InvestigatorTurn frame this turn ran on. It is
     // always on top here — end_turn reaches this after the
@@ -583,7 +584,7 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// from [`next_investigator_turn`] when one investigator is left waiting, and
 /// from [`resume_turn_choice`] when the lead has chosen. Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
-/// inputs while `InvestigatorTurnBegins` is the "previous player window."
+/// inputs while `TurnPlayerWindow` is the "previous player window."
 ///
 /// **Emits in tail position** (ADR 0003): the anchor is parked at
 /// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
@@ -609,19 +610,51 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> Engin
 /// window.
 ///
 /// The anchor advances to `TurnBegins` first, so the closing
-/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm.
+/// `TurnPlayerWindow` routes to the right `on_child_pop` arm.
 fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::TurnBegins);
-    let outcome = reaction_windows::open_fast_window(
-        cx,
-        FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    );
+    let outcome =
+        reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::TurnPlayerWindow));
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
-        "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
+        "open_fast_window(TurnPlayerWindow) unexpectedly suspended; this window has no suspending continuation",
     );
     outcome
+}
+
+/// The open turn, re-exposed as a driven frame: an action was taken, or the turn
+/// is ending.
+///
+/// An action comes first. Appendix II step 2.2.1
+/// (`Appendix_II_Timing_and_Gameplay.md`):
+///
+/// > 2.2.1 Active investigator may take an action, if able. If an action was
+/// > taken, return to previous player window. If no action was taken, proceed
+/// > to 2.2.2.
+///
+/// The previous player window is the one after 2.2, so the record `take` left
+/// is cleared and [`PhaseStep::TurnPlayerWindow`] opens again above the turn.
+/// Every investigator holding an eligible fast play answers it, and it does not
+/// appear when nobody does. It closes back to this turn: the menu, or, if the
+/// action ended the turn by eliminating the active investigator, the rotation
+/// (2.2.2). That is why the record is read ahead of `ending`.
+///
+/// Only an action opens the window, meaning something paid through `take`. A
+/// fast play or a zero-action ability from the menu is not an action, so it
+/// does not reopen the window. That is a deliberate reading of *"If an action
+/// was taken"*, and it has a cost: the other investigators can respond to a
+/// fast play from the active investigator's menu only after the next action
+/// (or in the window after 2.2 on the next turn, if the turn ends first).
+pub(super) fn drive_open_turn(cx: &mut Cx) -> EngineOutcome {
+    let turn = cx.state.continuations.top_mut::<InvestigatorTurnFrame>();
+    if turn.player_window_owed {
+        turn.player_window_owed = false;
+        reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
+    } else {
+        let investigator = turn.investigator;
+        resume_end_turn(cx, investigator)
+    }
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)` emit and
@@ -1243,10 +1276,9 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      begin_investigator_turn always sets it"
                 )
             });
-            cx.state.continuations.push(InvestigatorTurnFrame {
-                investigator,
-                ending: false,
-            });
+            cx.state
+                .continuations
+                .push(InvestigatorTurnFrame::open(investigator));
             EngineOutcome::Done
         }
         // Step 1.1's queued `PhaseStarted { Mythos }` forced abilities have

@@ -26,7 +26,8 @@ use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
     CandidateSource, Continuation, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
-    PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
+    InvestigatorTurnFrame, PhaseStep, PlayFromHandFrame, ResolutionCandidate, TimingMode,
+    TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -1100,7 +1101,10 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// A phase window routes to the `*Phase` anchor beneath it: the
 /// anchor's `resume` — not the [`PhaseStep`] — selects the relocated body (the
 /// Mythos/Investigation transitions, the Enemy attack-loop step, the Upkeep
-/// 4.2–4.6 cascade). A skill-test window re-enters the skill-test driver;
+/// 4.2–4.6 cascade). The one exception is the turn's player window reopened
+/// after an action ([`phases::drive_open_turn`]): it sits above the open turn,
+/// not the anchor, so it returns `Done` and the loop re-exposes the turn (its
+/// menu, or its rotation if it is ending). A skill-test window re-enters the skill-test driver;
 /// its cursor was pre-advanced before the window opened. Returns `Done` or
 /// `AwaitingInput` when a body suspends.
 pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
@@ -1111,6 +1115,15 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
     // driver-to-driver reach-down, so it stays imperative; `close_reaction_window`
     // calls nothing after it.
     match kind {
+        FastWindowKind::Phase(PhaseStep::TurnPlayerWindow)
+            if cx
+                .state
+                .continuations
+                .top_of::<InvestigatorTurnFrame>()
+                .is_some() =>
+        {
+            EngineOutcome::Done
+        }
         FastWindowKind::Phase(_) => phases::anchor_on_child_pop(cx),
         FastWindowKind::SkillTest { .. } => skill_test::advance(cx),
     }
