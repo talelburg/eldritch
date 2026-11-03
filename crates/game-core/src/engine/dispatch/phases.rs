@@ -622,6 +622,40 @@ fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     outcome
 }
 
+/// The open turn, re-exposed as a driven frame: an action was taken, or the turn
+/// is ending.
+///
+/// An action comes first. Appendix II step 2.2.1
+/// (`Appendix_II_Timing_and_Gameplay.md`):
+///
+/// > 2.2.1 Active investigator may take an action, if able. If an action was
+/// > taken, return to previous player window. If no action was taken, proceed
+/// > to 2.2.2.
+///
+/// The previous player window is the one after 2.2, so the record `take` left
+/// is cleared and [`PhaseStep::TurnPlayerWindow`] opens again above the turn.
+/// Every investigator holding an eligible fast play answers it, and it does not
+/// appear when nobody does. It closes back to this turn: the menu, or, if the
+/// action ended the turn by eliminating the active investigator, the rotation
+/// (2.2.2). That is why the record is read ahead of `ending`.
+///
+/// Only an action opens the window, meaning something paid through `take`. A
+/// fast play or a zero-action ability from the menu is not an action, so it
+/// does not reopen the window. That is a deliberate reading of *"If an action
+/// was taken"*, and it has a cost: the other investigators can respond to a
+/// fast play from the active investigator's menu only after the next action
+/// (or in the window after 2.2 on the next turn, if the turn ends first).
+pub(super) fn drive_open_turn(cx: &mut Cx) -> EngineOutcome {
+    let turn = cx.state.continuations.top_mut::<InvestigatorTurnFrame>();
+    if turn.action_taken {
+        turn.action_taken = false;
+        reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
+    } else {
+        let investigator = turn.investigator;
+        resume_end_turn(cx, investigator)
+    }
+}
+
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)` emit and
 /// queues its forced abilities; the Investigation → Enemy transition runs from
 /// [`investigation_phase_end_transition`] once they have resolved. Called only
@@ -1241,10 +1275,9 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      begin_investigator_turn always sets it"
                 )
             });
-            cx.state.continuations.push(InvestigatorTurnFrame {
-                investigator,
-                ending: false,
-            });
+            cx.state
+                .continuations
+                .push(InvestigatorTurnFrame::open(investigator));
             EngineOutcome::Done
         }
         // Step 1.1's queued `PhaseStarted { Mythos }` forced abilities have

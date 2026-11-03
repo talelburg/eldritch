@@ -16,10 +16,9 @@ fn investigator_turn_defaults_to_not_ending() {
         .build();
     assert_eq!(
         state.continuations.top(),
-        Some(&Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-            investigator: InvestigatorId(1),
-            ending: false,
-        })),
+        Some(&Continuation::InvestigatorTurn(
+            InvestigatorTurnFrame::open(InvestigatorId(1))
+        )),
     );
 }
 
@@ -48,10 +47,9 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     // Top frame is the InvestigatorTurn for investigator 1...
     assert_eq!(
         state.continuations.top(),
-        Some(&Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-            investigator: InvestigatorId(1),
-            ending: false,
-        })),
+        Some(&Continuation::InvestigatorTurn(
+            InvestigatorTurnFrame::open(InvestigatorId(1))
+        )),
     );
     // ...sitting above the still-present InvestigationPhase anchor.
     assert!(state.continuations.iter().any(|c| matches!(

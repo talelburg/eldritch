@@ -14,7 +14,7 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{enumerate, evaluator, native_tail, Cx};
 use crate::state::{
     ActionResolutionFrame, ActionResume, Continuation, EffectFrame, FastWindowFrame, FrameActivity,
-    GameState, InvestigatorId, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
+    GameState, InvestigatorId, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -377,13 +377,12 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // exhaust it (enemy phase), and either begin the next attack, prompt
             // for the order, or run the loop's source-keyed tail.
             Continuation::AttackLoop(_) => combat::drive_parked_attack_loop(cx),
-            // An open turn that is not a prompt is ending: a suspending `EndOfTurn` forced
-            // stranded `end_turn` before rotation and flagged this frame.
-            // Re-exposed now that the suspension resolved, drive the rotation
-            // tail.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame { investigator, .. }) => {
-                phases::resume_end_turn(cx, *investigator)
-            }
+            // An open turn that is not a prompt has just had an action fully
+            // resolved, or is ending: a suspending `EndOfTurn` forced stranded
+            // `end_turn` before rotation and flagged this frame. Re-exposed
+            // now, reopen the turn's player window (step 2.2.1) or drive the
+            // rotation tail.
+            Continuation::InvestigatorTurn(_) => phases::drive_open_turn(cx),
             // An investigator's elimination, mid-sequence. Step 0's
             // weakness-scoped game-end emit is in tail position (it only queues
             // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;

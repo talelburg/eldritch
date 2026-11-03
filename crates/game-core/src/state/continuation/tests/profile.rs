@@ -52,6 +52,7 @@ fn investigator_turn(ending: bool) -> Continuation {
     Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending,
+        action_taken: false,
     })
 }
 
@@ -422,6 +423,14 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         // Framework sequence the loop drives.
         (investigator_turn(true), profile(DRIVEN, CANCEL)),
+        (
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame {
+                investigator: InvestigatorId(1),
+                ending: false,
+                action_taken: true,
+            }),
+            profile(DRIVEN, CANCEL),
+        ),
         (
             attack_loop(AttackLoopStage::Attacking),
             profile(DRIVEN, CANCEL),

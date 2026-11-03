@@ -75,7 +75,8 @@ fn table(
         Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator,
             ending,
-        }) => (!ending).then(|| {
+            action_taken,
+        }) => (!ending && !action_taken).then(|| {
             (
                 turn_menu(state, cards, *investigator),
                 Responder::Investigator(*investigator),

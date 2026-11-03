@@ -762,11 +762,16 @@ impl Continuation {
                 FrameActivity::Prompt,
                 ScenarioEndDisposition::Cancel,
             ),
-            // The open turn surfaces its legal-action menu; once
-            // `ending`, it is the rotation tail the loop drives after a
-            // suspending `EndOfTurn` forced resolved.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending, .. }) => {
-                let activity = if *ending {
+            // The open turn surfaces its legal-action menu. Once an action
+            // was taken, it is driven instead: the loop reopens the turn's
+            // player window above it. Once `ending`, it is the rotation tail
+            // the loop drives after a suspending `EndOfTurn` forced resolved.
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame {
+                ending,
+                action_taken,
+                ..
+            }) => {
+                let activity = if *ending || *action_taken {
                     FrameActivity::Driven
                 } else {
                     FrameActivity::Prompt
@@ -2230,8 +2235,10 @@ pub enum PhaseStep {
     /// > action was taken, return to previous player window. If no action
     /// > was taken, proceed to 2.2.2.
     ///
-    /// Bare variant. Continuation is a no-op: the engine then waits for the active
-    /// investigator's player-driven actions.
+    /// Bare variant. Its continuation depends on what lies beneath it. After
+    /// 2.2 that is the Investigation phase anchor, which pushes the open turn.
+    /// After an action it is the open turn itself, which comes back as the
+    /// active investigator's menu, or as the rotation if the turn is ending.
     TurnPlayerWindow,
 }
 
@@ -2609,7 +2616,7 @@ pub struct UpkeepPhaseFrame {
 /// `PlayerAction`) while
 /// it is on top; `EndTurn` pops it via
 /// [`resume_end_turn`](crate::engine). A prompt while open, and driven once
-/// `ending` (see [`Continuation::profile`]).
+/// `ending` or `action_taken` (see [`Continuation::profile`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvestigatorTurnFrame {
     /// Whose turn this is. Mirrors [`GameState::active_investigator`](crate::state::game_state::GameState::active_investigator) while on
@@ -2621,6 +2628,28 @@ pub struct InvestigatorTurnFrame {
     /// to decide the resolved test triggers rotation; an ordinary mid-turn
     /// test leaves it `false`.
     pub ending: bool,
+    /// `true` from the moment an action is paid for (taking an action, see
+    /// `GLOSSARY.md`) until the turn is back on top with that action fully
+    /// resolved. The drive loop then clears it and reopens the turn's player
+    /// window ([`PhaseStep::TurnPlayerWindow`]) above the turn, as step 2.2.1's
+    /// *"If an action was taken, return to previous player window"* asks.
+    ///
+    /// Left out of the wire when unset and defaulted on read, so a stack
+    /// serialized before the field existed reads back unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub action_taken: bool,
+}
+
+impl InvestigatorTurnFrame {
+    /// `investigator`'s turn as it opens: not ending, no action taken yet.
+    #[must_use]
+    pub fn open(investigator: InvestigatorId) -> Self {
+        Self {
+            investigator,
+            ending: false,
+            action_taken: false,
+        }
+    }
 }
 
 /// An action or an activated ability paused over something that must resolve

@@ -348,6 +348,13 @@
     }
   },
   {
+    "InvestigatorTurn": {
+      "investigator": 1,
+      "ending": false,
+      "action_taken": true
+    }
+  },
+  {
     "AttackLoop": {
       "investigator": 1,
       "remaining_attackers": [

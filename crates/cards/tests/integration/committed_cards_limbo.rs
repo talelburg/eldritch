@@ -175,7 +175,10 @@ fn the_st2_window_does_not_offer_a_committed_card_as_a_play() {
         window.prompt(),
     );
 
-    assert_turn_resolved(&window.skip());
+    // The uncommitted copy is still a legal Fast play once the action has
+    // resolved, so the turn's player window (step 2.2.1) offers it: pass that
+    // too.
+    assert_turn_resolved(&window.skip().skip());
 }
 
 #[test]

@@ -33,10 +33,7 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
 
 #[test]
 fn investigator_turn_frame_classification() {
-    let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-        investigator: InvestigatorId(1),
-        ending: false,
-    });
+    let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame::open(InvestigatorId(1)));
     // The open turn is not a framework anchor...
     assert!(!frame.is_phase_anchor());
     // ...and it DOES await input: the open turn surfaces its legal-action
@@ -47,6 +44,15 @@ fn investigator_turn_frame_classification() {
     assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: true,
+        action_taken: false,
+    })
+    .awaits_input());
+    // Nor is the turn whose action has just resolved: it reopens its player
+    // window instead.
+    assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
+        investigator: InvestigatorId(1),
+        ending: false,
+        action_taken: true,
     })
     .awaits_input());
     // It carries no window candidates (the menu is re-enumerated, not stored).
@@ -61,6 +67,7 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
         let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending,
+            action_taken: false,
         });
         let json = serde_json::to_string(&frame).unwrap();
         let back: Continuation = serde_json::from_str(&json).unwrap();

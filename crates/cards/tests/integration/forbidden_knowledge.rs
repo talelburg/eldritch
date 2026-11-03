@@ -76,6 +76,9 @@ fn played_from_hand_it_enters_with_four_secrets() {
         investigator: INV,
         source: PlaySource::Hand(0),
     });
+    // Playing it is an action, and its own [fast] ability is now in play, so
+    // the turn's player window (step 2.2.1) offers it: pass.
+    let session = session.skip();
     session.assert_at_turn_menu(INV);
     assert_eq!(secrets(&session), Some(4));
 }

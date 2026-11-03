@@ -64,11 +64,13 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     assert!(session.state().investigators[&INV].cards_in_play.is_empty());
 
     // Magnifying Glass is Fast and still in hand, so the test's player windows
-    // offer it, before the commit window and after it; pass on both.
+    // offer it, before the commit window and after it, and so does the turn's
+    // player window once the action has resolved (step 2.2.1); pass on each.
     let session = session
         .take(&TurnAction::Investigate { investigator: INV })
         .skip()
         .commit(&[])
+        .skip()
         .skip();
     session.assert_at_turn_menu(INV);
     assert_event!(

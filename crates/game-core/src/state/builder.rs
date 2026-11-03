@@ -672,10 +672,7 @@ impl GameStateBuilder {
         // A staged open turn sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
-            continuations.push(InvestigatorTurnFrame {
-                investigator,
-                ending: false,
-            });
+            continuations.push(InvestigatorTurnFrame::open(investigator));
         }
         for window in self.open_windows {
             continuations.push(window);

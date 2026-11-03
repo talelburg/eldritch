@@ -4,7 +4,9 @@
 //!
 //! Every action is taken through [`take`]: the basic actions, a non-fast play,
 //! and an action-cost ability. A fast play or a zero-action ability spends no
-//! action, so it takes none and never reaches the step. The turn menu asks
+//! action, so it takes none and never reaches the step. Taking an action is
+//! also what reopens the turn's player window once the action has resolved
+//! (step 2.2.1, see `phases::drive_open_turn`). The turn menu asks
 //! [`check`] what taking a basic action would cost, and the play and activation
 //! validators ask it whether a non-fast play or an action-cost ability can be
 //! afforded.
@@ -58,7 +60,7 @@ use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume,
     AdditionalActionChoiceFrame, AdditionalActionGrant, CardCode, CardInstanceId, GameState,
-    InvestigatorId, Status,
+    InvestigatorId, InvestigatorTurnFrame, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -653,6 +655,14 @@ pub(crate) fn take(
         return ask_additional_action_choice(cx, investigator, description, &choice);
     }
     use_additional_actions(cx.state, investigator, &additional);
+    // An action is taken from here on, so the turn reopens its player window
+    // once the action has resolved (step 2.2.1, `phases::drive_open_turn`).
+    cx.state
+        .continuations
+        .topmost_of_mut::<InvestigatorTurnFrame>()
+        .filter(|turn| turn.investigator == investigator)
+        .expect("take: an action is taken only during its taker's open turn")
+        .action_taken = true;
     let inv = cx
         .state
         .investigators

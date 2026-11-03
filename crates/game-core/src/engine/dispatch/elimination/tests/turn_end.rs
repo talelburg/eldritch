@@ -13,6 +13,7 @@ fn turn_frame(state: &GameState) -> Option<(InvestigatorId, bool)> {
         Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator,
             ending,
+            ..
         }) => Some((*investigator, *ending)),
         _ => None,
     })
