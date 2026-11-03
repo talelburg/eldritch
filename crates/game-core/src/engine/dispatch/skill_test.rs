@@ -1409,7 +1409,7 @@ pub(super) fn resolve_verdict(
 /// step. Push the success/failure card effect (exactly one, or neither):
 /// `on_success` on a passing draw (Frozen in Fear 01164), `on_fail` on a failing
 /// draw (Crypt Chill 01167, Grasping Hands 01162). Pre-advances the cursor to
-/// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push so a
+/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) **before** the push so a
 /// suspending effect resumes past this step. The push (if any) makes an Effect
 /// frame the new top → the `advance` loop yields to drive it.
 fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
@@ -1455,14 +1455,14 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// through [`chaos_symbol_effect`] from the token on
 /// [`revealed`](InFlightSkillTest::revealed), the way
 /// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) and
-/// [`FireOnResolution`](SkillTestStep::FireOnResolution) look up the committed
+/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) look up the committed
 /// cards' abilities: an elder sign from the investigator card, sourced to it;
 /// a scenario symbol from the scenario's symbol hook, controller-only. No
 /// token was revealed when a determination skipped the draw, so nothing is
 /// pushed.
 ///
 /// Pre-advances the cursor to
-/// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push, so
+/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) **before** the push, so
 /// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
 /// step. TODO(#642): the token result's fixed position after the card result
 /// ignores the performer's chosen order of the ST.7 results.
@@ -1477,7 +1477,7 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::FireOnResolution { next: 0 };
+        .continuation = SkillTestStep::ApplyResultAdditions { next: 0 };
     let Some(token) = token else {
         return;
     };
@@ -1496,8 +1496,8 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     }
 }
 
-/// RR ST.7 — the [`FireOnResolution`](SkillTestStep::FireOnResolution) step.
-/// Fire the committed cards' [result additions](ResultContribution::Adds) whose
+/// RR ST.7 — the [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) step.
+/// Apply the committed cards' [result additions](ResultContribution::Adds) whose
 /// outcome matches the resolved test, one effect per visit, in committed-card
 /// order. Collect the matching effects, push the
 /// `next`th (pre-advancing `next` first), and yield (the pushed Effect frame is
@@ -1509,7 +1509,7 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// on a success, the failure margin on a failure — and with the position of the
 /// committed card it is printed on, so the effect can name its own card
 /// (Opportunist 01053 returns itself to hand).
-fn fire_on_resolution_step(
+fn apply_result_additions_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
     committed: &[CommittedCard],
@@ -1527,7 +1527,7 @@ fn fire_on_resolution_step(
         cx.state
             .current_skill_test_mut()
             .expect("the SkillTest frame must persist across driver steps")
-            .continuation = SkillTestStep::FireOnResolution {
+            .continuation = SkillTestStep::ApplyResultAdditions {
             next: next.saturating_add(1),
         };
         let mut ctx = EvalContext::for_controller(investigator);
@@ -1641,7 +1641,8 @@ fn open_skill_test_player_window(
 ///   [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome), or back here
 ///   if the re-total flipped the verdict.
 /// - [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) → ST.7 head
-///   (committed cards' result modifiers); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
+///   (committed cards' result modifiers); advance to
+///   [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
 /// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
 ///   (the clue discovery); advance to
 ///   [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
@@ -1650,8 +1651,8 @@ fn open_skill_test_player_window(
 ///   [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult).
 /// - [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) → push the revealed
 ///   token's `on_success` / `on_fail` part (Cultist horror); advance to
-///   [`FireOnResolution`](SkillTestStep::FireOnResolution).
-/// - [`FireOnResolution`](SkillTestStep::FireOnResolution) → fire committed
+///   [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions).
+/// - [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) → apply committed
 ///   cards' result additions (one per visit); advance to
 ///   [`PostRetaliate`](SkillTestStep::PostRetaliate).
 /// - [`PostRetaliate`](SkillTestStep::PostRetaliate) → fire a Retaliate attack
@@ -1833,8 +1834,8 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::ApplyTokenResult => {
                 apply_token_result_step(cx, investigator);
             }
-            SkillTestStep::FireOnResolution { next } => {
-                fire_on_resolution_step(cx, investigator, &committed, next);
+            SkillTestStep::ApplyResultAdditions { next } => {
+                apply_result_additions_step(cx, investigator, &committed, next);
             }
             SkillTestStep::PostRetaliate => {
                 // Retaliate fires here — after ST.7, before the ST.8 teardown
@@ -2228,7 +2229,7 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// gate or source effects.
 /// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) combines the
 /// [`Modifies`](ResultContribution::Modifies) list into one `Seq`;
-/// [`FireOnResolution`](SkillTestStep::FireOnResolution) indexes into the
+/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) indexes into the
 /// [`Adds`](ResultContribution::Adds) list, pushing one effect per visit so they
 /// cursor-sequence (no LIFO). At collection time the committed cards are in
 /// limbo on the in-flight record (discard happens at teardown), which also
@@ -2236,7 +2237,7 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// resolves cleanly.
 ///
 /// Each effect comes paired with its card's position in `committed`, which
-/// `FireOnResolution` binds for the effect to name its own card.
+/// `ApplyResultAdditions` binds for the effect to name its own card.
 ///
 /// No abilities for the codes → empty list: engine-only tests that don't touch
 /// card data never reach a committed card's ability. Silent skip mirrors

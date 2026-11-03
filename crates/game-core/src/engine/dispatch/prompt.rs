@@ -131,7 +131,7 @@ fn table(
             | SkillTestStep::ApplyFollowUp
             | SkillTestStep::ApplyResultEffect
             | SkillTestStep::ApplyTokenResult
-            | SkillTestStep::FireOnResolution { .. }
+            | SkillTestStep::ApplyResultAdditions { .. }
             | SkillTestStep::PostRetaliate
             | SkillTestStep::PostOnResolution => None,
         }

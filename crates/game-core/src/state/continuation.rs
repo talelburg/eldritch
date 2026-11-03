@@ -1695,7 +1695,7 @@ impl ResolvedTest {
 ///   sub-steps: action follow-up (the clue discovery), then the
 ///   success/failure card effect. Each effect is pushed for the global drive
 ///   loop and cursor-sequenced so results resolve in ST order.
-/// - [`FireOnResolution`](Self::FireOnResolution) — fire the committed cards'
+/// - [`ApplyResultAdditions`](Self::ApplyResultAdditions) — apply the committed cards'
 ///   result additions, one per visit.
 /// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1833,12 +1833,12 @@ pub enum SkillTestStep {
     /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome) up again from
     /// [`InFlightSkillTest::revealed`], as
     /// [`ApplyResultModifiers`](Self::ApplyResultModifiers) and
-    /// [`FireOnResolution`](Self::FireOnResolution) look up the committed
+    /// [`ApplyResultAdditions`](Self::ApplyResultAdditions) look up the committed
     /// cards' abilities — an elder sign from the investigator card, sourced to
     /// it, and a scenario symbol from the scenario's symbol hook, with the
     /// controller-only context. Pushed as an effect frame, so a sanity-soak
     /// (Holy Rosary 01028) on an [`Effect::Deal`] suspends cleanly.
-    /// Pre-advances to [`FireOnResolution`](Self::FireOnResolution) before the
+    /// Pre-advances to [`ApplyResultAdditions`](Self::ApplyResultAdditions) before the
     /// push.
     ///
     /// Sits among the ST.7 result effects, after the action follow-up and the
@@ -1848,7 +1848,7 @@ pub enum SkillTestStep {
     /// his or her choice."* The engine sequences them in this fixed order
     /// instead. TODO(#642): let the performer choose the order.
     ApplyTokenResult,
-    /// RR ST.7 — fire the committed cards' [result
+    /// RR ST.7 — apply the committed cards' [result
     /// additions](card_dsl::dsl::ResultContribution::Adds) whose outcome matches
     /// the resolved test, one effect per driver visit so they cursor-sequence in committed-card
     /// order (no LIFO). `next` is the index into the flattened
@@ -1859,7 +1859,7 @@ pub enum SkillTestStep {
     /// The test outcome (`succeeded`/`margin`) is read off
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
-    FireOnResolution {
+    ApplyResultAdditions {
         /// Index of the next matching (card, ability) trigger to fire.
         next: u32,
     },
