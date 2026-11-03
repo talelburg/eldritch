@@ -23,7 +23,9 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, enemy, location, seat, AnyKind, Printed, Seat, TestSession};
+use game_core::test_support::{
+    self, enemy, location, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
+};
 
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -374,4 +376,67 @@ fn the_elder_sign_gains_nothing_when_the_test_fails() {
     assert_event!(session.events(), Event::SkillTestFailed { by: 1, .. });
     assert_no_event!(session.events(), Event::ResourcesGained { .. });
     assert_eq!(resources(session.state()), 5);
+}
+
+/// Skids ending his turn with Frozen in Fear 01164 in his threat area, on the
+/// elder sign: *"**Forced** - At the end of your turn: Test \[willpower\] (3).
+/// If you succeed, discard Frozen in Fear."* Willpower 2 + 2 succeeds, so two
+/// ST.7 results are pending, Frozen in Fear's discard and the elder sign's 2
+/// resources, and RR ST.7 gives him the order: *"If there are multiple results
+/// to be applied during this step, the investigator performing the test
+/// applies those results in the order of his or her choice."* Returns the
+/// session at that prompt.
+fn ending_his_turn_frozen_in_fear_on_the_elder_sign() -> TestSession {
+    staged(skids().threat_area([FROZEN_IN_FEAR]))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+        .session()
+        .take(&TurnAction::EndTurn)
+        .commit(&[])
+}
+
+/// The card result's option anchors to Frozen in Fear in his threat area, and
+/// the elder sign's to his investigator card, which prints it.
+#[test]
+fn the_elder_signs_result_is_offered_on_his_card_beside_frozen_in_fears() {
+    let session = ending_his_turn_frozen_in_fear_on_the_elder_sign();
+    let state = session.state();
+    let frozen = state.card(INV, FROZEN_IN_FEAR);
+    let card = state.investigators[&INV].card_anchor();
+    let offered: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|option| option.target.clone())
+        .collect();
+    assert_eq!(
+        offered,
+        [Some(frozen), Some(card)],
+        "{:?}",
+        session.prompt()
+    );
+}
+
+/// Either order resolves both: Frozen in Fear is discarded and he gains 2.
+#[test]
+fn both_orders_discard_frozen_in_fear_and_gain_two() {
+    for elder_sign_first in [false, true] {
+        let session = ending_his_turn_frozen_in_fear_on_the_elder_sign();
+        let first = if elder_sign_first {
+            session.state().investigators[&INV].card_anchor()
+        } else {
+            session.state().card(INV, FROZEN_IN_FEAR)
+        };
+        let session = session.pick(first);
+        assert!(
+            !session.state().investigators[&INV]
+                .threat_area
+                .iter()
+                .any(|c| c.code.as_str() == FROZEN_IN_FEAR),
+            "Frozen in Fear is discarded (elder sign first: {elder_sign_first})",
+        );
+        assert_event!(
+            session.events(),
+            Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV
+        );
+    }
 }

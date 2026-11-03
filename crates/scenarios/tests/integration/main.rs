@@ -8,6 +8,7 @@
 mod act_clues_per_investigator;
 mod issue_476_fast_window;
 mod issue_482_advance;
+mod st7_result_order;
 mod test_registries;
 mod the_gathering;
 mod the_gathering_default_decks;

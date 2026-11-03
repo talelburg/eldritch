@@ -273,7 +273,11 @@ pub(super) fn candidate_options<T>(
 /// engine bug, because every candidate is enumerated from `state`. It trips a
 /// `debug_assert!` in tests and degrades to a neutral placeholder in a live
 /// game, never to an id's `Debug` form.
-fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) -> String {
+pub(crate) fn anchor_label(
+    state: &GameState,
+    cards: &CardRegistry,
+    anchor: &OptionTarget,
+) -> String {
     let found = match anchor {
         OptionTarget::Location(id) => state.locations.get(id).map(|l| l.name.clone()),
         OptionTarget::Enemy(id) => state.enemies.get(id).map(|e| e.name.clone()),

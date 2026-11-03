@@ -25,17 +25,20 @@ use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, PickCount};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount,
+};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::continuation::{PendingResults, St7Result};
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
-    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, EnemyId, FastWindowKind,
-    GameState, InFlightSkillTest, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime,
-    LocationId, RecordedModifier, ResolvedTest, RevealedToken, SkillKind, SkillSubstitution,
-    SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution, Zone,
+    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, EncounterCardFrame,
+    EnemyId, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, LastingEffect,
+    LastingEffectKind, Lifetime, LocationId, RecordedModifier, ResolvedTest, RevealedToken,
+    SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
+    SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -1461,15 +1464,28 @@ fn collect_results_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[
 ///
 /// RR ST.7: *"If there are multiple results to be applied during this step,
 /// the investigator performing the test applies those results in the order of
-/// his or her choice."* The next result is the first in the engine's fixed
-/// order instead: the card result, the token result, then the additions in
-/// committed-card order. TODO(#642): let the performer choose the order.
+/// his or her choice."* So while two or more of the results the performer
+/// orders ([`PendingResults::ordered`]: the card result and the token result)
+/// are pending, this step applies none: it parks the cursor at
+/// [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) and suspends on
+/// the "which next" prompt ([`result_order_request`]), which
+/// [`resume_result_order`] answers. Otherwise the next result is the first
+/// pending one, so the last ordered result applies without asking. The
+/// additions are not ordered yet, TODO(#642): they come after the card and
+/// token results, in committed-card order.
 fn apply_results_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
     committed: &[CommittedCard],
     pending: PendingResults,
-) {
+) -> Option<EngineOutcome> {
+    if pending.ordered().nth(1).is_some() {
+        cx.state
+            .current_skill_test_mut()
+            .expect("the SkillTest frame must persist across driver steps")
+            .continuation = SkillTestStep::AwaitingResultOrder { pending };
+        return Some(prompt::suspend(cx.state, cx.cards));
+    }
     let next = pending.iter().next();
     cx.state
         .current_skill_test_mut()
@@ -1483,6 +1499,191 @@ fn apply_results_step(
     if let Some(result) = next {
         apply_result(cx, investigator, committed, result);
     }
+    None
+}
+
+/// What a skill test at its result-order pick asks (the
+/// [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) step): which
+/// pending ST.7 result applies next, one option per
+/// [ordered](PendingResults::ordered) result, in that order. One of the
+/// [prompt table](super::prompt::request)'s helpers; the performer answers it.
+///
+/// A `PickSingle` [`Selection`](crate::engine::PromptNature::Selection), not
+/// skippable, like the multiple-attacks order pick. Each option anchors to the
+/// board entity its result comes from, when there is one:
+///
+/// - the card result, to the source of the test when it is still on the board
+///   (Frozen in Fear 01164 in a threat area). A Revelation in limbo (Rotting
+///   Remains 01163) has none, so the option is label-only, named after the
+///   encounter card resolving beneath the test;
+/// - the elder sign's token result, to the performer's investigator card,
+///   which prints it. A scenario token's (the Cultist's horror) is label-only:
+///   the scenario reference card is not on the board.
+///
+/// # Panics
+///
+/// If no skill test is in flight at that step.
+pub(super) fn result_order_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
+    let test = state
+        .current_skill_test()
+        .expect("result_order_request: in-flight test must exist");
+    let SkillTestStep::AwaitingResultOrder { pending } = test.continuation else {
+        unreachable!("result_order_request: the prompt table asks only at AwaitingResultOrder")
+    };
+    let options = pending
+        .ordered()
+        .zip(0u32..)
+        .map(|(result, i)| {
+            let (label, target) = result_option(state, cards, test, result);
+            ChoiceOption::new(OptionId(i), label).maybe_at(target)
+        })
+        .collect();
+    InputRequest::pick_single(
+        format!(
+            "{}: choose which result of the skill test to apply next.",
+            choice::investigator_name(state, test.investigator),
+        ),
+        options,
+    )
+}
+
+/// The label and anchor of the option offering `result` in the
+/// [`result_order_request`] (see there for the anchors).
+fn result_option(
+    state: &GameState,
+    cards: &CardRegistry,
+    test: &InFlightSkillTest,
+    result: St7Result,
+) -> (String, Option<OptionTarget>) {
+    match result {
+        St7Result::Card => {
+            let target = test
+                .source
+                .and_then(|source| OptionTarget::for_live_source(source, state));
+            let name = match &target {
+                Some(target) => Some(choice::anchor_label(state, cards, target)),
+                None => resolving_encounter_card(state).map(|code| choice::card_name(cards, code)),
+            };
+            let label = name.map_or_else(
+                || "Result of the test".to_owned(),
+                |name| format!("Result of {name}"),
+            );
+            (label, target)
+        }
+        St7Result::Token => {
+            let token = test.revealed.map(|revealed| revealed.counts_as);
+            let target = match token {
+                Some(ChaosToken::ElderSign) => state
+                    .investigators
+                    .get(&test.investigator)
+                    .map(|inv| OptionTarget::CardInstance(inv.investigator_card.instance_id)),
+                _ => None,
+            };
+            let label = format!(
+                "Result of the {} token",
+                token.map_or("chaos", token_symbol_name)
+            );
+            (label, target)
+        }
+        St7Result::Addition { .. } => {
+            unreachable!("result_option: additions are not ordered yet (TODO(#642))")
+        }
+    }
+}
+
+/// The encounter card whose Revelation started the in-flight test: the card
+/// on the [`EncounterCard`](Continuation::EncounterCard) frame beneath the
+/// test, past the frames its Revelation resolves in (the draw's timing event,
+/// and the effect walk that pushed the test). `None` when another kind of frame
+/// comes first, such as a card being played, so a test some other card started
+/// is never named after a Revelation still resolving further down.
+fn resolving_encounter_card(state: &GameState) -> Option<&CardCode> {
+    state
+        .continuations
+        .iter()
+        .rev()
+        .skip_while(|frame| !matches!(frame, Continuation::SkillTest(_)))
+        .skip(1)
+        .find(|frame| {
+            !matches!(
+                frame,
+                Continuation::Effect(_) | Continuation::EffectBase(_) | Continuation::EmitEvent(_)
+            )
+        })
+        .and_then(|frame| match frame {
+            Continuation::EncounterCard(EncounterCardFrame { card, .. }) => card.as_ref(),
+            _ => None,
+        })
+}
+
+/// A chaos symbol's name as a card prints it, for a prompt label.
+fn token_symbol_name(token: ChaosToken) -> &'static str {
+    match token {
+        ChaosToken::Skull => "Skull",
+        ChaosToken::Cultist => "Cultist",
+        ChaosToken::Tablet => "Tablet",
+        ChaosToken::ElderThing => "Elder Thing",
+        ChaosToken::ElderSign => "Elder Sign",
+        ChaosToken::AutoFail => "Auto-fail",
+        _ => "chaos",
+    }
+}
+
+/// Resume the result-order pick: the performer named the pending ST.7 result
+/// to apply next. Validate-first: the cursor must be at
+/// [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) and the answer a
+/// `PickSingle` naming one of the options [`result_order_request`] offered;
+/// anything else is rejected with the prompt left up for a retry. A valid pick
+/// pre-advances the cursor to [`ApplyResults`](SkillTestStep::ApplyResults)
+/// without the picked result, **before** pushing its effect (as
+/// [`apply_results_step`] does), and returns `Done`: the drive loop resolves
+/// the effect and re-enters [`advance`], which asks again while two or more
+/// ordered results remain.
+pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(t) = cx.state.current_skill_test() else {
+        return EngineOutcome::Rejected {
+            reason: "skill-test result order: no in-flight skill test to resume".into(),
+        };
+    };
+    let SkillTestStep::AwaitingResultOrder { pending } = t.continuation else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "skill-test result order: not at the result-order pick (continuation {:?})",
+                t.continuation,
+            )
+            .into(),
+        };
+    };
+    let InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: the result-order pick expects InputResponse::PickSingle, got \
+                 {response:?}"
+            )
+            .into(),
+        };
+    };
+    let Some(result) = usize::try_from(*i)
+        .ok()
+        .and_then(|i| pending.ordered().nth(i))
+    else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: result-order option {i} out of range (0..{})",
+                pending.ordered().count(),
+            )
+            .into(),
+        };
+    };
+    let (investigator, committed) = (t.investigator, t.committed_by_active.clone());
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame was present immediately above")
+        .continuation = SkillTestStep::ApplyResults {
+        pending: pending.without(result),
+    };
+    apply_result(cx, investigator, &committed, result);
+    EngineOutcome::Done
 }
 
 /// Push one ST.7 result's effect, looked up now, with the test's margin bound
@@ -1684,7 +1885,12 @@ fn open_skill_test_player_window(
 ///   [`ApplyResults`](SkillTestStep::ApplyResults).
 /// - [`ApplyResults`](SkillTestStep::ApplyResults) → apply one pending ST.7
 ///   result per visit; advance to
-///   [`PostRetaliate`](SkillTestStep::PostRetaliate) once none is left.
+///   [`PostRetaliate`](SkillTestStep::PostRetaliate) once none is left. With
+///   two or more ordered results pending, park at
+///   [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) instead.
+/// - [`AwaitingResultOrder`](SkillTestStep::AwaitingResultOrder) → suspend on
+///   the "which next" pick; `resume_result_order` applies the picked result
+///   and sets `ApplyResults` with the rest.
 /// - [`PostRetaliate`](SkillTestStep::PostRetaliate) → fire a Retaliate attack
 ///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
@@ -1767,8 +1973,9 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // RR p.26 player window after ST.1.
                 return open_skill_test_player_window(cx, SkillTestStep::AwaitingCommit, false);
             }
-            SkillTestStep::AwaitingCommit => {
-                // The frame's `awaiting()`: emit the commit prompt. (See
+            SkillTestStep::AwaitingCommit | SkillTestStep::AwaitingResultOrder { .. } => {
+                // The frame's `awaiting()`: emit the commit prompt, or the
+                // outstanding ST.7 "which next" pick. (See
                 // `emit_commit_window` for the propagation rationale.)
                 return prompt::suspend(cx.state, cx.cards);
             }
@@ -1862,8 +2069,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 collect_results_step(cx, investigator, &committed);
             }
             SkillTestStep::ApplyResults { pending } => {
-                // RR ST.7 results, one per visit, in the engine's fixed order.
-                apply_results_step(cx, investigator, &committed, pending);
+                // RR ST.7 results, one per visit. With two or more the
+                // performer orders still pending, suspends on the "which next"
+                // pick instead, which `resume_result_order` answers.
+                if let Some(outcome) = apply_results_step(cx, investigator, &committed, pending) {
+                    return outcome;
+                }
             }
             SkillTestStep::PostRetaliate => {
                 // Retaliate fires here — after ST.7, before the ST.8 teardown

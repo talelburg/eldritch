@@ -60,10 +60,11 @@ use crate::test_support::resolver::{
 /// Where the session stopped is read off the engine's outcome alone, never off
 /// the continuation stack: the turn menu is the prompt anchored to
 /// [`TurnControl`](OptionTarget::TurnControl), any other `AwaitingInput` is a
-/// prompt, and `Done` is game over. No step matches on option labels — an
-/// option is chosen by the board entity it anchors to, or
-/// by printed position for a [`Decision`](PromptNature::Decision) alone
-/// (ADR 0011, ADR 0015).
+/// prompt, and `Done` is game over. An option is chosen by the board entity it
+/// anchors to, or by printed position for a [`Decision`](PromptNature::Decision)
+/// alone (ADR 0011, ADR 0015). One step matches on option labels:
+/// [`pick_unanchored`](Self::pick_unanchored), and only among options with no
+/// anchor, which have no other handle.
 ///
 /// ```
 /// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
@@ -550,6 +551,38 @@ impl TestSession {
     )]
     pub fn pick(self, target: OptionTarget) -> Self {
         let id = self.sole_option_at(&target, "pick");
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the un-anchored option labelled `label`, then drain. For
+    /// an option with no board entity to pick it by: the ST.7 result order
+    /// prompt's scenario-token result (the Cultist's horror), or a card result
+    /// whose card is in limbo (Rotting Remains 01163's Revelation). An anchored
+    /// option is picked by its anchor, with [`pick`](Self::pick).
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, or unless exactly one un-anchored option is
+    /// labelled `label`.
+    #[track_caller]
+    pub fn pick_unanchored(self, label: &str) -> Self {
+        self.assert_off_turn_menu("pick_unanchored");
+        let request = self.prompt();
+        let matching: Vec<OptionId> = request
+            .options
+            .iter()
+            .filter(|option| option.target.is_none() && option.label == label)
+            .map(|option| option.id)
+            .collect();
+        let [id] = matching[..] else {
+            panic!(
+                "TestSession::pick_unanchored: {} un-anchored option(s) are labelled {label:?}, \
+                 not one. Prompt {:?} offers {:?}",
+                matching.len(),
+                request.prompt,
+                request.options,
+            );
+        };
         self.respond(InputResponse::PickSingle(id))
     }
 

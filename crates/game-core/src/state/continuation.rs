@@ -1696,6 +1696,8 @@ impl ResolvedTest {
 ///   [`ApplyResults`](Self::ApplyResults) — settle the pending **ST.7
 ///   results** once, then apply them one per visit. Each effect is pushed for
 ///   the global drive loop and cursor-sequenced so results resolve in ST order.
+/// - [`AwaitingResultOrder`](Self::AwaitingResultOrder) — the performer's
+///   "which next" pick, while two or more results they order are pending.
 /// - [`PostRetaliate`](Self::PostRetaliate) — a failed Fight's Retaliate
 ///   attack, after every ST.7 result.
 /// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
@@ -1837,11 +1839,25 @@ pub enum SkillTestStep {
     ///
     /// RR ST.7: *"If there are multiple results to be applied during this
     /// step, the investigator performing the test applies those results in the
-    /// order of his or her choice."* The engine applies them in a fixed order
-    /// instead: the card result, the token result, then the additions in
-    /// committed-card order. TODO(#642): let the performer choose the order.
+    /// order of his or her choice."* While two or more of the results the
+    /// performer orders ([`PendingResults::ordered`]) are pending, the visit
+    /// takes none and sets [`AwaitingResultOrder`](Self::AwaitingResultOrder)
+    /// to ask which comes next. The last one applies without asking. The
+    /// additions are not ordered yet, TODO(#642): they apply after the card
+    /// and token results, in committed-card order.
     ApplyResults {
         /// The ST.7 results not yet applied.
+        pending: PendingResults,
+    },
+    /// RR ST.7 — the performer picks which pending ST.7 result applies next,
+    /// a "which next" [`PickSingle`](crate::engine::InputKind::PickSingle)
+    /// offering one option per [ordered](PendingResults::ordered) result. The
+    /// cursor stays here across the suspension; the answer applies the picked
+    /// result and sets [`ApplyResults`](Self::ApplyResults) with the rest, so
+    /// the prompt comes back while two or more ordered results remain. An
+    /// answer naming no offered option is rejected and the prompt stays up.
+    AwaitingResultOrder {
+        /// The ST.7 results not yet applied, the picked one among them.
         pending: PendingResults,
     },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
@@ -1911,8 +1927,8 @@ impl PendingResults {
         }
     }
 
-    /// The pending results, in the engine's fixed order: the card result, the
-    /// token result, then the additions in committed-card order.
+    /// The pending results: the card result, the token result, then the
+    /// additions in committed-card order.
     pub fn iter(self) -> impl Iterator<Item = St7Result> {
         let additions = (0..64u8)
             .filter(move |&index| self.additions & (1u64 << index) != 0)
@@ -1922,6 +1938,14 @@ impl PendingResults {
             .into_iter()
             .chain(self.token.then_some(St7Result::Token))
             .chain(additions)
+    }
+
+    /// The pending results the performer puts in order, in the order the
+    /// prompt offers them: the card result, then the token result. The
+    /// additions are not among them yet (TODO(#642)), and apply after these.
+    pub fn ordered(self) -> impl Iterator<Item = St7Result> {
+        self.iter()
+            .filter(|result| matches!(result, St7Result::Card | St7Result::Token))
     }
 
     /// This set without `result`.

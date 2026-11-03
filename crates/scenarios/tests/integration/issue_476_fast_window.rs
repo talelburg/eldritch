@@ -51,11 +51,14 @@ fn to_fast_window() -> TestSession {
         .push(CardCode::new(MAGNIFYING_GLASS));
 
     // End the turn into round 2's Mythos draw, draw Rotting Remains, and
-    // commit nothing to its willpower test.
+    // commit nothing to its willpower test. Failing it on the Cultist leaves
+    // two ST.7 results, the card's horror and the token's, and Roland orders
+    // them; either order gives him the same horror.
     TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .confirm()
         .commit(&[])
+        .pick_unanchored("Result of Rotting Remains")
 }
 
 #[test]

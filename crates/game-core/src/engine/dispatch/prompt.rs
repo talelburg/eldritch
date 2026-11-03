@@ -122,6 +122,9 @@ fn table(
             SkillTestStep::AcknowledgeOutcome if state.interactive_acknowledge => {
                 Some(skill_test::acknowledge_request())
             }
+            SkillTestStep::AwaitingResultOrder { .. } => {
+                Some(skill_test::result_order_request(state, cards))
+            }
             SkillTestStep::AcknowledgeOutcome
             | SkillTestStep::PreCommitWindow
             | SkillTestStep::PreTokenWindow
