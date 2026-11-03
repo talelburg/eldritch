@@ -176,6 +176,18 @@
     }
   },
   {
+    "ClueAllocation": {
+      "contributors": [
+        2,
+        1
+      ],
+      "shares": [
+        1
+      ],
+      "threshold": 4
+    }
+  },
+  {
     "Effect": {
       "Leaf": {
         "effect": {

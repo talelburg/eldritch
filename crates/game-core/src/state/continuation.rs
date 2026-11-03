@@ -302,6 +302,8 @@ pub enum Continuation {
     AdditionalActionChoice(AdditionalActionChoiceFrame),
     /// See [`HandDiscardCostFrame`].
     HandDiscardCost(HandDiscardCostFrame),
+    /// See [`ClueAllocationFrame`].
+    ClueAllocation(ClueAllocationFrame),
     /// See [`MythosPhaseFrame`].
     MythosPhase(MythosPhaseFrame),
     /// See [`InvestigationPhaseFrame`].
@@ -360,6 +362,7 @@ impl_frame!(MoveEnter, MoveEnterFrame);
 impl_frame!(SlotDiscard, SlotDiscardFrame);
 impl_frame!(AdditionalActionChoice, AdditionalActionChoiceFrame);
 impl_frame!(HandDiscardCost, HandDiscardCostFrame);
+impl_frame!(ClueAllocation, ClueAllocationFrame);
 impl_frame!(MythosPhase, MythosPhaseFrame);
 impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
 impl_frame!(EnemyPhase, EnemyPhaseFrame);
@@ -714,6 +717,10 @@ impl Continuation {
             // A cost being paid: the ability is initiated, its use recorded and
             // its other costs paid, with its effect parked beneath — under way.
             | Continuation::HandDiscardCost(_)
+            // A group's clue cost being paid for an act advance that has
+            // started: nothing is spent until every share is settled, and the
+            // advance runs from it.
+            | Continuation::ClueAllocation(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
             | Continuation::SlotDiscard(_) => (
@@ -3223,6 +3230,47 @@ pub struct HandDiscardCostFrame {
     pub investigator: InvestigatorId,
     /// The card whose ability the cost is for, which the prompt names.
     pub code: CardCode,
+}
+
+/// An act's clues being paid as a group: who contributes how many.
+///
+/// `glossary/Act_Deck_and_Agenda_Deck.md`: *"Any or all investigators may
+/// contribute any number of clues towards the total number of clues required
+/// to advance the act."* Pushed by the `AdvanceAct` action and by the
+/// round-end group spend once the contributors can afford the act's
+/// threshold. Each contributor in turn settles a share
+/// (`clue_allocation::drive`): one with a single amount that keeps the advance
+/// affordable for those after them gets it unasked, and one with a choice is
+/// asked. Once every share is settled, the clues come off together
+/// (`glossary/Costs.md`: *"If multiple costs for a single card or ability
+/// require payment, those costs must be paid simultaneously."*) and the act
+/// advances. A [Prompt](FrameActivity::Prompt); not a phase anchor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ClueAllocationFrame {
+    /// The contributors in asking order: player order with the investigator
+    /// who started the advance moved last, so that investigator covers what
+    /// the others leave.
+    pub contributors: Vec<InvestigatorId>,
+    /// The shares settled so far, one per contributor from the front of
+    /// [`contributors`](Self::contributors).
+    pub shares: Vec<u8>,
+    /// The clues the act needs.
+    pub threshold: u8,
+}
+
+impl ClueAllocationFrame {
+    /// The allocation of `threshold` clues among `contributors`, in asking
+    /// order, with nothing settled yet. The constructor for code outside the
+    /// crate, where `#[non_exhaustive]` blocks the struct literal.
+    #[must_use]
+    pub fn new(contributors: Vec<InvestigatorId>, threshold: u8) -> Self {
+        Self {
+            contributors,
+            shares: Vec::new(),
+            threshold,
+        }
+    }
 }
 
 #[cfg(test)]

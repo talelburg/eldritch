@@ -13,14 +13,20 @@ use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries, Responder};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{act, location, objective_act, seat, MockRegistry, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
+/// A second investigator, beside [`INV`] in the Hallway.
+const INV_2: InvestigatorId = InvestigatorId(2);
+/// A third investigator, away from the Hallway.
+const INV_3: InvestigatorId = InvestigatorId(3);
 /// The location where the investigator stands.
 const HERE: LocationId = LocationId(2);
+/// A location away from [`HERE`].
+const ELSEWHERE: LocationId = LocationId(3);
 /// The act current at round end, clue threshold 3, carrying the reaction.
 const ACT_2: &str = "_round_end_act";
 /// The act after [`ACT_2`].
@@ -31,8 +37,8 @@ const HALLWAY: &str = "_round_end_hallway";
 /// The advance logic lives in the registry ([`ACT_2`]'s `When`-`RoundEnded`
 /// reaction native), so the coordinator fires it through the effect evaluator
 /// when its candidate is picked. A minimal mock registry stands in for `cards`.
-fn advance_native(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    cx.round_end_advance(HALLWAY)
+fn advance_native(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.round_end_advance(ctx.controller, HALLWAY)
 }
 
 fn advance_reaction() -> Vec<Ability> {
@@ -104,4 +110,41 @@ fn resolve_skip_declines_advance() {
         3,
         "no clues spent on Skip"
     );
+}
+
+/// Two investigators at [`HALLWAY`] holding 3 and 2 against the threshold of 3,
+/// and a third elsewhere holding clues of their own. The round-end reaction is
+/// bound to the lead, [`INV`], who covers the rest: [`INV_2`] is asked first,
+/// and the investigator outside the Hallway is not asked and spends nothing.
+#[test]
+fn the_round_end_spend_asks_the_other_hallway_investigator_first() {
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seat(1).at(HERE).clues(3))
+        .with_seat(seat(2).at(HERE).clues(2))
+        .with_seat(seat(3).at(ELSEWHERE).clues(4))
+        .with_seating([INV, INV_2, INV_3])
+        .ending_upkeep_phase()
+        .with_location(location(HERE).code(HALLWAY))
+        .with_location(location(ELSEWHERE))
+        .with_act_deck([act(ACT_2, 3), objective_act(ACT_3)])
+        .build();
+    let session = TestSession::new(state, registries()).pick_for(INV, OptionTarget::Act);
+    let prompt = session.prompt();
+    assert_eq!(prompt.responder, Responder::Investigator(INV_2));
+    let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+    // [`INV`]'s 3 can cover it all, so [`INV_2`] may put in nothing.
+    assert_eq!(
+        labels,
+        [
+            "Contribute 0 clues",
+            "Contribute 1 clue",
+            "Contribute 2 clues"
+        ]
+    );
+
+    let session = session.pick_nth(2);
+    assert_eq!(session.state().act_index, 1, "advanced act 2 -> act 3");
+    let clues = |id| session.state().investigators[&id].clues;
+    assert_eq!((clues(INV), clues(INV_2), clues(INV_3)), (2, 0, 4));
 }

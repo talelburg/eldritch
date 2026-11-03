@@ -102,7 +102,10 @@ pub enum NativeOp {
         count: u8,
     },
     /// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance).
-    RoundEndAdvance { contributor_location_code: CardCode },
+    RoundEndAdvance {
+        initiator: InvestigatorId,
+        contributor_location_code: CardCode,
+    },
     /// [`NativeCx::substitute_skill_until_end_of_round`](crate::engine::NativeCx::substitute_skill_until_end_of_round).
     SubstituteSkillUntilEndOfRound { substitution: SkillSubstitution },
     /// [`NativeCx::restrict_until_end_of_round`](crate::engine::NativeCx::restrict_until_end_of_round).
@@ -216,9 +219,14 @@ impl NativeOp {
                 count,
             } => take::lose_actions(cx, investigator, count),
             Self::RoundEndAdvance {
+                initiator,
                 contributor_location_code,
             } => {
-                return act_agenda::round_end_advance(cx, contributor_location_code.as_str());
+                return act_agenda::round_end_advance(
+                    cx,
+                    initiator,
+                    contributor_location_code.as_str(),
+                );
             }
             Self::SubstituteSkillUntilEndOfRound { substitution } => {
                 skill_test::substitute_skill_until_end_of_round(cx, substitution);

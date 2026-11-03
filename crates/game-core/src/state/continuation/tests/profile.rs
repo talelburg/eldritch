@@ -336,6 +336,14 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
+            Continuation::ClueAllocation(ClueAllocationFrame {
+                contributors: vec![InvestigatorId(2), InvestigatorId(1)],
+                shares: vec![1],
+                threshold: 4,
+            }),
+            profile(PROMPT, COMPLETE),
+        ),
+        (
             Continuation::Effect(EffectFrame::Leaf {
                 effect: Box::new(Effect::Seq(vec![])),
                 ctx,

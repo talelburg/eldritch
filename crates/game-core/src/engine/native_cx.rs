@@ -682,11 +682,20 @@ impl<'a> NativeCx<'a> {
 
     // --- Acts and skill tests ---
 
-    /// Advance the current act at round end, spending the clues its
-    /// threshold needs from investigators at the location coded
-    /// `contributor_location_code`. `Rejected` when they can't afford it.
-    pub fn round_end_advance(&mut self, contributor_location_code: &str) -> EngineOutcome {
+    /// Advance the current act at round end, the investigators at the
+    /// location coded `contributor_location_code` spending the clues its
+    /// threshold needs as a group. Each of them but `initiator` (the
+    /// investigator the round-end ability was offered to) is asked for their
+    /// share where they have a choice, and `initiator` covers the rest. The
+    /// spend is left pending, so the act has not advanced when this returns.
+    /// `Rejected` when they can't afford it.
+    pub fn round_end_advance(
+        &mut self,
+        initiator: InvestigatorId,
+        contributor_location_code: &str,
+    ) -> EngineOutcome {
         self.run_op(NativeOp::RoundEndAdvance {
+            initiator,
             contributor_location_code: CardCode::from(contributor_location_code),
         })
     }

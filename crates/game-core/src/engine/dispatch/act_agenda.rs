@@ -2,11 +2,11 @@
 //! advancement, clue spending, and act advancement.
 
 use std::borrow::Cow;
-use std::iter;
 
 use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::dispatch::{clue_allocation, cursor};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{board, evaluator, Cx};
 use crate::scenario::ScenarioEnding;
@@ -108,15 +108,13 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     });
 }
 
-/// The investigators who may contribute clues to advance the act, in the
-/// deterministic spend order: the acting investigator first, then the rest
-/// of `seating`. Shared by [`advance_act_action`]'s clue-sufficiency
-/// check and [`spend_clues`] so the validation domain and the spend domain
+/// The investigators who may contribute clues to an `AdvanceAct`: every Active
+/// investigator, wherever they stand, in player order. Shared by
+/// [`check_advance_act`]'s clue-sufficiency check and the spend
+/// [`advance_act_action`] starts, so the validation domain and the spend domain
 /// can never diverge.
-fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<InvestigatorId> {
-    iter::once(acting)
-        .chain(state.seating.iter().copied().filter(|id| *id != acting))
-        .collect()
+fn clue_contributors(state: &GameState) -> Vec<InvestigatorId> {
+    cursor::player_order(state)
 }
 
 /// Validate the `AdvanceAct` action
@@ -129,7 +127,6 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
 pub(crate) fn check_advance_act(
     state: &GameState,
     cards: &CardRegistry,
-    investigator: InvestigatorId,
 ) -> Result<u8, Cow<'static, str>> {
     if state.phase != Phase::Investigation {
         return Err(format!(
@@ -164,11 +161,7 @@ pub(crate) fn check_advance_act(
                 .into(),
         );
     };
-    let total_clues: u32 = clue_contributors(state, investigator)
-        .into_iter()
-        .filter_map(|id| state.investigators.get(&id))
-        .map(|i| u32::from(i.clues))
-        .sum();
+    let total_clues = clues_held(state, &clue_contributors(state));
     if total_clues < u32::from(threshold) {
         return Err(format!(
             "AdvanceAct: act requires {threshold} clues, group holds {total_clues}"
@@ -179,56 +172,29 @@ pub(crate) fn check_advance_act(
 }
 
 /// Handler for `TurnAction::AdvanceAct`:
-/// validate via [`check_advance_act`], then (on success) spend exactly the act's
-/// clue threshold (acting investigator first, then the rest in `seating`) and
-/// advance the act — terminal or not (ADR 0013); a terminal act's ending comes
+/// validate via [`check_advance_act`], then (on success) start the group's spend
+/// of the act's clue threshold ([`clue_allocation::start`]), with the acting
+/// investigator as its initiator. The allocation advances the act once every
+/// share is settled — terminal or not (ADR 0013); a terminal act's ending comes
 /// from the reverse the advance fires, not from this handler.
 pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let threshold = match check_advance_act(cx.state, cx.cards, investigator) {
+    let threshold = match check_advance_act(cx.state, cx.cards) {
         Ok(t) => t,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
 
     // All validations passed — mutate.
-    spend_clues(cx.state, investigator, threshold);
-    // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
-    advance_act(cx, AdvanceTrigger::Deliberate);
+    let contributors = clue_contributors(cx.state);
+    clue_allocation::start(cx, investigator, &contributors, threshold);
     EngineOutcome::Done
 }
 
-/// Spend `amount` clues from the group, deterministically: the acting
-/// investigator's clues first, then the remaining investigators in
-/// `seating`. Callers must have already validated the group holds at
-/// least `amount` clues, so the spend always completes.
-///
-/// TODO(#153): let players choose who contributes when the group holds a
-/// surplus (an `AwaitingInput` allocation prompt). The fixed order here is
-/// outcome-equivalent single-player.
-fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
-    let mut remaining = amount;
-    for id in clue_contributors(state, acting) {
-        if remaining == 0 {
-            break;
-        }
-        if let Some(inv) = state.investigators.get_mut(&id) {
-            let take = inv.clues.min(remaining);
-            inv.clues -= take;
-            remaining -= take;
-        }
-    }
-    debug_assert_eq!(
-        remaining, 0,
-        "spend_clues called without enough clues in the group"
-    );
-}
-
 /// Investigators currently at `location`, in
-/// [`player_order`](super::cursor::player_order). Used by the act round-end
-/// clue-spend window (01109: Hallway investigators), so the group spends in the
-/// order the offer was made in: its first contributor is the investigator the
-/// trigger scan bound the offer to.
+/// [`player_order`](cursor::player_order). Used by the act round-end
+/// clue-spend (01109: Hallway investigators), whose contributors are asked in
+/// player order.
 pub(crate) fn investigators_at(state: &GameState, location: LocationId) -> Vec<InvestigatorId> {
-    super::cursor::player_order(state)
+    cursor::player_order(state)
         .into_iter()
         .filter(|id| state.investigators.get(id).and_then(|i| i.current_location) == Some(location))
         .collect()
@@ -240,23 +206,6 @@ pub(crate) fn clues_held(state: &GameState, ids: &[InvestigatorId]) -> u32 {
         .filter_map(|id| state.investigators.get(id))
         .map(|i| u32::from(i.clues))
         .sum()
-}
-
-/// Spend `amount` clues from `ids` in order. Caller must have validated the
-/// group holds at least `amount` (via [`clues_held`]). Mirrors [`spend_clues`].
-pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], amount: u8) {
-    let mut remaining = amount;
-    for id in ids {
-        if remaining == 0 {
-            break;
-        }
-        if let Some(inv) = state.investigators.get_mut(id) {
-            let take = inv.clues.min(remaining);
-            inv.clues -= take;
-            remaining -= take;
-        }
-    }
-    debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
 /// Whether the current act's round-end group clue-spend advance is affordable.
@@ -287,9 +236,11 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// Round-end group clue-spend act advance — the generic mechanics behind act
 /// 01109's "investigators in the Hallway may, as a group, spend the requisite
 /// number of clues to advance" (the only card-specific datum is the contributor
-/// location, passed in). If [`round_end_advance_affordable`], spends the act's
-/// [`clues_to_advance`](crate::state::Act::clues_to_advance) from the
-/// contributors (player order) and advances the act.
+/// location, passed in). If [`round_end_advance_affordable`], starts the spend
+/// of the act's [`clues_to_advance`](crate::state::Act::clues_to_advance) among
+/// the investigators there ([`clue_allocation::start`]), with `initiator` — the
+/// investigator the round-end reaction was bound to — as its initiator. The
+/// allocation advances the act once every share is settled.
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
 /// eligibility condition (which calls [`round_end_advance_affordable`]), so the
@@ -304,7 +255,11 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// the location is present, so reaching the `expect` would mean
 /// [`round_end_advance_affordable`] and [`location_id_by_code`](crate::engine::location_id_by_code)
 /// disagree about the same code.
-pub(crate) fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
+pub(crate) fn round_end_advance(
+    cx: &mut Cx,
+    initiator: InvestigatorId,
+    contributor_location_code: &str,
+) -> EngineOutcome {
     if !round_end_advance_affordable(cx.state, contributor_location_code) {
         return EngineOutcome::Rejected {
             reason: "round_end_advance: contributors no longer hold enough clues".into(),
@@ -316,9 +271,7 @@ pub(crate) fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) ->
     let loc = evaluator::location_id_by_code(cx.state, contributor_location_code)
         .expect("affordable ⇒ contributor location in play");
     let contributors = investigators_at(cx.state, loc);
-    spend_clues_from(cx.state, &contributors, threshold);
-    // The round-end objective (01109) is a deliberate, player-chosen advance.
-    advance_act(cx, AdvanceTrigger::Deliberate);
+    clue_allocation::start(cx, initiator, &contributors, threshold);
     EngineOutcome::Done
 }
 
@@ -516,7 +469,7 @@ mod advance_act_tests {
     use super::*;
     use crate::assert_event;
     use crate::engine::enumerate::{self, TurnAction};
-    use crate::engine::outcome::EngineOutcome;
+    use crate::engine::outcome::{EngineOutcome, Responder};
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
@@ -709,8 +662,11 @@ mod advance_act_tests {
         );
     }
 
+    /// A surplus of 1 (acting 1, other 2, threshold 2): the other investigator
+    /// is asked first and offered 1 or 2; the acting investigator covers the
+    /// rest unasked.
     #[test]
-    fn advance_act_spends_acting_investigator_first_then_seating() {
+    fn advance_act_asks_the_other_investigator_before_the_initiator() {
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
         let state = GameStateBuilder::new()
@@ -721,25 +677,24 @@ mod advance_act_tests {
             .open_turn(acting)
             // Two acts so the first is non-terminal and its advance bumps the
             // cursor to 1 (a lone act would be terminal, and would need a
-            // reverse that reaches an ending). The successor's contents are
-            // irrelevant to this spend-order test.
+            // reverse that reaches an ending).
             .with_act_deck([act("_test_act_1", 2), act("_test_act_2", 2)])
             .build();
 
-        // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
         let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
             investigator: acting,
         });
+        let prompt = session.prompt();
+        assert_eq!(prompt.responder, Responder::Investigator(other));
+        let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["Contribute 1 clue", "Contribute 2 clues"]);
+
+        // Picks 1: the acting investigator's 1 covers the rest.
+        let session = session.pick_nth(0);
         session.assert_at_turn_menu(acting);
         let state = session.state();
-        assert_eq!(
-            state.investigators[&acting].clues, 0,
-            "acting drained first"
-        );
-        assert_eq!(
-            state.investigators[&other].clues, 1,
-            "remainder taken from seating"
-        );
+        assert_eq!(state.investigators[&acting].clues, 0);
+        assert_eq!(state.investigators[&other].clues, 1);
         assert_eq!(state.act_index, 1);
     }
 }
