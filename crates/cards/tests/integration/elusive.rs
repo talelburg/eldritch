@@ -385,7 +385,11 @@ fn with_no_destination_beside_another_investigator_the_lead_picks_whom_the_enemy
     let ghoul = EnemyId(100);
     let session = staying_beside_inv2_with(&[ghoul]);
 
-    assert_eq!(location_of(&session), Some(HERE), "nowhere to move: no move");
+    assert_eq!(
+        location_of(&session),
+        Some(HERE),
+        "nowhere to move: no move"
+    );
     assert_eq!(session.state().enemies[&ghoul].engaged_with, None);
     assert_lead_offered_both(&session);
 
