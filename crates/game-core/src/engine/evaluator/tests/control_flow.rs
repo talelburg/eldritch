@@ -12,7 +12,7 @@ fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
             skill: SkillKind::Intellect,
             kind,
             difficulty_basis: DifficultyBasis::Fixed(2),
-            committed_by_active: Vec::new(),
+            committed: Vec::new(),
             tested_location: Some(HERE),
             follow_up: SkillTestFollowUp::None,
             on_fail: None,

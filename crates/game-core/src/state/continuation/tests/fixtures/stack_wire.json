@@ -131,7 +131,7 @@
       "difficulty_basis": {
         "Fixed": 3
       },
-      "committed_by_active": [],
+      "committed": [],
       "tested_location": null,
       "follow_up": "None",
       "on_fail": null,

@@ -107,7 +107,7 @@ pub enum OptionTarget {
     EncounterDeck,
     /// A card committed to the in-flight skill test, by its zero-based position
     /// in the test's committed list
-    /// ([`committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    /// ([`committed`](crate::state::InFlightSkillTest::committed)).
     /// A committed card has no [`CardInstanceId`] while the test runs, and the
     /// position keeps two copies of one card apart, which replay needs: it
     /// keys an option by (label, target, investigator) (ADR 0022). Anchors a

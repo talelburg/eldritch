@@ -116,7 +116,7 @@ pub struct RevelationBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCardBinding {
     /// The card's position among the in-flight test's committed cards
-    /// ([`InFlightSkillTest::committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    /// ([`InFlightSkillTest::committed`](crate::state::InFlightSkillTest::committed)).
     pub index: u8,
 }
 
