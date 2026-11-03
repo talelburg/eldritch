@@ -1895,7 +1895,7 @@ pub enum St7Result {
         /// Position in the flattened (committed card, matching ability) list.
         /// Not the card's position in the committed list, which the
         /// result-order prompt anchors the option to
-        /// ([`OptionTarget::CommittedCard`](crate::engine::OptionTarget::CommittedCard)).
+        /// ([`OptionTarget::CommittedCard`]).
         index: u8,
     },
 }
