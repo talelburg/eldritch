@@ -1771,6 +1771,11 @@ fn apply_result(
         .into_iter()
         .nth(index.to_usize())
         .map(|(card_index, effect)| {
+            // TODO(#65): bind the investigator who committed the card, not the
+            // performer. Overpower 01091's ruling
+            // (https://arkhamdb.com/card/01091): *"If you commit this card to
+            // another player's skill test, and the test is successful, you draw
+            // a card (not the other player)."*
             let mut ctx = EvalContext::for_controller(investigator);
             ctx.set_committed_card(card_index.0);
             (effect, ctx)

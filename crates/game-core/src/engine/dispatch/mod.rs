@@ -621,7 +621,7 @@ fn resume_window(
 /// with [`InputResponse::Confirm`]), or the ST.7 result-order pick (the performer
 /// names the result to apply next with [`InputResponse::PickSingle`]). Each
 /// resume validates the cursor it expects.
-fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+fn resume_skill_test(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         InputResponse::PickMultiple { selected } => {
             // The teardown tail (forced-run-sibling re-drive / end-of-turn
@@ -722,7 +722,7 @@ pub(crate) fn resolve_input(
         Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),
         Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),
         Continuation::EncounterDraw(_) => encounter::resume_encounter_draw(cx, response),
-        Continuation::SkillTest(_) => resume_skill_test_commit(cx, response),
+        Continuation::SkillTest(_) => resume_skill_test(cx, response),
         // The advance acknowledge pause: the single on-card advance
         // pick (`PickSingle(0)`) resumes the AdvanceReverse frame past its AwaitAck
         // step into firing the leaving card's reverse.
