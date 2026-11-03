@@ -352,15 +352,16 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `queue_event` pushes
     // the forced/reaction abilities (Frozen in Fear 01164's willpower test, a 2+
     // forced run) as frames; the `drive` loop drives them and, once they pop,
-    // re-dispatches the `InvestigatorTurn { ending: true }` frame → `resume_end_turn`
+    // re-dispatches the turn frame → `drive_open_turn` → `resume_end_turn`
     // for the rotation (RR p.24 step 2.2.2). Uniform whether the forced run is
     // empty, completes immediately, or suspends — there is no inline-resume branch.
     // A `Rejected` from `queue_event` rolls back the armed flag with the rest of
     // the apply (transactional snapshot).
-    let ending = cursor::turn_frame_ending_mut(cx.state, active_id).unwrap_or_else(|| {
-        unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
-    });
-    *ending = true;
+    cursor::turn_frame_mut(cx.state, active_id)
+        .unwrap_or_else(|| {
+            unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
+        })
+        .ending = true;
     emit::queue_event(
         cx,
         &TimingEvent::EndOfTurn {
@@ -371,12 +372,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 
 /// Run the post-`EndOfTurn`-forced portion of [`end_turn`] (Rules
 /// Reference p.24 step 2.2.2): record the turn, then return to step 2.2
-/// ([`next_investigator_turn`]). Reached uniformly through the `drive` loop's
-/// `InvestigatorTurn { ending: true }` arm: `end_turn` arms
-/// that flag and emits `EndOfTurn`, whose forced/reaction effects (Frozen in
-/// Fear 01164's willpower test) the loop drives as frames; once they pop, the
-/// re-exposed turn frame runs this rotation — whether the forced run was empty,
-/// completed immediately, or suspended.
+/// ([`next_investigator_turn`]). Reached uniformly through
+/// [`drive_open_turn`], the `drive` loop's arm for a driven turn frame:
+/// `end_turn` arms `ending` and emits `EndOfTurn`, whose forced/reaction
+/// effects (Frozen in Fear 01164's willpower test) the loop drives as frames;
+/// once they pop, the re-exposed turn frame runs this rotation — whether the
+/// forced run was empty, completed immediately, or suspended.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
     // The turn is over: pop the InvestigatorTurn frame this turn ran on. It is
     // always on top here — end_turn reaches this after the
@@ -647,8 +648,8 @@ fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
 /// (or in the window after 2.2 on the next turn, if the turn ends first).
 pub(super) fn drive_open_turn(cx: &mut Cx) -> EngineOutcome {
     let turn = cx.state.continuations.top_mut::<InvestigatorTurnFrame>();
-    if turn.action_taken {
-        turn.action_taken = false;
+    if turn.player_window_owed {
+        turn.player_window_owed = false;
         reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
     } else {
         let investigator = turn.investigator;

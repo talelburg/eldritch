@@ -60,7 +60,7 @@ use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume,
     AdditionalActionChoiceFrame, AdditionalActionGrant, CardCode, CardInstanceId, GameState,
-    InvestigatorId, InvestigatorTurnFrame, Status,
+    InvestigatorId, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -657,12 +657,9 @@ pub(crate) fn take(
     use_additional_actions(cx.state, investigator, &additional);
     // An action is taken from here on, so the turn reopens its player window
     // once the action has resolved (step 2.2.1, `phases::drive_open_turn`).
-    cx.state
-        .continuations
-        .topmost_of_mut::<InvestigatorTurnFrame>()
-        .filter(|turn| turn.investigator == investigator)
+    cursor::turn_frame_mut(cx.state, investigator)
         .expect("take: an action is taken only during its taker's open turn")
-        .action_taken = true;
+        .player_window_owed = true;
     let inv = cx
         .state
         .investigators

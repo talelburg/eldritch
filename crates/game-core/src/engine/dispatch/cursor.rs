@@ -174,34 +174,35 @@ pub fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
             .is_some_and(|turn| turn.investigator == investigator && turn.ending)
 }
 
-/// Mutable access to the `ending` flag on `investigator`'s open
+/// Mutable access to `investigator`'s open
 /// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame, or
 /// `None` when they hold no open turn.
 ///
-/// Setting the flag is how a turn is brought to Rules Reference Appendix II step
-/// 2.2.2 without running the rotation inline: `drive`'s `ending: true` arm picks
-/// the frame up once everything above it has unwound and runs
-/// [`resume_end_turn`](super::phases::resume_end_turn). Two callers arm it, and
-/// they differ only in whether a missing frame is possible —
-/// [`end_turn`](super::phases::end_turn) is dispatched *from* the open turn so
-/// its absence is state corruption, while
+/// Its flags are how work is deferred to the turn once everything above it has
+/// unwound, which the `drive` loop's
+/// [`drive_open_turn`](super::phases::drive_open_turn) picks up. Setting
+/// `ending` brings the turn to Rules Reference Appendix II step 2.2.2 without
+/// running the rotation inline: two callers arm it, and they differ only in
+/// whether a missing frame is possible — [`end_turn`](super::phases::end_turn)
+/// is dispatched *from* the open turn so its absence is state corruption, while
 /// [`end_turn_on_elimination`](super::elimination) fires from anywhere a defeat
-/// can happen and treats `None` as "not their turn, nothing to end". Keyed by
-/// investigator rather than by "the topmost turn frame" so a bystander's defeat
-/// cannot end the *active* investigator's turn.
+/// can happen and treats `None` as "not their turn, nothing to end". Setting
+/// `player_window_owed` ([`take`](super::actions::take::take)) reopens the turn's
+/// player window after the action. Keyed by investigator rather than by "the
+/// topmost turn frame" so a bystander's defeat cannot end the *active*
+/// investigator's turn.
 ///
 /// Searched from the top down: only one `InvestigatorTurn` is ever on the stack
 /// (2.2's "that investigator must complete the turn before another investigator
 /// may take his or her turn"), so the direction is a formality.
-pub(super) fn turn_frame_ending_mut(
+pub(super) fn turn_frame_mut(
     state: &mut GameState,
     investigator: InvestigatorId,
-) -> Option<&mut bool> {
+) -> Option<&mut InvestigatorTurnFrame> {
     state
         .continuations
         .topmost_of_mut::<InvestigatorTurnFrame>()
         .filter(|turn| turn.investigator == investigator)
-        .map(|turn| &mut turn.ending)
 }
 
 #[cfg(test)]

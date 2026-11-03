@@ -52,7 +52,7 @@ fn investigator_turn(ending: bool) -> Continuation {
     Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending,
-        action_taken: false,
+        player_window_owed: false,
     })
 }
 
@@ -427,7 +427,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             Continuation::InvestigatorTurn(InvestigatorTurnFrame {
                 investigator: InvestigatorId(1),
                 ending: false,
-                action_taken: true,
+                player_window_owed: true,
             }),
             profile(DRIVEN, CANCEL),
         ),

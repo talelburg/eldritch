@@ -108,7 +108,7 @@ pub(super) fn apply_investigator_elimination(
 /// flag so the `drive` loop runs the rotation tail
 /// ([`resume_end_turn`](super::phases::resume_end_turn)) once every frame above
 /// it has unwound. The lookup
-/// ([`turn_frame_ending_mut`](super::cursor::turn_frame_ending_mut)) is keyed by
+/// ([`turn_frame_mut`](super::cursor::turn_frame_mut)) is keyed by
 /// investigator, so this is a no-op when it is not their turn: a defeat in the
 /// Mythos or Enemy phase finds no turn frame at all, and one dealt to a bystander
 /// by Dynamite Blast 01024 leaves the *active* investigator's frame alone rather
@@ -168,16 +168,16 @@ pub(super) fn apply_investigator_elimination(
 /// defeat or resignation alike — therefore ends the scenario, and this arming is
 /// what keeps a *surviving* table moving.
 fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
-    let Some(ending) = cursor::turn_frame_ending_mut(cx.state, investigator) else {
+    let Some(turn) = cursor::turn_frame_mut(cx.state, investigator) else {
         return;
     };
     // Already armed: the player submitted `EndTurn` and a suspending `EndOfTurn`
     // forced ability killed them (Frozen in Fear 01164's willpower test). The
     // turn is ending exactly once, and `end_turn` already announced it.
-    if *ending {
+    if turn.ending {
         return;
     }
-    *ending = true;
+    turn.ending = true;
     cx.events.push(Event::TurnEnded { investigator });
 }
 

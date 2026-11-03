@@ -44,7 +44,7 @@ fn investigator_turn_frame_classification() {
     assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: true,
-        action_taken: false,
+        player_window_owed: false,
     })
     .awaits_input());
     // Nor is the turn whose action has just resolved: it reopens its player
@@ -52,7 +52,7 @@ fn investigator_turn_frame_classification() {
     assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: false,
-        action_taken: true,
+        player_window_owed: true,
     })
     .awaits_input());
     // It carries no window candidates (the menu is re-enumerated, not stored).
@@ -67,7 +67,7 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
         let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending,
-            action_taken: false,
+            player_window_owed: false,
         });
         let json = serde_json::to_string(&frame).unwrap();
         let back: Continuation = serde_json::from_str(&json).unwrap();

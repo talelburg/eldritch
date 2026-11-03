@@ -31,8 +31,7 @@ use crate::engine::outcome::{
 };
 use crate::state::{
     AttackLoopFrame, AttackLoopStage, Continuation, DealDamageFrame, DealDamageStep, EffectFrame,
-    FastWindowFrame, GameState, InvestigatorId, InvestigatorTurnFrame, SkillTestStep,
-    TimingPointWindowFrame,
+    FastWindowFrame, GameState, InvestigatorId, SkillTestStep, TimingPointWindowFrame,
 };
 
 /// What `frame` asks when it rests on top of `state`, answered by whom ADR
@@ -72,14 +71,10 @@ fn table(
     cards: &CardRegistry,
 ) -> Option<(InputRequest, Responder)> {
     match frame {
-        Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-            investigator,
-            ending,
-            action_taken,
-        }) => (!ending && !action_taken).then(|| {
+        Continuation::InvestigatorTurn(turn) => turn.awaits_menu().then(|| {
             (
-                turn_menu(state, cards, *investigator),
-                Responder::Investigator(*investigator),
+                turn_menu(state, cards, turn.investigator),
+                Responder::Investigator(turn.investigator),
             )
         }),
         // An empty event window or forced run is closed on sight, never shown.

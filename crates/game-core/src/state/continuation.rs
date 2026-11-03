@@ -766,15 +766,11 @@ impl Continuation {
             // was taken, it is driven instead: the loop reopens the turn's
             // player window above it. Once `ending`, it is the rotation tail
             // the loop drives after a suspending `EndOfTurn` forced resolved.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-                ending,
-                action_taken,
-                ..
-            }) => {
-                let activity = if *ending || *action_taken {
-                    FrameActivity::Driven
-                } else {
+            Continuation::InvestigatorTurn(turn) => {
+                let activity = if turn.awaits_menu() {
                     FrameActivity::Prompt
+                } else {
+                    FrameActivity::Driven
                 };
                 (activity, ScenarioEndDisposition::Cancel)
             }
@@ -2616,7 +2612,7 @@ pub struct UpkeepPhaseFrame {
 /// `PlayerAction`) while
 /// it is on top; `EndTurn` pops it via
 /// [`resume_end_turn`](crate::engine). A prompt while open, and driven once
-/// `ending` or `action_taken` (see [`Continuation::profile`]).
+/// `ending` or `player_window_owed` (see [`Continuation::profile`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvestigatorTurnFrame {
     /// Whose turn this is. Mirrors [`GameState::active_investigator`](crate::state::game_state::GameState::active_investigator) while on
@@ -2628,27 +2624,35 @@ pub struct InvestigatorTurnFrame {
     /// to decide the resolved test triggers rotation; an ordinary mid-turn
     /// test leaves it `false`.
     pub ending: bool,
-    /// `true` from the moment an action is paid for (taking an action, see
-    /// `GLOSSARY.md`) until the turn is back on top with that action fully
-    /// resolved. The drive loop then clears it and reopens the turn's player
-    /// window ([`PhaseStep::TurnPlayerWindow`]) above the turn, as step 2.2.1's
-    /// *"If an action was taken, return to previous player window"* asks.
+    /// `true` while the turn owes its player window: from the moment an action
+    /// is paid for (taking an action, see `GLOSSARY.md`) until the turn is back
+    /// on top with that action fully resolved. The drive loop then clears it
+    /// and reopens the turn's player window ([`PhaseStep::TurnPlayerWindow`])
+    /// above the turn, as step 2.2.1's *"If an action was taken, return to
+    /// previous player window"* asks.
     ///
     /// Left out of the wire when unset and defaulted on read, so a stack
     /// serialized before the field existed reads back unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub action_taken: bool,
+    pub player_window_owed: bool,
 }
 
 impl InvestigatorTurnFrame {
-    /// `investigator`'s turn as it opens: not ending, no action taken yet.
+    /// `investigator`'s turn as it opens: not ending, no player window owed.
     #[must_use]
     pub fn open(investigator: InvestigatorId) -> Self {
         Self {
             investigator,
             ending: false,
-            action_taken: false,
+            player_window_owed: false,
         }
+    }
+
+    /// Whether the turn, on top, surfaces its legal-action menu: it is neither
+    /// ending nor owed a player window. Otherwise the drive loop drives it.
+    #[must_use]
+    pub fn awaits_menu(&self) -> bool {
+        !self.ending && !self.player_window_owed
     }
 }
 

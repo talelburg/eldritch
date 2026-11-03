@@ -2337,8 +2337,8 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // within. A suspending `EndOfTurn` forced stranded `end_turn`
                 // before rotation and flagged the `InvestigatorTurn { ending:
                 // true }` frame beneath (a single Frozen in Fear, or a 2+ forced
-                // run); the loop's `InvestigatorTurn { ending: true }` arm runs
-                // `resume_end_turn` once this returns — no reach-down here (the
+                // run); the loop re-exposes it once this returns, and
+                // `drive_open_turn` runs `resume_end_turn` — no reach-down here (the
                 // same path a 2+ forced run takes).
                 return tear_down_test(cx, investigator, &committed, TestEnd::PerformerRemains);
             }
