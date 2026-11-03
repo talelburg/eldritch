@@ -34,7 +34,7 @@ The tail frame is Driven and completes under a latched ending, because it is man
 
 **The Barrier 01109** reads its own writes and is unchanged. Its reverse is *"Reveal the Parlor. Put the set-aside Lita Chantler into play in the Parlor. Spawn the set-aside Ghoul Priest in the Hallway."* The reveal pushes nothing. Putting Lita, an asset, into play at a location logs `CardPutIntoPlayAtLocation` and pushes no frame at all. Only the Ghoul Priest's spawn can push one, an engagement tie, and it is the last call.
 
-**The Necronomicon 01009 is a known limit.** Its native moves horror to Daisy, then reads the board and may discard the card. If the move defeated her while she owned an in-play weakness with a game-end ability, the elimination would push an `Elimination` frame, and the read after it would reject the action. That can't happen in the corpus. Cover Up is the only game-end weakness, and it is Roland's.
+**The Necronomicon 01009 is two natives.** Its ability was one native that moved horror to Daisy, then read the board and might discard the card. A move that defeats her can leave work pending, and the read after it would reject the action. With #151 that is reachable in the corpus: an enemy engaged with her, tied between two investigators beside her, pushes an engagement tie for the lead. So the ability is `seq[move, discard-if-empty]` (#1309), and the discard's read runs once the tie is answered. A game-end weakness's `Elimination` frame would be held back the same way.
 
 ## Considered options
 
