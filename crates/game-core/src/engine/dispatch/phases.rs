@@ -583,7 +583,7 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// from [`next_investigator_turn`] when one investigator is left waiting, and
 /// from [`resume_turn_choice`] when the lead has chosen. Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
-/// inputs while `InvestigatorTurnBegins` is the "previous player window."
+/// inputs while `TurnPlayerWindow` is the "previous player window."
 ///
 /// **Emits in tail position** (ADR 0003): the anchor is parked at
 /// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
@@ -609,17 +609,15 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> Engin
 /// window.
 ///
 /// The anchor advances to `TurnBegins` first, so the closing
-/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm.
+/// `TurnPlayerWindow` routes to the right `on_child_pop` arm.
 fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::TurnBegins);
-    let outcome = reaction_windows::open_fast_window(
-        cx,
-        FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    );
+    let outcome =
+        reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::TurnPlayerWindow));
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
-        "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
+        "open_fast_window(TurnPlayerWindow) unexpectedly suspended; this window has no suspending continuation",
     );
     outcome
 }

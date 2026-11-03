@@ -2221,12 +2221,18 @@ pub enum PhaseStep {
     /// addressable and so step 2.2's rotation runs in this window's
     /// continuation (preserving the printed 2.1 → window → 2.2 order).
     InvestigationBegins,
-    /// The player window opened at the start of each investigator's
-    /// turn (Rules Reference p.24 step 2.2, the "previous player window"
-    /// that actions return to during step 2.2.1). Bare variant. One per
-    /// investigator turn. Continuation is a no-op: the engine then waits
-    /// for the active investigator's player-driven actions.
-    InvestigatorTurnBegins,
+    /// The turn's player window: the window that opens after Rules
+    /// Reference p.24 step 2.2 (next investigator's turn begins), and the
+    /// "previous player window" that step 2.2.1 returns to after each
+    /// action (`Appendix_II_Timing_and_Gameplay.md`):
+    ///
+    /// > 2.2.1 Active investigator may take an action, if able. If an
+    /// > action was taken, return to previous player window. If no action
+    /// > was taken, proceed to 2.2.2.
+    ///
+    /// Bare variant. Continuation is a no-op: the engine then waits for the active
+    /// investigator's player-driven actions.
+    TurnPlayerWindow,
 }
 
 /// A suspended Hunter-movement choice awaiting input during Enemy-phase step
@@ -2598,7 +2604,7 @@ pub struct UpkeepPhaseFrame {
 /// The active investigator's open turn — Rules Reference step 2.2.1.
 ///
 /// Pushed *above* the [`Continuation::InvestigationPhase`]
-/// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
+/// anchor once the `TurnPlayerWindow` closes; the anchor spans the
 /// whole phase beneath it. The player takes basic actions (each a typed
 /// `PlayerAction`) while
 /// it is on top; `EndTurn` pops it via

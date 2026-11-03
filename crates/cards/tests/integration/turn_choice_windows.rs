@@ -68,7 +68,7 @@ fn the_post_2_1_window_comes_before_the_first_choice() {
 #[test]
 fn the_post_2_2_window_opens_after_the_chosen_turn_begins() {
     let session = investigation_begins().skip().choose_turn(B);
-    assert_at_window(&session, PhaseStep::InvestigatorTurnBegins);
+    assert_at_window(&session, PhaseStep::TurnPlayerWindow);
     assert_eq!(session.state().active_investigator, Some(B));
 
     session.skip().assert_at_turn_menu(B);

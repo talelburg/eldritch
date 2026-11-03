@@ -288,7 +288,7 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
 #[test]
 fn end_turn_rotates_to_next_active_and_opens_turn_window() {
     // Two investigators: ending the first investigator's turn returns to 2.2
-    // for the second's and opens the InvestigatorTurnBegins window for them.
+    // for the second's and opens the `TurnPlayerWindow` for them.
     let session = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))

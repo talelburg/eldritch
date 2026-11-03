@@ -18,7 +18,7 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     // `ResolveInput::Skip` closes it.
     assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
-        kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+        kind: FastWindowKind::Phase(PhaseStep::TurnPlayerWindow),
         passed: Vec::new(),
     })
     .awaits_input());

@@ -125,7 +125,7 @@ fn turn_begins_window_with(code: &str) -> GameStateBuilder {
         .with_active_investigator(INV)
         .with_seating([INV])
         .with_phase_anchor(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins))
-        .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
+        .with_open_window(FastWindowKind::Phase(PhaseStep::TurnPlayerWindow))
 }
 
 fn board_with(in_play: &[&str]) -> GameStateBuilder {
