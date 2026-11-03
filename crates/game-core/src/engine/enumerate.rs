@@ -352,7 +352,7 @@ fn push_act_actions(
     investigator: InvestigatorId,
     out: &mut Vec<TurnAction>,
 ) {
-    if act_agenda::check_advance_act(state, cards, investigator).is_ok() {
+    if act_agenda::check_advance_act(state, cards).is_ok() {
         out.push(TurnAction::AdvanceAct { investigator });
     }
 }

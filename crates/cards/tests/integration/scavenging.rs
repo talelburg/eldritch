@@ -81,15 +81,6 @@ fn pick(index: u32) -> Action {
     })
 }
 
-fn labels(session: &TestSession) -> Vec<&str> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.label.as_str())
-        .collect()
-}
-
 fn codes(cards: &[&str]) -> Vec<CardCode> {
     cards.iter().map(|c| CardCode::new(*c)).collect()
 }
@@ -116,7 +107,7 @@ fn succeeding_by_two_offers_scavenging_and_takes_the_chosen_item_to_hand() {
     let choice = window.pick(scavenging);
     assert!(exhausted(&choice), "exhausting Scavenging is its cost");
     assert_eq!(
-        labels(&choice),
+        choice.offered_labels(),
         ["Flashlight", "Knife"],
         "only the Items in the discard pile are offered",
     );

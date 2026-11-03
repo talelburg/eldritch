@@ -27,6 +27,7 @@ pub(super) mod advance_reverse;
 // pub(super): engine/mod.rs re-exports `resolve_grounded_choice` (pub) for
 // the `cards` crate's native picks (Crypt Chill 01167, Dynamite Blast 01024).
 pub(super) mod choice;
+mod clue_allocation;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
@@ -415,6 +416,9 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // A hand-discard cost being paid: prompt for the card, or
             // discard a lone candidate and pop, exposing the parked effect.
             Continuation::HandDiscardCost(_) => hand_discard_cost::drive(cx),
+            // A group clue spend: settle the forced shares, ask the next
+            // contributor with a choice, or spend and advance the act.
+            Continuation::ClueAllocation(_) => clue_allocation::drive(cx),
             // Every one of these is always a prompt, so the resting arm above
             // takes it; named rather than wildcarded so a new kind must be
             // placed.
@@ -720,6 +724,7 @@ pub(crate) fn resolve_input(
         Continuation::TurnChoice(_) => phases::resume_turn_choice(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
         Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),
+        Continuation::ClueAllocation(_) => clue_allocation::resume(cx, response),
         Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),
         Continuation::EncounterDraw(_) => encounter::resume_encounter_draw(cx, response),
         Continuation::SkillTest(_) => resume_skill_test(cx, response),

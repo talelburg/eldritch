@@ -12,7 +12,7 @@
 //!
 //! This module implements **both** of 01109's abilities. The **front
 //! objective** (the round-end clue-spend advance) is a `When`-`RoundEnded`
-//! reaction whose native does the group clue-spend + `advance_act`. The
+//! reaction whose native starts the group clue-spend, which advances the act. The
 //! `RoundEnded` `EmitEvent` coordinator surfaces it as the round-end `when`-cell
 //! reaction candidate; picking it fires this native, `Skip` declines.
 //! The contributor location (the Hallway, `01112`) is printed-in-card — passed
@@ -173,13 +173,15 @@ fn can_advance(state: &GameState, ctx: &EvalContext) -> bool {
         && engine::round_end_advance_affordable(state, HALLWAY)
 }
 
-/// Front-objective native: spend the act's clues to advance (3 per
-/// investigator) from Hallway (01112) investigators, then advance the act.
-/// Synchronous — the player's choice was the round-end `When` window's
-/// `PickSingle`. Delegates to the engine's generic group-spend entry, passing
-/// the printed contributor location.
-fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    cx.round_end_advance(HALLWAY)
+/// Front-objective native: the Hallway (01112) investigators spend the act's
+/// clues to advance (3 per investigator) as a group, then the act advances. The
+/// choice to advance was the round-end `When` window's `PickSingle`; the
+/// investigator it was offered to starts the spend and covers whatever the
+/// others in the Hallway leave, each of whom with a choice is asked for their
+/// share. Delegates to the engine's generic group-spend entry, passing the
+/// printed contributor location.
+fn advance_via_clue_spend(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.round_end_advance(ctx.controller, HALLWAY)
 }
 
 /// Resolve the reverse **in printed order**: reveal the Parlor (01115), put the

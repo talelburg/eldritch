@@ -22,8 +22,8 @@
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::{
-    advance_reverse, cards, choice, combat, cursor, encounter, engagement, forced_triggers,
-    hand_discard_cost, hunters, phases, reaction_windows, skill_test, slots,
+    advance_reverse, cards, choice, clue_allocation, combat, cursor, encounter, engagement,
+    forced_triggers, hand_discard_cost, hunters, phases, reaction_windows, skill_test, slots,
 };
 use crate::engine::enumerate;
 use crate::engine::outcome::{
@@ -193,6 +193,11 @@ fn table(
             hand_discard_cost::request(state, cards, cost),
             Responder::Investigator(cost.investigator),
         )),
+        // A contributor's share of a group clue spend is theirs to settle.
+        Continuation::ClueAllocation(allocation) => {
+            clue_allocation::request(state, cards, allocation)
+                .map(|(request, contributor)| (request, Responder::Investigator(contributor)))
+        }
         Continuation::AttackLoop(AttackLoopFrame {
             investigator,
             remaining_attackers,
