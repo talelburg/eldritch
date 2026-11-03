@@ -36,7 +36,7 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Effect, IntExpr, InvestigatorTarget, ResultContribution, TestOutcome, Trigger,
+        Effect, IntExpr, InvestigatorTarget, ResultContribution, ResultController, TestOutcome, Trigger,
     };
 
     #[test]
@@ -48,6 +48,7 @@ mod tests {
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
                 contributes: ResultContribution::Adds,
+                controller: ResultController::Committer,
             },
         );
         assert_eq!(

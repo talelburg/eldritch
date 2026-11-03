@@ -12,12 +12,12 @@
 //! [`Trigger::OnSkillTestResolution`] ability on a success, gated by an
 //! [`if_`](dsl::if_) over [`Condition::SkillTestKind`] of
 //! [`SkillTestKind::Evade`] — Deduction 01039's kind gate. It is a result
-//! addition (`dsl::adds_result`): the disengage and move are consequences of
-//! its own, not a change to the evasion's. On any other test, or a failed
-//! evasion, the card is inert.
+//! addition: the disengage and move are consequences of its own, not a change
+//! to the evasion's. On any other test, or a failed evasion, the card is inert.
 //!
-//! The ability's controller is the tester, so *"the evading investigator"* is
-//! who acts even when someone else committed the card. The evasion's own
+//! The addition is the performer's (`dsl::adds_result_for_performer`), not
+//! its committer's, so *"the evading investigator"* is who acts and is asked
+//! each "may" even when someone else committed the card. The evasion's own
 //! follow-up resolves before the card's ability, so by then the evaded enemy
 //! is already disengaged and exhausted, and [`EnemySet::EngagedWithYou`] is
 //! exactly *"each other enemy"*.
@@ -96,7 +96,7 @@ const STAY_LABEL: &str = "Do not move";
 /// connecting location, then the engagement rule.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::adds_result(
+    vec![dsl::adds_result_for_performer(
         TestOutcome::Success,
         dsl::if_(
             Condition::SkillTestKind(SkillTestKind::Evade),

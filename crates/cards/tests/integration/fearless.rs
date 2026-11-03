@@ -7,10 +7,8 @@
 //! Ruling (<https://arkhamdb.com/card/01067>): *"If you commit this card to
 //! another player's skill test, and the test is successful, you heal 1 horror
 //! (not the other player)."* These tests are solo, where the committer is the
-//! performer.
-//!
-//! TODO(#65): commits to another investigator's skill test, which the
-//! committer binding needs.
+//! performer. A helper's Fearless on another investigator's test is in
+//! `helper_commits.rs`.
 
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;

@@ -526,6 +526,10 @@ pub enum Trigger {
     ///   of his or her choice."* So with two or more pending, the performer
     ///   picks which applies next, one at a time.
     ///
+    /// `controller` says whose "you" the effect reads, which matters once
+    /// another investigator commits the card to the performer's test. See
+    /// [`ResultController`].
+    ///
     /// Both apply before the committed cards discard at ST.8, so the
     /// committed card is still in limbo on the in-flight test record and
     /// [`LocationTarget::TestedLocation`] resolves against it.
@@ -552,6 +556,9 @@ pub enum Trigger {
         /// Whether the ability modifies a consequence the test already
         /// produces or adds one of its own.
         contributes: ResultContribution,
+        /// Who controls the ability's effect: the card's committer or the
+        /// test's performer.
+        controller: ResultController,
     },
     /// Fires when an engine `Event` (in `game_core`) matching `pattern` reaches
     /// the timing cell `timing` names. `kind` says whether the ability is
@@ -3545,6 +3552,33 @@ pub enum ResultContribution {
     Adds,
 }
 
+/// Who controls a [`Trigger::OnSkillTestResolution`] ability's effect, so whose
+/// "you" it reads, when the card's committer is not the test's performer. See
+/// **Committer / Performer** in `GLOSSARY.md`.
+///
+/// Official FAQ: *"Generally speaking, the player who committed the skill card
+/// gets the effects of any ability on that skill card. … However, if a skill
+/// card changes or adds to the results of the skill test itself, the
+/// investigator performing the test receives the benefit of that ability."*
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ResultController {
+    /// The investigator who committed the card. A result addition's default:
+    /// Overpower 01091's ruling reads *"If you commit this card to another
+    /// player's skill test, and the test is successful, you draw a card (not
+    /// the other player)"* (<https://arkhamdb.com/card/01091>).
+    Committer,
+    /// The investigator performing the test. Every result
+    /// [modifier](ResultContribution::Modifies) is the performer's, since it
+    /// changes the performer's own consequence: Deduction 01039's ruling reads
+    /// *"If you commit Deduction to another player's investigation attempt,
+    /// that other player would discover 1 additional clue, not you"*
+    /// (<https://arkhamdb.com/card/01039>). An addition is the performer's when
+    /// its text names the performer, as Survival Instinct 01081's *"the
+    /// evading investigator may immediately disengage …"* does; see
+    /// [`adds_result_for_performer`].
+    Performer,
+}
+
 // ---- builders --------------------------------------------------
 
 /// Construct a [`Trigger::Constant`]-driven [`Ability`] wrapping the
@@ -3603,34 +3637,73 @@ pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
 ///
 /// The [`Trigger::OnSkillTestResolution`] ability changes a consequence the test
 /// already produces, gated on the given outcome: Vicious Blow 01025's +1 attack
-/// damage.
+/// damage. It is the [performer's](ResultController::Performer).
 #[must_use]
 pub fn modifies_result(outcome: TestOutcome, effect: Effect) -> Ability {
-    on_skill_test_resolution(outcome, ResultContribution::Modifies, effect)
+    on_skill_test_resolution(
+        outcome,
+        ResultContribution::Modifies,
+        ResultController::Performer,
+        effect,
+    )
 }
 
 /// Construct a committed card's result [addition](ResultContribution::Adds).
 ///
 /// The [`Trigger::OnSkillTestResolution`] ability contributes a consequence of
-/// its own, gated on the given outcome: Guts 01089's *"draw 1 card"*.
+/// its own, gated on the given outcome: Guts 01089's *"draw 1 card"*. It is the
+/// [committer's](ResultController::Committer): a helper who commits Guts draws
+/// the card.
 #[must_use]
 pub fn adds_result(outcome: TestOutcome, effect: Effect) -> Ability {
-    on_skill_test_resolution(outcome, ResultContribution::Adds, effect)
+    on_skill_test_resolution(
+        outcome,
+        ResultContribution::Adds,
+        ResultController::Committer,
+        effect,
+    )
 }
 
-/// The shared body of [`modifies_result`] and [`adds_result`].
+/// [`adds_result`], for an addition whose text names the test's performer.
+///
+/// Survival Instinct 01081: *"the evading investigator may immediately
+/// disengage from each other enemy engaged with him or her, and may move to a
+/// connecting location."* The addition is the
+/// [performer's](ResultController::Performer), so its `You`, its enemies
+/// engaged with you, and its natives' controller are the evader, whoever
+/// committed the card.
+///
+/// Making the whole ability the performer's is a shortcut. The more faithful
+/// form names the performer where the text does: an `InvestigatorTarget`
+/// `Performer`, with performer forms of the enemy sets and natives the card
+/// uses, under a committer-controlled addition. Switch to that once a second
+/// card prints the pattern.
+#[must_use]
+pub fn adds_result_for_performer(outcome: TestOutcome, effect: Effect) -> Ability {
+    on_skill_test_resolution(
+        outcome,
+        ResultContribution::Adds,
+        ResultController::Performer,
+        effect,
+    )
+}
+
+/// The shared body of [`modifies_result`], [`adds_result`] and
+/// [`adds_result_for_performer`].
 ///
 /// Costs are empty — resolution-time triggers fire automatically as part of the
 /// test's machinery, not via player activation.
 fn on_skill_test_resolution(
     outcome: TestOutcome,
     contributes: ResultContribution,
+    controller: ResultController,
     effect: Effect,
 ) -> Ability {
     Ability {
         trigger: Trigger::OnSkillTestResolution {
             outcome,
             contributes,
+            controller,
         },
         designator: None,
         costs: Vec::new(),
