@@ -2061,15 +2061,17 @@ pub enum HunterChoice {
 ///
 /// An engagement tie is a ready unengaged enemy beside two or more
 /// investigators its prey can't separate (**Prey tie / engagement tie** in
-/// `GLOSSARY.md`), however it got there: spawning, a hunter's arrival, or a
-/// relocation. `glossary/Prey.md` gives it to the lead: *"if multiple
-/// investigators are tied in meeting these instructions, the lead investigator
-/// may decide among them"*.
+/// `GLOSSARY.md`), however it got there: spawning, a hunter's arrival, a
+/// relocation, readying in Upkeep 4.3, an elimination, a stranding move, or a
+/// card that disengaged it. `glossary/Prey.md` gives it to the lead: *"if
+/// multiple investigators are tied in meeting these instructions, the lead
+/// investigator may decide among them"*.
 ///
 /// Each answer engages the head's chosen investigator and drops the head. The
-/// frame pops once the queue is empty, and the frame beneath continues: the
-/// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain, the Enemy-phase
-/// anchor's hunter cursor, or a native's [`NativeTail`](Continuation::NativeTail).
+/// frame pops once the queue is empty, and the frame beneath continues, for
+/// example the drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain, the
+/// Enemy-phase anchor's hunter cursor, the Upkeep anchor at 4.4, the move's
+/// `LeftLocation` cells, or a native's [`NativeTail`](Continuation::NativeTail).
 /// The frame holds only the picks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
