@@ -143,6 +143,7 @@
       "on_fail": null,
       "on_success": null,
       "source": null,
+      "kept_investigator": null,
       "continuation": {
         "AwaitingHelperCommit": {
           "helper": 2
@@ -189,7 +190,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         },
         "prompt": null
       }
@@ -209,7 +211,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         }
       }
     }
@@ -231,7 +234,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         }
       }
     }

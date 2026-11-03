@@ -13,9 +13,11 @@
 //!
 //! # Choices
 //!
-//! A leaf that needs a choice, an [`Effect::ChooseOne`] or a `*::Chosen` target,
-//! resolves without a prompt when it has fewer than two candidates. With two or
-//! more it suspends: its [`EffectFrame::Leaf`] stays on top of the stack as the
+//! A leaf that needs a choice, an [`Effect::ChooseOne`], an
+//! [`Effect::ChooseInvestigator`] or a `*::Chosen` target, resolves without a
+//! prompt when it has fewer than two candidates (outside interactive play,
+//! which surfaces a lone candidate as a one-option pick). With two or more it
+//! suspends: its [`EffectFrame::Leaf`] stays on top of the stack as the
 //! prompt, and the answer re-steps that frame with the choice bound.
 //! `ground_chosen_targets` says which candidates each target's scope offers.
 //!
@@ -220,6 +222,18 @@ pub struct EvalContext {
     /// from [`controller`](Self::controller) so "you" still means the card's
     /// controller inside a fan-out.
     pub each: Option<EachBinding>,
+    /// The investigator an enclosing [`Effect::ChooseInvestigator`] picked,
+    /// bound only inside its `then`. Read via [`Self::kept_investigator`].
+    ///
+    /// Kept apart from [`choice`](Self::choice), which holds the picks of
+    /// `*::Chosen` targets, so a `Chosen` target nested under a
+    /// `ChooseInvestigator` still grounds as its own choice rather than
+    /// silently reusing this pick.
+    ///
+    /// A skill test parks it and gives it back to its `on_success` /
+    /// `on_fail`; [`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator)
+    /// says why it is the one binding besides the source that crosses.
+    pub kept_investigator: Option<InvestigatorId>,
 }
 
 impl EvalContext {
@@ -238,6 +252,7 @@ impl EvalContext {
             choice: None,
             ability_source: None,
             each: None,
+            kept_investigator: None,
         }
     }
 
@@ -385,6 +400,22 @@ impl EvalContext {
             EachBinding::Enemy(id) => Some(id),
             EachBinding::Investigator(_) => None,
         }
+    }
+
+    /// The investigator the nearest enclosing [`Effect::ChooseInvestigator`]
+    /// picked: what a card-local native under it reads to know whose deck,
+    /// hand or card it acts on (Scrying 01061's *"any investigator's deck"*).
+    /// `None` outside such an effect.
+    #[must_use]
+    pub fn kept_investigator(&self) -> Option<InvestigatorId> {
+        self.kept_investigator
+    }
+
+    /// Keep `id` as the [`Effect::ChooseInvestigator`] pick (see
+    /// [`Self::kept_investigator`]). The evaluator binds it when the choice is
+    /// made; a unit test calling a native directly binds it by hand.
+    pub fn set_kept_investigator(&mut self, id: InvestigatorId) {
+        self.kept_investigator = Some(id);
     }
 
     /// Bind the target a [`Effect::ForEach`] body runs for (see
@@ -1034,6 +1065,9 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             EngineOutcome::Done
         }
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
+        Effect::ChooseInvestigator { scope, then } => {
+            step_choose_investigator(cx, *scope, then, eval_ctx, effect)
+        }
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::ReachResolution(n) => apply_reach_resolution(cx, *n),
         Effect::PlaceDoomOnCurrentAgenda { count, may_advance } => {
@@ -1056,6 +1090,9 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 difficulty: i8::try_from(*difficulty).unwrap_or(i8::MAX),
                 on_success: on_success.as_ref().map(|b| (**b).clone()),
                 on_fail: on_fail.as_ref().map(|b| (**b).clone()),
+                // The one binding that crosses the test: a pick kept by an
+                // enclosing `ChooseInvestigator` ("that investigator").
+                kept_investigator: eval_ctx.kept_investigator(),
             },
             eval_ctx.ability_source,
         ),
@@ -1253,6 +1290,54 @@ fn step_choose_one(
             }
         }
     }
+}
+
+/// The [`Effect::ChooseInvestigator`] step: pick one investigator in `scope`,
+/// keep the pick, and push `then` with it bound
+/// ([`EvalContext::kept_investigator`]).
+///
+/// The candidates are [`investigator_candidates`], with no eligibility filter
+/// of the pick's own: RR *Target* bars a card *"if the resolution of that
+/// ability's effect could not change the target's state"*, and that is a
+/// question about `then`, which the initiation gate asks of the whole effect
+/// ([`effect_can_change_state`]). The pick follows the grounded-choice
+/// convention: no candidate rejects, one binds (or, under
+/// [`interactive_acknowledge`](crate::state::GameState::interactive_acknowledge),
+/// surfaces as a one-option pick), and two or more suspend this leaf in place
+/// on a selection anchored on each investigator card.
+///
+/// The leaf's pick index is cleared before `then` is pushed, so a native first
+/// in `then` does not read it as its own pick. The kept investigator rides in
+/// every frame `then` pushes, since each frame parks its whole context, so it
+/// survives a suspend anywhere inside `then`. A skill test in `then` carries
+/// it across ST.7 too
+/// ([`InFlightSkillTest::kept_investigator`](crate::state::InFlightSkillTest::kept_investigator)).
+/// It is kept apart from the `*::Chosen` picks, so a `Chosen` target nested in
+/// `then` still grounds as its own choice.
+fn step_choose_investigator(
+    cx: &mut Cx,
+    scope: LocationSet,
+    then: &Effect,
+    eval_ctx: EvalContext,
+    node: &Effect,
+) -> EngineOutcome {
+    let candidates = investigator_candidates(cx.state, eval_ctx.controller, scope);
+    let picked = pick_investigator(
+        cx,
+        eval_ctx,
+        &candidates,
+        "ChooseInvestigator: no investigator in scope",
+        EvalContext::set_kept_investigator,
+    );
+    let ctx = match picked {
+        Ok(ctx) => ctx,
+        Err(Unbound::Stop(outcome)) => return outcome,
+        Err(Unbound::Ask(prompt)) => return suspend_leaf_in_place(cx, node, eval_ctx, prompt),
+    };
+    cx.state
+        .continuations
+        .push(Continuation::Effect(frame_of(then, ctx)));
+    EngineOutcome::Done
 }
 
 /// The [`Effect::Native`] step: dispatch to the card-local handler (threading
@@ -2408,7 +2493,8 @@ fn picked_or_reject<T>(grounded: Grounded<T>, empty_reason: &'static str) -> Res
 }
 
 /// Ground an `InvestigatorTarget::Chosen` against its [`LocationSet`]:
-/// candidates are the matching investigators in sorted `BTreeMap` order (so the
+/// candidates are the matching `Active` investigators
+/// ([`investigator_candidates`]) in sorted `BTreeMap` order (so the
 /// `OptionId` index re-derives deterministically). Binds `chosen_investigator`,
 /// or suspends in place.
 ///
@@ -2422,9 +2508,9 @@ fn picked_or_reject<T>(grounded: Grounded<T>, empty_reason: &'static str) -> Res
 /// unsatisfiable target requirement a bar on *initiation* — which is
 /// `check_activate_ability`'s gate, upstream of here. Reaching resolution with
 /// every in-scope candidate ineligible means the ability was legitimately
-/// initiated and only this sub-effect has nowhere to land: Medical Texts 01035
-/// passes its intellect(2) test with nobody at the location damaged, and its
-/// `on_success` heal finds no target. Rejecting there would unwind the whole
+/// initiated and only this sub-effect has nowhere to land: a skill test whose
+/// `on_success` heals a `Chosen` investigator passes with nobody in scope
+/// damaged, and the heal finds no target. Rejecting there would unwind the whole
 /// action — chaos draw included — via `apply_via`'s snapshot restore, so the
 /// effect is skipped (`Err(Unbound::Stop(EngineOutcome::Done))`, which `step_leaf` returns
 /// after having already popped the leaf) instead. An *empty scope* still
@@ -2444,19 +2530,41 @@ fn ground_investigator_choice(
     if candidates.is_empty() && !in_scope.is_empty() {
         return Err(Unbound::Stop(EngineOutcome::Done));
     }
+    pick_investigator(
+        cx,
+        eval_ctx,
+        &candidates,
+        "Chosen investigator: no candidate in scope",
+        EvalContext::set_chosen_investigator,
+    )
+}
+
+/// Pick one of `candidates` on a selection anchored on each investigator card,
+/// then return `eval_ctx` with the pick stored by `bind` and the leaf's pick
+/// index cleared, so the next native does not read it as its own pick. Shared
+/// by [`step_choose_investigator`] and [`ground_investigator_choice`], which
+/// differ only in where the pick is kept. An empty `candidates` rejects with
+/// `empty_reason`.
+fn pick_investigator(
+    cx: &Cx,
+    eval_ctx: EvalContext,
+    candidates: &[InvestigatorId],
+    empty_reason: &'static str,
+    bind: fn(&mut EvalContext, InvestigatorId),
+) -> Result<EvalContext, Unbound> {
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
             cx.cards,
             &eval_ctx,
-            &candidates,
+            candidates,
             "Choose an investigator",
             |id| cx.state.investigators[id].card_anchor(),
         ),
-        "Chosen investigator: no candidate in scope",
+        empty_reason,
     )?;
     let mut ctx = eval_ctx;
-    ctx.set_chosen_investigator(id);
+    bind(&mut ctx, id);
     ctx.set_chosen_option(None);
     Ok(ctx)
 }
@@ -2567,30 +2675,37 @@ fn ground_designated_enemy(
     Ok(ctx)
 }
 
-/// Investigators at a location in a [`LocationSet`](card_dsl::dsl::LocationSet),
-/// in `BTreeMap` (id) order so the `OptionId` index replays deterministically.
+/// The `Active` investigators at a location in a
+/// [`LocationSet`](card_dsl::dsl::LocationSet), in `BTreeMap` (id) order so the
+/// `OptionId` index replays deterministically.
+///
+/// An eliminated investigator is never a candidate. RR *Elimination*: *"The
+/// only manner in which eliminated investigators interact with the game is
+/// when establishing "per investigator" values."*
 fn investigator_candidates(
     state: &GameState,
     controller: InvestigatorId,
     at: LocationSet,
 ) -> Vec<InvestigatorId> {
-    match at {
-        LocationSet::Anywhere => state.investigators.keys().copied().collect(),
+    let here = match at {
+        LocationSet::Anywhere => None,
         LocationSet::Here => match state
             .investigators
             .get(&controller)
             .and_then(|i| i.current_location)
         {
-            Some(here) => state
-                .investigators
-                .iter()
-                .filter(|(_, inv)| inv.current_location == Some(here))
-                .map(|(id, _)| *id)
-                .collect(),
+            Some(here) => Some(here),
             // controller is between locations ⇒ no "your location"
-            None => Vec::new(),
+            None => return Vec::new(),
         },
-    }
+    };
+    state
+        .investigators
+        .iter()
+        .filter(|(_, inv)| inv.status == Status::Active)
+        .filter(|(_, inv)| here.is_none_or(|here| inv.current_location == Some(here)))
+        .map(|(id, _)| *id)
+        .collect()
 }
 
 /// Locations matching a [`LocationSet`](card_dsl::dsl::LocationSet), in `BTreeMap`
@@ -2640,6 +2755,9 @@ fn resolve_investigator_target(
         InvestigatorTarget::Each => ctx
             .each_investigator()
             .ok_or("InvestigatorTarget::Each outside a ForEach body over investigators"),
+        InvestigatorTarget::That => ctx
+            .kept_investigator()
+            .ok_or("InvestigatorTarget::That outside a ChooseInvestigator"),
     }
 }
 
@@ -2751,6 +2869,18 @@ pub(crate) fn effect_can_change_state(
                 body_ctx.set_each(target);
                 effect_can_change_state(state, body_ctx, body)
             }),
+        // Choosing an investigator changes state iff `then` can with some
+        // candidate kept: with none in scope grounding rejects, so the ability
+        // is provably inert.
+        Effect::ChooseInvestigator { scope, then } => {
+            investigator_candidates(state, ctx.controller, *scope)
+                .into_iter()
+                .any(|id| {
+                    let mut then_ctx = ctx;
+                    then_ctx.set_kept_investigator(id);
+                    effect_can_change_state(state, then_ctx, then)
+                })
+        }
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()

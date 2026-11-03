@@ -38,6 +38,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 |---|---|
 | #65 | Each other investigator at the performer's location may commit one card to their skill test, asked in player order before the performer; a committed card's result addition is its committer's, a modifier the performer's, PR #1321; slices #1316, #1317, #1318, #1319, #1320 |
 | #151 | An engagement tie is the lead's to answer, wherever an enemy comes to stand ready beside several investigators its prey can't tell apart, PR #1310; slices #1306, #1307, #1308, #1309 |
+| #359 | Medical Texts 01035 chooses an investigator at your location before its test, and the result heals or damages that investigator; the pick crosses the skill test beside the ability source, PR #1326; slice #1325 |
 | #371 | Location-attachment ownership, PR #984 |
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
 | #409 | A failed Fight deals the attack's damage to the investigator engaged with the attacked enemy, PR #1301 |
@@ -52,6 +53,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
+| #1061 | Scrying 01061 reorders any investigator's deck, chosen once and kept for its placements; an eliminated investigator is never offered by a choice of investigator, PR #1326; slice #1324 |
 | #1086 | A committed skill's ST.7 ability says whether it modifies the test's consequence or adds one; modifiers apply before the follow-up, both gated on the outcome, PR #1311 |
 | #1132 | An eliminated investigator's card that later leaves play is removed from the game into their own pile, PR #1302 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
@@ -73,6 +75,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
+| #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
 
 ## Ordering
 
@@ -100,8 +103,8 @@ landed, before phase 9 is scoped.
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 and #1061 follow #1086 and pair on one
-  choose-and-keep primitive.
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
+  choose-and-keep primitive, specced in #1323 (✅ PR #1326).
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
 **4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is

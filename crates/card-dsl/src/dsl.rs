@@ -1888,6 +1888,7 @@ impl Effect {
                 }
             }
             Effect::ForEach { body, .. } => body.collect_native_refs(refs),
+            Effect::ChooseInvestigator { then, .. } => then.collect_native_refs(refs),
             Effect::ChooseOne(branches) => {
                 for branch in branches {
                     branch.effect.collect_native_refs(refs);
@@ -2003,7 +2004,8 @@ pub struct ChoiceBranch {
 /// Effects compose: [`Effect::Seq`] runs a list in order,
 /// [`Effect::If`] branches, [`Effect::ForEach`] applies a body once
 /// per resolved target, [`Effect::ChooseOne`] presents alternatives
-/// to the controller.
+/// to the controller, and [`Effect::ChooseInvestigator`] keeps one chosen
+/// investigator for the effect beneath it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Effect {
     /// Add resources to the wallet of the resolved target investigator.
@@ -2155,6 +2157,28 @@ pub enum Effect {
     /// branch rather than an `Option`, or an `Effect::Labeled` wrapper node
     /// that would compile anywhere and mean something in one place.
     ChooseOne(Vec<ChoiceBranch>),
+    /// *"Choose an investigator … that investigator"*: the controller picks one
+    /// investigator in `scope`, and `then` runs with that pick **kept**, so
+    /// every later step of `then` reads the same investigator without asking
+    /// again (Scrying 01061's *"any investigator's deck … that deck"*).
+    ///
+    /// The pick is made once, when this node resolves, and it is the only
+    /// one: no investigator in scope rejects, one binds without a prompt
+    /// (outside interactive play, which surfaces even a lone pick), and two or
+    /// more ask the controller. An eliminated investigator is never offered.
+    /// There is no eligibility filter of the pick's own: whether `then` could
+    /// change the chosen investigator's state is not asked of each candidate.
+    ///
+    /// The kept pick lives apart from an [`InvestigatorTarget::Chosen`] pick,
+    /// so a `Chosen` target nested in `then` is still its own choice. A
+    /// `ChooseInvestigator` nested in `then` replaces the kept pick for its own
+    /// `then` only.
+    ChooseInvestigator {
+        /// Where the candidates stand, relative to the controller.
+        scope: LocationSet,
+        /// The effect run with the pick kept.
+        then: Box<Effect>,
+    },
     /// Advance the current act one step: the cursor moves and the act's
     /// on-advance reverse fires. Used by act objectives like 01110 ("If the
     /// Ghoul Priest is Defeated, advance."). A *terminal* act advances the
@@ -3156,6 +3180,14 @@ pub enum InvestigatorTarget {
     /// body can name both the card's controller and the iterated investigator.
     /// Resolving it outside a `ForEach` body over investigators is a rejection.
     Each,
+    /// *"that investigator"*: the investigator kept by the nearest enclosing
+    /// [`Effect::ChooseInvestigator`]. It names the pick already made rather
+    /// than making a new one, so it never prompts, and it reads the same pick
+    /// in a skill test's result branches as before the test (Medical Texts
+    /// 01035: *"Choose an investigator at your location and test \[intellect\]
+    /// (2). If you succeed, heal 1 damage from that investigator."*). Resolving
+    /// it outside a `ChooseInvestigator` is a rejection.
+    That,
 }
 
 impl InvestigatorTarget {
@@ -4112,6 +4144,16 @@ pub fn for_each(targets: impl Into<ForEachTargets>, body: Effect) -> Effect {
     Effect::ForEach {
         targets: targets.into(),
         body: Box::new(body),
+    }
+}
+
+/// Build an [`Effect::ChooseInvestigator`]: choose an investigator in `scope`
+/// and run `then` with the pick kept.
+#[must_use]
+pub fn choose_investigator(scope: LocationSet, then: Effect) -> Effect {
+    Effect::ChooseInvestigator {
+        scope,
+        then: Box::new(then),
     }
 }
 

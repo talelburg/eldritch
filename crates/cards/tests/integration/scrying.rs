@@ -10,10 +10,12 @@
 //! No rulings: 01061 is listed in `data/arkhamdb-faq/no-rulings.txt`.
 //!
 //! The controller first decides which deck (a decision printed on the card:
-//! "Your deck" or "The encounter deck"; solo, "any investigator's deck" is
-//! your own), then rebuilds the top of it one card at a time: each pick puts
-//! one of the remaining looked-at cards next in line from the top, and the
-//! last card needs no pick.
+//! "An investigator's deck" or "The encounter deck"). On the investigator-deck
+//! branch they then choose the investigator, a selection anchored on each
+//! investigator card, which binds without a prompt when only one investigator
+//! is left in the game. Then they rebuild the top of the deck one card at a
+//! time: each pick puts one of the remaining looked-at cards next in line from
+//! the top, and the last card needs no pick.
 //!
 //! Each per-card pick is sent raw: its options are cards **in a deck**, with no
 //! board anchor and neither of ADR 0015's natures, so no session step can name
@@ -25,10 +27,10 @@ use card_dsl::card_data::UseKind;
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionId;
+use game_core::engine::{OptionId, PromptNature};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
-    LocationId,
+    LocationId, Status,
 };
 use game_core::test_support::{location, seat, uses, BoardLookup as _, Seat, TestSession};
 
@@ -49,7 +51,7 @@ const OBSCURING_FOG: &str = "01168";
 const ROTTING_REMAINS: &str = "01163";
 
 /// The deck decision's branches, in printed order.
-const YOUR_DECK: usize = 0;
+const INVESTIGATOR_DECK: usize = 0;
 const ENCOUNTER_DECK: usize = 1;
 
 /// Investigator 1 at `HERE` with a fully charged Scrying in play and `deck`
@@ -113,7 +115,7 @@ fn reordering_your_deck_puts_the_chosen_order_on_top() {
     let session = board(seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION, OVERPOWER]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     let card = s.state().investigators[&INV]
         .cards_in_play
         .iter()
@@ -180,7 +182,7 @@ fn a_deck_of_two_cards_takes_one_pick() {
     let session = board(seer(&[GUTS, PERCEPTION]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     assert_eq!(labels(&s), ["Guts", "Perception"]);
     let s = s.apply(place(1));
 
@@ -191,12 +193,140 @@ fn a_deck_of_two_cards_takes_one_pick() {
     );
 }
 
+/// A second investigator, seated after the seer.
+const ROLAND: InvestigatorId = InvestigatorId(2);
+
+/// The seer's turn at `HERE`, with `other` seated after them.
+fn board_with(seer: Seat, other: Seat) -> TestSession {
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(HERE))
+        .with_seat(seer)
+        .with_seat(other)
+        .with_seating([INV, ROLAND])
+        .open_turn(INV)
+        .session()
+}
+
+/// On the investigator-deck branch the seer is asked which investigator's
+/// deck, a selection anchored on each investigator card, and every
+/// investigator is offered, the seer included.
+#[test]
+fn the_investigator_deck_branch_asks_which_investigator() {
+    let session = board_with(
+        seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION]),
+        seat(2).at(HERE).deck([OVERPOWER, GUTS, PERCEPTION]),
+    );
+    let scrying = scrying(&session);
+
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+
+    assert_eq!(s.prompt().prompt, "Choose an investigator");
+    assert_eq!(s.prompt().nature, PromptNature::Selection);
+    assert_eq!(
+        s.offered_targets(),
+        [
+            Some(s.state().investigator_card(INV)),
+            Some(s.state().investigator_card(ROLAND))
+        ],
+    );
+}
+
+/// *"any investigator's deck"*: the seer reorders Roland's top 3, and the
+/// seer's own deck is untouched.
+#[test]
+fn reordering_another_investigators_deck_leaves_yours_untouched() {
+    let session = board_with(
+        seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION]),
+        seat(2)
+            .at(HERE)
+            .deck([OVERPOWER, GUTS, PERCEPTION, EMERGENCY_CACHE]),
+    );
+    let scrying = scrying(&session);
+
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+    let roland = s.state().investigator_card(ROLAND);
+    let s = s.pick(roland);
+    assert_eq!(
+        labels(&s),
+        ["Overpower", "Guts", "Perception"],
+        "Roland's top 3 are looked at",
+    );
+
+    // Perception goes on top, then Overpower; Guts is left third.
+    let s = s.apply(place(2));
+    assert_eq!(labels(&s), ["Overpower", "Guts"]);
+    let s = s.apply(place(0));
+
+    s.assert_at_turn_menu(INV);
+    assert_eq!(
+        s.state().investigators[&ROLAND].deck,
+        codes([PERCEPTION, OVERPOWER, GUTS, EMERGENCY_CACHE]),
+        "Roland's top 3 are in the picked order",
+    );
+    assert_eq!(
+        s.state().investigators[&INV].deck,
+        codes([EMERGENCY_CACHE, GUTS, PERCEPTION]),
+        "the seer's own deck is untouched",
+    );
+}
+
+/// With another investigator seated, the seer can still pick their own deck.
+#[test]
+fn picking_yourself_reorders_your_own_deck() {
+    let session = board_with(
+        seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION]),
+        seat(2).at(HERE).deck([OVERPOWER, GUTS, PERCEPTION]),
+    );
+    let scrying = scrying(&session);
+
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+    let seer = s.state().investigator_card(INV);
+    let s = s.pick(seer);
+    assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
+
+    // Guts on top, then Perception; Emergency Cache is left third.
+    let s = s.apply(place(1));
+    let s = s.apply(place(1));
+
+    s.assert_at_turn_menu(INV);
+    assert_eq!(
+        s.state().investigators[&INV].deck,
+        codes([GUTS, PERCEPTION, EMERGENCY_CACHE]),
+    );
+    assert_eq!(
+        s.state().investigators[&ROLAND].deck,
+        codes([OVERPOWER, GUTS, PERCEPTION]),
+        "Roland's deck is untouched",
+    );
+}
+
+/// Elimination: *"The only manner in which eliminated investigators interact
+/// with the game is when establishing "per investigator" values."* A defeated
+/// Roland is not offered, so the seer is the one investigator left and the
+/// choice binds without a prompt: the next prompt is the seer's own top 3.
+#[test]
+fn an_eliminated_investigator_is_not_offered() {
+    let session = board_with(
+        seer(&[EMERGENCY_CACHE, GUTS, PERCEPTION]),
+        seat(2)
+            .at(HERE)
+            .deck([OVERPOWER, GUTS, PERCEPTION])
+            .status(Status::Defeated),
+    );
+    let scrying = scrying(&session);
+
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
+
+    assert_eq!(labels(&s), ["Emergency Cache", "Guts", "Perception"]);
+}
+
 #[test]
 fn a_deck_of_one_card_takes_no_pick() {
     let session = board(seer(&[GUTS]), &[]);
     let scrying = scrying(&session);
 
-    let s = session.take(&activate(scrying)).pick_nth(YOUR_DECK);
+    let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
 
     s.assert_at_turn_menu(INV);
     assert_eq!(s.state().investigators[&INV].deck, codes([GUTS]));

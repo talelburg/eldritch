@@ -12,11 +12,14 @@
 //! One `[action]` ability whose costs are the exhaust and the charge. The
 //! `Uses (3 charges)` pool is corpus metadata, so it enters play with 3.
 //!
-//! **Which deck** is an `Effect::ChooseOne` between *"Your deck"* and *"The
-//! encounter deck"*, because the later picks must know it and a native cannot
-//! hand a pick to the next one: the effect tree holds it instead. Solo, *"any
-//! investigator's deck"* is your own. TODO(#1061): offer another
-//! investigator's deck in multiplayer.
+//! **Which deck** is an `Effect::ChooseOne` between *"An investigator's deck"*
+//! and *"The encounter deck"*, because the later picks must know it and a
+//! native cannot hand a pick to the next one: the effect tree holds it
+//! instead. The investigator-deck branch then chooses the investigator with an
+//! `Effect::ChooseInvestigator` over every investigator in play, which keeps
+//! the pick for both of the branch's natives
+//! ([`EvalContext::kept_investigator`]). With one investigator left in the
+//! game, that choice binds without a prompt outside interactive play.
 //!
 //! **The order** is built one card at a time, one native per pick, since a
 //! native sees one pick and must make it before it writes. Pick `k` offers the
@@ -38,7 +41,7 @@
 //! placed, its place is final.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{self, Ability, Cost};
+use card_dsl::dsl::{self, Ability, Cost, LocationSet};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, Grounded, NativeCx};
 use game_core::state::{CardCode, Deck, GameState};
@@ -50,22 +53,22 @@ pub const CODE: &str = "01061";
 
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[
-    (YOUR_DECK_FIRST, your_deck_first),
-    (YOUR_DECK_SECOND, your_deck_second),
+    (INVESTIGATOR_DECK_FIRST, investigator_deck_first),
+    (INVESTIGATOR_DECK_SECOND, investigator_deck_second),
     (ENCOUNTER_DECK_FIRST, encounter_deck_first),
     (ENCOUNTER_DECK_SECOND, encounter_deck_second),
 ]);
 
-const YOUR_DECK_FIRST: &str = "01061:your-deck-first";
-const YOUR_DECK_SECOND: &str = "01061:your-deck-second";
+const INVESTIGATOR_DECK_FIRST: &str = "01061:investigator-deck-first";
+const INVESTIGATOR_DECK_SECOND: &str = "01061:investigator-deck-second";
 const ENCOUNTER_DECK_FIRST: &str = "01061:encounter-deck-first";
 const ENCOUNTER_DECK_SECOND: &str = "01061:encounter-deck-second";
 
 /// How many cards from the top Scrying looks at.
 const LOOKED_AT: usize = 3;
 
-/// `[action]` Exhaust + 1 charge: choose a deck, then put its top 3 back in
-/// the order picked.
+/// `[action]` Exhaust + 1 charge: choose a deck (for an investigator's deck,
+/// then the investigator), then put its top 3 back in the order picked.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::activated(
@@ -79,8 +82,14 @@ pub fn abilities() -> Vec<Ability> {
         ],
         dsl::choose_one(vec![
             (
-                "Your deck",
-                dsl::seq([dsl::native(YOUR_DECK_FIRST), dsl::native(YOUR_DECK_SECOND)]),
+                "An investigator's deck",
+                dsl::choose_investigator(
+                    LocationSet::Anywhere,
+                    dsl::seq([
+                        dsl::native(INVESTIGATOR_DECK_FIRST),
+                        dsl::native(INVESTIGATOR_DECK_SECOND),
+                    ]),
+                ),
             ),
             (
                 "The encounter deck",
@@ -93,12 +102,23 @@ pub fn abilities() -> Vec<Ability> {
     )]
 }
 
-fn your_deck_first(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    place_next(cx, ctx, Deck::Investigator(ctx.controller), 0)
+fn investigator_deck_first(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    place_next_in_kept_deck(cx, ctx, 0)
 }
 
-fn your_deck_second(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    place_next(cx, ctx, Deck::Investigator(ctx.controller), 1)
+fn investigator_deck_second(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    place_next_in_kept_deck(cx, ctx, 1)
+}
+
+/// [`place_next`] in the deck of the investigator the enclosing
+/// `ChooseInvestigator` kept.
+fn place_next_in_kept_deck(cx: &mut NativeCx, ctx: &EvalContext, position: usize) -> EngineOutcome {
+    match ctx.kept_investigator() {
+        Some(id) => place_next(cx, ctx, Deck::Investigator(id), position),
+        None => EngineOutcome::Rejected {
+            reason: "Scrying: an investigator's deck outside a ChooseInvestigator".into(),
+        },
+    }
 }
 
 fn encounter_deck_first(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
@@ -180,6 +200,17 @@ mod tests {
             panic!("expected ChooseOne, got {:?}", abilities[0].effect);
         };
         let labels: Vec<_> = branches.iter().map(|b| b.label.as_str()).collect();
-        assert_eq!(labels, ["Your deck", "The encounter deck"]);
+        assert_eq!(labels, ["An investigator's deck", "The encounter deck"]);
+        assert_eq!(
+            branches[0].effect,
+            dsl::choose_investigator(
+                LocationSet::Anywhere,
+                dsl::seq([
+                    dsl::native(INVESTIGATOR_DECK_FIRST),
+                    dsl::native(INVESTIGATOR_DECK_SECOND),
+                ]),
+            ),
+            "the investigator-deck branch chooses any investigator, then places in their deck",
+        );
     }
 }

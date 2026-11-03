@@ -235,6 +235,7 @@ pub fn test_skill_test(
         on_fail: None,
         on_success: None,
         source: None,
+        kept_investigator: None,
         continuation: SkillTestStep::AwaitingCommit,
         bonus_attack_damage: 0,
         bonus_clues_discovered: 0,

@@ -42,6 +42,15 @@ pub trait BoardLookup {
         OptionTarget::CardInstance(self.in_play(investigator, code))
     }
 
+    /// The anchor on `investigator`'s own investigator card: what
+    /// [`pick`](super::TestSession::pick) takes to choose that investigator,
+    /// and what a selection of investigators offers for each.
+    ///
+    /// # Panics
+    ///
+    /// If `investigator` is not seated.
+    fn investigator_card(&self, investigator: InvestigatorId) -> OptionTarget;
+
     /// The name `investigator` is shown by, as their investigator card prints
     /// it.
     ///
@@ -86,6 +95,13 @@ impl BoardLookup for GameState {
             matches.len(),
             there.join(", "),
         );
+    }
+
+    fn investigator_card(&self, investigator: InvestigatorId) -> OptionTarget {
+        self.investigators
+            .get(&investigator)
+            .unwrap_or_else(|| panic!("investigator_card: no investigator {investigator:?}"))
+            .card_anchor()
     }
 
     fn name_of(&self, investigator: InvestigatorId) -> String {

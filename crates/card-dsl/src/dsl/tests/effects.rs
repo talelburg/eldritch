@@ -62,6 +62,67 @@ fn for_each_over_an_enemy_set_is_an_enemy_fan_out() {
     );
 }
 
+/// `choose_investigator` boxes the effect the pick is kept for, under the
+/// scope the pick is offered from (Scrying 01061's *"any investigator's
+/// deck"*).
+#[test]
+fn choose_investigator_keeps_the_pick_for_its_then() {
+    let effect = choose_investigator(LocationSet::Anywhere, native("x:in-choose-investigator"));
+    assert_eq!(
+        effect,
+        Effect::ChooseInvestigator {
+            scope: LocationSet::Anywhere,
+            then: Box::new(Effect::Native {
+                tag: "x:in-choose-investigator".into()
+            }),
+        }
+    );
+}
+
+/// `choose_investigator` survives a serde round trip.
+#[test]
+fn choose_investigator_round_trips_through_serde_json() {
+    let effect = choose_investigator(
+        LocationSet::Here,
+        gain_resources(InvestigatorTarget::You, 1),
+    );
+    let json = serde_json::to_string(&effect).expect("serialize");
+    let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(effect, recovered);
+}
+
+/// *"that investigator"* names the kept pick inside `choose_investigator`'s
+/// `then`, through a skill test's result branches (Medical Texts 01035), and
+/// the whole tree survives a serde round trip.
+#[test]
+fn that_names_the_kept_pick_through_a_skill_tests_branches() {
+    let effect = choose_investigator(
+        LocationSet::Here,
+        skill_test(
+            SkillKind::Intellect,
+            2,
+            Some(heal_damage(InvestigatorTarget::That, 1)),
+            Some(deal_damage(InvestigatorTarget::That, 1u8)),
+        ),
+    );
+    let Effect::ChooseInvestigator { then, .. } = &effect else {
+        panic!("expected ChooseInvestigator, got {effect:?}");
+    };
+    let Effect::SkillTest { on_fail, .. } = then.as_ref() else {
+        panic!("expected SkillTest, got {then:?}");
+    };
+    assert!(matches!(
+        on_fail.as_deref(),
+        Some(Effect::Deal {
+            target: InvestigatorTarget::That,
+            ..
+        })
+    ));
+    let json = serde_json::to_string(&effect).expect("serialize");
+    let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(effect, recovered);
+}
+
 /// `choose_one` accepts an iterable like `seq`.
 #[test]
 fn choose_one_collects_alternatives() {

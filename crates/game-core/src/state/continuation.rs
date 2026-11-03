@@ -1506,6 +1506,21 @@ pub struct InFlightSkillTest {
     /// [`Effect::DiscardSelf`] reads back
     /// out to find itself.
     pub source: Option<AbilitySource>,
+    /// The investigator an enclosing
+    /// [`Effect::ChooseInvestigator`]
+    /// picked before this test started, parked beside
+    /// [`source`](Self::source) so the `on_success` / `on_fail` eval-context
+    /// rebuilt at ST.7 still reads it as *"that investigator"* (Medical Texts
+    /// 01035: *"Choose an investigator at your location and test \[intellect\]
+    /// (2). If you succeed, heal 1 damage from that investigator."*). `None`
+    /// for every test not started under one.
+    ///
+    /// It is the only part of the starting [`EvalContext`] besides the source
+    /// that crosses the test. ST.7 builds the `on_success` / `on_fail` context
+    /// fresh, so every other binding on it is gone by construction: each
+    /// belongs to a moment that ends before ST.7, and carrying one over would
+    /// revive a closed binding.
+    pub kept_investigator: Option<InvestigatorId>,
     /// Where the resolution driver should resume on the next call to
     /// `advance`. Initialized to
     /// [`SkillTestStep::AwaitingCommit`] at

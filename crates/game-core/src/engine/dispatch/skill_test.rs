@@ -123,6 +123,12 @@ pub(in crate::engine) enum SkillTestSpec {
         on_success: Option<Effect>,
         /// Resolved at ST.7 on failure.
         on_fail: Option<Effect>,
+        /// The investigator an enclosing
+        /// [`Effect::ChooseInvestigator`]
+        /// kept, carried into the test so `on_success` / `on_fail` read it
+        /// at ST.7 ([`InFlightSkillTest::kept_investigator`]). `None` outside
+        /// one.
+        kept_investigator: Option<InvestigatorId>,
     },
 }
 
@@ -134,6 +140,7 @@ struct DerivedSkillTest {
     follow_up: SkillTestFollowUp,
     on_success: Option<Effect>,
     on_fail: Option<Effect>,
+    kept_investigator: Option<InvestigatorId>,
     initiator_modifier: Option<InitiatorModifier>,
     reveal_clause: Option<RevealClause>,
 }
@@ -163,6 +170,7 @@ impl SkillTestSpec {
                     },
                     on_success: None,
                     on_fail: None,
+                    kept_investigator: None,
                     // "+N [combat] for this attack" — a row over the
                     // controller's tested skill, scoped to the test about to
                     // start.
@@ -192,6 +200,7 @@ impl SkillTestSpec {
                 follow_up: SkillTestFollowUp::Evade { enemy },
                 on_success,
                 on_fail: None,
+                kept_investigator: None,
                 initiator_modifier: None, // no Evade designator prints a skill modifier
                 reveal_clause,
             },
@@ -215,6 +224,7 @@ impl SkillTestSpec {
                 },
                 on_success: instead_of_discovery,
                 on_fail: None,
+                kept_investigator: None,
                 // "Your location gets -2 shroud for this investigation" — a row
                 // over the *location*, scoped to the test about to start.
                 initiator_modifier: shroud_modifier.map(|delta| InitiatorModifier {
@@ -229,6 +239,7 @@ impl SkillTestSpec {
                 difficulty,
                 on_success,
                 on_fail,
+                kept_investigator,
             } => DerivedSkillTest {
                 skill,
                 kind: SkillTestKind::Plain,
@@ -236,6 +247,7 @@ impl SkillTestSpec {
                 follow_up: SkillTestFollowUp::None,
                 on_success,
                 on_fail,
+                kept_investigator,
                 initiator_modifier: None,
                 reveal_clause: None,
             },
@@ -258,6 +270,7 @@ pub(in crate::engine) fn start_skill_test(
         follow_up,
         on_success,
         on_fail,
+        kept_investigator,
         initiator_modifier,
         reveal_clause,
     } = spec.derive(investigator);
@@ -338,6 +351,7 @@ pub(in crate::engine) fn start_skill_test(
             on_fail,
             on_success,
             source,
+            kept_investigator,
             continuation: SkillTestStep::PreCommitWindow,
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
@@ -1744,7 +1758,11 @@ pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> Engi
 ///   01164's self-discard, Crypt Chill 01167's discard choice), in a context
 ///   rebuilt from the parked source, so `Effect::DiscardSelf` finds itself
 ///   across the suspend/resume boundary and a `ChooseOne` in either branch
-///   keeps the anchor the activation gave it.
+///   keeps the anchor the activation gave it. The parked
+///   [`kept_investigator`](InFlightSkillTest::kept_investigator) is put back
+///   too; that field's doc says why nothing else crosses. Only this arm
+///   restores the kept pick; the token and addition arms build their own
+///   contexts without it.
 /// - [`St7Result::Token`]: the revealed token's part, looked up again through
 ///   [`chaos_symbol_effect`] from the token on
 ///   [`revealed`](InFlightSkillTest::revealed), the way the committed cards'
@@ -1764,7 +1782,7 @@ fn apply_result(
     let resolved_test = resolved(cx);
     let pushed = match result {
         St7Result::Card => {
-            let (effect, source) = {
+            let (effect, source, kept_investigator) = {
                 let t = cx
                     .state
                     .current_skill_test()
@@ -1774,13 +1792,15 @@ fn apply_result(
                 } else {
                     &t.on_fail
                 };
-                (effect.clone(), t.source)
+                (effect.clone(), t.source, t.kept_investigator)
             };
             effect.map(|effect| {
-                (
-                    effect,
-                    EvalContext::for_controller_with_optional_source(investigator, source),
-                )
+                let mut ctx =
+                    EvalContext::for_controller_with_optional_source(investigator, source);
+                if let Some(kept) = kept_investigator {
+                    ctx.set_kept_investigator(kept);
+                }
+                (effect, ctx)
             })
         }
         St7Result::Token => cx
@@ -2789,6 +2809,7 @@ pub(crate) fn perform_skill_test(
             difficulty,
             on_success: None,
             on_fail: None,
+            kept_investigator: None,
         },
         None,
     )

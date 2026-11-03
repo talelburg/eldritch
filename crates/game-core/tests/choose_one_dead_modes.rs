@@ -3,13 +3,12 @@
 //! modes are *all* dead is **skipped**, not rejected.
 //!
 //! The skip half needs a `ChooseOne` reached where no initiation gate has
-//! already proved a branch live — the shape is Medical Texts 01035's: a skill
-//! test whose `on_success` heals. The activation gate passes (a `SkillTest` is
-//! never provably inert), the test resolves, and only then does the heal find
-//! nobody to heal. Rejecting there would unwind the whole action through
-//! `apply_via`'s snapshot restore — chaos draw included — so the sub-effect is
-//! skipped instead, the convention `ground_investigator_choice` follows for
-//! the same reason.
+//! already proved a branch live: a skill test whose `on_success` heals. The
+//! activation gate passes (a `SkillTest` is never provably inert), the test
+//! resolves, and only then does the heal find nobody to heal. Rejecting there
+//! would unwind the whole action through `apply_via`'s snapshot restore —
+//! chaos draw included — so the sub-effect is skipped instead, the convention
+//! `ground_investigator_choice` follows for the same reason.
 //!
 //! Lives at `crates/game-core/tests/` for its own process and its own
 //! `MockRegistry`, like the sibling mock-registry integration tests.
@@ -31,8 +30,8 @@ use game_core::test_support::{self, seat, BoardLookup as _, MockRegistry, TestSe
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: `[action] Test intellect(2). If you succeed, heal 1 damage or horror
-/// from you.` — Medical Texts 01035's shape with the heal made modal, so the
-/// post-test `ChooseOne` can be reached with every mode dead.
+/// from you.` — a skill test with a modal heal on success, so the post-test
+/// `ChooseOne` can be reached with every mode dead.
 const MODAL_HEAL_ON_SUCCESS: &str = "MOCK-664";
 
 const INV: InvestigatorId = InvestigatorId(1);
