@@ -5,7 +5,7 @@ use crate::test_support::{enemy, location, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 #[test]
-fn reengage_at_location_engages_sole_co_located_survivor() {
+fn engage_or_report_tie_engages_sole_co_located_survivor() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
     let survivor = test_support::seat(2).at(loc);
@@ -19,7 +19,8 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    assert_eq!(tie, None, "no tie to report");
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(surv));
     assert_event!(events, Event::EnemyEngaged { enemy, investigator }
@@ -27,7 +28,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
 }
 
 #[test]
-fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
+fn engage_or_report_tie_no_co_located_investigator_leaves_unengaged() {
     let loc = LocationId(1);
     let enemy = enemy(1).at(loc);
     let mut state = GameStateBuilder::default()
@@ -37,15 +38,19 @@ fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    assert_eq!(tie, None, "no tie to report");
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
+/// Two co-located investigators and `Prey::Default` tie. The tie is reported,
+/// candidates in player order, for the lead to answer, and nobody is engaged
+/// yet (`glossary/Prey.md`: *"if multiple investigators are tied in meeting
+/// these instructions, the lead investigator may decide among them"*).
 #[test]
-fn reengage_at_location_tie_auto_picks_lead_first_in_player_order() {
-    // Two co-located survivors, Prey::Default → tie → engage player-order-first (lead).
+fn engage_or_report_tie_reports_a_tie_and_engages_nobody() {
     let lead = InvestigatorId(2);
     let other = InvestigatorId(3);
     let loc = LocationId(1);
@@ -60,19 +65,19 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_player_order() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
 
     assert_eq!(
-        state.enemies[&EnemyId(1)].engaged_with,
-        Some(lead),
-        "tie engages the lead (player-order-first)"
+        tie,
+        Some(TiedEngagement::new(EnemyId(1), vec![lead, other])),
+        "the tie is reported, candidates in player order",
     );
-    assert_event!(events, Event::EnemyEngaged { enemy, investigator }
-        if *enemy == EnemyId(1) && *investigator == lead);
+    assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+    assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
 #[test]
-fn reengage_at_location_exhausted_enemy_does_not_engage() {
+fn engage_or_report_tie_exhausted_enemy_does_not_engage() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
     let survivor = test_support::seat(2).at(loc);
@@ -87,19 +92,21 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    assert_eq!(tie, None, "no tie to report");
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
 #[test]
-fn reengage_at_location_enemy_without_location_is_noop() {
+fn engage_or_report_tie_enemy_without_location_is_noop() {
     // no location — must no-op
     let enemy = enemy(1);
     let mut state = GameStateBuilder::default().with_enemy(enemy).build();
     let mut events = Vec::new();
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    assert_eq!(tie, None, "no tie to report");
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
@@ -111,7 +118,7 @@ fn reengage_at_location_enemy_without_location_is_noop() {
 /// moving and engaging."* That it engages no one beside only non-bearers is
 /// driven through `apply` by `crates/cards/tests/integration/silver_twilight_acolyte.rs`.
 #[test]
-fn reengage_at_location_bearer_only_picks_the_bearer_over_the_lead() {
+fn engage_or_report_tie_bearer_only_picks_the_bearer_over_the_lead() {
     let loc = LocationId(1);
     let lead = InvestigatorId(2);
     let bearer = InvestigatorId(1);
@@ -129,7 +136,8 @@ fn reengage_at_location_bearer_only_picks_the_bearer_over_the_lead() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    let tie = engage_or_report_tie(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+    assert_eq!(tie, None, "no tie to report");
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(bearer));
 }

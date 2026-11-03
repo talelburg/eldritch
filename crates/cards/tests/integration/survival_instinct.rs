@@ -253,3 +253,36 @@ fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
         Event::SkillTestEnded { .. },
     );
 }
+
+/// The evader stays in the Study, with nowhere to move, beside a second
+/// investigator: the rat disengaged there is ready and unengaged beside both,
+/// and with no Prey the two tie, so the lead picks whom it engages
+/// (`glossary/Prey.md`: *"if multiple investigators are tied in meeting these
+/// instructions, the lead investigator may decide among them"*).
+#[test]
+fn the_rat_left_beside_two_investigators_asks_the_lead_whom_it_engages() {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(HERE))
+        .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
+        .with_seat(seat(2).at(HERE))
+        .with_seating([INV, INV2])
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_enemy(enemy(GHOUL).evade(2).engaged_with(INV))
+        .with_enemy(enemy(RAT).evade(2).engaged_with(INV))
+        .open_turn(INV)
+        .session();
+    let inv2 = session.state().investigators[&INV2].card_anchor();
+
+    // No connecting location: the move is not offered.
+    let session = evade_committing(session).pick_nth(DISENGAGE);
+
+    assert_eq!(engaged_with(&session, RAT), None);
+    session.assert_lead_asked_between(INV, &[INV, INV2]);
+
+    let session = session.pick(inv2);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(standing_at(&session), Some(HERE));
+    assert_eq!(engaged_with(&session, RAT), Some(INV2));
+}

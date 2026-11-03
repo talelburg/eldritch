@@ -42,7 +42,9 @@
 //! initiates while this is in play.
 //!
 //! *"\[action\]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
-//! The Necronomicon has no horror on it, discard it."* is a native on
+//! The Necronomicon has no horror on it, discard it."* is a sequence of two
+//! natives, the move and then the discard, so the discard's check waits for
+//! anything Daisy's elimination leaves pending. The move is
 //! [`NativeCx::move_horror`]: a move, not a deal, so nothing keyed on harm
 //! fires. The ruling (<https://arkhamdb.com/card/01009>): *"Moving damage or
 //! horror is different from 'dealing' or 'taking' damage or horror, so does
@@ -62,11 +64,15 @@ use crate::impls::CardRecord;
 pub const CODE: &str = "01009";
 
 /// This card's registration, listed in [`ALL`](super::ALL).
-pub const CARD: CardRecord =
-    CardRecord::new(CODE, abilities).effects(&[(MOVE_HORROR_TAG, move_horror_to_daisy)]);
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[
+    (MOVE_HORROR_TAG, move_horror_to_daisy),
+    (DISCARD_IF_EMPTY_TAG, discard_if_empty),
+]);
 
-/// Native tag: move 1 horror to Daisy, then discard the card if it is empty.
+/// Native tag: move 1 horror to Daisy.
 const MOVE_HORROR_TAG: &str = "01009:move-horror";
+/// Native tag: discard the card if it has no horror on it.
+const DISCARD_IF_EMPTY_TAG: &str = "01009:discard-if-empty";
 
 /// The Necronomicon's printed abilities:
 ///
@@ -92,15 +98,24 @@ pub fn abilities() -> Vec<Ability> {
             ChaosSymbol::ElderSign,
             ChaosSymbol::AutoFail,
         )),
-        dsl::activated(1, vec![], dsl::native(MOVE_HORROR_TAG)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::seq([
+                dsl::native(MOVE_HORROR_TAG),
+                dsl::native(DISCARD_IF_EMPTY_TAG),
+            ]),
+        ),
     ]
 }
 
-/// *"Move 1 horror from The Necronomicon to Daisy Walker. Then, if The
-/// Necronomicon has no horror on it, discard it."*
+/// *"Move 1 horror from The Necronomicon to Daisy Walker."*
 ///
-/// A move that defeats Daisy eliminates her, which removes this card from the
-/// game, so there is nothing left to discard.
+/// Its own native, apart from the *"Then"* clause, because the move can defeat
+/// Daisy, and her elimination may leave work pending: an enemy engaged with her
+/// tied between two investigators beside her is the lead's to assign. A native
+/// cannot read the board after an exit leaves work pending (ADR 0020), so the
+/// emptiness check waits in [`discard_if_empty`] until that work is done.
 fn move_horror_to_daisy(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = ctx.source_instance() else {
         return EngineOutcome::Rejected {
@@ -124,6 +139,19 @@ fn move_horror_to_daisy(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
             reason: format!("the_necronomicon: moving horror failed: {err:?}").into(),
         };
     }
+    EngineOutcome::Done
+}
+
+/// *"Then, if The Necronomicon has no horror on it, discard it."*
+///
+/// A move that defeated Daisy eliminated her, which removed this card from the
+/// game, so there is nothing left to discard.
+fn discard_if_empty(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    let Some(source) = ctx.source_instance() else {
+        return EngineOutcome::Rejected {
+            reason: "the_necronomicon: no source instance".into(),
+        };
+    };
     let empty = board::find_instance(cx.state(), source)
         .is_some_and(|(card, _)| card.accumulated_horror == 0);
     if empty {

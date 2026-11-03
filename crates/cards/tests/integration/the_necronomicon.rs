@@ -679,3 +679,69 @@ fn a_move_that_reaches_her_sanity_defeats_her() {
     );
     assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
+
+/// The move that defeats Daisy beside two other investigators, while an enemy
+/// is engaged with her, leaves that enemy's engagement to the lead, and the
+/// activation still resolves.
+///
+/// Elimination step 3 (`glossary/Elimination.md`): *"All enemies engaged with
+/// that player are placed at the location the investigator was at when he or
+/// she was eliminated, unengaged but otherwise maintaining their current game
+/// state."* The ready enemy then engages one of the two left beside it, and
+/// `glossary/Prey.md` leaves the tie to the lead: *"if multiple investigators
+/// are tied in meeting these instructions, the lead investigator may decide
+/// among them"*. Daisy led, so the next seat answers (step 5: *"If the lead
+/// investigator is eliminated, the remaining players (if any) choose a new
+/// lead investigator"*). The tie's frame holds back the card's *"Then, if The
+/// Necronomicon has no horror on it, discard it"* (ADR 0020), and with Daisy
+/// eliminated it finds nothing to discard.
+#[test]
+fn a_move_that_defeats_daisy_beside_two_others_leaves_her_enemy_to_the_lead() {
+    let (agnes, roland) = (InvestigatorId(2), InvestigatorId(3));
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(HERE))
+        .with_seat(
+            seat(1)
+                .as_card(DAISY)
+                .at(HERE)
+                .harm(0, 8)
+                .threat_area([(NECRONOMICON, horror(3))]),
+        )
+        .with_seat(seat(2).at(HERE))
+        .with_seat(seat(3).at(HERE))
+        .with_seating([INV, agnes, roland])
+        // A harmless attack of opportunity, so the move is what defeats her.
+        .with_enemy(
+            enemy(ENEMY)
+                .attack_damage(0)
+                .attack_horror(0)
+                .engaged_with(INV),
+        )
+        .open_turn(INV)
+        .session();
+
+    let session = move_one_horror(session);
+
+    assert_event!(
+        session.events(),
+        Event::InvestigatorEliminated {
+            investigator: INV,
+            cause: EliminationCause::Horror
+        }
+    );
+    session.assert_lead_asked_between(agnes, &[agnes, roland]);
+    let roland_card = session.state().investigators[&roland].card_anchor();
+    assert_eq!(session.state().enemies[&ENEMY].engaged_with, None);
+
+    let session = session.pick(roland_card);
+
+    assert_eq!(session.state().enemies[&ENEMY].engaged_with, Some(roland));
+    assert!(
+        session.state().investigators[&INV]
+            .removed_from_game
+            .contains(&CardCode::new(NECRONOMICON)),
+        "elimination removed it from the game, so nothing was discarded",
+    );
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
+}

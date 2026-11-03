@@ -2,8 +2,8 @@ use super::*;
 use crate::action::{Action, PlayerAction};
 use crate::engine::{enumerate::TurnAction, outcome::OptionTarget};
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
-use crate::test_support::{enemy, location, TEST_REGISTRIES};
-use crate::{assert_event, test_support};
+use crate::test_support::{enemy, location, TestSession, TEST_REGISTRIES};
+use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 use card_dsl::card_data::SkillKind;
 
@@ -269,4 +269,59 @@ fn hunter_engage_tie_rejects_wrong_response_kind() {
         assert_eq!(session.offered_at(anchor), 1);
     }
     assert_eq!(session.state().enemies[&EnemyId(1)].engaged_with, None);
+}
+
+#[test]
+fn hunter_engage_tie_resumes_the_later_hunters_then_the_attack_loop() {
+    // Line A(1)-B(2)-C(3), two investigators at B. Hunter 1 at A and hunter 2
+    // at C each step into B, and each ties there on default prey. Hunters move
+    // one at a time, so hunter 2 waits for the lead's answer about hunter 1,
+    // and the step-3.3 attacks wait for the answer about hunter 2.
+    let first = test_support::seat(1).at(B);
+    let second = test_support::seat(2).at(B);
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(A).connections(vec![B]))
+        .with_location(location(B).connections(vec![A, C]))
+        .with_location(location(C).connections(vec![B]))
+        .with_seat(first)
+        .with_seat(second)
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
+        .with_enemy(enemy(1).hunter().attack_damage(1).at(A))
+        .with_enemy(enemy(2).hunter().attack_damage(1).at(C))
+        .open_turn(InvestigatorId(1))
+        .session()
+        .take(&TurnAction::EndTurn)
+        .take(&TurnAction::EndTurn);
+    let card =
+        |s: &TestSession, id: u32| s.state().investigators[&InvestigatorId(id)].card_anchor();
+    assert_eq!(
+        session.state().enemies[&EnemyId(2)].current_location,
+        Some(C),
+        "hunter 2 waits for the answer about hunter 1"
+    );
+
+    let second_card = card(&session, 2);
+    let session = session.pick(second_card);
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        Some(InvestigatorId(2))
+    );
+    assert_eq!(
+        session.state().enemies[&EnemyId(2)].current_location,
+        Some(B)
+    );
+    assert_eq!(session.state().enemies[&EnemyId(2)].engaged_with, None);
+    assert_eq!(session.offered_at(&card(&session, 1)), 1, "hunter 2's tie");
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+
+    let first_card = card(&session, 1);
+    let session = session.pick(first_card);
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(2) && *investigator == InvestigatorId(1),
+        Event::DamagePlacedOnInvestigator { .. },
+    );
+    session.assert_at_encounter_draw();
 }

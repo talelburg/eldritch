@@ -308,7 +308,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::HandSizeDiscard(_)
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
+            | Continuation::EngagementTie(_)
             | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_)
@@ -424,7 +424,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             | Continuation::HandSizeDiscard(_)
             | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
+            | Continuation::EngagementTie(_)
             | Continuation::TurnChoice(_)
             | Continuation::SlotDiscard(_)
             | Continuation::AdditionalActionChoice(_) => {
@@ -711,7 +711,7 @@ pub(crate) fn resolve_input(
         // frame is never on top here (the drive steps it before yielding).
         Continuation::Effect(_) => choice::resume_effect_choice(cx, response),
         Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
-        Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
+        Continuation::EngagementTie(_) => engagement::resume_engagement_tie(cx, response),
         Continuation::TurnChoice(_) => phases::resume_turn_choice(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
         Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),

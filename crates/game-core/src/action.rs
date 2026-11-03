@@ -143,7 +143,7 @@ pub enum InputResponse {
     /// ([`InputRequest::pick_single`](crate::engine::InputRequest::pick_single)),
     /// echoing back its [`OptionId`]. The
     /// single-selection family: the effect-choice machinery, and
-    /// the location/investigator-pick windows (hunter move/engage, spawn engage)
+    /// the location/investigator-pick windows (a hunter's direction, an engagement tie)
     /// whose offered options index the candidate list.
     PickSingle(OptionId),
     /// Select a subset of the offered options, echoing back their

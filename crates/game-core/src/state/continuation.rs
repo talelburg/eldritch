@@ -269,11 +269,11 @@ pub enum Continuation {
     /// resolves. At most one is ever on the stack (no nesting today);
     /// [`GameState::current_skill_test`](crate::state::game_state::GameState::current_skill_test) returns the topmost one.
     SkillTest(InFlightSkillTest),
-    /// A suspended Hunter-movement / engagement choice. Resumed by
-    /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
+    /// A suspended Hunter-movement choice: where a hunter moves. See
+    /// [`HunterChoice`].
     HunterMove(HunterChoice),
-    /// A suspended engagement-on-spawn choice.
-    SpawnEngage(SpawnEngagePending),
+    /// See [`EngagementTieFrame`].
+    EngagementTie(EngagementTieFrame),
     /// See [`TurnChoiceFrame`].
     TurnChoice(TurnChoiceFrame),
     /// A suspended upkeep hand-size discard.
@@ -345,7 +345,7 @@ impl_frame!(AdvanceReverse, AdvanceReverseFrame);
 impl_frame!(AcknowledgeForced, AcknowledgeForcedFrame);
 impl_frame!(SkillTest, InFlightSkillTest);
 impl_frame!(HunterMove, HunterChoice);
-impl_frame!(SpawnEngage, SpawnEngagePending);
+impl_frame!(EngagementTie, EngagementTieFrame);
 impl_frame!(TurnChoice, TurnChoiceFrame);
 impl_frame!(HandSizeDiscard, HandSizeDiscard);
 impl_frame!(EmitEvent, EmitEventFrame);
@@ -732,7 +732,7 @@ impl Continuation {
                 },
                 ScenarioEndDisposition::Complete,
             ),
-            // Framework prompts. Hunter movement and spawn engagement are board
+            // Framework prompts. Hunter movement and engagement ties are board
             // maintenance whose prompt would otherwise be put to a player after
             // the game is over, and whose outcome no longer reaches state anyone
             // reads; the rest are the framework sequence, in which nothing
@@ -747,7 +747,7 @@ impl Continuation {
             Continuation::FastWindow(_)
             | Continuation::AdditionalActionChoice(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
+            | Continuation::EngagementTie(_)
             | Continuation::TurnChoice(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::Mulligan(_)
@@ -1174,13 +1174,13 @@ pub enum EnemyResume {
     /// movement) and the step-3.3 attack-loop kickoff. Set by `enemy_phase`
     /// before it emits, per ADR 0003.
     AfterPhaseStartForced,
-    /// Step 3.2: hunter enemies are moving. Set by `enemy_after_phase_start`
-    /// before it moves them. Hunter movement either completes synchronously or
-    /// suspends on a lead-investigator tie whose resume runs the step-3.3
-    /// kickoff directly, and the kickoff re-points the anchor; so nothing
-    /// re-exposes the anchor at this value, and its dispatch arm is
-    /// `unreachable!`.
-    HuntersMoving,
+    /// Step 3.2: hunter enemies are moving, and this hunter is the last one
+    /// processed. Parked before each hunter moves (ADR 0003), so a choice it
+    /// leaves (a [direction tie](HunterChoice) or an
+    /// [engagement tie](EngagementTieFrame) on arrival) resolves above this
+    /// anchor. On re-exposure, the next eligible hunter in enemy-id order
+    /// moves; after the last, the step-3.3 attack loop starts.
+    HuntersAfter(EnemyId),
     /// This investigator's before-attacked window closed; resolve their
     /// engaged enemies' attacks (step 3.3). Set by `open_attack_window`.
     BeforeInvestigatorAttacked(InvestigatorId),
@@ -1206,6 +1206,13 @@ pub enum UpkeepResume {
     AfterPhaseStartForced,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
+    /// Step 4.3 readied enemies into engagement ties, and their
+    /// [`EngagementTie`](Continuation::EngagementTie) frame sits above this
+    /// anchor for the lead to answer. On re-exposure — once every tie is
+    /// answered — run the step-4.4 draws from the first investigator, then 4.5
+    /// and 4.6. Parked before 4.3 runs; with no tie, 4.4 follows 4.3 inline and
+    /// its draws re-park the anchor at once.
+    AfterReady,
     /// Step 4.4's per-investigator cursor: `drew` has drawn their card, and the
     /// draw pushed frames above this anchor (the deck-out horror's deal, a drawn
     /// weakness's Revelation) that ceded to the drive loop. On re-exposure —
@@ -2027,13 +2034,12 @@ pub enum PhaseStep {
 /// investigators"* (`glossary/Prey.md`). See **Lead investigator** in
 /// `GLOSSARY.md`.
 ///
-/// Two shapes because the two choice points need different input:
-/// movement is a `PickSingle` over a prey-filtered destination set,
-/// engagement on arrival a `PickSingle` over the co-located set. Movement
-/// offers destinations rather than investigators because a hunter able to
-/// move must move: FFG's Game Rules Specialist, on two prey-tied investigators
-/// one of whom is behind a Barricade, *"it will have to move toward the other
-/// investigator"*
+/// Only the hunter's direction is asked here. Whom it engages on arrival is an
+/// engagement tie like any other, and goes on an [`EngagementTieFrame`].
+/// Movement offers destinations rather than investigators because a hunter
+/// able to move must move: FFG's Game Rules Specialist, on two prey-tied
+/// investigators one of whom is behind a Barricade, *"it will have to move
+/// toward the other investigator"*
 /// (<https://boardgamegeek.com/thread/3073397/exhausted-enemies-whunter-movement>).
 /// Offering the tied investigators would let the lead pick the blocked one and
 /// keep the hunter in place.
@@ -2048,42 +2054,56 @@ pub enum HunterChoice {
         /// Legal destinations to choose among (the validated option set).
         candidates: Vec<LocationId>,
     },
-    /// The pick of whom the hunter engages among co-located
-    /// tied prey candidates (Rules Reference p.10 / p.17).
-    Engage {
-        /// The hunter that arrived.
-        enemy: EnemyId,
-        /// Co-located investigators to choose among.
-        candidates: Vec<InvestigatorId>,
-    },
 }
 
-/// A suspended engagement-on-spawn choice: a multi-investigator spawn tie
-/// awaiting a `PickSingle`.
+/// The lead's choice of whom an enemy engages, for each engagement tie one
+/// step left, answered in enemy-id order.
 ///
-/// `glossary/Prey.md` gives the tie to the lead: *"if multiple investigators
-/// are tied in meeting these instructions, the lead investigator may decide
-/// among them"*. The engine does not model the lead; see `GLOSSARY.md`.
+/// An engagement tie is a ready unengaged enemy beside two or more
+/// investigators its prey can't separate (**Prey tie / engagement tie** in
+/// `GLOSSARY.md`), however it got there: spawning, a hunter's arrival, a
+/// relocation, readying in Upkeep 4.3, an elimination, a stranding move, or a
+/// card that disengaged it. `glossary/Prey.md` gives it to the lead: *"if
+/// multiple investigators are tied in meeting these instructions, the lead
+/// investigator may decide among them"*.
 ///
-/// Distinct from [`HunterChoice`] because spawn engagement is not a
-/// hunter move (it never picks a location) and its resume just engages
-/// the chosen investigator and pops; any Mythos encounter-draw chain
-/// continues through the [`PlayerDraw`](Continuation::PlayerDraw) frame
-/// beneath it (which carries its own surge/chain state), so this frame
-/// holds only the pick itself.
+/// Each answer engages the head's chosen investigator and drops the head. The
+/// frame pops once the queue is empty, and the frame beneath continues, for
+/// example the drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain, the
+/// Enemy-phase anchor's hunter cursor, the Upkeep anchor at 4.4, the move's
+/// `LeftLocation` cells, or a native's [`NativeTail`](Continuation::NativeTail).
+/// The frame holds only the picks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct SpawnEngagePending {
-    /// The spawned enemy awaiting an engagement target.
+pub struct EngagementTieFrame {
+    /// The ties still to answer, the head first. Never empty on the stack.
+    pub ties: Vec<TiedEngagement>,
+}
+
+impl EngagementTieFrame {
+    /// The ties `ties` leaves, answered in the order given. The constructor
+    /// for code outside the crate, such as a test staging the prompt, where
+    /// `#[non_exhaustive]` blocks the struct literal.
+    #[must_use]
+    pub fn new(ties: Vec<TiedEngagement>) -> Self {
+        Self { ties }
+    }
+}
+
+/// One enemy's engagement tie: the enemy, and the investigators its prey
+/// leaves tied, in player order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct TiedEngagement {
+    /// The enemy awaiting an engagement target.
     pub enemy: EnemyId,
-    /// Co-located investigators to choose among.
+    /// The tied investigators to choose among, two or more.
     pub candidates: Vec<InvestigatorId>,
 }
 
-impl SpawnEngagePending {
-    /// `enemy`'s pending engagement among `candidates`. The constructor for
-    /// code outside the crate, such as a test staging the prompt, where
-    /// `#[non_exhaustive]` blocks the struct literal.
+impl TiedEngagement {
+    /// `enemy`'s tie among `candidates`. The constructor for code outside the
+    /// crate, as [`EngagementTieFrame::new`] is.
     #[must_use]
     pub fn new(enemy: EnemyId, candidates: Vec<InvestigatorId>) -> Self {
         Self { enemy, candidates }
@@ -2849,8 +2869,8 @@ pub struct EncounterDrawFrame {
 /// card — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine),
 /// and pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
 /// disposal exposes this one again; otherwise it pops itself and advances the
-/// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
-/// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
+/// loop to the next drawer. A mid-chain spawn-engagement tie pushes an
+/// [`EngagementTie`](Continuation::EngagementTie) frame *above* this one. Never
 /// awaits input itself (mirrors `EncounterCard`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerDrawFrame {

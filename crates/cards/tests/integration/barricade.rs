@@ -737,6 +737,48 @@ fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
     );
 }
 
+/// With two investigators left at the origin the stranded enemy's engagement is
+/// a tie, and `glossary/Prey.md` leaves it to the lead: *"if multiple
+/// investigators are tied in meeting these instructions, the lead investigator
+/// may decide among them"*. The mover leads and is still Active, so they
+/// answer. The answer comes at the departure, before the arrival: the
+/// destination B is face down, and its reveal on entering lands only after the
+/// pick.
+#[test]
+fn a_stranded_enemy_beside_two_left_at_the_origin_is_the_leads_to_assign() {
+    const INV3: InvestigatorId = InvestigatorId(3);
+    let session = board(
+        &[(A, &[B]), (B, &[A])],
+        vec![seat(1).at(A), seat(2).at(A), seat(3).at(A)],
+        engaged_ghoul(GHOUL_MINION),
+        &[B],
+    )
+    .edit_state(|state| {
+        state
+            .locations
+            .get_mut(&B)
+            .expect("B is on the board")
+            .revealed = false;
+    })
+    .take(&MOVE_TO_B);
+
+    session.assert_lead_asked_between(INV, &[INV2, INV3]);
+    let inv3 = session.state().investigators[&INV3].card_anchor();
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, None);
+    assert_no_event!(session.events(), Event::LocationRevealed { .. });
+
+    let session = session.pick(inv3);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(INV3));
+    assert_event_sequence!(
+        session.events(),
+        Event::InvestigatorMoved { investigator, .. } if *investigator == INV,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV3,
+        Event::LocationRevealed { location, .. } if *location == B,
+    );
+}
+
 /// With nobody left at the origin the stranded enemy stays unengaged: it never
 /// re-engages the investigator who just moved away.
 #[test]

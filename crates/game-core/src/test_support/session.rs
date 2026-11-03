@@ -50,8 +50,9 @@ use crate::test_support::resolver::{
 ///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
 ///   [`state`](Self::state), [`events`](Self::events),
 ///   [`offered_at`](Self::offered_at),
-///   [`assert_at_turn_menu`](Self::assert_at_turn_menu) and
-///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) — look at the
+///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
+///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) and
+///   [`assert_lead_asked_between`](Self::assert_lead_asked_between) — look at the
 ///   session without moving it. [`assert_rejects`](Self::assert_rejects) runs
 ///   one step and asserts the engine refused it with nothing moved, and
 ///   [`finish`](Self::finish) hands back the last step's [`ApplyResult`].
@@ -885,6 +886,42 @@ impl TestSession {
                  session rests at {other:?}"
             ),
         }
+    }
+
+    /// Assert the session rests at a `PickSingle` the lead `lead` answers,
+    /// offering exactly one option per investigator in `tied`, each anchored to
+    /// that investigator's card and nothing else: the shape of an engagement
+    /// tie (`glossary/Prey.md`: *"if multiple investigators are tied in meeting
+    /// these instructions, the lead investigator may decide among them"*).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests at no prompt, the prompt is not a
+    /// `PickSingle`, someone other than `lead` answers it, or its options are
+    /// not one per tied investigator's card.
+    #[track_caller]
+    pub fn assert_lead_asked_between(&self, lead: InvestigatorId, tied: &[InvestigatorId]) {
+        let prompt = self.prompt();
+        assert_eq!(
+            prompt.kind,
+            InputKind::PickSingle,
+            "TestSession::assert_lead_asked_between: {prompt:?}"
+        );
+        assert_eq!(
+            prompt.responder,
+            Responder::Lead(lead),
+            "TestSession::assert_lead_asked_between: {prompt:?}"
+        );
+        let offered: Vec<usize> = tied
+            .iter()
+            .map(|i| self.offered_at(&self.state().investigators[i].card_anchor()))
+            .collect();
+        assert_eq!(
+            (offered, prompt.options.len()),
+            (vec![1; tied.len()], tied.len()),
+            "TestSession::assert_lead_asked_between: expected one option on each of {tied:?}'s \
+             cards and no other: {prompt:?}",
+        );
     }
 
     /// Assert the session rests at a Mythos step-1.4 encounter-draw prompt:

@@ -319,7 +319,7 @@ pub enum Event {
     /// investigator its prey picked at its location (Rules Reference
     /// p.10). It is `None` when the enemy spawned at an empty location, or
     /// when a prey tie there waits on a pick
-    /// ([`SpawnEngagePending`](crate::state::SpawnEngagePending)).
+    /// ([`EngagementTieFrame`](crate::state::EngagementTieFrame)).
     ///
     /// When `engaged_with == Some(_)`, the spawn handler also emits
     /// [`EnemyEngaged`](Self::EnemyEngaged) immediately after this

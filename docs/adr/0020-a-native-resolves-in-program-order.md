@@ -2,7 +2,7 @@
 
 Dynamite Blast 01024 prints *"Choose either your location or a connecting location. Deal 3 damage to each enemy and to each investigator at the chosen location."* Its native damages each enemy, then calls `deal_harm` once for each investigator. `deal_harm` doesn't place anything: it pushes a deal frame, with its soak prompt, and returns. The stack is last in, first out, so two deals pushed one after the other resolve in reverse. The card worked only because its author knew that and folded the deals in reverse id order.
 
-A native is ordinary Rust, read top to bottom, but its exits ran on two clocks. A direct write (placing doom, revealing a location) landed when called. A push (`deal_harm`, `move_investigator`, `resolve_encounter_card`, a spawned enemy's engagement tie) left its work for after the native returned. So "take harm, then X" wrote X before the harm was assigned. #1189 refused a direct write made while a pushed prompt was pending. That caught the bug, but it left every author tracking both clocks and every new exit waiting for someone to decide which clock it ran on.
+A native is ordinary Rust, read top to bottom, but its exits ran on two clocks. A direct write (placing doom, revealing a location) landed when called. A push (`deal_harm`, `move_investigator`, `resolve_encounter_card`, an engagement tie left for the lead) left its work for after the native returned. So "take harm, then X" wrote X before the harm was assigned. #1189 refused a direct write made while a pushed prompt was pending. That caught the bug, but it left every author tracking both clocks and every new exit waiting for someone to decide which clock it ran on.
 
 **So a native resolves in the order its author wrote it.** Its exits run at once until one leaves work pending. From then on, every exit it calls is held as an op on a `NativeTail` frame directly beneath the frame that started the deferral, and the drive loop runs the ops in call order once that frame has resolved. An op that leaves work pending again re-parks the rest of the tail beneath that work. Dynamite Blast's native deals its investigators in a forward loop.
 
@@ -10,7 +10,7 @@ A tail holds a call as a `NativeOp`, so a new exit that returns `()` or an outco
 
 ## What starts the deferral
 
-**Every frame the native's exits push starts it, except the coordinator (`EmitEvent`) frame of a caller-owned condition** ([ADR 0008](0008-a-triggering-condition-resolves-inside-its-own-sequence.md)'s `ConditionResolution::Caller`). It doesn't matter whether the frame is a prompt yet: a deal, a move's arrival, an encounter card's frames, a spawn's engagement tie and an `Elimination` all start it.
+**Every frame the native's exits push starts it, except the coordinator (`EmitEvent`) frame of a caller-owned condition** ([ADR 0008](0008-a-triggering-condition-resolves-inside-its-own-sequence.md)'s `ConditionResolution::Caller`). It doesn't matter whether the frame is a prompt yet: a deal, a move's arrival, an encounter card's frames, an engagement tie and an `Elimination` all start it. An engagement tie is pushed wherever an enemy comes to stand ready and unengaged beside several investigators its prey can't tell apart: a spawn, `relocate_enemy`, a move that strands an enemy at its origin, an elimination's step 3, and `engage_ready_enemies`.
 
 A caller-owned condition's frame holds only its `when`/`at`/`after` cells, because the caller has already made the change. That is Dynamite Blast's enemy loop: a lethal `deal_damage_to_enemy` removes the enemy and queues `EnemyDefeated`, and the damage to the next enemy must not sink beneath that window. `glossary/Effects.md`: *"All aspects of an effect have timing priority over all "after..." triggering conditions that might arise as a consequence of that effect."* Roland Banks 01001's *"After you defeat an enemy"* reaction is offered once the blast is finished.
 
@@ -34,7 +34,7 @@ The tail frame is Driven and completes under a latched ending, because it is man
 
 **The Barrier 01109** reads its own writes and is unchanged. Its reverse is *"Reveal the Parlor. Put the set-aside Lita Chantler into play in the Parlor. Spawn the set-aside Ghoul Priest in the Hallway."* The reveal pushes nothing. Putting Lita, an asset, into play at a location logs `CardPutIntoPlayAtLocation` and pushes no frame at all. Only the Ghoul Priest's spawn can push one, an engagement tie, and it is the last call.
 
-**The Necronomicon 01009 is a known limit.** Its native moves horror to Daisy, then reads the board and may discard the card. If the move defeated her while she owned an in-play weakness with a game-end ability, the elimination would push an `Elimination` frame, and the read after it would reject the action. That can't happen in the corpus. Cover Up is the only game-end weakness, and it is Roland's.
+**The Necronomicon 01009 is two natives**, `seq[move, discard-if-empty]`, for *"Move 1 horror from The Necronomicon to Daisy Walker. Then, if The Necronomicon has no horror on it, discard it."* A move that defeats Daisy can leave work pending: an enemy engaged with her, tied between two investigators beside her, pushes an engagement tie for the lead. In one native, the read after that move would reject the action. As the second native, the discard reads the board once the tie is answered. A game-end weakness's `Elimination` frame is held back the same way.
 
 ## Considered options
 
@@ -42,4 +42,4 @@ The tail frame is Driven and completes under a latched ending, because it is man
 
 **(C) Keep #1189's refusal.** It catches the bug, but it leaves two clocks. The next card that prints "take harm, then X" would have to be written in reverse order or split into two natives.
 
-*Folded: #1205.*
+*Folded: #1205, #151, #1309.*

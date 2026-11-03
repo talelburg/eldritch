@@ -19,7 +19,7 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
-    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InvestigationPhaseFrame,
+    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
     InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
     MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, TurnChoiceFrame,
     UpkeepPhaseFrame, UpkeepResume, Zone,
@@ -807,9 +807,8 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 
 /// 3.3 Seed the per-investigator attack cursor and open the first
 /// attack window — or the final window directly if there is no Active
-/// investigator. Called once hunter movement (step 3.2) completes:
-/// from [`enemy_phase`] on the no-tie path, and from
-/// [`resume_hunter_choice`] once all hunters resolve.
+/// investigator. Called once hunter movement (step 3.2) completes, by
+/// [`enemy_hunters_after`] after the last hunter.
 ///
 /// Seeds the cursor to the first investigator in [`cursor::player_order`],
 /// Appendix II 3.3: *"Resolve engaged enemy attacks in player order"*.
@@ -870,7 +869,7 @@ pub(super) fn set_enemy_anchor(cx: &mut Cx, resume: EnemyResume) {
 /// Entered by [`advance_phase_entry`] on the Investigation→Enemy transition. Owns the
 /// `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1) and queues its
 /// forced abilities; hunter movement (3.2) and the attack-loop kickoff (3.3)
-/// run from [`enemy_after_phase_start`] once they have resolved.
+/// run from [`enemy_hunters_after`] once they have resolved.
 fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // 3.1 Enemy phase begins.
     cx.events.push(Event::PhaseStarted {
@@ -881,7 +880,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     //
     // **Emits in tail position** (ADR 0003): parked at `AfterPhaseStartForced`
     // *before* the emit, so hunter movement cannot run above the step-3.1 forced
-    // abilities the emit queues. `enemy_after_phase_start` sets the running
+    // abilities the emit queues. `enemy_hunters_after` parks the hunter
     // cursor and runs 3.2/3.3 on re-exposure.
     cx.state.continuations.push(EnemyPhaseFrame {
         resume: EnemyResume::AfterPhaseStartForced,
@@ -894,34 +893,30 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     )
 }
 
-/// Enemy steps 3.2 + 3.3, reached via the Enemy anchor's
+/// Enemy steps 3.2 + 3.3 on from the hunter `after` (from the first when
+/// `None`): reached via the Enemy anchor's
 /// [`AfterPhaseStartForced`](crate::state::EnemyResume::AfterPhaseStartForced)
-/// resume once step 3.1's queued forced abilities have resolved.
+/// resume once step 3.1's queued forced abilities have resolved, and again via
+/// [`HuntersAfter`](crate::state::EnemyResume::HuntersAfter) each time a
+/// hunter's choice is answered.
 ///
-/// If hunter movement parks on a lead-investigator tie, its
-/// [`HunterMove`](crate::state::Continuation::HunterMove) prompt is left on top
-/// for the `drive` loop to surface, and the attack-loop kickoff is deferred to
-/// [`resume_hunter_choice`], which runs it once the last hunter resolves.
-fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    // Advance the anchor off `AfterPhaseStartForced`: step 3.2 is running.
-    // No investigator is selected yet, since the kickoff runs after hunter
-    // movement; `enemy_attack_kickoff` / `after_enemy_phase_attacks` re-point
-    // the anchor before opening each attack window.
-    set_enemy_anchor(cx, EnemyResume::HuntersMoving);
-
-    // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
-    //     attack-loop kickoff then happens on resume. A tie pushes its
-    //     `HunterMove` prompt and returns `Done`, so the frame on top, not the
-    //     outcome, says whether movement finished.
-    let outcome = hunters::drive_hunter_moves(cx);
+/// If a hunter leaves a choice for the lead (a direction tie, or an engagement
+/// tie on arrival), its prompt is left on top for the `drive` loop to surface,
+/// with the anchor parked at that hunter; the remaining hunters and the
+/// attack-loop kickoff wait for the anchor's re-exposure.
+fn enemy_hunters_after(cx: &mut Cx, after: Option<EnemyId>) -> EngineOutcome {
+    // 3.2 Hunter enemies move. A choice pushes its prompt and returns `Done`,
+    //     so the frame on top, not the outcome, says whether movement finished.
+    let outcome = hunters::drive_hunter_moves(cx, after);
     if let EngineOutcome::Rejected { reason } = outcome {
-        unreachable!("enemy_after_phase_start: hunter movement rejected unexpectedly: {reason}")
+        unreachable!("enemy_hunters_after: hunter movement rejected unexpectedly: {reason}")
     }
-    if cx.state.continuations.top_of::<HunterChoice>().is_some() {
+    if hunters::choice_pending(cx.state) {
         return EngineOutcome::Done;
     }
 
-    // 3.3 Kick off the per-investigator attack loop.
+    // 3.3 Kick off the per-investigator attack loop. It re-points the anchor
+    //     before opening each attack window.
     enemy_attack_kickoff(cx)
 }
 
@@ -1131,6 +1126,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             upkeep_resume(cx)
         }
+        // Step 4.3's engagement ties have been answered, re-exposing this
+        // anchor: the step-4.4 draws start from the first investigator.
+        Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+            resume: UpkeepResume::AfterReady,
+        })) => upkeep_draws_after(cx, None),
         // One investigator's step-4.4 draw (its deck-out horror, a drawn
         // weakness's Revelation) has resolved, re-exposing this anchor:
         // the next investigator draws, or 4.4 completes.
@@ -1159,13 +1159,13 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         // resolved, re-exposing this anchor: run 3.2 + 3.3.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseStartForced,
-        })) => enemy_after_phase_start(cx),
-        // Never re-exposed: see `EnemyResume::HuntersMoving`.
+        })) => enemy_hunters_after(cx, None),
+        // A hunter's choice (its direction, or whom it engages on arrival) has
+        // been answered, re-exposing this anchor: the next hunter moves, or
+        // 3.3 starts after the last.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
-            resume: EnemyResume::HuntersMoving,
-        })) => {
-            unreachable!("the EnemyPhase anchor was re-exposed during hunter movement (step 3.2)")
-        }
+            resume: EnemyResume::HuntersAfter(hunter),
+        })) => enemy_hunters_after(cx, Some(hunter)),
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(investigator),
         })) => {
@@ -1324,14 +1324,23 @@ fn upkeep_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 
 /// The post-4.1 window continuation. Steps 4.2 and 4.3 run inline, then the 4.4
 /// draws start from the first active investigator ([`upkeep_draws_after`]),
-/// which runs 4.5/4.6 inline once every draw has resolved. Step 4.5
+/// which runs 4.5/4.6 inline once every draw has resolved. The anchor parks at
+/// [`AfterReady`](crate::state::UpkeepResume::AfterReady) before 4.3, so when
+/// 4.3 leaves engagement ties for the lead, their frame sits above it and no
+/// 4.4 card is drawn until every tie is answered. Step 4.5
 /// ([`check_hand_size`]) may suspend with [`EngineOutcome::AwaitingInput`] when
 /// an investigator is over the hand cap — in which case 4.6 runs only once the
 /// discard resolves — else it hands to [`upkeep_phase_end`] for 4.6 +
 /// transition.
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
-    ready_exhausted_cards(cx); // 4.3
+                       // Park before 4.3 can push its ties (ADR 0003): the frame resolves above
+                       // the anchor, which then runs 4.4 on re-exposure. With no tie, the 4.4
+                       // draws below re-park it at once.
+    set_upkeep_resume(cx, UpkeepResume::AfterReady);
+    if ready_exhausted_cards(cx) {
+        return EngineOutcome::Done; // 4.3 pushed engagement ties
+    }
     upkeep_draws_after(cx, None) // 4.4, then 4.5 + 4.6
 }
 
@@ -1483,10 +1492,13 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
 ///
 /// After readying, each enemy that became ready while unengaged and
 /// co-located with an investigator engages it via
-/// [`engagement::reengage_at_location`]
-/// (Rules Reference p.10: "if an exhausted enemy at the same location as an
-/// investigator becomes ready, it engages as soon as it is readied").
-fn ready_exhausted_cards(cx: &mut Cx) {
+/// [`engagement::engage_or_report_tie`] (`glossary/Enemy_Engagement.md`: *"if
+/// an exhausted enemy at the same location as an investigator becomes ready,
+/// it engages as soon as it is readied"*). An enemy whose prey leaves several
+/// investigators tied engages no one here: the ties go on one frame for the
+/// lead, in enemy-id order, through [`engagement::engage_each_or_push_ties`].
+/// Returns whether that frame was pushed.
+fn ready_exhausted_cards(cx: &mut Cx) -> bool {
     let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for id in inv_ids {
         let inv = cx.state.investigators.get_mut(&id).expect("id from keys");
@@ -1515,14 +1527,16 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     // becomes ready, it engages as soon as it is readied." Runs after the
     // (simultaneous, RR p.25) readying pass. Only newly-readied enemies are
     // checked ("becomes ready"), and only those still unengaged —
-    // reengage_at_location's precondition is engaged_with == None, so an enemy
+    // engage_or_report_tie's precondition is engaged_with == None, so an enemy
     // that readied while still engaged keeps its existing engagement.
-    // newly_readied is in ascending EnemyId order (BTreeMap key order).
-    for eid in newly_readied {
-        if cx.state.enemies[&eid].engaged_with.is_none() {
-            engagement::reengage_at_location(cx, eid);
-        }
-    }
+    // newly_readied is in ascending EnemyId order (BTreeMap key order), so the
+    // ties are too. Engaging one enemy leaves the others' engaged_with as it
+    // was, so filtering them up front is the same as checking each in turn.
+    let unengaged: Vec<EnemyId> = newly_readied
+        .into_iter()
+        .filter(|eid| cx.state.enemies[eid].engaged_with.is_none())
+        .collect();
+    engagement::engage_each_or_push_ties(cx, unengaged)
 }
 
 /// Maximum hand size (Rules Reference p.25 step 4.5: discard down to 8). A module

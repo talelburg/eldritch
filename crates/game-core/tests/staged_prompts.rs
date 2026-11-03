@@ -28,10 +28,10 @@ use game_core::state::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopFrame, AttackLoopStage, CandidateSource, CardCode, CardInPlay, CardInstanceId,
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EffectPrompt,
-    EncounterDrawFrame, EnemyAttackSource, EnemyId, GameStateBuilder, HandDiscardCostFrame,
-    HunterChoice, InvestigatorId, LocationId, MulliganFrame, Owner, ResolutionCandidate, SkillKind,
-    SkillTestId, SlotDiscardFrame, SpawnEngagePending, Status, SubstitutionPromptFrame, TimingMode,
-    TimingPointWindowFrame,
+    EncounterDrawFrame, EnemyAttackSource, EnemyId, EngagementTieFrame, GameStateBuilder,
+    HandDiscardCostFrame, HunterChoice, InvestigatorId, LocationId, MulliganFrame, Owner,
+    ResolutionCandidate, SkillKind, SkillTestId, SlotDiscardFrame, Status, SubstitutionPromptFrame,
+    TiedEngagement, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{
     self, act, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
@@ -196,6 +196,16 @@ fn assert_reads_as_a_game(session: &TestSession) {
     }
 }
 
+/// An engagement-tie frame holding `ties`, each an enemy and its tied
+/// investigators, answered in the order given.
+fn engagement_tie(ties: &[(EnemyId, &[InvestigatorId])]) -> EngagementTieFrame {
+    EngagementTieFrame::new(
+        ties.iter()
+            .map(|(enemy, tied)| TiedEngagement::new(*enemy, tied.to_vec()))
+            .collect(),
+    )
+}
+
 // ---- the kinds a step pushes and returns from --------------------------
 
 /// A hunter's tie between two destinations asks where it moves, on the map.
@@ -223,19 +233,17 @@ fn a_staged_hunter_move_asks_for_its_destination() {
     assert_eq!(session.prompt().responder, Responder::Lead(INV));
 }
 
-/// A hunter's tie between two investigators asks whom it engages, on their
-/// investigator cards, and the lead answers it: `glossary/Lead_Investigator.md`,
-/// *"the lead investigator is the final arbiter in choosing among those
-/// options"*. The lead sits in the second seat, so the first seat is not it.
+/// An engagement tie between two investigators asks whom the enemy engages,
+/// offering their investigator cards in player order, and the lead answers it:
+/// `glossary/Lead_Investigator.md`, *"the lead investigator is the final
+/// arbiter in choosing among those options"*. The lead sits in the second seat,
+/// so the first seat is not it. The answer engages the chosen investigator.
 #[test]
-fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
+fn a_staged_engagement_tie_asks_the_lead_on_the_tied_cards_and_engages_the_pick() {
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
-        .with_enemy(enemy(GHOUL).name("Ghoul"))
-        .with_frame(Continuation::HunterMove(HunterChoice::Engage {
-            enemy: GHOUL,
-            candidates: vec![INV, OTHER],
-        }))
+        .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
+        .with_frame(engagement_tie(&[(GHOUL, &[INV, OTHER])]))
         .session();
     assert_reads_as_a_game(&session);
     assert_eq!(
@@ -251,29 +259,46 @@ fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
         ],
     );
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+
+    let session = session.pick(investigators[&OTHER].card_anchor());
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(OTHER));
+    session.assert_at_turn_menu(INV);
 }
 
-/// A spawn's tie asks the lead whom the enemy engages, and the answer engages
-/// them.
+/// Two engagement ties left by one step are asked one at a time, in the order
+/// the frame holds them (enemy-id order, as each caller collects them), one
+/// prompt per enemy. Each answer engages its enemy, and the round goes on
+/// once the last is answered.
 #[test]
-fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator() {
+fn two_engagement_ties_are_asked_one_enemy_at_a_time_in_order() {
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
         .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
-        .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
+        .with_enemy(enemy(RAT).name("Rat").at(HERE))
+        .with_frame(engagement_tie(&[
+            (GHOUL, &[INV, OTHER]),
+            (RAT, &[INV, OTHER]),
+        ]))
         .session();
-    assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
         "The lead investigator chooses whom Ghoul engages."
     );
+    let me = session.state().investigators[&INV].card_anchor();
     let other = session.state().investigators[&OTHER].card_anchor();
-    assert_eq!(session.offered_at(&other), 1, "{:?}", session.prompt());
-    assert_eq!(session.prompt().options.len(), 2);
-    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
 
     let session = session.pick(other);
     assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(OTHER));
+    assert_eq!(session.state().enemies[&RAT].engaged_with, None);
+    assert_eq!(
+        session.prompt().prompt,
+        "The lead investigator chooses whom Rat engages."
+    );
+    assert_eq!(session.prompt().options.len(), 2);
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+
+    let session = session.pick(me);
+    assert_eq!(session.state().enemies[&RAT].engaged_with, Some(INV));
     session.assert_at_turn_menu(INV);
 }
 
@@ -284,7 +309,7 @@ fn a_spawn_engagement_answered_by_someone_other_than_the_lead_is_rejected() {
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
         .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
-        .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
+        .with_frame(engagement_tie(&[(GHOUL, &[INV, OTHER])]))
         .session();
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
     let other = session.state().investigators[&OTHER].card_anchor();

@@ -263,7 +263,9 @@ fn begin_move(
 /// The departure's own impact: the engaged enemies that ride along (or
 /// disengage because they cannot), the investigator's location assignment, the
 /// `InvestigatorMoved` event, and the engagement rule run for each enemy left
-/// behind against the investigators who stayed.
+/// behind against the investigators who stayed. A tie among them is pushed as
+/// an [`EngagementTie`](crate::state::Continuation::EngagementTie) frame for
+/// the lead.
 ///
 /// This is `LeftLocation`'s **resolve step** — step 2 of the
 /// sequence in `glossary/Nested_Sequences.md` — run by the timing coordinator
@@ -370,11 +372,14 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     // "after you enter" abilities see the rule already applied. It runs after
     // the location write so the mover is no longer a candidate: the enemy must
     // never re-engage the investigator it just disengaged from. Disengage all,
-    // then re-engage, as elimination's step 3 does; `reengage_at_location`
-    // owns readiness, bearer-only filtering and prey.
-    for enemy_id in stranded {
-        engagement::reengage_at_location(cx, enemy_id);
-    }
+    // then re-engage, as elimination's step 3 does; `engage_or_report_tie`
+    // owns readiness, bearer-only filtering and prey. A tie is the lead's
+    // (`glossary/Prey.md`: "if multiple investigators are tied in meeting these
+    // instructions, the lead investigator may decide among them"): every tie
+    // goes on one frame, in enemy-id order, pushed from `LeftLocation`'s
+    // resolve step, so the lead answers before its `at` and `after` cells and
+    // before the arrival's `MoveEnter` frame beneath.
+    engagement::engage_each_or_push_ties(cx, stranded);
 }
 
 /// The entered-location half of a Move, run when the `drive` loop re-exposes the

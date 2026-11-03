@@ -12,8 +12,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget
 use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
-    Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
-    LocationId, SpawnEngagePending,
+    Continuation, Enemy, EnemyId, EnemyResume, EngagementTieFrame, GameState, HunterChoice,
+    Investigator, InvestigatorId, LocationId,
 };
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -249,10 +249,9 @@ fn hunter_destinations(
 /// that `to` is a legal destination.
 ///
 /// The only two callers are [`relocate_enemy`] (the funnel every mover
-/// should use) and the Hunter path, which runs its own *interactive*
-/// [`engage_on_arrival`] immediately afterwards: a prey tie there
-/// suspends for a tie-break prompt rather than auto-picking, so it must
-/// not go through `relocate_enemy`'s synchronous engagement.
+/// should use) and the Hunter path, which runs [`engage_on_arrival`]
+/// immediately afterwards and reports whether it left a tie, so the hunter
+/// loop can park on it.
 fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!("place_enemy_at: enemy {enemy_id:?} vanished mid-movement; state corruption")
@@ -273,14 +272,14 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// it engages that investigator, and is placed in that investigator's
 /// threat area"*, and among the listed examples: *"It moves into the
 /// same location as an investigator"*. The check is
-/// `reengage_at_location`, so its rules already hold here: an
+/// `engage_or_report_tie`, so its rules already hold here: an
 /// exhausted enemy does not engage (*"An exhausted unengaged enemy does
 /// not engage"* — agenda 01107 *can* move evaded enemies, and they
 /// arrive unengaged), and prey resolution picks among co-located
 /// investigators.
 ///
 /// **Takes an unengaged enemy.** An enemy that is already engaged is
-/// left engaged — `reengage_at_location`'s precondition is
+/// left engaged — `engage_or_report_tie`'s precondition is
 /// `engaged_with == None`, so the check is skipped rather than
 /// re-targeting it. That is right for the only engaged-enemy relocation
 /// the engine has (the Move action dragging an enemy along with the
@@ -295,48 +294,36 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// Enemy *spawning* is not relocation and does not come through here:
 /// `spawn_enemy_at` mints the enemy already at its location and runs
 /// its own prey resolution, so the `EnemySpawned` event precedes the
-/// `EnemyEngaged` one and a spawn-time tie can suspend interactively.
+/// `EnemyEngaged` one.
 ///
-/// Synchronous by construction, unlike the Hunter path: a prey tie
-/// among co-located investigators auto-picks the player-order-first of them
-/// rather than suspending for a tie-break prompt. TODO(#151): make it an
-/// interactive tie-break, as `reengage_at_location` needs too. Solo play — the only mode
-/// that ships today — never ties.
+/// An engagement tie among co-located investigators pushes an
+/// [`EngagementTie`](Continuation::EngagementTie) frame of one for the lead
+/// and returns, engaging no one yet. A native that relocates several enemies
+/// has its later calls held behind the frame (ADR 0020), so the next enemy
+/// moves only once the lead has answered.
 pub(crate) fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
     if cx.state.enemies[&enemy_id].engaged_with.is_none() {
-        engagement::reengage_at_location(cx, enemy_id);
+        engagement::engage_each_or_push_ties(cx, [enemy_id]);
     }
 }
 
-/// Engage-on-arrival for a hunter now at its (possibly unchanged)
-/// location. Returns `Some(HunterChoice::Engage{..})` if the co-located
-/// set ties under prey (caller suspends); otherwise engages the resolved
-/// investigator (or no-one) and returns `None`.
-fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
-    let enemy = &cx.state.enemies[&enemy_id];
+/// Engage-on-arrival for a hunter now at its (possibly unchanged) location:
+/// engage the investigator its prey picks there, or push an
+/// [`EngagementTie`](Continuation::EngagementTie) frame of one for the lead.
+/// Returns whether it pushed one.
+fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> bool {
     assert!(
-        enemy.current_location.is_some(),
+        cx.state.enemies[&enemy_id].current_location.is_some(),
         "engage_on_arrival: enemy {enemy_id:?} has no location; state corruption"
     );
-    let prey = enemy.prey;
-    let candidates = engagement::candidates(cx.state, enemy_id);
-    match resolve_prey(cx.state, cx.cards, prey, &candidates) {
-        PreyResolution::None => None,
-        PreyResolution::One(target) => {
-            engagement::engage(cx, enemy_id, target);
-            None
-        }
-        PreyResolution::Tie(v) => Some(HunterChoice::Engage {
-            enemy: enemy_id,
-            candidates: v,
-        }),
-    }
+    engagement::engage_each_or_push_ties(cx, [enemy_id])
 }
 
-/// Process a single hunter (movement + engage-on-arrival). Returns
-/// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
-fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
+/// Process a single hunter (movement + engage-on-arrival). Returns whether it
+/// left a choice for the lead on top: a [`HunterMove`](Continuation::HunterMove)
+/// direction tie, or an engagement tie on arrival.
+fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> bool {
     let from = cx.state.enemies[&enemy_id]
         .current_location
         .unwrap_or_else(|| {
@@ -356,13 +343,16 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
         let dests =
             hunter_destinations(cx.state, cx.cards, from, prey, &cx.state.enemies[&enemy_id]);
         match dests.as_slice() {
-            [] => return None,
+            [] => return false,
             [one] => place_enemy_at(cx, enemy_id, *one),
             _ => {
-                return Some(HunterChoice::Move {
-                    enemy: enemy_id,
-                    candidates: dests,
-                })
+                cx.state
+                    .continuations
+                    .push(Continuation::HunterMove(HunterChoice::Move {
+                        enemy: enemy_id,
+                        candidates: dests,
+                    }));
+                return true;
             }
         }
     }
@@ -381,30 +371,33 @@ fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<Ene
         .next()
 }
 
-/// Drive Enemy-phase step 3.2: process eligible hunters in ascending
-/// `EnemyId` order until none remain or one parks on a lead-investigator tie.
-/// Returns `Done` either way: a tie leaves its
-/// [`HunterMove`](Continuation::HunterMove) frame on top for the `drive` loop
-/// to surface, so a caller with work after step 3.2 checks the top frame.
-pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
-    let mut cursor: Option<EnemyId> = None;
+/// Drive Enemy-phase step 3.2 on from the hunter `after` (from the first when
+/// `None`): process eligible hunters in ascending `EnemyId` order until none
+/// remain or one leaves a choice for the lead.
+///
+/// The Enemy-phase anchor is parked at
+/// [`HuntersAfter`](EnemyResume::HuntersAfter) before each hunter moves (ADR
+/// 0003), so a choice it leaves resolves above the anchor, whose re-exposure
+/// calls back here after that hunter. Returns `Done` either way: a choice
+/// leaves its frame on top for the `drive` loop to surface, so a caller with
+/// work after step 3.2 checks [`choice_pending`].
+pub(crate) fn drive_hunter_moves(cx: &mut Cx, after: Option<EnemyId>) -> EngineOutcome {
+    let mut cursor = after;
     while let Some(id) = next_eligible_hunter(cx.state, cursor) {
-        if let Some(choice) = process_one_hunter(cx, id) {
-            return suspend_hunter_choice(cx, choice);
+        phases::set_enemy_anchor(cx, EnemyResume::HuntersAfter(id));
+        if process_one_hunter(cx, id) {
+            return EngineOutcome::Done;
         }
         cursor = Some(id);
     }
     EngineOutcome::Done
 }
 
-/// Park the pending hunter choice for the tie-break, which the rules give the
-/// lead investigator: push its frame and return `Done`, for the `drive` loop to
-/// surface ([`choice_request`]).
-fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
-    cx.state
-        .continuations
-        .push(Continuation::HunterMove(choice));
-    EngineOutcome::Done
+/// Whether the hunter loop left a choice for the lead on top: a direction tie
+/// or an engagement tie.
+pub(super) fn choice_pending(state: &GameState) -> bool {
+    state.continuations.top_of::<HunterChoice>().is_some()
+        || state.continuations.top_of::<EngagementTieFrame>().is_some()
 }
 
 /// What a [`HunterMove`](Continuation::HunterMove) frame asks. The request
@@ -416,34 +409,28 @@ pub(super) fn choice_request(
     cards: &CardRegistry,
     choice: &HunterChoice,
 ) -> InputRequest {
-    let (prompt, options) = match choice {
-        HunterChoice::Move { enemy, candidates } => (
-            format!(
-                "The lead investigator chooses where {} moves.",
-                choice::enemy_name(state, *enemy),
-            ),
-            choice::candidate_options(state, cards, candidates, |l| OptionTarget::Location(*l)),
+    let HunterChoice::Move { enemy, candidates } = choice;
+    InputRequest::pick_single(
+        format!(
+            "The lead investigator chooses where {} moves.",
+            choice::enemy_name(state, *enemy),
         ),
-        HunterChoice::Engage { enemy, candidates } => (
-            format!(
-                "The lead investigator chooses whom {} engages.",
-                choice::enemy_name(state, *enemy),
-            ),
-            choice::candidate_options(state, cards, candidates, |i| {
-                state.investigators[i].card_anchor()
-            }),
-        ),
-    };
-    InputRequest::pick_single(prompt, options)
+        choice::candidate_options(state, cards, candidates, |l| OptionTarget::Location(*l)),
+    )
 }
 
-/// Resume a suspended Hunter-movement choice with the tie-break response,
-/// then continue driving remaining hunters.
+/// Resume a suspended Hunter-movement choice with the lead's pick of
+/// direction: move the hunter there, then run its engagement on arrival, which
+/// may push an engagement tie of its own. Returns `Done`; the Enemy-phase
+/// anchor, parked at this hunter, runs the remaining hunters once it is
+/// re-exposed.
+///
 /// Validates the response against the stored candidate set; on an
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry.
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx.state.continuations.top_expect::<HunterChoice>().clone();
+    let HunterChoice::Move { enemy, candidates } =
+        cx.state.continuations.top_expect::<HunterChoice>().clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -452,102 +439,19 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
             .into(),
         };
     };
-    let i = *i as usize;
-    let current_enemy = match &pending {
-        HunterChoice::Move { enemy, candidates } => {
-            let Some(&loc) = candidates.get(i) else {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "ResolveInput: hunter move option {i} out of range (0..{})",
-                        candidates.len()
-                    )
-                    .into(),
-                };
-            };
-            cx.state.continuations.pop_expect::<HunterChoice>();
-            place_enemy_at(cx, *enemy, loc);
-            // After the move, attempt engage-on-arrival; that itself may
-            // suspend on an engagement tie.
-            if let Some(choice) = engage_on_arrival(cx, *enemy) {
-                return suspend_hunter_choice(cx, choice);
-            }
-            *enemy
-        }
-        HunterChoice::Engage { enemy, candidates } => {
-            let Some(&who) = candidates.get(i) else {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "ResolveInput: hunter engage option {i} out of range (0..{})",
-                        candidates.len()
-                    )
-                    .into(),
-                };
-            };
-            cx.state.continuations.pop_expect::<HunterChoice>();
-            engagement::engage(cx, *enemy, who);
-            *enemy
-        }
-    };
-    // Continue with the next eligible hunter after the one we finished.
-    let mut cursor = Some(current_enemy);
-    while let Some(id) = next_eligible_hunter(cx.state, cursor) {
-        if let Some(choice) = process_one_hunter(cx, id) {
-            return suspend_hunter_choice(cx, choice);
-        }
-        cursor = Some(id);
-    }
-    // All hunters processed (step 3.2 complete) — begin the
-    // per-investigator attack loop (step 3.3). Reached only on the
-    // no-further-suspension path; every suspension above early-returns
-    // via `suspend_hunter_choice`.
-    phases::enemy_attack_kickoff(cx)
-}
-
-/// Resume a suspended engagement-on-spawn choice with the tie-break
-/// `PickSingle`: pop the `SpawnEngage` frame and engage
-/// the chosen investigator, then return [`EngineOutcome::Done`].
-///
-/// Validate-first: an invalid pick (wrong response shape, or a target
-/// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame
-/// on the stack so the client can retry.
-///
-/// This function does not continue the Mythos surge chain. The enemy's
-/// `EncounterCard` frame was already popped before `spawn_enemy` suspended
-/// (the disposal pops, then spawns), so
-/// the `SpawnEngage` frame sits *above* the drawing investigator's
-/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain frame. Once we
-/// pop the `SpawnEngage` here, that `PlayerDraw` frame is exposed and the
-/// `drive` loop's `PlayerDraw` arm continues the chain off its own
-/// `surge_pending` (set when the enemy card was drawn). The standalone
-/// `EncounterCardRevealed` / agenda-reverse-draw paths have no `PlayerDraw`
-/// frame beneath, so the loop simply finishes.
-pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .continuations
-        .top_expect::<SpawnEngagePending>()
-        .clone();
-    let InputResponse::PickSingle(OptionId(i)) = response else {
+    let Some(&loc) = candidates.get(*i as usize) else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: spawn engagement expects InputResponse::PickSingle, got {response:?}"
+                "ResolveInput: hunter move option {i} out of range (0..{})",
+                candidates.len()
             )
             .into(),
         };
     };
-    let Some(&who) = pending.candidates.get(*i as usize) else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput: spawn engage option {i} out of range (0..{})",
-                pending.candidates.len()
-            )
-            .into(),
-        };
-    };
-    cx.state.continuations.pop_expect::<SpawnEngagePending>();
-    engagement::engage(cx, pending.enemy, who);
-    // The exposed `PlayerDraw` frame (if any) is driven by the `drive` loop;
-    // nothing else to do here.
+    cx.state.continuations.pop_expect::<HunterChoice>();
+    place_enemy_at(cx, enemy, loc);
+    // Whether or not it ties, the anchor beneath carries the loop on.
+    engage_on_arrival(cx, enemy);
     EngineOutcome::Done
 }
 

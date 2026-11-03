@@ -365,10 +365,10 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::SpawnEngage(SpawnEngagePending {
-                enemy: EnemyId(2),
-                candidates: vec![InvestigatorId(1), InvestigatorId(2)],
-            }),
+            Continuation::EngagementTie(EngagementTieFrame::new(vec![TiedEngagement::new(
+                EnemyId(2),
+                vec![InvestigatorId(1), InvestigatorId(2)],
+            )])),
             profile(PROMPT, CANCEL),
         ),
         (
@@ -549,7 +549,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         (
             Continuation::EnemyPhase(EnemyPhaseFrame {
-                resume: EnemyResume::HuntersMoving,
+                resume: EnemyResume::HuntersAfter(EnemyId(1)),
             }),
             profile(INERT, CANCEL),
         ),

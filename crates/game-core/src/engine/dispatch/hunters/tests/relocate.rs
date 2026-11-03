@@ -111,7 +111,7 @@ fn relocate_enemy_to_empty_location_leaves_it_unengaged() {
 }
 
 /// An already-engaged enemy keeps its engagement — the funnel must not
-/// re-target it (`reengage_at_location`'s precondition is
+/// re-target it (`engage_or_report_tie`'s precondition is
 /// `engaged_with == None`).
 #[test]
 fn relocate_enemy_keeps_an_existing_engagement() {

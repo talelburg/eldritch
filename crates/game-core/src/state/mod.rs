@@ -35,14 +35,14 @@ pub use continuation::{
     Continuation, ContinuationStack, DamageSource, DealDamageFrame, DealDamageStep,
     EffectBaseFrame, EffectFrame, EffectPrompt, EliminationFrame, EliminationStep, EmitEventFrame,
     EmitStep, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, EnemyAttackSource,
-    EnemyPhaseFrame, EnemyResume, FastWindowFrame, FastWindowKind, Frame, FrameActivity,
-    FrameProfile, HandDiscardCostFrame, HandSizeDiscard, HunterChoice, InFlightSkillTest,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame, MoveEnterFrame,
-    MulliganFrame, MythosPhaseFrame, MythosResume, NativeTailFrame, PhaseStep, PlayFromHandFrame,
-    PlayerDrawFrame, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame,
-    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
-    SubstitutionPromptFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
-    TurnChoiceFrame, UpkeepPhaseFrame, UpkeepResume,
+    EnemyPhaseFrame, EnemyResume, EngagementTieFrame, FastWindowFrame, FastWindowKind, Frame,
+    FrameActivity, FrameProfile, HandDiscardCostFrame, HandSizeDiscard, HunterChoice,
+    InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame,
+    MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume, NativeTailFrame, PhaseStep,
+    PlayFromHandFrame, PlayerDrawFrame, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition,
+    ScenarioEndFrame, ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SlotDiscardFrame,
+    SubstitutionPromptFrame, TiedEngagement, TimingMode, TimingPointFrame, TimingPointWindowFrame,
+    TimingSub, TurnChoiceFrame, UpkeepPhaseFrame, UpkeepResume,
 };
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
