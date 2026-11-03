@@ -18,7 +18,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{InputKind, OptionTarget, PromptNature, Responder};
+use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
@@ -272,25 +272,13 @@ fn the_rat_left_beside_two_investigators_asks_the_lead_whom_it_engages() {
         .with_enemy(enemy(RAT).evade(2).engaged_with(INV))
         .open_turn(INV)
         .session();
-    let inv = session.state().investigators[&INV].card_anchor();
     let inv2 = session.state().investigators[&INV2].card_anchor();
 
     // No connecting location: the move is not offered.
     let session = evade_committing(session).pick_nth(DISENGAGE);
 
     assert_eq!(engaged_with(&session, RAT), None);
-    let prompt = session.prompt();
-    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
-    assert_eq!(prompt.responder, Responder::Lead(INV));
-    assert_eq!(
-        (
-            session.offered_at(&inv),
-            session.offered_at(&inv2),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers both investigators: {prompt:?}",
-    );
+    session.assert_lead_asked_between(INV, &[INV, INV2]);
 
     let session = session.pick(inv2);
 

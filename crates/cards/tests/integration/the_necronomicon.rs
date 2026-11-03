@@ -42,7 +42,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::board::NotLeft;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, OptionId, OptionTarget, Responder};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EliminationCause,
@@ -680,9 +680,9 @@ fn a_move_that_reaches_her_sanity_defeats_her() {
     assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
-/// Regression for #1309: the move that defeats Daisy beside two other
-/// investigators, while an enemy is engaged with her, leaves that enemy's
-/// engagement to the lead, and the activation still resolves.
+/// The move that defeats Daisy beside two other investigators, while an enemy
+/// is engaged with her, leaves that enemy's engagement to the lead, and the
+/// activation still resolves.
 ///
 /// Elimination step 3 (`glossary/Elimination.md`): *"All enemies engaged with
 /// that player are placed at the location the investigator was at when he or
@@ -730,19 +730,8 @@ fn a_move_that_defeats_daisy_beside_two_others_leaves_her_enemy_to_the_lead() {
             cause: EliminationCause::Horror
         }
     );
-    let prompt = session.prompt();
-    assert_eq!(prompt.responder, Responder::Lead(agnes), "{prompt:?}");
-    let agnes_card = session.state().investigators[&agnes].card_anchor();
+    session.assert_lead_asked_between(agnes, &[agnes, roland]);
     let roland_card = session.state().investigators[&roland].card_anchor();
-    assert_eq!(
-        (
-            session.offered_at(&agnes_card),
-            session.offered_at(&roland_card),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers the two left beside the enemy: {prompt:?}",
-    );
     assert_eq!(session.state().enemies[&ENEMY].engaged_with, None);
 
     let session = session.pick(roland_card);

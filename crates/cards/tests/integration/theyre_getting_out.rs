@@ -23,7 +23,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::action::InputResponse;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{InputKind, OptionId, OptionTarget, Responder};
+use game_core::engine::{OptionId, OptionTarget, Responder};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
@@ -514,26 +514,13 @@ fn daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(origins: &[LocationId]) 
 #[test]
 fn a_ghoul_moved_beside_two_tied_investigators_asks_the_lead_whom_it_engages() {
     let session = daisy_and_agnes_in_the_hallway_as_ghouls_arrive_from(&[ATTIC]);
-    let daisy = session.state().investigators[&DAISY].card_anchor();
-    let agnes = session.state().investigators[&AGNES].card_anchor();
 
     let ghoul = &session.state().enemies[&GHOUL];
     assert_eq!(
         (ghoul.current_location, ghoul.engaged_with),
         (Some(HALLWAY), None)
     );
-    let prompt = session.prompt();
-    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
-    assert_eq!(prompt.responder, Responder::Lead(DAISY));
-    assert_eq!(
-        (
-            session.offered_at(&daisy),
-            session.offered_at(&agnes),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers Daisy and Agnes: {prompt:?}",
-    );
+    session.assert_lead_asked_between(DAISY, &[DAISY, AGNES]);
 }
 
 /// The lead's answer engages the investigator she chose, and the round goes on

@@ -15,7 +15,6 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::Responder;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
@@ -763,19 +762,8 @@ fn a_stranded_enemy_beside_two_left_at_the_origin_is_the_leads_to_assign() {
     })
     .take(&MOVE_TO_B);
 
-    let prompt = session.prompt();
-    assert_eq!(prompt.responder, Responder::Lead(INV), "{prompt:?}");
-    let inv2 = session.state().investigators[&INV2].card_anchor();
+    session.assert_lead_asked_between(INV, &[INV2, INV3]);
     let inv3 = session.state().investigators[&INV3].card_anchor();
-    assert_eq!(
-        (
-            session.offered_at(&inv2),
-            session.offered_at(&inv3),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers the two left at the origin: {prompt:?}",
-    );
     assert_eq!(session.state().enemies[&GHOUL].engaged_with, None);
     assert_no_event!(session.events(), Event::LocationRevealed { .. });
 

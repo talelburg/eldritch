@@ -538,7 +538,7 @@ fn spawn_tie_suspends_for_lead_pick() {
 }
 
 #[test]
-fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
+fn a_spawned_enemys_engagement_tie_rejects_a_bad_pick_and_keeps_the_tie_pending() {
     // Validate-first: a pick outside the stored candidate set rejects
     // and leaves the EngagementTie frame intact for retry, with the
     // enemy still unengaged.

@@ -18,7 +18,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
-use game_core::engine::{InputKind, OptionTarget, Responder};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, EnemyId, FastWindowKind, GameStateBuilder,
@@ -362,24 +362,6 @@ fn staying_beside_inv2_with(engaged: &[EnemyId]) -> TestSession {
     .take(&PLAY)
 }
 
-/// The tie asks the lead, offering exactly the two investigators' cards.
-fn assert_lead_offered_both(session: &TestSession) {
-    let inv = session.state().investigators[&INV].card_anchor();
-    let inv2 = session.state().investigators[&INV2].card_anchor();
-    let prompt = session.prompt();
-    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
-    assert_eq!(prompt.responder, Responder::Lead(INV));
-    assert_eq!(
-        (
-            session.offered_at(&inv),
-            session.offered_at(&inv2),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers both investigators: {prompt:?}",
-    );
-}
-
 #[test]
 fn with_no_destination_beside_another_investigator_the_lead_picks_whom_the_enemy_engages() {
     let ghoul = EnemyId(100);
@@ -391,7 +373,7 @@ fn with_no_destination_beside_another_investigator_the_lead_picks_whom_the_enemy
         "nowhere to move: no move"
     );
     assert_eq!(session.state().enemies[&ghoul].engaged_with, None);
-    assert_lead_offered_both(&session);
+    session.assert_lead_asked_between(INV, &[INV, INV2]);
 
     let inv2 = session.state().investigators[&INV2].card_anchor();
     let session = session.pick(inv2);
@@ -413,7 +395,7 @@ fn two_disengaged_enemies_are_asked_about_in_enemy_id_order() {
     let inv = session.state().investigators[&INV].card_anchor();
     let inv2 = session.state().investigators[&INV2].card_anchor();
 
-    assert_lead_offered_both(&session);
+    session.assert_lead_asked_between(INV, &[INV, INV2]);
     let session = session.pick(inv2);
     assert_eq!(
         (
@@ -424,7 +406,7 @@ fn two_disengaged_enemies_are_asked_about_in_enemy_id_order() {
         "the lower enemy id is asked about first"
     );
 
-    assert_lead_offered_both(&session);
+    session.assert_lead_asked_between(INV, &[INV, INV2]);
     let session = session.pick(inv);
 
     session.assert_at_turn_menu(INV);

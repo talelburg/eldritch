@@ -233,15 +233,16 @@ fn a_staged_hunter_move_asks_for_its_destination() {
     assert_eq!(session.prompt().responder, Responder::Lead(INV));
 }
 
-/// A hunter's tie between two investigators asks whom it engages, on their
-/// investigator cards, and the lead answers it: `glossary/Lead_Investigator.md`,
-/// *"the lead investigator is the final arbiter in choosing among those
-/// options"*. The lead sits in the second seat, so the first seat is not it.
+/// An engagement tie between two investigators asks whom the enemy engages,
+/// offering their investigator cards in player order, and the lead answers it:
+/// `glossary/Lead_Investigator.md`, *"the lead investigator is the final
+/// arbiter in choosing among those options"*. The lead sits in the second seat,
+/// so the first seat is not it. The answer engages the chosen investigator.
 #[test]
-fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
+fn a_staged_engagement_tie_asks_the_lead_on_the_tied_cards_and_engages_the_pick() {
     let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .open_turn(INV)
-        .with_enemy(enemy(GHOUL).name("Ghoul"))
+        .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
         .with_frame(engagement_tie(&[(GHOUL, &[INV, OTHER])]))
         .session();
     assert_reads_as_a_game(&session);
@@ -258,28 +259,8 @@ fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
         ],
     );
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
-}
 
-/// A spawn's tie asks the lead whom the enemy engages, and the answer engages
-/// them.
-#[test]
-fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator() {
-    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
-        .open_turn(INV)
-        .with_enemy(enemy(GHOUL).name("Ghoul").at(HERE))
-        .with_frame(engagement_tie(&[(GHOUL, &[INV, OTHER])]))
-        .session();
-    assert_reads_as_a_game(&session);
-    assert_eq!(
-        session.prompt().prompt,
-        "The lead investigator chooses whom Ghoul engages."
-    );
-    let other = session.state().investigators[&OTHER].card_anchor();
-    assert_eq!(session.offered_at(&other), 1, "{:?}", session.prompt());
-    assert_eq!(session.prompt().options.len(), 2);
-    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
-
-    let session = session.pick(other);
+    let session = session.pick(investigators[&OTHER].card_anchor());
     assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(OTHER));
     session.assert_at_turn_menu(INV);
 }

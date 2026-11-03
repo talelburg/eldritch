@@ -1,10 +1,13 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{EngineOutcome, InputKind, Responder};
+use crate::engine::outcome::{EngineOutcome, InputKind};
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, enemy, location, BoardLookup as _, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
+
+/// Where [`exhausted_enemies_beside_two_in_upkeep`] seats everyone.
+const HERE: LocationId = LocationId(10);
 
 #[test]
 fn hand_size_discard_prompt_is_player_facing() {
@@ -304,9 +307,9 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
     );
 }
 
-/// Daisy evaded a Ghoul in the Hallway, where Agnes also stands: Upkeep 4.3
-/// readies each of `enemies` beside the two of them, seat 1 leading, each
-/// seat with a card to draw in 4.4. `glossary/Enemy_Engagement.md`: *"if an
+/// Two stock investigators at `HERE`, seat 1 leading, each with a card to draw
+/// in 4.4, and each of `enemies` exhausted and unengaged beside them, run
+/// through Upkeep from its post-4.1 window so 4.3 readies them. `glossary/Enemy_Engagement.md`: *"if an
 /// exhausted enemy at the same location as an investigator becomes ready, it
 /// engages as soon as it is readied."* A stock enemy prints no prey, so the two
 /// tie, and `glossary/Prey.md` leaves the tie to the lead: *"if multiple
@@ -315,12 +318,12 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
 fn exhausted_enemies_beside_two_in_upkeep(enemies: &[EnemyId]) -> TestSession {
     let mut builder = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(test_support::seat(1).at(LocationId(10)).deck(["filler0"]))
-        .with_seat(test_support::seat(2).at(LocationId(10)).deck(["filler1"]))
+        .with_seat(test_support::seat(1).at(HERE).deck(["filler0"]))
+        .with_seat(test_support::seat(2).at(HERE).deck(["filler1"]))
         .with_seating([InvestigatorId(1), InvestigatorId(2)])
-        .with_location(location(10));
+        .with_location(location(HERE));
     for id in enemies {
-        builder = builder.with_enemy(enemy(id.0).exhausted().at(LocationId(10)));
+        builder = builder.with_enemy(enemy(id.0).exhausted().at(HERE));
     }
     run_upkeep(builder)
 }
@@ -328,21 +331,8 @@ fn exhausted_enemies_beside_two_in_upkeep(enemies: &[EnemyId]) -> TestSession {
 #[test]
 fn an_enemy_readying_beside_two_investigators_asks_the_lead_before_any_draw() {
     let session = exhausted_enemies_beside_two_in_upkeep(&[EnemyId(1)]);
-    let first = session.state().investigators[&InvestigatorId(1)].card_anchor();
-    let second = session.state().investigators[&InvestigatorId(2)].card_anchor();
 
-    let prompt = session.prompt();
-    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
-    assert_eq!(prompt.responder, Responder::Lead(InvestigatorId(1)));
-    assert_eq!(
-        (
-            session.offered_at(&first),
-            session.offered_at(&second),
-            prompt.options.len()
-        ),
-        (1, 1, 2),
-        "the tie offers the two investigators: {prompt:?}",
-    );
+    session.assert_lead_asked_between(InvestigatorId(1), &[InvestigatorId(1), InvestigatorId(2)]);
     assert_eq!(session.state().enemies[&EnemyId(1)].engaged_with, None);
     assert_event!(session.events(), Event::EnemyReadied { enemy } if *enemy == EnemyId(1));
     assert_no_event!(session.events(), Event::CardsDrawn { .. });
