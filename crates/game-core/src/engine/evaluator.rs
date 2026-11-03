@@ -109,9 +109,10 @@ pub struct RevelationBinding {
 }
 
 /// The committed card a result addition (`ResultContribution::Adds`) is printed
-/// on (bound only while resolving one, at RR ST.7). Result modifiers run
-/// combined into one `Seq` and get no binding. The effect names its own card through
-/// it: Opportunist 01053 returns itself to hand.
+/// on, bound only while resolving one at RR ST.7.
+///
+/// The effect names its own card through it: Opportunist 01053 returns itself
+/// to hand. Result modifiers run combined into one `Seq` and get no binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCardBinding {
     /// The card's position among the in-flight test's committed cards
