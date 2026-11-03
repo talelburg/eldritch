@@ -297,6 +297,7 @@ fn find(options: &[ChoiceOption], logged: &LoggedOption) -> Result<OptionId, Rep
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_core::state::CommittedIndex;
 
     #[test]
     fn a_pick_finds_the_option_offered_to_its_investigator() {
@@ -340,26 +341,25 @@ mod tests {
     }
 
     /// The ST.7 result-order prompt with two copies of Fearless 01067
-    /// committed: the same label, told apart by their positions in the
-    /// committed list.
-    fn two_committed_copies() -> InputRequest {
-        InputRequest::pick_single(
+    /// committed offers two options with the same label, told apart by their
+    /// positions in the committed list. A pick of either copy replays to that
+    /// copy.
+    #[test]
+    fn a_pick_of_one_of_two_committed_copies_replays_to_that_copy() {
+        let request = InputRequest::pick_single(
             "Choose which result of the skill test to apply next.",
             [0, 1]
                 .into_iter()
                 .map(|index| {
-                    ChoiceOption::new(OptionId(index.into()), "Result of Fearless")
-                        .at(OptionTarget::CommittedCard { index })
+                    ChoiceOption::new(OptionId(index.into()), "Result of Fearless").at(
+                        OptionTarget::CommittedCard {
+                            index: CommittedIndex(index),
+                        },
+                    )
                 })
                 .collect(),
         )
-        .answered_by(Responder::Investigator(InvestigatorId(1)))
-    }
-
-    /// A pick of either copy replays to that copy.
-    #[test]
-    fn a_pick_of_one_of_two_committed_copies_replays_to_that_copy() {
-        let request = two_committed_copies();
+        .answered_by(Responder::Investigator(InvestigatorId(1)));
         for id in [OptionId(0), OptionId(1)] {
             let response = InputResponse::PickSingle(id);
             let answer = record(&request, InvestigatorId(1), &response)

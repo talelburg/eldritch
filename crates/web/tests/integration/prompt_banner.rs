@@ -15,7 +15,7 @@ use game_core::engine::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::{GameState, GameStateBuilder};
+use game_core::state::{CommittedIndex, GameState, GameStateBuilder};
 use game_core::test_support::{self, seat, BoardLookup as _};
 use leptos::prelude::*;
 use leptos::task;
@@ -460,8 +460,9 @@ async fn a_committed_cards_option_renders_on_the_banner() {
         vec![
             // Anchored to a board surface, so not the banner's.
             ChoiceOption::new(OptionId(0), "Result of the act").at(OptionTarget::Act),
-            ChoiceOption::new(OptionId(1), "Result of Overpower")
-                .at(OptionTarget::CommittedCard { index: 0 }),
+            ChoiceOption::new(OptionId(1), "Result of Overpower").at(OptionTarget::CommittedCard {
+                index: CommittedIndex(0),
+            }),
         ],
     );
     let mut rx = mount(outcome, &[]).await;

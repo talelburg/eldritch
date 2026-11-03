@@ -16,7 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    ChaosBag, ChaosToken, CommittedIndex, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{location, seat, TestSession};
 use game_core::{assert_event_count, assert_event_sequence};
@@ -98,8 +98,12 @@ fn two_identical_copies_are_two_distinct_options() {
             .map(|(_, target, _)| target.clone())
             .collect::<Vec<_>>(),
         [
-            Some(OptionTarget::CommittedCard { index: 0 }),
-            Some(OptionTarget::CommittedCard { index: 1 }),
+            Some(OptionTarget::CommittedCard {
+                index: CommittedIndex(0)
+            }),
+            Some(OptionTarget::CommittedCard {
+                index: CommittedIndex(1)
+            }),
         ],
         "{:?}",
         session.prompt()
@@ -112,7 +116,9 @@ fn two_identical_copies_are_two_distinct_options() {
 #[test]
 fn either_copy_first_both_heal() {
     for index in [0, 1] {
-        let session = two_fearless_committed().pick(OptionTarget::CommittedCard { index });
+        let session = two_fearless_committed().pick(OptionTarget::CommittedCard {
+            index: CommittedIndex(index),
+        });
         session.assert_at_turn_menu(INV);
         assert_event_count!(
             session.events(),

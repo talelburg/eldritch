@@ -31,14 +31,13 @@ use crate::engine::outcome::{
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
-use crate::state::continuation::{PendingResults, St7Result};
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
-    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, EncounterCardFrame,
-    EnemyId, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, LastingEffect,
-    LastingEffectKind, Lifetime, LocationId, RecordedModifier, ResolvedTest, RevealedToken,
-    SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
-    SubstitutionPromptFrame, TokenResolution, Zone,
+    CommittedCardDestination, CommittedIndex, Continuation, DifficultyBasis, DiscardPile,
+    EncounterCardFrame, EnemyId, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId,
+    LastingEffect, LastingEffectKind, Lifetime, LocationId, PendingResults, RecordedModifier,
+    ResolvedTest, RevealedToken, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
+    St7Result, Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -1590,8 +1589,7 @@ fn result_option(
             (label, target)
         }
         St7Result::Addition { index } => {
-            // `index` counts the matching additions, not the committed cards:
-            // map it to the position of the card that prints it.
+            // Map the addition to the committed card that prints it.
             let card = test.resolved.and_then(|resolved| {
                 collect_result_contributions(
                     cards,
@@ -1599,7 +1597,7 @@ fn result_option(
                     resolved.succeeded,
                     ResultContribution::Adds,
                 )
-                .get(usize::from(index))
+                .get(index.to_usize())
                 .map(|&(card, _)| card)
             });
             let target = card.map(|index| OptionTarget::CommittedCard { index });
@@ -1771,10 +1769,10 @@ fn apply_result(
             ResultContribution::Adds,
         )
         .into_iter()
-        .nth(usize::from(index))
+        .nth(index.to_usize())
         .map(|(card_index, effect)| {
             let mut ctx = EvalContext::for_controller(investigator);
-            ctx.set_committed_card(card_index);
+            ctx.set_committed_card(card_index.0);
             (effect, ctx)
         }),
     };
@@ -2506,7 +2504,7 @@ fn collect_result_contributions(
     committed: &[CommittedCard],
     succeeded: bool,
     contribution: ResultContribution,
-) -> Vec<(u8, Effect)> {
+) -> Vec<(CommittedIndex, Effect)> {
     let outcome_now = if succeeded {
         TestOutcome::Success
     } else {
@@ -2517,7 +2515,8 @@ fn collect_result_contributions(
     for (index, CommittedCard { code, .. }) in committed.iter().enumerate() {
         // Committed cards come out of a hand, which `hand_pick::picked`
         // already indexes by `u8`.
-        let index = u8::try_from(index).expect("committed cards are hand-indexed by u8");
+        let index =
+            CommittedIndex(u8::try_from(index).expect("committed cards are hand-indexed by u8"));
         let Some(abilities) = (cards.abilities_for)(code) else {
             continue;
         };

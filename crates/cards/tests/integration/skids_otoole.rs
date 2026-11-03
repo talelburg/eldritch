@@ -20,8 +20,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, CommittedIndex, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
     self, enemy, location, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
@@ -499,7 +499,9 @@ fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
         offered,
         [
             Some(session.state().investigators[&INV].card_anchor()),
-            Some(OptionTarget::CommittedCard { index: 0 }),
+            Some(OptionTarget::CommittedCard {
+                index: CommittedIndex(0)
+            }),
         ],
         "{:?}",
         session.prompt()
@@ -510,8 +512,9 @@ fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
 /// apply with no further prompt: he ends at 2.
 #[test]
 fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
-    let session =
-        fighting_with_overpower_on_the_elder_sign().pick(OptionTarget::CommittedCard { index: 0 });
+    let session = fighting_with_overpower_on_the_elder_sign().pick(OptionTarget::CommittedCard {
+        index: CommittedIndex(0),
+    });
     session.assert_at_turn_menu(INV);
     assert_event_sequence!(
         session.events(),

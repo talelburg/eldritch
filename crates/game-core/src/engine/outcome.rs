@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::action::InputResponse;
 use crate::engine::ability_source;
 use crate::state::{
-    AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId,
+    AbilitySource, CardCode, CardInstanceId, CommittedIndex, EnemyId, GameState, InvestigatorId,
+    LocationId,
 };
 
 /// The terminal status of an [`apply`](crate::engine::apply) call.
@@ -113,7 +114,7 @@ pub enum OptionTarget {
     /// committed card's result addition in the ST.7 result-order prompt.
     CommittedCard {
         /// Zero-based position in the test's committed list.
-        index: u8,
+        index: CommittedIndex,
     },
 }
 

@@ -1361,6 +1361,23 @@ impl CommittedCard {
     }
 }
 
+/// A card's zero-based position in an in-flight test's committed list
+/// ([`InFlightSkillTest::committed_by_active`]).
+///
+/// Its own type so it cannot be mixed up with an [`AdditionIndex`], which
+/// counts result additions rather than committed cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CommittedIndex(pub u8);
+
+impl CommittedIndex {
+    /// The position as a `usize`, to index the committed list with.
+    #[must_use]
+    pub fn to_usize(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
 /// Where RR ST.8 sends a [`CommittedCard`].
 ///
 /// A card's own success effect overrides the discard: Opportunist 01053's
@@ -1893,11 +1910,30 @@ pub enum St7Result {
     /// among the additions matching the outcome, in committed-card order.
     Addition {
         /// Position in the flattened (committed card, matching ability) list.
-        /// Not the card's position in the committed list, which the
-        /// result-order prompt anchors the option to
-        /// ([`OptionTarget::CommittedCard`]).
-        index: u8,
+        index: AdditionIndex,
     },
+}
+
+/// A result addition's zero-based position in the flattened list of (committed
+/// card, matching [`Adds`](card_dsl::dsl::ResultContribution::Adds) ability)
+/// pairs, in committed-card order.
+///
+/// Its own type because it differs from the card's [`CommittedIndex`] as soon
+/// as a card without a matching addition is committed ahead of one. The
+/// result-order prompt anchors the option to the `CommittedIndex`
+/// ([`OptionTarget::CommittedCard`]), so a card printing two matching additions
+/// would offer two options with the same anchor and label, which replay could
+/// not tell apart (ADR 0022). No card in the corpus prints two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AdditionIndex(pub u8);
+
+impl AdditionIndex {
+    /// The position as a `usize`, to index the flattened list with.
+    #[must_use]
+    pub fn to_usize(self) -> usize {
+        usize::from(self.0)
+    }
 }
 
 /// The ST.7 results a test has still to apply.
@@ -1938,9 +1974,11 @@ impl PendingResults {
     /// order. Every one is the performer's to order; this order only lays out
     /// the prompt.
     pub fn iter(self) -> impl Iterator<Item = St7Result> {
-        let additions = (0..64u8)
-            .filter(move |&index| self.additions & (1u64 << index) != 0)
-            .map(|index| St7Result::Addition { index });
+        let additions = (0..u64::BITS)
+            .filter(move |&bit| self.additions & (1u64 << bit) != 0)
+            .map(|bit| St7Result::Addition {
+                index: AdditionIndex(u8::try_from(bit).expect("a u64 bit index fits a u8")),
+            });
         self.card
             .then_some(St7Result::Card)
             .into_iter()
@@ -1961,7 +1999,7 @@ impl PendingResults {
                 ..self
             },
             St7Result::Addition { index } => Self {
-                additions: self.additions & !(1u64 << index),
+                additions: self.additions & !(1u64 << index.0),
                 ..self
             },
         }

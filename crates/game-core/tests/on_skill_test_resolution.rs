@@ -18,7 +18,8 @@ use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    CardCode, ChaosBag, ChaosToken, CommittedIndex, GameStateBuilder, InvestigatorId, LocationId,
+    SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -219,7 +220,9 @@ fn two_committed_success_triggers_both_fire() {
         2,
         &[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS],
     )
-    .pick(OptionTarget::CommittedCard { index: 0 });
+    .pick(OptionTarget::CommittedCard {
+        index: CommittedIndex(0),
+    });
 
     session.assert_at_turn_menu(INV);
     assert_eq!(session.state().locations[&HERE].clues, 1);
