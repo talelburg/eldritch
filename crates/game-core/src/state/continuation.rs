@@ -1975,9 +1975,10 @@ impl PendingResults {
     /// the prompt.
     pub fn iter(self) -> impl Iterator<Item = St7Result> {
         let additions = (0..u64::BITS)
-            .filter(move |&bit| self.additions & (1u64 << bit) != 0)
-            .map(|bit| St7Result::Addition {
-                index: AdditionIndex(u8::try_from(bit).expect("a u64 bit index fits a u8")),
+            .zip(0u8..)
+            .filter(move |&(bit, _)| self.additions & (1u64 << bit) != 0)
+            .map(|(_, index)| St7Result::Addition {
+                index: AdditionIndex(index),
             });
         self.card
             .then_some(St7Result::Card)
