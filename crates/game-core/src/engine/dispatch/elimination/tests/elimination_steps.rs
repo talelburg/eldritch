@@ -148,6 +148,101 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
+/// Three investigators seated 1, 2, 3 (investigator 1 the stored lead) at one
+/// location, on `turn`'s turn, with a ready stock enemy `EnemyId(1)` engaged
+/// with `engaged`. Defeating `engaged` leaves the enemy ready and unengaged
+/// beside the other two: step 3's engagement tie.
+fn three_beside_an_enemy_engaged_with(
+    engaged: InvestigatorId,
+    turn: InvestigatorId,
+) -> test_support::TestSession {
+    let loc = LocationId(1);
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(test_support::seat(1).at(loc))
+        .with_seat(test_support::seat(2).at(loc))
+        .with_seat(test_support::seat(3).at(loc))
+        .with_location(location(1))
+        .with_enemy(enemy(1).at(loc).engaged_with(engaged))
+        .with_seating([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+        .open_turn(turn)
+        .session()
+}
+
+/// Assert `session` rests at the lead `lead` choosing whom `EnemyId(1)`
+/// engages, offered exactly `tied` (each anchored to its investigator card),
+/// with the enemy still unengaged.
+fn assert_lead_asked_between(
+    session: &test_support::TestSession,
+    lead: InvestigatorId,
+    tied: [InvestigatorId; 2],
+) {
+    use crate::engine::outcome::{InputKind, Responder};
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
+    assert_eq!(prompt.responder, Responder::Lead(lead), "{prompt:?}");
+    let offered: Vec<usize> = tied
+        .iter()
+        .map(|i| session.offered_at(&session.state().investigators[i].card_anchor()))
+        .collect();
+    assert_eq!(
+        (offered, prompt.options.len()),
+        (vec![1, 1], 2),
+        "the tie offers exactly the two survivors: {prompt:?}",
+    );
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        None,
+        "nobody is engaged until the lead answers",
+    );
+}
+
+/// Elimination step 3 (`glossary/Elimination.md`): *"All enemies engaged with
+/// that player are placed at the location the investigator was at when he or
+/// she was eliminated, unengaged but otherwise maintaining their current game
+/// state."* The ready enemy then engages per prey, and with two survivors beside
+/// it the lead decides (`glossary/Prey.md`: *"if multiple investigators are
+/// tied in meeting these instructions, the lead investigator may decide among
+/// them"*).
+#[test]
+fn an_eliminated_investigators_enemy_tied_between_two_survivors_asks_the_lead() {
+    let (lead, dead, third) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
+    let session = three_beside_an_enemy_engaged_with(dead, lead).take_damage(dead, 8);
+
+    assert!(
+        session.state().investigators[&dead].status == Status::Defeated,
+        "the elimination finished before the lead is asked",
+    );
+    assert_lead_asked_between(&session, lead, [lead, third]);
+
+    let anchor = session.state().investigators[&third].card_anchor();
+    let session = session.pick(anchor);
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        Some(third)
+    );
+    assert_event!(session.events(), Event::EnemyEngaged { enemy, investigator }
+        if *enemy == EnemyId(1) && *investigator == third);
+}
+
+/// Step 5: *"If the lead investigator is eliminated, the remaining players (if
+/// any) choose a new lead investigator."* The lead's own enemy's tie goes to
+/// the next Active investigator in player order.
+#[test]
+fn an_eliminated_leads_enemy_tie_is_answered_by_the_new_lead() {
+    let (dead, next, third) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
+    let session = three_beside_an_enemy_engaged_with(dead, next).take_damage(dead, 8);
+
+    assert_lead_asked_between(&session, next, [next, third]);
+
+    let anchor = session.state().investigators[&next].card_anchor();
+    let session = session.pick(anchor);
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        Some(next)
+    );
+}
+
 #[test]
 fn last_investigator_defeated_latches_lost_resolution() {
     // Single investigator; defeat them and assert the no-remaining-players

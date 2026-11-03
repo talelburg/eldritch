@@ -142,43 +142,10 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
         .collect()
 }
 
-/// Engage a now-unengaged enemy with a co-located investigator per the
-/// general engagement rule (`glossary/Enemy_Engagement.md`), narrowing several
-/// [`candidates`] by the enemy's prey.
-///
-/// No-op when the enemy is exhausted (*"An exhausted unengaged enemy does not
-/// engage"*) or has no location. On a prey `Tie` this engages `tied[0]`, the
-/// player-order-first of the tied investigators because [`candidates`] is
-/// in player order, rather than suspending for a tie-break `PickSingle` —
-/// keeping every caller synchronous. TODO(#151): make the multiplayer tie an
-/// interactive choice.
-///
-/// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
-/// and a move's departure (for an enemy stranded by a block on the
-/// destination). Relocation, a hunter's arrival and [`engage_ready_enemies`]
-/// use [`engage_or_report_tie`] instead, which leaves a tie to the lead.
-///
-/// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
-/// would be re-targeted through [`engage`], which is not what any of the rule's
-/// triggers mean.
-pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
-    let enemy = &cx.state.enemies[&enemy_id];
-    if enemy.exhausted || enemy.current_location.is_none() {
-        return;
-    }
-    let prey = enemy.prey;
-    let candidates = candidates(cx.state, enemy_id);
-    match hunters::resolve_prey(cx.state, cx.cards, prey, &candidates) {
-        PreyResolution::None => {}
-        PreyResolution::One(target) => engage(cx, enemy_id, target),
-        PreyResolution::Tie(tied) => engage(cx, enemy_id, tied[0]),
-    }
-}
-
 /// Engage a ready, unengaged enemy with the investigator its prey picks where
 /// it stands, or report the tie for the lead instead: the general engagement
-/// rule (`glossary/Enemy_Engagement.md`), as [`reengage_at_location`] applies
-/// it, but without resolving an engagement tie itself.
+/// rule (`glossary/Enemy_Engagement.md`), narrowing several [`candidates`] by
+/// the enemy's prey.
 ///
 /// No-op returning `None` when the enemy is exhausted (*"An exhausted
 /// unengaged enemy does not engage"*), has no location, or has no one to
@@ -190,8 +157,14 @@ pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
 /// investigators are tied in meeting these instructions, the lead investigator
 /// may decide among them"*.
 ///
-/// Precondition: `enemy.engaged_with` is `None` on entry, as for
-/// [`reengage_at_location`].
+/// Every application of the rule to an enemy that has just come to stand
+/// ready and unengaged beside investigators calls it: relocation, a hunter's
+/// arrival, readying, elimination's step 3, an enemy stranded by a move, and
+/// [`engage_ready_enemies`].
+///
+/// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
+/// would be re-targeted through [`engage`], which is not what any of the rule's
+/// triggers mean.
 #[must_use = "a reported engagement tie must be pushed for the lead to answer"]
 pub(super) fn engage_or_report_tie(cx: &mut Cx, enemy_id: EnemyId) -> Option<TiedEngagement> {
     let enemy = &cx.state.enemies[&enemy_id];

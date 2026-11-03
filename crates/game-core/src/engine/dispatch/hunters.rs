@@ -272,14 +272,14 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// it engages that investigator, and is placed in that investigator's
 /// threat area"*, and among the listed examples: *"It moves into the
 /// same location as an investigator"*. The check is
-/// `reengage_at_location`, so its rules already hold here: an
+/// `engage_or_report_tie`, so its rules already hold here: an
 /// exhausted enemy does not engage (*"An exhausted unengaged enemy does
 /// not engage"* — agenda 01107 *can* move evaded enemies, and they
 /// arrive unengaged), and prey resolution picks among co-located
 /// investigators.
 ///
 /// **Takes an unengaged enemy.** An enemy that is already engaged is
-/// left engaged — `reengage_at_location`'s precondition is
+/// left engaged — `engage_or_report_tie`'s precondition is
 /// `engaged_with == None`, so the check is skipped rather than
 /// re-targeting it. That is right for the only engaged-enemy relocation
 /// the engine has (the Move action dragging an enemy along with the

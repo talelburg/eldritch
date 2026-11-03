@@ -15,6 +15,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
+use game_core::engine::Responder;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
@@ -734,6 +735,59 @@ fn a_stranded_enemy_engages_the_investigator_who_stayed_at_the_origin() {
         Event::EnemyDisengaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV,
         Event::InvestigatorMoved { investigator, .. } if *investigator == INV,
         Event::EnemyEngaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV2,
+    );
+}
+
+/// With two investigators left at the origin the stranded enemy's engagement is
+/// a tie, and `glossary/Prey.md` leaves it to the lead: *"if multiple
+/// investigators are tied in meeting these instructions, the lead investigator
+/// may decide among them"*. The mover leads and is still Active, so they
+/// answer. The answer comes at the departure, before the arrival: the
+/// destination B is face down, and its reveal on entering lands only after the
+/// pick.
+#[test]
+fn a_stranded_enemy_beside_two_left_at_the_origin_is_the_leads_to_assign() {
+    const INV3: InvestigatorId = InvestigatorId(3);
+    let session = board(
+        &[(A, &[B]), (B, &[A])],
+        vec![seat(1).at(A), seat(2).at(A), seat(3).at(A)],
+        engaged_ghoul(GHOUL_MINION),
+        &[B],
+    )
+    .edit_state(|state| {
+        state
+            .locations
+            .get_mut(&B)
+            .expect("B is on the board")
+            .revealed = false;
+    })
+    .take(&MOVE_TO_B);
+
+    let prompt = session.prompt();
+    assert_eq!(prompt.responder, Responder::Lead(INV), "{prompt:?}");
+    let inv2 = session.state().investigators[&INV2].card_anchor();
+    let inv3 = session.state().investigators[&INV3].card_anchor();
+    assert_eq!(
+        (
+            session.offered_at(&inv2),
+            session.offered_at(&inv3),
+            prompt.options.len()
+        ),
+        (1, 1, 2),
+        "the tie offers the two left at the origin: {prompt:?}",
+    );
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, None);
+    assert_no_event!(session.events(), Event::LocationRevealed { .. });
+
+    let session = session.pick(inv3);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(INV3));
+    assert_event_sequence!(
+        session.events(),
+        Event::InvestigatorMoved { investigator, .. } if *investigator == INV,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == GHOUL && *investigator == INV3,
+        Event::LocationRevealed { location, .. } if *location == B,
     );
 }
 
