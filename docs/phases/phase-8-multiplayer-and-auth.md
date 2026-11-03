@@ -52,6 +52,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
+| #1061 | Scrying 01061 reorders any investigator's deck, chosen once and kept for its placements; an eliminated investigator is never offered by a choice of investigator, PR #1326; slice #1324 |
 | #1086 | A committed skill's ST.7 ability says whether it modifies the test's consequence or adds one; modifiers apply before the follow-up, both gated on the outcome, PR #1311 |
 | #1132 | An eliminated investigator's card that later leaves play is removed from the game into their own pile, PR #1302 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
@@ -100,7 +101,7 @@ landed, before phase 9 is scoped.
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 and #1061 follow #1086 and pair on one
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 and #1061 (✅ PR #1326) follow #1086 and pair on one
   choose-and-keep primitive.
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
