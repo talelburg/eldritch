@@ -108,7 +108,9 @@ landed, before phase 9 is scoped.
 rarely used, so it comes late and stays small. #1274, returning to the page a
 sign-in started from, follows #1237 and #1239.
 
-**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243.**
+**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243 and #1322.**
+#1322, the board surface for committed cards, also follows #65, which records each
+card's committer.
 
 **6. Reconnect and presence.** #587 and #582, after #1230, put the full history
 in `Hello`. #1232 follows #1230, #1140 and #1241.

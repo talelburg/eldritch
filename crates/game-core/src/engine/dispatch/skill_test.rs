@@ -1918,7 +1918,7 @@ pub(super) fn helper_commit_request(
 /// the count admits every offered card and the limit is checked on resume.
 ///
 /// The text names each card committed so far and its committer, since nothing
-/// else shows the performer what help has come. TODO(#1242): the
+/// else shows the performer what help has come. TODO(#1322): the
 /// committed-card surface replaces that listing.
 pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
     let test = state
