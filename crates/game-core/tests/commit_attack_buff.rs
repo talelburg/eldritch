@@ -1,9 +1,10 @@
-//! End-to-end commit-time attack buff with a mock `CardRegistry`: a skill card
-//! carrying `[Trigger::OnCommit] BoostAttackDamage(1)` (Vicious-Blow-shaped).
+//! End-to-end committed attack buff with a mock `CardRegistry`: a skill card
+//! carrying a success-gated result modifier, `BoostAttackDamage(1)`
+//! (Vicious-Blow-shaped).
 //!
 //! Verifies that committing it to a Fight skill test adds +1 to the attack's
-//! damage on success, and that the `OnCommit` firing path fires committed
-//! cards' effects at the commit step.
+//! damage on success: the modifier applies at the head of ST.7, before the
+//! Fight follow-up deals the damage it changes.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
 //! hence its own process and its own `MockRegistry`). Vicious Blow 01025 is
@@ -13,7 +14,7 @@
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl;
+use card_dsl::dsl::{self, TestOutcome};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::Registries;
@@ -24,7 +25,7 @@ use game_core::state::{
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
-/// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
+/// Mock skill: combat icon + a result modifier, `that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
 
 fn skill_metadata() -> CardMetadata {
@@ -58,7 +59,12 @@ fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
             .with_card(skill_metadata())
-            .with_abilities(SKILL, || vec![dsl::on_commit(dsl::boost_attack_damage(1))])
+            .with_abilities(SKILL, || {
+                vec![dsl::modifies_result(
+                    TestOutcome::Success,
+                    dsl::boost_attack_damage(1),
+                )]
+            })
             .build(),
         scenarios: &ScenarioRegistry::EMPTY,
     });
@@ -102,7 +108,7 @@ fn fight_committing(commit: &[&str]) -> TestSession {
     session
 }
 
-/// Committing the `OnCommit` skill to a successful Fight test deals
+/// Committing the modifier skill to a successful Fight test deals
 /// `1 base + 1 bonus = 2` damage.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
@@ -113,7 +119,7 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 }
 
 /// Without committing the skill, the same Fight deals the base `1`
-/// damage — the `OnCommit` buff only applies when committed (regression
+/// damage — the buff only applies when committed (regression
 /// guard that the accumulator defaults to 0).
 #[test]
 fn fight_without_commit_deals_base_damage() {

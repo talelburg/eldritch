@@ -9,8 +9,8 @@
 //! The 2 willpower icons and the "Max 1 committed per skill test" cap are
 //! printed metadata (`SkillIcons` + `CardKind::Skill.commit_limit`,
 //! enforced at the commit window), not `abilities()`. `abilities()`
-//! describes only the triggered effect: an `OnSkillTestResolution` gated on
-//! `Success` that draws 1 card. No kind narrowing — it draws on **any**
+//! describes only the triggered effect: a success-gated result addition
+//! that draws 1 card. No kind narrowing — it draws on **any**
 //! successful test the card is committed to (unlike Deduction's
 //! Investigate-only bonus).
 
@@ -27,7 +27,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 /// On any successful test this is committed to, draw 1 card.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_skill_test_resolution(
+    vec![dsl::adds_result(
         TestOutcome::Success,
         dsl::draw_cards(InvestigatorTarget::You, 1u8),
     )]
@@ -35,7 +35,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, IntExpr, InvestigatorTarget, TestOutcome, Trigger};
+    use card_dsl::dsl::{
+        Effect, IntExpr, InvestigatorTarget, ResultContribution, TestOutcome, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_on_success_draw_one() {
@@ -45,6 +47,7 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
+                contributes: ResultContribution::Adds,
             },
         );
         assert_eq!(

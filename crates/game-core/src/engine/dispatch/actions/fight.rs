@@ -185,8 +185,8 @@ pub(crate) fn perform(
 /// `glossary/Fight_Action.md`: *"If the test is successful, the attack
 /// succeeds and damage is dealt to the attacked enemy."* The attack's own
 /// damage is [`attack_damage`]'s; a committed skill's bonus (Vicious Blow's
-/// +1) is added on top, read off the in-flight record where it accumulated at
-/// commit time. The in-flight test is still present here — it's torn down
+/// +1) is added on top, read off the in-flight record where its result
+/// modifier accumulated it. The in-flight test is still present here — it's torn down
 /// only at the end of resolution — so the accumulator, the ability's source
 /// and the verdict are all readable.
 ///
@@ -311,7 +311,7 @@ fn attack_damage(
 /// retaliate attack."*
 ///
 /// The skill-test driver calls this at its `PostRetaliate` step — after
-/// `fire_on_skill_test_resolution` (the rest of ST.7) and before the
+/// `apply_result_additions_step` (the rest of ST.7) and before the
 /// `PostOnResolution` teardown (ST.8) — matching "after applying all results."
 /// Routes through [`combat::drive_retaliate`] so the attack opens its
 /// before-attack cancel window (Dodge 01023) and per-soaked-asset soak window
@@ -367,7 +367,7 @@ mod tests {
     use crate::test_support::{self, enemy, TEST_REGISTRIES};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
-    /// reading the commit-time accumulator off the in-flight record
+    /// reading the result-modifier accumulator off the in-flight record
     /// (Vicious Blow 01025). With `extra_damage: 1` (a weapon bonus) and
     /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
     #[test]

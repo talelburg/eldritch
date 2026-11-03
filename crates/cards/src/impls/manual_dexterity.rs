@@ -8,7 +8,7 @@
 //!
 //! Same shape as Guts 01089 (agility icons). Icons + the "Max 1 committed"
 //! cap are printed metadata; `abilities()` is the
-//! `OnSkillTestResolution { Success }` draw, firing on any successful
+//! success-gated result-addition draw, firing on any successful
 //! committed-to test.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, TestOutcome};
@@ -24,7 +24,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 /// On any successful test this is committed to, draw 1 card.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_skill_test_resolution(
+    vec![dsl::adds_result(
         TestOutcome::Success,
         dsl::draw_cards(InvestigatorTarget::You, 1u8),
     )]
@@ -32,7 +32,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, IntExpr, InvestigatorTarget, TestOutcome, Trigger};
+    use card_dsl::dsl::{
+        Effect, IntExpr, InvestigatorTarget, ResultContribution, TestOutcome, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_on_success_draw_one() {
@@ -42,6 +44,7 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
+                contributes: ResultContribution::Adds,
             },
         );
         assert_eq!(

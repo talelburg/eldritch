@@ -2,7 +2,7 @@
 //! against the real `cards::REGISTRY`.
 //!
 //! - Emergency Cache 01088: `on_play(gain_resources(You, 3))`.
-//! - Guts 01089: `on_skill_test_resolution(Success, draw_cards(You, 1))` —
+//! - Guts 01089: `adds_result(Success, draw_cards(You, 1))` —
 //!   draws on a successful committed-to test, not on a failed one.
 //!
 //! The other three draw-skills (Perception/Overpower/Manual Dexterity) are

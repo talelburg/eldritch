@@ -198,7 +198,7 @@ pub(crate) fn perform(
 /// ST.6 success, before this discovery. The discovery comes from the action,
 /// not from an ability source, so `for_controller` is correct.
 ///
-/// **One** discovery, whose count carries any commit-time bonus (Deduction
+/// **One** discovery, whose count carries any result-modifier bonus (Deduction
 /// 01039's `bonus_clues_discovered`, the clue-side twin of Fight's
 /// `bonus_attack_damage`). "Discover 1 additional clue" raises this discovery's
 /// count; it does not make a second one — see the **Discovery** entry in
@@ -244,7 +244,7 @@ mod tests {
     /// Regression for #471: the `Investigate` follow-up pushes **one**
     /// `DiscoverClue` of
     /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
-    /// commit-time accumulator off the in-flight record (Deduction 01039). With
+    /// result-modifier accumulator off the in-flight record (Deduction 01039). With
     /// `bonus_clues_discovered: 1` that is a single discovery of 2 — not two of
     /// 1, which is what Cover Up 01007 would replace twice.
     #[test]

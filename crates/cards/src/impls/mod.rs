@@ -72,7 +72,7 @@
 //!   test (`SkillTestResolved { by_controller: false }`) carrying a
 //!   card-local native eligibility condition. The complement of the Parlor's
 //!   grant above.
-//! - Deduction (01039) — `Trigger::OnCommit` +
+//! - Deduction (01039) — `dsl::modifies_result(Success, …)` +
 //!   `If(SkillTestKind(Investigate), DiscoverAdditionalClues(1))`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
 //!   reaction (`EnemyDefeated { by_controller: true }`, `After`) +

@@ -1426,7 +1426,7 @@ pub struct InFlightSkillTest {
     /// dispatch, which removes the named cards from the hand and moves them
     /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
-    /// codes off this field (e.g. `collect_on_skill_test_resolution` /
+    /// codes off this field (e.g. `collect_result_contributions` /
     /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
     /// must stay accurate across suspensions — don't treat it as
     /// inspection-only metadata.
@@ -1492,21 +1492,21 @@ pub struct InFlightSkillTest {
     /// (set at ST.5–ST.6, one step later than the commit window closes — see
     /// that field), not in the cursor payloads.
     pub continuation: SkillTestStep,
-    /// Bonus damage added to this attack, accumulated at commit time by
+    /// Bonus damage added to this attack, accumulated by a result modifier's
     /// [`Effect::BoostAttackDamage`]
     /// (Vicious Blow 01025). Read **only** by the `Fight` follow-up, which
     /// deals `1 + extra_damage + bonus_attack_damage` on success — so it
     /// is inert for non-Fight tests. `0` for every test that no
-    /// commit-time attack buff touches (regression-safe).
+    /// attack buff touches (regression-safe).
     pub bonus_attack_damage: u8,
-    /// Bonus clues added to this investigation's discovery, accumulated at
-    /// commit time by
+    /// Bonus clues added to this investigation's discovery, accumulated by a
+    /// result modifier's
     /// [`Effect::DiscoverAdditionalClues`]
     /// (Deduction 01039). Read **only** by the `Investigate` follow-up, which
     /// makes **one** discovery of `1 + bonus_clues_discovered` on success — so
     /// it is inert for non-Investigate tests. The sibling of
     /// [`bonus_attack_damage`](Self::bonus_attack_damage); `0` for every test
-    /// no commit-time clue buff touches.
+    /// no clue buff touches.
     ///
     /// Raising one discovery's count is not interchangeable with adding a
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
@@ -1688,13 +1688,15 @@ impl ResolvedTest {
 /// - [`DetermineOutcome`](Self::DetermineOutcome) — the ST.6→ST.7 boundary:
 ///   emit the logged success/failure events, then the `SkillTestResolved`
 ///   timing point, **before** any ST.7 consequence resolves.
+/// - [`ApplyResultModifiers`](Self::ApplyResultModifiers) — the ST.7 head:
+///   the committed cards' result modifiers, before the consequence they change.
 /// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
 ///   [`ApplyResultEffect`](Self::ApplyResultEffect) — the ST.7 "apply results"
 ///   sub-steps: action follow-up (the clue discovery), then the
 ///   success/failure card effect. Each effect is pushed for the global drive
 ///   loop and cursor-sequenced so results resolve in ST order.
-/// - [`FireOnResolution`](Self::FireOnResolution) — fire the committed cards'
-///   `OnSkillTestResolution` triggers, one per visit.
+/// - [`ApplyResultAdditions`](Self::ApplyResultAdditions) — apply the committed cards'
+///   result additions, one per visit.
 /// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -1790,23 +1792,22 @@ pub enum SkillTestStep {
     /// is set, `advance` suspends here with an `AwaitingInput { InputKind::Confirm }`
     /// so an interactive host can show the player the result before the ST.7
     /// consequence resolves. The cursor stays here across the suspension;
-    /// `acknowledge_outcome` advances it to [`FireOnCommit`](Self::FireOnCommit)
-    /// on the Confirm resume (mirroring the `AwaitingCommit` / `finish_skill_test`
-    /// handshake). When the flag is off, `advance` advances straight to
-    /// `FireOnCommit` without pausing.
+    /// `acknowledge_outcome` advances it to
+    /// [`ApplyResultModifiers`](Self::ApplyResultModifiers) on the Confirm resume
+    /// (mirroring the `AwaitingCommit` / `finish_skill_test` handshake). When the
+    /// flag is off, `advance` advances straight to `ApplyResultModifiers` without
+    /// pausing.
     AcknowledgeOutcome,
-    /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
-    /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
-    /// success ("If this skill test is successful during an attack…") so they
-    /// belong after the token is resolved, but **before**
-    /// [`ApplyFollowUp`](Self::ApplyFollowUp) reads the
-    /// `bonus_attack_damage` accumulator they populate. Collected into one
-    /// [`Effect::Seq`] and pushed for the drive loop
-    /// (nothing pushed if no committed card carries an `OnCommit` trigger);
-    /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
-    ///
-    /// [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
-    FireOnCommit,
+    /// RR ST.7 head — push the committed cards' [result
+    /// modifiers](card_dsl::dsl::ResultContribution::Modifies) whose outcome
+    /// matches the resolved test (Vicious Blow 01025's `BoostAttackDamage`,
+    /// Deduction 01039's `DiscoverAdditionalClues`). A modifier changes a
+    /// consequence the test already produces, so it sits **before**
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp), which reads the accumulators the
+    /// modifiers populate. Collected into one [`Effect::Seq`] and pushed for the
+    /// drive loop (nothing pushed if none matches); pre-advances to
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp).
+    ApplyResultModifiers,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
     /// pushes its `discover_clue` effect and the Evade follow-up its
@@ -1831,13 +1832,13 @@ pub enum SkillTestStep {
     /// stored for it: the step looks the token's
     /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome) up again from
     /// [`InFlightSkillTest::revealed`], as
-    /// [`FireOnCommit`](Self::FireOnCommit) and
-    /// [`FireOnResolution`](Self::FireOnResolution) look up the committed
+    /// [`ApplyResultModifiers`](Self::ApplyResultModifiers) and
+    /// [`ApplyResultAdditions`](Self::ApplyResultAdditions) look up the committed
     /// cards' abilities — an elder sign from the investigator card, sourced to
     /// it, and a scenario symbol from the scenario's symbol hook, with the
     /// controller-only context. Pushed as an effect frame, so a sanity-soak
     /// (Holy Rosary 01028) on an [`Effect::Deal`] suspends cleanly.
-    /// Pre-advances to [`FireOnResolution`](Self::FireOnResolution) before the
+    /// Pre-advances to [`ApplyResultAdditions`](Self::ApplyResultAdditions) before the
     /// push.
     ///
     /// Sits among the ST.7 result effects, after the action follow-up and the
@@ -1847,8 +1848,9 @@ pub enum SkillTestStep {
     /// his or her choice."* The engine sequences them in this fixed order
     /// instead. TODO(#642): let the performer choose the order.
     ApplyTokenResult,
-    /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
-    /// one effect per driver visit so they cursor-sequence in committed-card
+    /// RR ST.7 — apply the committed cards' [result
+    /// additions](card_dsl::dsl::ResultContribution::Adds) whose outcome matches
+    /// the resolved test, one effect per driver visit so they cursor-sequence in committed-card
     /// order (no LIFO). `next` is the index into the flattened
     /// (card, matching-ability) list of the next trigger to fire; each visit
     /// pushes that effect, advances `next`, and yields. When `next` runs past
@@ -1857,9 +1859,7 @@ pub enum SkillTestStep {
     /// The test outcome (`succeeded`/`margin`) is read off
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
-    ///
-    /// [`OnSkillTestResolution`]: card_dsl::dsl::Trigger::OnSkillTestResolution
-    FireOnResolution {
+    ApplyResultAdditions {
         /// Index of the next matching (card, ability) trigger to fire.
         next: u32,
     },
@@ -1901,7 +1901,7 @@ pub enum SkillTestFollowUp {
     /// clues at the test's
     /// [`tested_location`](InFlightSkillTest::tested_location) (via the
     /// [`DiscoverClue`](card_dsl::dsl::Effect::DiscoverClue) evaluator path).
-    /// Used by `Investigate`. A commit-time "discover 1 additional clue"
+    /// Used by `Investigate`. A committed "discover 1 additional clue"
     /// (Deduction 01039) raises this discovery's count rather than adding a
     /// second discovery — see the **Discovery** entry in `GLOSSARY.md`.
     Investigate,

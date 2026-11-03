@@ -46,8 +46,8 @@ fn only_the_activated_and_on_play_builders_carry_a_designator() {
     for undesignated in [
         constant(seq([])),
         on_play(seq([])),
-        on_commit(seq([])),
-        on_skill_test_resolution(TestOutcome::Success, seq([])),
+        modifies_result(TestOutcome::Success, seq([])),
+        adds_result(TestOutcome::Success, seq([])),
         reaction_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
         forced_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
         revelation(seq([])),

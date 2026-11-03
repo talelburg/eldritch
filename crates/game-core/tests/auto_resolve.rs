@@ -216,7 +216,7 @@ fn registries() -> Registries {
                 )]
             })
             .with_abilities(ON_RESOLUTION_GAIN, || {
-                vec![dsl::on_skill_test_resolution(
+                vec![dsl::adds_result(
                     TestOutcome::Success,
                     dsl::gain_resources(InvestigatorTarget::You, 1),
                 )]
