@@ -37,6 +37,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | Issue | Work |
 |---|---|
 | #65 | Each other investigator at the performer's location may commit one card to their skill test, asked in player order before the performer; a committed card's result addition is its committer's, a modifier the performer's, PR #1321; slices #1316, #1317, #1318, #1319, #1320 |
+| #146 | The turn's player window reopens after each action (Appendix II 2.2.1), answered by every investigator holding an eligible fast play; a fast play, a 0-action ability, the act advance and End Turn open none, PR #1332; slices #1330, #1331 |
 | #153 | An act's group clue spend asks each contributor with a choice for their share, in player order with the investigator who started the advance last and covering the rest; both `AdvanceAct` and The Barrier 01109's round-end spend, PR #1327 |
 | #151 | An engagement tie is the lead's to answer, wherever an enemy comes to stand ready beside several investigators its prey can't tell apart, PR #1310; slices #1306, #1307, #1308, #1309 |
 | #359 | Medical Texts 01035 chooses an investigator at your location before its test, and the result heals or damages that investigator; the pick crosses the skill test beside the ability source, PR #1326; slice #1325 |
@@ -106,7 +107,7 @@ landed, before phase 9 is scoped.
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
 - ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
   choose-and-keep primitive, specced in #1323 (✅ PR #1326).
-- After the wire break: #153 (✅ PR #1327, also after #573) and #146 (after #1194).
+- After the wire break: #153 (✅ PR #1327, also after #573) and #146 (✅ PR #1332).
 
 **4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
 rarely used, so it comes late and stays small. #1274, returning to the page a
