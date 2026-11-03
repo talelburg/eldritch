@@ -60,7 +60,7 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
     // shroud 4 → succeed by 0. **One** discovery of 2 clues: the
     // Investigate follow-up's own discovery, its count raised from 1
     // to 2 by the `bonus_clues_discovered` accumulator Deduction
-    // populates at commit. Location ends with 0 of 2 clues;
+    // populates as a result modifier. Location ends with 0 of 2 clues;
     // controller carries 2.
     //
     // The event *count* is the whole point of this assertion — final

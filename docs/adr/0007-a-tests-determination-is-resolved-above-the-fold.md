@@ -43,4 +43,4 @@ Finally, the revealed token's own contribution is a recorded row, as ADR 0005 sp
 
 An elder sign can carry a determination as well as a number. Its `TokenOutcome` has an `immediate` arm that runs at ST.4, and an `Effect::AutoResolve` there latches a determination exactly as a card's does, sourced to the investigator card. Wendy Adams 01005 is the first consumer (#780); Rex Murphy 02002 is the corpus consumer this ADR is written for. Father Mateo 04004 (*"[elder_sign] effect: You automatically succeed. …"*) is out of corpus but shows the plainest case: an elder sign whose modifier never decides the test, because the determination is resolved above the fold.
 
-*Folded: #776.*
+*Folded: #776, #1086.*

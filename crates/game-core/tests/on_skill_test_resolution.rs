@@ -40,10 +40,11 @@ const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
 
 /// Mock: a success-gated result **modifier** gaining 1 resource. Gaining a
 /// resource modifies nothing; the effect only makes the step that applies it
-/// visible in the event log.
+/// visible in the event log, and its amount tells it apart from
+/// [`ADDITION_SUCCESS`]'s.
 const MODIFIER_SUCCESS: &str = "MOCK-OSR-MOD";
 
-/// Mock: a success-gated result **addition** gaining 1 resource, the
+/// Mock: a success-gated result **addition** gaining 2 resources, the
 /// counterpart of [`MODIFIER_SUCCESS`].
 const ADDITION_SUCCESS: &str = "MOCK-OSR-ADD";
 
@@ -83,7 +84,7 @@ fn registries() -> Registries {
             .with_abilities(ADDITION_SUCCESS, || {
                 vec![dsl::adds_result(
                     TestOutcome::Success,
-                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                    dsl::gain_resources(InvestigatorTarget::You, 2),
                 )]
             })
             .build(),
@@ -326,20 +327,21 @@ fn a_modifier_applies_before_the_follow_up_and_an_addition_after_it() {
 
     session.assert_at_turn_menu(INV);
     let events = session.events();
-    let gained: Vec<usize> = events
-        .iter()
-        .enumerate()
-        .filter(|(_, ev)| matches!(ev, Event::ResourcesGained { .. }))
-        .map(|(i, _)| i)
-        .collect();
+    let gained_at = |amount: u8| {
+        events
+            .iter()
+            .position(|ev| matches!(ev, Event::ResourcesGained { amount: a, .. } if *a == amount))
+            .unwrap_or_else(|| panic!("expected a gain of {amount}: {events:#?}"))
+    };
+    let modifier = gained_at(1);
+    let addition = gained_at(2);
     let discovery = events
         .iter()
         .position(|ev| matches!(ev, Event::CluePlaced { .. }))
         .expect("the follow-up discovers a clue");
-    assert_eq!(gained.len(), 2, "one resource gain per mock");
     assert!(
-        gained[0] < discovery && discovery < gained[1],
-        "modifier before the discovery, addition after: {events:#?}"
+        modifier < discovery && discovery < addition,
+        "modifier (1) before the discovery, addition (2) after: {events:#?}"
     );
 }
 

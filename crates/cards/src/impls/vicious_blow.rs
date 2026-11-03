@@ -14,7 +14,7 @@
 //! not through the DSL.
 //!
 //! `abilities()` describes only the triggered effect: a success-gated
-//! [result modifier](ResultContribution::Modifies) running
+//! [result modifier](card_dsl::dsl::ResultContribution::Modifies) running
 //! [`Effect::BoostAttackDamage`], gated by an [`if_`] over
 //! [`Condition::SkillTestKind`] of [`SkillTestKind::Fight`].
 //!
@@ -42,7 +42,7 @@
 //! [`if_`]: card_dsl::dsl::if_
 //! [`InFlightSkillTest::bonus_attack_damage`]: game_core::state::InFlightSkillTest::bonus_attack_damage
 
-use card_dsl::dsl::{self, Ability, Condition, ResultContribution, SkillTestKind, TestOutcome};
+use card_dsl::dsl::{self, Ability, Condition, SkillTestKind, TestOutcome};
 
 use crate::impls::CardRecord;
 
@@ -59,15 +59,17 @@ pub fn abilities() -> Vec<Ability> {
     vec![dsl::modifies_result(
         TestOutcome::Success,
         dsl::if_(
-        Condition::SkillTestKind(SkillTestKind::Fight),
-        dsl::boost_attack_damage(1),
+            Condition::SkillTestKind(SkillTestKind::Fight),
+            dsl::boost_attack_damage(1),
         ),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger};
+    use card_dsl::dsl::{
+        Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_success_modifier_attack_buff() {

@@ -265,7 +265,7 @@ pub enum Event {
         determination: Determination,
         /// The in-play card instance whose ability latched it, when there
         /// is one. `None` for an effect with no in-play source — an event
-        /// card resolving out of hand, or a card's commit-time effect —
+        /// card resolving out of hand, or a committed card's effect —
         /// mirroring the recorded row's own
         /// [`source`](crate::state::RecordedModifier::source). Widening
         /// that attribution is the row's problem, not this event's.

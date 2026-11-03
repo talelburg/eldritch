@@ -14,7 +14,7 @@
 //! `metadata_for`), not through the DSL.
 //!
 //! `abilities()` describes only the triggered effect: a success-gated
-//! [result modifier](ResultContribution::Modifies) running
+//! [result modifier](card_dsl::dsl::ResultContribution::Modifies) running
 //! [`Effect::DiscoverAdditionalClues`], gated by an [`if_`] over
 //! [`Condition::SkillTestKind`] of [`SkillTestKind::Investigate`]. The
 //! trigger's `Success` gate is the **"if this skill test is successful"**
@@ -58,7 +58,7 @@
 //! [`LocationTarget::TestedLocation`]: card_dsl::dsl::LocationTarget::TestedLocation
 //! [`InFlightSkillTest::bonus_clues_discovered`]: game_core::state::InFlightSkillTest::bonus_clues_discovered
 
-use card_dsl::dsl::{self, Ability, Condition, ResultContribution, SkillTestKind, TestOutcome};
+use card_dsl::dsl::{self, Ability, Condition, SkillTestKind, TestOutcome};
 
 use crate::impls::CardRecord;
 
@@ -75,15 +75,17 @@ pub fn abilities() -> Vec<Ability> {
     vec![dsl::modifies_result(
         TestOutcome::Success,
         dsl::if_(
-        Condition::SkillTestKind(SkillTestKind::Investigate),
-        dsl::discover_additional_clues(1),
+            Condition::SkillTestKind(SkillTestKind::Investigate),
+            dsl::discover_additional_clues(1),
         ),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger};
+    use card_dsl::dsl::{
+        Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_success_modifier_clue_buff() {

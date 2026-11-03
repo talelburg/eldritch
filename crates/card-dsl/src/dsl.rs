@@ -3523,9 +3523,11 @@ pub enum TestOutcome {
 }
 
 /// Which of ST.7's two kinds of contribution a
-/// [`Trigger::OnSkillTestResolution`] ability makes: *"some other card
-/// abilities may contribute additional consequences, or modify existing
-/// consequences, at this time."* See **Result modifier** in `GLOSSARY.md`.
+/// [`Trigger::OnSkillTestResolution`] ability makes.
+///
+/// ST.7: *"some other card abilities may contribute additional consequences,
+/// or modify existing consequences, at this time."* See **Result modifier** in
+/// `GLOSSARY.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ResultContribution {
     /// Changes a consequence the test already produces, so it is in place
@@ -3593,17 +3595,20 @@ pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
     }
 }
 
-/// Construct a committed card's [`Trigger::OnSkillTestResolution`] ability that
-/// [modifies](ResultContribution::Modifies) a consequence the test already
-/// produces, gated on the given outcome. Vicious Blow 01025's +1 attack damage.
+/// Construct a committed card's result [modifier](ResultContribution::Modifies).
+///
+/// The [`Trigger::OnSkillTestResolution`] ability changes a consequence the test
+/// already produces, gated on the given outcome: Vicious Blow 01025's +1 attack
+/// damage.
 #[must_use]
 pub fn modifies_result(outcome: TestOutcome, effect: Effect) -> Ability {
     on_skill_test_resolution(outcome, ResultContribution::Modifies, effect)
 }
 
-/// Construct a committed card's [`Trigger::OnSkillTestResolution`] ability that
-/// [adds](ResultContribution::Adds) a consequence of its own, gated on the given
-/// outcome. Guts 01089's *"draw 1 card"*.
+/// Construct a committed card's result [addition](ResultContribution::Adds).
+///
+/// The [`Trigger::OnSkillTestResolution`] ability contributes a consequence of
+/// its own, gated on the given outcome: Guts 01089's *"draw 1 card"*.
 #[must_use]
 pub fn adds_result(outcome: TestOutcome, effect: Effect) -> Ability {
     on_skill_test_resolution(outcome, ResultContribution::Adds, effect)

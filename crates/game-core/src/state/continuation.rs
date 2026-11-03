@@ -1426,7 +1426,7 @@ pub struct InFlightSkillTest {
     /// dispatch, which removes the named cards from the hand and moves them
     /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
-    /// codes off this field (e.g. `collect_on_skill_test_resolution` /
+    /// codes off this field (e.g. `collect_result_contributions` /
     /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
     /// must stay accurate across suspensions — don't treat it as
     /// inspection-only metadata.
@@ -1492,21 +1492,21 @@ pub struct InFlightSkillTest {
     /// (set at ST.5–ST.6, one step later than the commit window closes — see
     /// that field), not in the cursor payloads.
     pub continuation: SkillTestStep,
-    /// Bonus damage added to this attack, accumulated at commit time by
+    /// Bonus damage added to this attack, accumulated by a result modifier's
     /// [`Effect::BoostAttackDamage`]
     /// (Vicious Blow 01025). Read **only** by the `Fight` follow-up, which
     /// deals `1 + extra_damage + bonus_attack_damage` on success — so it
     /// is inert for non-Fight tests. `0` for every test that no
-    /// commit-time attack buff touches (regression-safe).
+    /// attack buff touches (regression-safe).
     pub bonus_attack_damage: u8,
-    /// Bonus clues added to this investigation's discovery, accumulated at
-    /// commit time by
+    /// Bonus clues added to this investigation's discovery, accumulated by a
+    /// result modifier's
     /// [`Effect::DiscoverAdditionalClues`]
     /// (Deduction 01039). Read **only** by the `Investigate` follow-up, which
     /// makes **one** discovery of `1 + bonus_clues_discovered` on success — so
     /// it is inert for non-Investigate tests. The sibling of
     /// [`bonus_attack_damage`](Self::bonus_attack_damage); `0` for every test
-    /// no commit-time clue buff touches.
+    /// no clue buff touches.
     ///
     /// Raising one discovery's count is not interchangeable with adding a
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
@@ -1901,7 +1901,7 @@ pub enum SkillTestFollowUp {
     /// clues at the test's
     /// [`tested_location`](InFlightSkillTest::tested_location) (via the
     /// [`DiscoverClue`](card_dsl::dsl::Effect::DiscoverClue) evaluator path).
-    /// Used by `Investigate`. A commit-time "discover 1 additional clue"
+    /// Used by `Investigate`. A committed "discover 1 additional clue"
     /// (Deduction 01039) raises this discovery's count rather than adding a
     /// second discovery — see the **Discovery** entry in `GLOSSARY.md`.
     Investigate,
