@@ -442,20 +442,24 @@ const OVERPOWER: &str = "01091";
 const PARANOIA: &str = "01097";
 /// Holy Rosary 01059, deck filler under Paranoia.
 const HOLY_ROSARY: &str = "01059";
+/// Unexpected Courage 01093: *"Max 1 committed per skill test."* Two wild
+/// icons and no result of its own.
+const UNEXPECTED_COURAGE: &str = "01093";
 const ENEMY: EnemyId = EnemyId(5);
 
 /// Skids, with his stock 5 resources, fighting an enemy engaged with him with
-/// Overpower committed, on the elder sign, and Paranoia on top of his deck.
-/// Combat 3 + Overpower's 2 icons + 2 succeeds against fight 3, so two ST.7
-/// results are pending once the attack's damage lands: the elder sign's *"If
-/// you succeed, gain 2 resources."* and Overpower's draw. RR ST.7: *"If there
-/// are multiple results to be applied during this step, the investigator
-/// performing the test applies those results in the order of his or her
-/// choice."* Returns the session at that prompt.
-fn fighting_with_overpower_on_the_elder_sign() -> TestSession {
+/// `committed` committed from his hand, on the elder sign, and Paranoia on top
+/// of his deck. With Overpower among them, combat 3 + Overpower's 2 icons + 2
+/// succeeds against fight 3, so two ST.7 results are pending once the attack's
+/// damage lands: the elder sign's *"If you succeed, gain 2 resources."* and
+/// Overpower's draw. RR ST.7: *"If there are multiple results to be applied
+/// during this step, the investigator performing the test applies those
+/// results in the order of his or her choice."* Returns the session at that
+/// prompt.
+fn fighting_on_the_elder_sign(committed: &[&str]) -> TestSession {
     staged(
         skids()
-            .hand([OVERPOWER])
+            .hand(committed.iter().copied())
             .deck([PARANOIA, HOLY_ROSARY, HOLY_ROSARY]),
     )
     .with_enemy(enemy(ENEMY).fight(3).health(3).at(HERE).engaged_with(INV))
@@ -467,7 +471,7 @@ fn fighting_with_overpower_on_the_elder_sign() -> TestSession {
     })
     // His `[fast]` ability keeps the test's player windows open: pass them.
     .skip()
-    .commit(&[OVERPOWER])
+    .commit(committed)
     .skip()
 }
 
@@ -476,7 +480,7 @@ fn fighting_with_overpower_on_the_elder_sign() -> TestSession {
 /// committed card.
 #[test]
 fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
-    let session = fighting_with_overpower_on_the_elder_sign();
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]);
     assert_eq!(session.state().enemies[&ENEMY].damage, 1);
     assert_eq!(resources(session.state()), 5, "nothing is applied yet");
     assert_eq!(
@@ -496,7 +500,7 @@ fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
 /// apply with no further prompt: he ends at 2.
 #[test]
 fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
-    let session = fighting_with_overpower_on_the_elder_sign().pick(OptionTarget::CommittedCard {
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]).pick(OptionTarget::CommittedCard {
         index: CommittedIndex(0),
     });
     session.assert_at_turn_menu(INV);
@@ -512,7 +516,7 @@ fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
 /// prompt, and Paranoia discards them all: he ends at 0.
 #[test]
 fn gaining_the_elder_signs_resources_before_drawing_paranoia_loses_them() {
-    let session = fighting_with_overpower_on_the_elder_sign();
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]);
     let card = session.state().investigators[&INV].card_anchor();
     let session = session.pick(card);
     session.assert_at_turn_menu(INV);
@@ -522,4 +526,33 @@ fn gaining_the_elder_signs_resources_before_drawing_paranoia_loses_them() {
         Event::ResourcesDiscarded { investigator, amount: 7 } if *investigator == INV,
     );
     assert_eq!(resources(session.state()), 0);
+}
+
+/// With Unexpected Courage committed ahead of Overpower, Overpower's draw is
+/// the first result addition but the second committed card, and its option
+/// anchors to its place in the committed list. Picking it draws Paranoia
+/// before the elder sign's 2 resources: he ends at 2.
+#[test]
+fn an_addition_behind_a_card_with_none_anchors_to_its_committed_place() {
+    let session = fighting_on_the_elder_sign(&[UNEXPECTED_COURAGE, OVERPOWER]);
+    let overpower = OptionTarget::CommittedCard {
+        index: CommittedIndex(1),
+    };
+    assert_eq!(
+        session.offered_targets(),
+        [
+            Some(session.state().investigators[&INV].card_anchor()),
+            Some(overpower.clone()),
+        ],
+        "{:?}",
+        session.prompt()
+    );
+    let session = session.pick(overpower);
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesDiscarded { investigator, amount: 5 } if *investigator == INV,
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 2);
 }

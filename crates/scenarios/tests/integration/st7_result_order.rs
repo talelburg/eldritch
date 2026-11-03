@@ -14,6 +14,7 @@
 //! not carry.
 
 use game_core::action::InputResponse;
+use game_core::assert_event_sequence;
 use game_core::engine::{InputKind, OptionId, PromptNature, Responder};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
@@ -139,4 +140,13 @@ fn a_token_with_no_result_leaves_the_card_result_alone_with_no_prompt() {
         .commit(&[]);
     session.assert_at_turn_menu(INV);
     assert_eq!(horror_placed(&session), [2]);
+    // The horror lands at ST.7, after the failure and before the test ends,
+    // and Rotting Remains is discarded once its Revelation is done.
+    assert_event_sequence!(
+        session.events(),
+        Event::SkillTestFailed { investigator, by: 2, .. } if *investigator == INV,
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV,
+        Event::SkillTestEnded { investigator } if *investigator == INV,
+        Event::CardDiscarded { code, .. } if code.as_str() == ROTTING_REMAINS,
+    );
 }
