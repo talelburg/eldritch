@@ -14,11 +14,12 @@ use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, InvestigatorTarget, LocationTarget, ModifierScope, Stat, TestOutcome};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::Registries;
+use game_core::engine::{OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    CardCode, ChaosBag, ChaosToken, CommittedIndex, GameStateBuilder, InvestigatorId, LocationId,
+    SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -212,12 +213,16 @@ fn uncommitted_resolution_triggered_card_does_not_fire() {
 #[test]
 fn two_committed_success_triggers_both_fire() {
     // Two copies of the same trigger in hand, both committed: both
-    // fire, discovering 2 clues total (1 each).
+    // fire, discovering 2 clues total (1 each). Two results are pending, so
+    // the performer orders them (RR ST.7): the first copy first.
     let session = skill_test_with_commits(
         &[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS],
         2,
         &[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS],
-    );
+    )
+    .pick(OptionTarget::CommittedCard {
+        index: CommittedIndex(0),
+    });
 
     session.assert_at_turn_menu(INV);
     assert_eq!(session.state().locations[&HERE].clues, 1);

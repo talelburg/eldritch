@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::action::InputResponse;
 use crate::engine::ability_source;
 use crate::state::{
-    AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId,
+    AbilitySource, CardCode, CardInstanceId, CommittedIndex, EnemyId, GameState, InvestigatorId,
+    LocationId,
 };
 
 /// The terminal status of an [`apply`](crate::engine::apply) call.
@@ -104,6 +105,17 @@ pub enum OptionTarget {
     PlayerDeck(InvestigatorId),
     /// The scenario's encounter deck (the Mythos step-1.4 draw).
     EncounterDeck,
+    /// A card committed to the in-flight skill test, by its zero-based position
+    /// in the test's committed list
+    /// ([`committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    /// A committed card has no [`CardInstanceId`] while the test runs, and the
+    /// position keeps two copies of one card apart, which replay needs: it
+    /// keys an option by (label, target, investigator) (ADR 0022). Anchors a
+    /// committed card's result addition in the ST.7 result-order prompt.
+    CommittedCard {
+        /// Zero-based position in the test's committed list.
+        index: CommittedIndex,
+    },
 }
 
 impl From<AbilitySource> for OptionTarget {

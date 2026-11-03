@@ -265,7 +265,8 @@ pub(super) fn candidate_options<T>(
 
 /// The player-facing name of the board surface `anchor` names, for an option's
 /// label. A location or enemy reads as its name. A card (in play, in a
-/// threat area, an investigator card, in hand, the current act or agenda) reads
+/// threat area, an investigator card, in hand, committed to the in-flight skill
+/// test, the current act or agenda) reads
 /// as its card's name via [`card_name`]. An investigator's panel affordances
 /// read as the investigator's name.
 ///
@@ -273,7 +274,11 @@ pub(super) fn candidate_options<T>(
 /// engine bug, because every candidate is enumerated from `state`. It trips a
 /// `debug_assert!` in tests and degrades to a neutral placeholder in a live
 /// game, never to an id's `Debug` form.
-fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) -> String {
+pub(crate) fn anchor_label(
+    state: &GameState,
+    cards: &CardRegistry,
+    anchor: &OptionTarget,
+) -> String {
     let found = match anchor {
         OptionTarget::Location(id) => state.locations.get(id).map(|l| l.name.clone()),
         OptionTarget::Enemy(id) => state.enemies.get(id).map(|e| e.name.clone()),
@@ -301,6 +306,10 @@ fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) 
         | OptionTarget::ResourcePool(id)
         | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
         OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
+        OptionTarget::CommittedCard { index } => state
+            .current_skill_test()
+            .and_then(|test| test.committed_by_active.get(index.to_usize()))
+            .map(|committed| card_name(cards, &committed.code)),
     };
     found.unwrap_or_else(|| {
         debug_assert!(

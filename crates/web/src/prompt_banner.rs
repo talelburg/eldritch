@@ -9,7 +9,9 @@
 //! waiting.
 //!
 //! It stays the home for the controls that belong nowhere on the board: a live
-//! prompt's **un-anchored** options, a `PickMultiple` commit's Confirm (submitting
+//! prompt's **un-anchored** options and those anchored to a card committed to the
+//! skill test (no board surface renders those yet), a `PickMultiple` commit's
+//! Confirm (submitting
 //! the `MultiSelect` selection), any skippable window's Pass (one per
 //! investigator still holding an option, when several do), and a fallback
 //! Confirm for an un-anchored `Confirm` the skill-test result modal is not already
@@ -87,10 +89,19 @@ pub fn PromptBanner() -> impl IntoView {
             // A decision's branches are excluded whatever their anchor: they are
             // un-anchored whenever their source has left play and the engine
             // degrades the anchor, and the modal is carrying them regardless.
+            //
+            // A committed card's option (the ST.7 result-order pick) is anchored,
+            // but no board surface renders the committed cards yet, so it homes
+            // here too, under the engine's label, which names the card.
+            // TODO(#1242): drop the `CommittedCard` arm once a committed-card
+            // surface renders the option on its card.
             let option_btns: Vec<_> = request
                 .options
                 .iter()
-                .filter(|opt| !decision_is_live && opt.target.is_none())
+                .filter(|opt| {
+                    !decision_is_live
+                        && matches!(opt.target, None | Some(OptionTarget::CommittedCard { .. }))
+                })
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;

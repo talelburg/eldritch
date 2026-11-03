@@ -132,7 +132,7 @@ fn revealed(state: GameState, commit: &[&str]) -> ApplyResult {
 fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     // Agility 3 + Numeric(-2) + 1 committed [agility] icon = 2 vs difficulty 3 →
     // fail by 1 → 1 damage. 7/8 damage → lethal → elimination drains the hand while the
-    // SkillTest frame is still live at ApplyResultAdditions / the teardown discard.
+    // SkillTest frame is still live at ApplyResults / the teardown discard.
     let r = revealed(
         drawing_grasping_hands(hurt(7, &[SURVIVAL_INSTINCT]), false),
         &[SURVIVAL_INSTINCT],

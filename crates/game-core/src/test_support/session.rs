@@ -49,7 +49,8 @@ use crate::test_support::resolver::{
 /// - **Readers** — [`prompt`](Self::prompt),
 ///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
 ///   [`state`](Self::state), [`events`](Self::events),
-///   [`offered_at`](Self::offered_at),
+///   [`offered_at`](Self::offered_at), [`offered_to`](Self::offered_to),
+///   [`offered_targets`](Self::offered_targets),
 ///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
 ///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) and
 ///   [`assert_lead_asked_between`](Self::assert_lead_asked_between) — look at the
@@ -60,10 +61,11 @@ use crate::test_support::resolver::{
 /// Where the session stopped is read off the engine's outcome alone, never off
 /// the continuation stack: the turn menu is the prompt anchored to
 /// [`TurnControl`](OptionTarget::TurnControl), any other `AwaitingInput` is a
-/// prompt, and `Done` is game over. No step matches on option labels — an
-/// option is chosen by the board entity it anchors to, or
-/// by printed position for a [`Decision`](PromptNature::Decision) alone
-/// (ADR 0011, ADR 0015).
+/// prompt, and `Done` is game over. An option is chosen by the board entity it
+/// anchors to, or by printed position for a [`Decision`](PromptNature::Decision)
+/// alone (ADR 0011, ADR 0015). One step matches on option labels:
+/// [`pick_unanchored`](Self::pick_unanchored), and only among options with no
+/// anchor, which have no other handle.
 ///
 /// ```
 /// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
@@ -553,6 +555,38 @@ impl TestSession {
         self.respond(InputResponse::PickSingle(id))
     }
 
+    /// Step: choose the un-anchored option labelled `label`, then drain. For
+    /// an option with no board entity to pick it by: the ST.7 result order
+    /// prompt's scenario-token result (the Cultist's horror), or a card result
+    /// whose card is in limbo (Rotting Remains 01163's Revelation). An anchored
+    /// option is picked by its anchor, with [`pick`](Self::pick).
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, or unless exactly one un-anchored option is
+    /// labelled `label`.
+    #[track_caller]
+    pub fn pick_unanchored(self, label: &str) -> Self {
+        self.assert_off_turn_menu("pick_unanchored");
+        let request = self.prompt();
+        let matching: Vec<OptionId> = request
+            .options
+            .iter()
+            .filter(|option| option.target.is_none() && option.label == label)
+            .map(|option| option.id)
+            .collect();
+        let [id] = matching[..] else {
+            panic!(
+                "TestSession::pick_unanchored: {} un-anchored option(s) are labelled {label:?}, \
+                 not one. Prompt {:?} offers {:?}",
+                matching.len(),
+                request.prompt,
+                request.options,
+            );
+        };
+        self.respond(InputResponse::PickSingle(id))
+    }
+
     /// Step: answer the lead's choice of who takes the next Investigation turn
     /// by naming `investigator`, then drain. Picks the option on their
     /// investigator card, so the lead answers, as [`pick`](Self::pick) does.
@@ -865,6 +899,20 @@ impl TestSession {
             .options
             .iter()
             .map(|option| option.investigator)
+            .collect()
+    }
+
+    /// The anchor of each of the current prompt's options, in option order:
+    /// where each one renders, `None` for an un-anchored option.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_targets(&self) -> Vec<Option<OptionTarget>> {
+        self.prompt()
+            .options
+            .iter()
+            .map(|option| option.target.clone())
             .collect()
     }
 

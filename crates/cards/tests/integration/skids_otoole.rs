@@ -17,13 +17,15 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, CommittedIndex, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, enemy, location, seat, AnyKind, Printed, Seat, TestSession};
+use game_core::test_support::{
+    self, enemy, location, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
+};
 
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -374,4 +376,183 @@ fn the_elder_sign_gains_nothing_when_the_test_fails() {
     assert_event!(session.events(), Event::SkillTestFailed { by: 1, .. });
     assert_no_event!(session.events(), Event::ResourcesGained { .. });
     assert_eq!(resources(session.state()), 5);
+}
+
+/// Skids ending his turn with Frozen in Fear 01164 in his threat area, on the
+/// elder sign: *"**Forced** - At the end of your turn: Test \[willpower\] (3).
+/// If you succeed, discard Frozen in Fear."* Willpower 2 + 2 succeeds, so two
+/// ST.7 results are pending, Frozen in Fear's discard and the elder sign's 2
+/// resources, and RR ST.7 gives him the order: *"If there are multiple results
+/// to be applied during this step, the investigator performing the test
+/// applies those results in the order of his or her choice."* Returns the
+/// session at that prompt.
+fn ending_his_turn_frozen_in_fear_on_the_elder_sign() -> TestSession {
+    staged(skids().threat_area([FROZEN_IN_FEAR]))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+        .session()
+        .take(&TurnAction::EndTurn)
+        .commit(&[])
+}
+
+/// The card result's option anchors to Frozen in Fear in his threat area, and
+/// the elder sign's to his investigator card, which prints it.
+#[test]
+fn the_elder_signs_result_is_offered_on_his_card_beside_frozen_in_fears() {
+    let session = ending_his_turn_frozen_in_fear_on_the_elder_sign();
+    let state = session.state();
+    let frozen = state.card(INV, FROZEN_IN_FEAR);
+    let card = state.investigators[&INV].card_anchor();
+    assert_eq!(
+        session.offered_targets(),
+        [Some(frozen), Some(card)],
+        "{:?}",
+        session.prompt()
+    );
+}
+
+/// Either order resolves both: Frozen in Fear is discarded and he gains 2.
+#[test]
+fn both_orders_discard_frozen_in_fear_and_gain_two() {
+    for elder_sign_first in [false, true] {
+        let session = ending_his_turn_frozen_in_fear_on_the_elder_sign();
+        let first = if elder_sign_first {
+            session.state().investigators[&INV].card_anchor()
+        } else {
+            session.state().card(INV, FROZEN_IN_FEAR)
+        };
+        let session = session.pick(first);
+        assert!(
+            !session.state().investigators[&INV]
+                .threat_area
+                .iter()
+                .any(|c| c.code.as_str() == FROZEN_IN_FEAR),
+            "Frozen in Fear is discarded (elder sign first: {elder_sign_first})",
+        );
+        assert_event!(
+            session.events(),
+            Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV
+        );
+    }
+}
+
+/// Overpower 01091: *"Max 1 committed per skill test. If this test is
+/// successful, draw 1 card."*
+const OVERPOWER: &str = "01091";
+/// Paranoia 01097: *"**Revelation** - Discard all your resources."*
+const PARANOIA: &str = "01097";
+/// Holy Rosary 01059, deck filler under Paranoia.
+const HOLY_ROSARY: &str = "01059";
+/// Unexpected Courage 01093: *"Max 1 committed per skill test."* Two wild
+/// icons and no result of its own.
+const UNEXPECTED_COURAGE: &str = "01093";
+const ENEMY: EnemyId = EnemyId(5);
+
+/// Skids, with his stock 5 resources, fighting an enemy engaged with him with
+/// `committed` committed from his hand, on the elder sign, and Paranoia on top
+/// of his deck. With Overpower among them, combat 3 + Overpower's 2 icons + 2
+/// succeeds against fight 3, so two ST.7 results are pending once the attack's
+/// damage lands: the elder sign's *"If you succeed, gain 2 resources."* and
+/// Overpower's draw. RR ST.7: *"If there are multiple results to be applied
+/// during this step, the investigator performing the test applies those
+/// results in the order of his or her choice."* Returns the session at that
+/// prompt.
+fn fighting_on_the_elder_sign(committed: &[&str]) -> TestSession {
+    staged(
+        skids()
+            .hand(committed.iter().copied())
+            .deck([PARANOIA, HOLY_ROSARY, HOLY_ROSARY]),
+    )
+    .with_enemy(enemy(ENEMY).fight(3).health(3).at(HERE).engaged_with(INV))
+    .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+    .session()
+    .take(&TurnAction::Fight {
+        investigator: INV,
+        enemy: ENEMY,
+    })
+    // His `[fast]` ability keeps the test's player windows open: pass them.
+    .skip()
+    .commit(committed)
+    .skip()
+}
+
+/// The attack's damage lands before he is asked, and the prompt offers the
+/// elder sign's result on his investigator card and Overpower's on the
+/// committed card.
+#[test]
+fn overpower_and_the_elder_sign_are_offered_after_the_attacks_damage() {
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]);
+    assert_eq!(session.state().enemies[&ENEMY].damage, 1);
+    assert_eq!(resources(session.state()), 5, "nothing is applied yet");
+    assert_eq!(
+        session.offered_targets(),
+        [
+            Some(session.state().investigators[&INV].card_anchor()),
+            Some(OptionTarget::CommittedCard {
+                index: CommittedIndex(0)
+            }),
+        ],
+        "{:?}",
+        session.prompt()
+    );
+}
+
+/// Drawing first, Paranoia discards the 5 he has, and the elder sign's 2 then
+/// apply with no further prompt: he ends at 2.
+#[test]
+fn drawing_paranoia_before_the_elder_sign_keeps_its_two_resources() {
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]).pick(OptionTarget::CommittedCard {
+        index: CommittedIndex(0),
+    });
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesDiscarded { investigator, amount: 5 } if *investigator == INV,
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 2);
+}
+
+/// Gaining first, he has 7 when Overpower's draw applies with no further
+/// prompt, and Paranoia discards them all: he ends at 0.
+#[test]
+fn gaining_the_elder_signs_resources_before_drawing_paranoia_loses_them() {
+    let session = fighting_on_the_elder_sign(&[OVERPOWER]);
+    let card = session.state().investigators[&INV].card_anchor();
+    let session = session.pick(card);
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+        Event::ResourcesDiscarded { investigator, amount: 7 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 0);
+}
+
+/// With Unexpected Courage committed ahead of Overpower, Overpower's draw is
+/// the first result addition but the second committed card, and its option
+/// anchors to its place in the committed list. Picking it draws Paranoia
+/// before the elder sign's 2 resources: he ends at 2.
+#[test]
+fn an_addition_behind_a_card_with_none_anchors_to_its_committed_place() {
+    let session = fighting_on_the_elder_sign(&[UNEXPECTED_COURAGE, OVERPOWER]);
+    let overpower = OptionTarget::CommittedCard {
+        index: CommittedIndex(1),
+    };
+    assert_eq!(
+        session.offered_targets(),
+        [
+            Some(session.state().investigators[&INV].card_anchor()),
+            Some(overpower.clone()),
+        ],
+        "{:?}",
+        session.prompt()
+    );
+    let session = session.pick(overpower);
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ResourcesDiscarded { investigator, amount: 5 } if *investigator == INV,
+        Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV,
+    );
+    assert_eq!(resources(session.state()), 2);
 }

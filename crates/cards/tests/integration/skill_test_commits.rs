@@ -136,7 +136,7 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
     );
     // Both ended up in discard, in commit order — ST.8 empties the in-flight
     // record's limbo list, which holds the cards in the order they were
-    // committed (the same order the ST.7 result modifiers and additions apply in).
+    // committed (the same order the ST.7 result modifiers apply in).
     assert_eq!(
         inv.discard,
         vec![CardCode::new(PERCEPTION), CardCode::new(UNEXPECTED_COURAGE),],

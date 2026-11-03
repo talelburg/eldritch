@@ -46,6 +46,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #580 | Room registry: each game loads once, off the global lock and the async workers, and is evicted after 10 idle minutes, PR #1285; slices #1282, #1283, #1284 |
 | #581 | Seat identity on the wire: every answer names its investigator, each account gets its own messages, with #1230, PR #1297 |
 | #583 | Wire versioning: `Hello` carries the build, with #1230, PR #1297 |
+| #642 | When two or more ST.7 results are pending, the performer picks which applies next; modifiers and the follow-up stay first and Retaliate last, PR #1315; slices #1312, #1313, #1314 |
 | #662 | A barricade-stranded enemy engages the investigators left at the origin, PR #1299 |
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
@@ -98,7 +99,7 @@ landed, before phase 9 is scoped.
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 → #65. #359 and #1061 follow #1086 and pair on one
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65. #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
