@@ -3184,7 +3184,7 @@ pub enum InvestigatorTarget {
     /// [`Effect::ChooseInvestigator`]. It names the pick already made rather
     /// than making a new one, so it never prompts, and it reads the same pick
     /// in a skill test's result branches as before the test (Medical Texts
-    /// 01035: *"Choose an investigator at your location and test [intellect]
+    /// 01035: *"Choose an investigator at your location and test \[intellect\]
     /// (2). If you succeed, heal 1 damage from that investigator."*). Resolving
     /// it outside a `ChooseInvestigator` is a rejection.
     That,

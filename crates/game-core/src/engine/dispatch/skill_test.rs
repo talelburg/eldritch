@@ -124,7 +124,7 @@ pub(in crate::engine) enum SkillTestSpec {
         /// Resolved at ST.7 on failure.
         on_fail: Option<Effect>,
         /// The investigator an enclosing
-        /// [`Effect::ChooseInvestigator`](card_dsl::dsl::Effect::ChooseInvestigator)
+        /// [`Effect::ChooseInvestigator`]
         /// kept, carried into the test so `on_success` / `on_fail` read it
         /// at ST.7 ([`InFlightSkillTest::kept_investigator`]). `None` outside
         /// one.

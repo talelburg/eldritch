@@ -1507,11 +1507,11 @@ pub struct InFlightSkillTest {
     /// out to find itself.
     pub source: Option<AbilitySource>,
     /// The investigator an enclosing
-    /// [`Effect::ChooseInvestigator`](card_dsl::dsl::Effect::ChooseInvestigator)
+    /// [`Effect::ChooseInvestigator`]
     /// picked before this test started, parked beside
     /// [`source`](Self::source) so the `on_success` / `on_fail` eval-context
     /// rebuilt at ST.7 still reads it as *"that investigator"* (Medical Texts
-    /// 01035: *"Choose an investigator at your location and test [intellect]
+    /// 01035: *"Choose an investigator at your location and test \[intellect\]
     /// (2). If you succeed, heal 1 damage from that investigator."*). `None`
     /// for every test not started under one.
     ///
