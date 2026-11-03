@@ -279,3 +279,52 @@ fn each_committed_card_goes_to_its_owners_discard_pile() {
         assert!(state.investigators[&investigator].hand.is_empty());
     }
 }
+
+/// Opportunist 01053: *"Commit only to a skill test you are performing."* One
+/// wild icon, so only the restriction keeps it off Roland's Intellect test.
+const OPPORTUNIST: &str = "01053";
+
+/// Opportunist isn't offered to a helper: the test is Roland's, not Daisy's.
+#[test]
+fn a_helper_is_not_offered_opportunist() {
+    let session = rolands_test_with_daisy_holding(&[OPPORTUNIST, UNEXPECTED_COURAGE]);
+    assert_eq!(session.prompt().responder, Responder::Investigator(DAISY));
+    assert_eq!(session.offered_at(&daisys_card(0)), 0, "Opportunist");
+    assert_eq!(session.offered_at(&daisys_card(1)), 1, "Unexpected Courage");
+}
+
+/// Roland's hand card at `hand_index`, as an option anchor.
+fn rolands_card(hand_index: u8) -> OptionTarget {
+    OptionTarget::HandCard {
+        investigator: ROLAND,
+        hand_index,
+    }
+}
+
+/// The performer is still offered their own Opportunist, with a helper beside
+/// them holding one too.
+#[test]
+fn the_performer_is_offered_their_own_opportunist() {
+    let session = board_with_roland_holding(&[OPPORTUNIST], seat(2).at(HERE).hand([OPPORTUNIST]))
+        .session()
+        .test_skill(ROLAND, SkillKind::Intellect, 5);
+    assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
+    assert_eq!(session.offered_at(&rolands_card(0)), 1);
+}
+
+/// Guts 01089: *"Max 1 committed per skill test."* Two willpower icons. Its
+/// ruling (<https://arkhamdb.com/card/01089>): *"\"Max 1 per skill test\"
+/// across all players."*
+const GUTS: &str = "01089";
+
+/// Once Daisy commits Guts to Roland's Willpower test the cap is reached
+/// across all players, so Roland's prompt doesn't offer his own copy.
+#[test]
+fn after_a_helper_commits_guts_the_performer_is_not_offered_guts() {
+    let session = board_with_roland_holding(&[GUTS], seat(2).at(HERE).hand([GUTS]))
+        .session()
+        .test_skill(ROLAND, SkillKind::Willpower, 1)
+        .commit(&[GUTS]);
+    assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
+    assert_eq!(session.offered_at(&rolands_card(0)), 0, "Roland's Guts");
+}

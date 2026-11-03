@@ -8,11 +8,9 @@
 //!
 //! 1 wild icon. No rulings (`data/arkhamdb-faq/no-rulings.txt`).
 //!
-//! The commit restriction is checked against the committing investigator, but
-//! only the investigator performing a test can commit to it today, so the
-//! restriction cannot be broken through `apply`.
-// TODO(#65): once other investigators can commit, test that Opportunist can't
-// be committed to another investigator's skill test.
+//! The commit restriction is checked against the committing investigator; its
+//! tests, which need a second investigator at the performer's location, are in
+//! `helper_commits.rs`.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 

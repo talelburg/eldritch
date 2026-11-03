@@ -2394,7 +2394,9 @@ struct CommitBy {
 }
 
 /// The hand indices of the committer's cards that may be committed to a test
-/// of `skill`, in hand order: the commit window's candidates ([`may_commit`]).
+/// of `skill`, in hand order: the commit window's candidates. Each passes
+/// [`may_commit`], and its title still has a copy left of its commit cap
+/// ([`remaining_allowance`]), counting every committer's cards so far.
 fn commit_candidates(
     state: &GameState,
     cards: &CardRegistry,
@@ -2402,8 +2404,38 @@ fn commit_candidates(
     skill: SkillKind,
 ) -> Vec<u8> {
     hand_pick::candidates(state, by.committer, |code| {
-        may_commit(cards, code, by, skill)
+        may_commit(cards, code, by, skill) && remaining_allowance(state, cards, code) != Some(0)
     })
+}
+
+/// How many more copies of `code`'s title may be committed to the in-flight
+/// test, under its printed "Max N committed per skill test" (`CardKind::Skill`'s
+/// `commit_limit`, Guts 01089), or `None` if the card has no cap or no registry
+/// entry.
+///
+/// The cap counts every committer, and keys on the title rather than the code.
+/// `glossary/Limits_and_Maximums.md`: a limit *"imposes a maximum across all
+/// copies of a card (by title) for all players."*
+///
+/// The one reading of the cap: the commit window's candidates
+/// ([`commit_candidates`]) and the resume check ([`check_commit_limits`]) both
+/// take it from here, so the two can't disagree.
+fn remaining_allowance(state: &GameState, cards: &CardRegistry, code: &CardCode) -> Option<u8> {
+    let meta = (cards.metadata_for)(code)?;
+    let CardKind::Skill {
+        commit_limit: Some(limit),
+        ..
+    } = meta.kind
+    else {
+        return None;
+    };
+    let committed = state.current_skill_test().map_or(0, |test| {
+        test.committed
+            .iter()
+            .filter(|card| (cards.metadata_for)(&card.code).is_some_and(|m| m.name == meta.name))
+            .count()
+    });
+    Some(limit.saturating_sub(u8::try_from(committed).unwrap_or(u8::MAX)))
 }
 
 /// Whether the card `code` may be committed to a test of `skill`, on its own.
@@ -2425,8 +2457,6 @@ fn may_commit(cards: &CardRegistry, code: &CardCode, by: CommitBy, skill: SkillK
         return true;
     };
     // Opportunist 01053: *"Commit only to a skill test you are performing."*
-    // TODO(#65): unreachable through `apply` until another investigator can
-    // commit; test it then.
     let own_test_only = matches!(
         meta.kind,
         CardKind::Skill {
@@ -2438,10 +2468,10 @@ fn may_commit(cards: &CardRegistry, code: &CardCode, by: CommitBy, skill: SkillK
 }
 
 /// Check a commit of the `committer`'s hand cards at `indices` against each
-/// card's printed "Max N committed per skill test" (`CardKind::Skill`'s
-/// `commit_limit`, Guts 01089), and return `indices` if it holds. A card with
-/// no cap, or no registry entry, is unconstrained. The limit binds a set, not
-/// a card, so the window offers every copy and this rejects the response.
+/// title's [`remaining_allowance`], and return `indices` if it holds. A card
+/// with no cap, or no registry entry, is unconstrained. The window offers
+/// every copy of a title with any allowance left, so a pick of more copies
+/// than are left is rejected here.
 fn check_commit_limits(
     state: &GameState,
     cards: &CardRegistry,
@@ -2449,21 +2479,22 @@ fn check_commit_limits(
     indices: Vec<u8>,
 ) -> Result<Vec<u8>, EngineOutcome> {
     let hand = &state.investigators[&committer].hand;
-    let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
+    // Copies picked per title, with a code to look the allowance up by.
+    let mut picked: BTreeMap<&str, (&CardCode, u8)> = BTreeMap::new();
     for &i in &indices {
-        *counts.entry(&hand[usize::from(i)]).or_insert(0) += 1;
+        let code = &hand[usize::from(i)];
+        let Some(meta) = (cards.metadata_for)(code) else {
+            continue;
+        };
+        picked.entry(meta.name.as_str()).or_insert((code, 0)).1 += 1;
     }
-    for (code, count) in counts {
-        let cap = (cards.metadata_for)(code).and_then(|m| match m.kind {
-            CardKind::Skill { commit_limit, .. } => commit_limit,
-            _ => None,
-        });
-        if let Some(limit) = cap {
-            if count > limit {
+    for (title, (code, count)) in picked {
+        if let Some(left) = remaining_allowance(state, cards, code) {
+            if count > left {
                 return Err(EngineOutcome::Rejected {
                     reason: format!(
-                        "skill-test commit: {code} allows at most {limit} committed per skill \
-                         test, but {count} were committed"
+                        "skill-test commit: {left} more {title} ({code}) may be committed to \
+                         this skill test, but {count} were picked"
                     )
                     .into(),
                 });
