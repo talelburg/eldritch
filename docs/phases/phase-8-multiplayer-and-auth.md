@@ -46,6 +46,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #580 | Room registry: each game loads once, off the global lock and the async workers, and is evicted after 10 idle minutes, PR #1285; slices #1282, #1283, #1284 |
 | #581 | Seat identity on the wire: every answer names its investigator, each account gets its own messages, with #1230, PR #1297 |
 | #583 | Wire versioning: `Hello` carries the build, with #1230, PR #1297 |
+| #642 | When two or more ST.7 results are pending, the performer picks which applies next; modifiers and the follow-up stay first and Retaliate last, PR #1315; slices #1312, #1313, #1314 |
 | #662 | A barricade-stranded enemy engages the investigators left at the origin, PR #1299 |
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
