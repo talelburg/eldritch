@@ -98,7 +98,7 @@ landed, before phase 9 is scoped.
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 → #65. #359 and #1061 follow #1086 and pair on one
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65. #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
