@@ -91,8 +91,10 @@ pub fn PromptBanner() -> impl IntoView {
             // degrades the anchor, and the modal is carrying them regardless.
             //
             // A committed card's option (the ST.7 result-order pick) is anchored,
-            // but no board surface renders the committed cards yet (#1242), so it
-            // homes here too, under the engine's label, which names the card.
+            // but no board surface renders the committed cards yet, so it homes
+            // here too, under the engine's label, which names the card.
+            // TODO(#1242): drop the `CommittedCard` arm once a committed-card
+            // surface renders the option on its card.
             let option_btns: Vec<_> = request
                 .options
                 .iter()

@@ -450,9 +450,9 @@ async fn banner_renders_only_unanchored_options() {
 }
 
 /// The ST.7 result-order prompt anchors a committed card's result to its place
-/// in the committed list, which no board surface renders yet (#1242), so the
-/// banner homes it, labelled with the card's name (ADR 0011: an option anchored
-/// to a surface the client does not render is unreachable).
+/// in the committed list, which no board surface renders yet, so the banner
+/// homes it, labelled with the card's name, rather than leave it unreachable
+/// (ADR 0011's committed-card stopgap).
 #[wasm_bindgen_test]
 async fn a_committed_cards_option_renders_on_the_banner() {
     let outcome = test_support::awaiting_pick_single_with(

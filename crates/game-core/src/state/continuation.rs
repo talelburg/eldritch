@@ -1837,7 +1837,7 @@ pub enum SkillTestStep {
     /// RR ST.7 — apply the pending ST.7 results one at a time. Each visit takes
     /// one entry out of `pending`, pre-advances to `ApplyResults` with the rest
     /// **before** pushing its effect, and yields, so a result that suspends
-    /// (a sanity soak, Holy Rosary 01028, on an [`Effect::Deal`]) resumes at the
+    /// (a sanity soak, Holy Rosary 01059, on an [`Effect::Deal`]) resumes at the
     /// next entry. An entry records only which result it is: its effect is
     /// looked up and evaluated when it is applied, with the test's margin bound.
     /// When nothing is pending, advances to [`PostRetaliate`](Self::PostRetaliate).

@@ -1,7 +1,7 @@
-//! RR ST.7's results in the performer's order (#1312), through a real
-//! treachery and a real scenario token.
+//! RR ST.7's results in the performer's order, through a real treachery and a
+//! real scenario token.
 //!
-//! Rotting Remains 01163: *"Revelation - Test [willpower] (3). For each point
+//! Rotting Remains 01163: *"Revelation - Test \[willpower\] (3). For each point
 //! you fail by, take 1 horror."* The Gathering 01104's Cultist token: *"-1. If
 //! you fail, take 1 horror."* Failing the test on the Cultist leaves two ST.7
 //! results pending, and RR ST.7 (`Appendix_II_Timing_and_Gameplay.md`) gives
