@@ -75,6 +75,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
+| #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
 
 ## Ordering
 
@@ -103,7 +104,7 @@ landed, before phase 9 is scoped.
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
 - ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
-  choose-and-keep primitive.
+  choose-and-keep primitive, specced in #1323 (✅ PR #1326).
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
 **4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
