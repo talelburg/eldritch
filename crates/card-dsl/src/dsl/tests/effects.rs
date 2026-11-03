@@ -62,6 +62,35 @@ fn for_each_over_an_enemy_set_is_an_enemy_fan_out() {
     );
 }
 
+/// `choose_investigator` boxes the effect the pick is kept for, under the
+/// scope the pick is offered from (Scrying 01061's *"any investigator's
+/// deck"*).
+#[test]
+fn choose_investigator_keeps_the_pick_for_its_then() {
+    let effect = choose_investigator(LocationSet::Anywhere, native("01061:probe"));
+    assert_eq!(
+        effect,
+        Effect::ChooseInvestigator {
+            scope: LocationSet::Anywhere,
+            then: Box::new(Effect::Native {
+                tag: "01061:probe".into()
+            }),
+        }
+    );
+}
+
+/// `choose_investigator` survives a serde round trip.
+#[test]
+fn choose_investigator_round_trips_through_serde_json() {
+    let effect = choose_investigator(
+        LocationSet::Here,
+        gain_resources(InvestigatorTarget::You, 1),
+    );
+    let json = serde_json::to_string(&effect).expect("serialize");
+    let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(effect, recovered);
+}
+
 /// `choose_one` accepts an iterable like `seq`.
 #[test]
 fn choose_one_collects_alternatives() {

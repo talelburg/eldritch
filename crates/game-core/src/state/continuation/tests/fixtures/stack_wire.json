@@ -189,7 +189,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         },
         "prompt": null
       }
@@ -209,7 +210,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         }
       }
     }
@@ -231,7 +233,8 @@
           "committed_card": null,
           "choice": null,
           "ability_source": null,
-          "each": null
+          "each": null,
+          "kept_investigator": null
         }
       }
     }

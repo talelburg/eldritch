@@ -26,6 +26,22 @@ fn an_effect_native_inside_a_seq_is_reported_as_an_effect() {
 }
 
 #[test]
+fn an_effect_native_under_a_choose_investigator_is_reported_as_an_effect() {
+    let ability = activated(
+        1,
+        vec![],
+        choose_investigator(
+            LocationSet::Anywhere,
+            seq([native("x:first"), native("x:second")]),
+        ),
+    );
+    assert_eq!(
+        ability.native_refs(),
+        [effect_ref("x:first"), effect_ref("x:second")]
+    );
+}
+
+#[test]
 fn an_ability_with_no_natives_references_nothing() {
     let ability = activated_as(
         fight(
