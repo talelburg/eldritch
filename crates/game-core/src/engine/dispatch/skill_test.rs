@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, ResultContribution, RevealClause, SkillTestKind, Stat,
-    TestOutcome, TokenOutcome, Trigger,
+    Determination, Effect, IntExpr, ResultContribution, ResultController, RevealClause,
+    SkillTestKind, Stat, TestOutcome, TokenOutcome, Trigger,
 };
 
 use crate::action::InputResponse;
@@ -20,7 +20,9 @@ use crate::engine::dispatch::actions::evade::{self, EvadeModification};
 use crate::engine::dispatch::actions::fight::{self, FightModification};
 use crate::engine::dispatch::actions::investigate::{self, InvestigateModification};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, coordinator, emit, hand_pick, prompt, reaction_windows};
+use crate::engine::dispatch::{
+    choice, coordinator, cursor, emit, hand_pick, prompt, reaction_windows,
+};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
@@ -330,7 +332,7 @@ pub(in crate::engine) fn start_skill_test(
             skill,
             kind,
             difficulty_basis,
-            committed_by_active: Vec::new(),
+            committed: Vec::new(),
             tested_location,
             follow_up,
             on_fail,
@@ -431,7 +433,7 @@ pub(crate) fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     let card = cx
         .state
         .current_skill_test_mut()
-        .and_then(|t| t.committed_by_active.get_mut(usize::from(index)));
+        .and_then(|t| t.committed.get_mut(usize::from(index)));
     debug_assert!(
         card.is_some(),
         "return_committed_card_to_hand: no committed card at {index} on an in-flight test",
@@ -582,53 +584,75 @@ pub(in crate::engine) fn resume_substitution_choice(
 }
 
 /// Commit-stage entry to the skill-test resolution driver. Handles the
-/// response to the
-/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) the engine emitted at
-/// the commit window: map the selected options back to the hand cards
-/// [`commit_request`] offered, validate the set, persist it onto the in-flight
-/// record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`], and
-/// return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
-/// the resolution body ([`run_resolution`]) and the remaining steps.
+/// response to an ST.2 commit prompt: a helper's
+/// ([`helper_commit_request`], at [`SkillTestStep::AwaitingHelperCommit`]) or
+/// the performer's ([`commit_request`], at [`SkillTestStep::AwaitingCommit`]).
+/// Map the selected options back to the hand cards the prompt offered,
+/// validate the set, and append it to the in-flight test's committed list.
+/// Then pre-advance the cursor: past a helper's answer to
+/// [`SkillTestStep::NextHelper`] after them, past the performer's to
+/// [`SkillTestStep::PreTokenWindow`]. Returns [`EngineOutcome::Done`] so the
+/// `drive` loop's `SkillTest` arm runs the remaining steps.
 ///
 /// On invalid input (no in-flight test, an option not offered or named twice,
-/// a set over a card's commit limit, or continuation already advanced) returns
-/// [`EngineOutcome::Rejected`] with no state change and no events pushed — the
-/// engine stays paused so the caller can submit a fixed-up response.
+/// a helper's pick of more than one card, a set over a card's commit limit, or
+/// a cursor not at a commit prompt) returns [`EngineOutcome::Rejected`] with no
+/// state change and no events pushed — the engine stays paused so the caller
+/// can submit a fixed-up response.
 pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOutcome {
     let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: "skill-test commit: no in-flight skill test to resume".into(),
         };
     };
-    if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "skill-test commit: commit window already closed (continuation {:?}); \
-                 the engine is mid-resolution, not at the commit step",
-                in_flight.continuation,
+    let performer = in_flight.investigator;
+    let (committer, next) = match in_flight.continuation {
+        SkillTestStep::AwaitingHelperCommit { helper } => {
+            // ST.2: a helper *"may commit one card"*. A request's count is not
+            // enforced generically, so the one-card limit is checked here.
+            if selected.len() > 1 {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "skill-test commit: a helper may commit one card to another \
+                         investigator's test, but {} were picked",
+                        selected.len(),
+                    )
+                    .into(),
+                };
+            }
+            (
+                helper,
+                SkillTestStep::NextHelper {
+                    after: Some(helper),
+                },
             )
-            .into(),
-        };
-    }
-    let investigator = in_flight.investigator;
+        }
+        SkillTestStep::AwaitingCommit => (performer, SkillTestStep::PreTokenWindow),
+        other => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "skill-test commit: commit window already closed (continuation {other:?}); \
+                     the engine is mid-resolution, not at the commit step",
+                )
+                .into(),
+            };
+        }
+    };
     // The skill as the commit window sees it: a substitution (Mind over Matter
     // 01036) has already rewritten it by now, and ST.2's icon check matches
     // against the skill actually being tested.
     let skill = in_flight.skill;
 
-    // Map the selection back to the hand cards the window offered, and check
+    // Map the selection back to the hand cards the prompt offered, and check
     // the set against the commit limits. On Err, state is untouched and the
     // engine stays paused so the client can retry.
-    //
-    // The committer is the investigator performing the test: only they commit
-    // today. TODO(#65): let another investigator at the same location commit.
     let by = CommitBy {
-        committer: investigator,
-        performer: investigator,
+        committer,
+        performer,
     };
     let candidates = commit_candidates(cx.state, cx.cards, by, skill);
     let indices_u8 = match hand_pick::picked(selected, &candidates, "skill-test commit")
-        .and_then(|indices| check_commit_limits(cx.state, cx.cards, investigator, indices))
+        .and_then(|indices| check_commit_limits(cx.state, cx.cards, committer, indices))
     {
         Ok(v) => v,
         Err(rejected) => return rejected,
@@ -654,11 +678,11 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
     let inv = cx
         .state
         .investigators
-        .get_mut(&investigator)
-        .expect("the window offered cards from the investigator's hand");
-    let committed: Vec<CommittedCard> = indices_u8
+        .get_mut(&committer)
+        .expect("the prompt offered cards from the committer's hand");
+    let picked: Vec<CommittedCard> = indices_u8
         .iter()
-        .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone()))
+        .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone(), committer))
         .collect();
     let mut descending = indices_u8;
     descending.sort_unstable_by(|a, b| b.cmp(a));
@@ -666,17 +690,17 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
         inv.hand.remove(usize::from(i));
     }
 
-    // Persist the committed cards and pre-advance the cursor to
-    // `PreTokenWindow`, then park: return `Done` so the `drive` loop's
-    // `SkillTest` arm (dispatch/mod.rs) runs the resolution body from there.
+    // Append the committed cards (helpers' first, in queue order, then the
+    // performer's) and pre-advance the cursor, then park: return `Done` so the
+    // `drive` loop's `SkillTest` arm (dispatch/mod.rs) drives on from there.
     // The frame stays on top and `resolve_input`'s caller drives it
     // (apply_player_action runs `drive` after this returns).
     let t = cx
         .state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above");
-    t.committed_by_active = committed;
-    t.continuation = SkillTestStep::PreTokenWindow;
+    t.committed.extend(picked);
+    t.continuation = next;
     EngineOutcome::Done
 }
 
@@ -1114,6 +1138,13 @@ fn resolved(cx: &Cx) -> ResolvedTest {
 /// non-suspending accumulator writes, so the loop drives the `Seq` and
 /// re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
 /// now-populated accumulators.
+///
+/// The combined `Seq` runs for the performer, so each modifier's
+/// [`ResultController`] is not read: every modifier declares
+/// [`Performer`](ResultController::Performer) ([`card_dsl::dsl::modifies_result`]),
+/// and a debug build asserts it, so a modifier declaring
+/// [`Committer`](ResultController::Committer) can't silently run for the
+/// performer.
 fn apply_result_modifiers_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -1123,7 +1154,15 @@ fn apply_result_modifiers_step(
     let effects: Vec<Effect> =
         collect_result_contributions(cx.cards, committed, succeeded, ResultContribution::Modifies)
             .into_iter()
-            .map(|(_, effect)| effect)
+            .map(|(index, effect, controller)| {
+                debug_assert_eq!(
+                    controller,
+                    ResultController::Performer,
+                    "the result modifier on committed card {index:?} declares {controller:?}, \
+                     but modifiers run for the performer",
+                );
+                effect
+            })
             .collect();
     cx.state
         .current_skill_test_mut()
@@ -1285,14 +1324,7 @@ pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
     // it folds and the clamp applied once at the end.
-    let total = sum_skill_value(
-        state,
-        cards,
-        t.investigator,
-        t.skill,
-        t.kind,
-        &t.committed_by_active,
-    );
+    let total = sum_skill_value(state, cards, t.investigator, t.skill, t.kind, &t.committed);
     // Both quantities above already carry the ST.6 substitution, applied as
     // the last stage of the fold that produced them:
     // `glossary/Automatic_Failure_Success.md` — *"If a skill test
@@ -1593,12 +1625,12 @@ fn result_option(
             let card = test.resolved.and_then(|resolved| {
                 collect_result_contributions(
                     cards,
-                    &test.committed_by_active,
+                    &test.committed,
                     resolved.succeeded,
                     ResultContribution::Adds,
                 )
                 .get(index.to_usize())
-                .map(|&(card, _)| card)
+                .map(|&(card, _, _)| card)
             });
             let target = card.map(|index| OptionTarget::CommittedCard { index });
             let label = target.as_ref().map_or_else(
@@ -1691,7 +1723,7 @@ pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> Engi
             .into(),
         };
     };
-    let (investigator, committed) = (t.investigator, t.committed_by_active.clone());
+    let (investigator, committed) = (t.investigator, t.committed.clone());
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
@@ -1770,13 +1802,15 @@ fn apply_result(
         )
         .into_iter()
         .nth(index.to_usize())
-        .map(|(card_index, effect)| {
-            // TODO(#65): bind the investigator who committed the card, not the
-            // performer. Overpower 01091's ruling
-            // (https://arkhamdb.com/card/01091): *"If you commit this card to
-            // another player's skill test, and the test is successful, you draw
-            // a card (not the other player)."*
-            let mut ctx = EvalContext::for_controller(investigator);
+        .map(|(card_index, effect, controller)| {
+            // Overpower 01091's ruling (https://arkhamdb.com/card/01091): *"If
+            // you commit this card to another player's skill test, and the test
+            // is successful, you draw a card (not the other player)."*
+            let controller = match controller {
+                ResultController::Committer => committed[card_index.to_usize()].committer,
+                ResultController::Performer => investigator,
+            };
+            let mut ctx = EvalContext::for_controller(controller);
             ctx.set_committed_card(card_index.0);
             (effect, ctx)
         }),
@@ -1797,16 +1831,95 @@ fn token_result_part(outcome: &TokenOutcome, succeeded: bool) -> Option<Effect> 
     }
 }
 
-/// What a skill test at its commit window asks (the `AwaitingCommit` step). The
-/// test parks there for the active investigator's commit; a Resolution frame
-/// pushed *above* it is a mid-test window. The commit `ResolveInput` resumes
-/// via `finish_skill_test`. One of the [prompt table](super::prompt::request)'s
-/// helpers.
+/// The next helper of the in-flight test's [commit
+/// queue](SkillTestStep::NextHelper) after `after` (`None`: the first), or
+/// `None` when no helper is left.
+///
+/// A helper is an Active investigator other than the performer, at the
+/// performer's location, holding a candidate ([`helper_candidates`]) now. The
+/// walk is in player order, so with `after` it resumes past them.
+fn next_helper(
+    state: &GameState,
+    cards: &CardRegistry,
+    after: Option<InvestigatorId>,
+) -> Option<InvestigatorId> {
+    let test = state.current_skill_test()?;
+    let performer = test.investigator;
+    let location = state.investigators.get(&performer)?.current_location?;
+    let colocated = cursor::active_investigators_at(state, location);
+    let start = after.map_or(0, |after| {
+        colocated
+            .iter()
+            .position(|id| *id == after)
+            .map_or(colocated.len(), |i| i + 1)
+    });
+    colocated[start..]
+        .iter()
+        .copied()
+        .filter(|id| *id != performer)
+        .find(|&helper| !helper_candidates(state, cards, helper).is_empty())
+}
+
+/// The hand indices of `helper`'s cards they may commit to the in-flight test,
+/// which another investigator performs: the helper prompt's candidates, and
+/// what [`next_helper`] reads to skip a helper with none.
+fn helper_candidates(state: &GameState, cards: &CardRegistry, helper: InvestigatorId) -> Vec<u8> {
+    let Some(test) = state.current_skill_test() else {
+        return Vec::new();
+    };
+    commit_candidates(
+        state,
+        cards,
+        CommitBy {
+            committer: helper,
+            performer: test.investigator,
+        },
+        test.skill,
+    )
+}
+
+/// What a helper of the in-flight test is asked (the
+/// [`AwaitingHelperCommit`](SkillTestStep::AwaitingHelperCommit) step): commit
+/// at most one of their candidates ([`helper_candidates`]) to the performer's
+/// test, or none. Appendix II, ST.2: *"Each other investigator at the same
+/// location as the investigator performing the skill test may commit one card
+/// with an appropriate skill icon to this test."* The text names the
+/// performer's test, its difficulty, and the commits made so far. The answer
+/// resumes via `finish_skill_test`, which rejects a pick of more than one. One
+/// of the [prompt table](super::prompt::request)'s helpers.
+pub(super) fn helper_commit_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    helper: InvestigatorId,
+) -> InputRequest {
+    let test = state
+        .current_skill_test()
+        .expect("helper_commit_request: in-flight test must exist");
+    let candidates = helper_candidates(state, cards, helper);
+    let ask = format!(
+        "{}: commit up to one card to {}'s {} test (difficulty {}).",
+        choice::investigator_name(state, helper),
+        choice::investigator_name(state, test.investigator),
+        skill_name(test.skill),
+        current_difficulty(state, cards),
+    );
+    commit_prompt(state, cards, helper, &ask, &candidates, PickCount::up_to(1))
+}
+
+/// What a skill test at the performer's commit window asks (the
+/// `AwaitingCommit` step), after every helper has answered. The test parks
+/// there for the performer's commit; a Resolution frame pushed *above* it is a
+/// mid-test window. The commit `ResolveInput` resumes via `finish_skill_test`.
+/// One of the [prompt table](super::prompt::request)'s helpers.
 ///
 /// It offers only the cards that may be committed ([`commit_candidates`]), so
 /// a card ST.2 forbids is never offered rather than rejected once chosen. A
 /// skill's "Max N committed per skill test" limits a set rather than a card, so
 /// the count admits every offered card and the limit is checked on resume.
+///
+/// The text names each card committed so far and its committer, since nothing
+/// else shows the performer what help has come. TODO(#1322): the
+/// committed-card surface replaces that listing.
 pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
     let test = state
         .current_skill_test()
@@ -1823,16 +1936,60 @@ pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRe
     );
     // The difficulty as it stands at the commit window — what a player
     // decides how many cards to commit against. ST.6 re-reads it.
-    let difficulty = current_difficulty(state, cards);
+    let ask = format!(
+        "Commit cards to the {} test (difficulty {}).",
+        skill_name(skill),
+        current_difficulty(state, cards),
+    );
+    let count = PickCount::up_to(candidates.len());
+    commit_prompt(state, cards, investigator, &ask, &candidates, count)
+}
+
+/// A commit prompt to `committer`, offering their hand cards at `candidates`:
+/// `ask`, the commits made so far ([`committed_so_far`]), and how to commit
+/// nothing. The shared body of [`helper_commit_request`] and
+/// [`commit_request`].
+fn commit_prompt(
+    state: &GameState,
+    cards: &CardRegistry,
+    committer: InvestigatorId,
+    ask: &str,
+    candidates: &[u8],
+    count: PickCount,
+) -> InputRequest {
+    let test = state
+        .current_skill_test()
+        .expect("commit_prompt: in-flight test must exist");
     InputRequest::pick_multiple(
         format!(
-            "Commit cards to the {} test (difficulty {difficulty}). \
-             An empty selection commits no cards.",
-            skill_name(skill),
+            "{ask}{} An empty selection commits no cards.",
+            committed_so_far(state, cards, test),
         ),
-        hand_pick::options(state, cards, investigator, &candidates),
-        PickCount::up_to(candidates.len()),
+        hand_pick::options(state, cards, committer, candidates),
+        count,
     )
+}
+
+/// A commit prompt's listing of the cards committed to `test` so far, each with
+/// its committer: `" Committed so far: Unexpected Courage (Daisy Walker)."`,
+/// or empty when nothing is committed, so a solo prompt reads as it always
+/// has.
+fn committed_so_far(state: &GameState, cards: &CardRegistry, test: &InFlightSkillTest) -> String {
+    if test.committed.is_empty() {
+        return String::new();
+    }
+    let listed: Vec<String> = test
+        .committed
+        .iter()
+        .map(|card| {
+            format!(
+                "{} ({})",
+                choice::card_name(cards, &card.code),
+                choice::investigator_name(state, card.committer),
+            )
+        })
+        .collect();
+    format!(" Committed so far: {}.", listed.join(", "))
 }
 
 /// What a skill test at its result pause asks (the `AcknowledgeOutcome` step,
@@ -1951,17 +2108,18 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             (
                 in_flight.continuation,
                 in_flight.investigator,
-                in_flight.committed_by_active.clone(),
+                in_flight.committed.clone(),
                 in_flight.difficulty_basis,
                 in_flight.resolved.is_some(),
             )
         };
 
         // RR p.10 Elimination step 1 removed every card this investigator owns
-        // from the game — including the cards this test holds in limbo. Abandon
-        // the test rather than resolve it on behalf of someone who has left the
-        // scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
-        // which drops remaining attackers on the same signal.
+        // from the game — including the cards they committed to this test,
+        // which it held in limbo. Abandon the test rather than resolve it on
+        // behalf of someone who has left the scenario. Mirrors
+        // `drive_attack_loop`'s early-break (`combat.rs`), which drops
+        // remaining attackers on the same signal.
         //
         // This is the single choke point: both the `drive` loop's `SkillTest`
         // arm and the `finish_skill_test` commit hop reach the driver here.
@@ -1971,7 +2129,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             .get(&investigator)
             .is_some_and(|inv| inv.status != Status::Active)
         {
-            return tear_down_test(cx, investigator, None);
+            return tear_down_test(cx, investigator, &committed, TestEnd::PerformerEliminated);
         }
 
         // The test's difficulty *is* a quantity of some entity on the
@@ -1986,17 +2144,36 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // what defeats the enemy. Only a test that has not yet been compared
         // can still be abandoned.
         if !past_st6 && difficulty_target_left_play(cx.state, difficulty_basis) {
-            return tear_down_test(cx, investigator, Some(&committed));
+            return tear_down_test(cx, investigator, &committed, TestEnd::PerformerRemains);
         }
 
         match continuation {
             SkillTestStep::PreCommitWindow => {
                 // RR p.26 player window after ST.1.
-                return open_skill_test_player_window(cx, SkillTestStep::AwaitingCommit, false);
+                return open_skill_test_player_window(
+                    cx,
+                    SkillTestStep::NextHelper { after: None },
+                    false,
+                );
             }
-            SkillTestStep::AwaitingCommit | SkillTestStep::AwaitingResultOrder { .. } => {
-                // The frame's `awaiting()`: emit the commit prompt, or the
-                // outstanding ST.7 "which next" pick. (See
+            SkillTestStep::NextHelper { after } => {
+                // RR ST.2's commit queue, worked out after the ST.1→ST.2
+                // window has closed: ask the next helper, or the performer
+                // once none is left.
+                cx.state
+                    .current_skill_test_mut()
+                    .expect("the SkillTest frame must persist across driver steps")
+                    .continuation = match next_helper(cx.state, cx.cards, after) {
+                    Some(helper) => SkillTestStep::AwaitingHelperCommit { helper },
+                    None => SkillTestStep::AwaitingCommit,
+                };
+            }
+            SkillTestStep::AwaitingHelperCommit { .. }
+            | SkillTestStep::AwaitingCommit
+            | SkillTestStep::AwaitingResultOrder { .. } => {
+                // The frame's `awaiting()`: emit a helper's or the
+                // performer's commit prompt, or the outstanding ST.7 "which
+                // next" pick. (See
                 // `emit_commit_window` for the propagation rationale.)
                 return prompt::suspend(cx.state, cx.cards);
             }
@@ -2143,7 +2320,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // run); the loop's `InvestigatorTurn { ending: true }` arm runs
                 // `resume_end_turn` once this returns — no reach-down here (the
                 // same path a 2+ forced run takes).
-                return tear_down_test(cx, investigator, Some(&committed));
+                return tear_down_test(cx, investigator, &committed, TestEnd::PerformerRemains);
             }
         }
     }
@@ -2183,37 +2360,28 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 
 /// Tear down the in-flight skill test, and pop its frame. Three callers: RR
 /// ST.8's normal end, at [`PostOnResolution`](SkillTestStep::PostOnResolution),
-/// and the two abandoned cases in [`advance`]'s loop preamble, where the tester
-/// was eliminated mid-resolution or the test's difficulty target left play.
+/// and the two abandoned cases in [`advance`]'s loop preamble, where the
+/// performer was eliminated mid-resolution or the test's difficulty target left
+/// play.
 ///
-/// `committed` names the cards to discard out of limbo, or is `None` to drop
-/// them with the frame:
-///
-/// - **ST.8** passes `Some`: *"Discard all cards that were committed to this
-///   skill test"* (Appendix II, ST.8).
-/// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
-///   step 1 ("The cards he or she controls in play and all of the cards in his
-///   or her out-of-play areas (such as hand, deck, discard pile) are removed
-///   from the game") removes every card that investigator owns, so discarding
-///   here would instead resurrect them into a pile.
-/// - **Target left play** passes `Some`. The investigator is still in the
-///   scenario and the cards are still theirs; dropping them silently would
-///   delete cards off the board, so they go to the discard pile exactly as an
-///   ST.8 teardown would send them, and so does the card the test was marked
-///   to discard ([`InFlightSkillTest::discard_after`]).
+/// `committed` is the cards still in limbo on the test, each discarded to its
+/// owner's pile: *"Discard all cards that were committed to this skill test"*
+/// (Appendix II, ST.8). The test's [`TestEnd`] decides whether the card the
+/// test was marked to discard ([`InFlightSkillTest::discard_after`]) goes with
+/// them.
 ///
 /// [`Event::SkillTestEnded`] still fires either way: the test *is* over, and it
 /// is the documented "test is fully over" signal downstream listeners key on.
 fn tear_down_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    committed: Option<&[CommittedCard]>,
+    committed: &[CommittedCard],
+    end: TestEnd,
 ) -> EngineOutcome {
-    if let Some(cards) = committed {
-        discard_committed_cards(cx, investigator, cards);
+    discard_committed_cards(cx, committed);
+    if end == TestEnd::PerformerRemains {
         // The marked card goes with them: the symbol that marked it was
-        // revealed during this test, abandoned or not. An eliminated tester's
-        // cards are removed from the game instead, so `None` skips it.
+        // revealed during this test, abandoned or not.
         discard_marked_card(cx);
     }
     cx.events.push(Event::SkillTestEnded { investigator });
@@ -2230,6 +2398,28 @@ fn tear_down_test(
     EngineOutcome::Done
 }
 
+/// How a skill test came to [tear down](tear_down_test), which decides what
+/// its teardown discards beyond the committed cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TestEnd {
+    /// The performer is still in the scenario: RR ST.8's normal end, or a test
+    /// abandoned because its difficulty target left play. The cards are still
+    /// their owners', so dropping them silently would delete cards off the
+    /// board; they go to the discard pile exactly as an ST.8 teardown would
+    /// send them, and so does the card the test was marked to discard.
+    PerformerRemains,
+    /// The performer was eliminated mid-test. Rules Reference p.10 Elimination
+    /// step 1 (*"The cards he or she controls in play and all of the cards in
+    /// his or her out-of-play areas (such as hand, deck, discard pile) are
+    /// removed from the game"*) has already taken the performer's own
+    /// committed cards off the test
+    /// ([`Continuation::take_committed_cards`]), so what is left is other
+    /// committers', still theirs and discarded to their piles. The marked card
+    /// is in play under the performer, so the same step removed it from the
+    /// game and it is not discarded here.
+    PerformerEliminated,
+}
+
 /// Who is committing, to whose test: the two differ once another investigator
 /// at the same location may commit.
 #[derive(Debug, Clone, Copy)]
@@ -2241,7 +2431,9 @@ struct CommitBy {
 }
 
 /// The hand indices of the committer's cards that may be committed to a test
-/// of `skill`, in hand order: the commit window's candidates ([`may_commit`]).
+/// of `skill`, in hand order: the commit window's candidates. Each passes
+/// [`may_commit`], and its title still has a copy left of its commit cap
+/// ([`remaining_allowance`]), counting every committer's cards so far.
 fn commit_candidates(
     state: &GameState,
     cards: &CardRegistry,
@@ -2249,8 +2441,38 @@ fn commit_candidates(
     skill: SkillKind,
 ) -> Vec<u8> {
     hand_pick::candidates(state, by.committer, |code| {
-        may_commit(cards, code, by, skill)
+        may_commit(cards, code, by, skill) && remaining_allowance(state, cards, code) != Some(0)
     })
+}
+
+/// How many more copies of `code`'s title may be committed to the in-flight
+/// test, under its printed "Max N committed per skill test" (`CardKind::Skill`'s
+/// `commit_limit`, Guts 01089), or `None` if the card has no cap or no registry
+/// entry.
+///
+/// The cap counts every committer, and keys on the title rather than the code.
+/// `glossary/Limits_and_Maximums.md`: a limit *"imposes a maximum across all
+/// copies of a card (by title) for all players."*
+///
+/// The one reading of the cap: the commit window's candidates
+/// ([`commit_candidates`]) and the resume check ([`check_commit_limits`]) both
+/// take it from here, so the two can't disagree.
+fn remaining_allowance(state: &GameState, cards: &CardRegistry, code: &CardCode) -> Option<u8> {
+    let meta = (cards.metadata_for)(code)?;
+    let CardKind::Skill {
+        commit_limit: Some(limit),
+        ..
+    } = meta.kind
+    else {
+        return None;
+    };
+    let committed = state.current_skill_test().map_or(0, |test| {
+        test.committed
+            .iter()
+            .filter(|card| (cards.metadata_for)(&card.code).is_some_and(|m| m.name == meta.name))
+            .count()
+    });
+    Some(limit.saturating_sub(u8::try_from(committed).unwrap_or(u8::MAX)))
 }
 
 /// Whether the card `code` may be committed to a test of `skill`, on its own.
@@ -2272,8 +2494,6 @@ fn may_commit(cards: &CardRegistry, code: &CardCode, by: CommitBy, skill: SkillK
         return true;
     };
     // Opportunist 01053: *"Commit only to a skill test you are performing."*
-    // TODO(#65): unreachable through `apply` until another investigator can
-    // commit; test it then.
     let own_test_only = matches!(
         meta.kind,
         CardKind::Skill {
@@ -2285,10 +2505,10 @@ fn may_commit(cards: &CardRegistry, code: &CardCode, by: CommitBy, skill: SkillK
 }
 
 /// Check a commit of the `committer`'s hand cards at `indices` against each
-/// card's printed "Max N committed per skill test" (`CardKind::Skill`'s
-/// `commit_limit`, Guts 01089), and return `indices` if it holds. A card with
-/// no cap, or no registry entry, is unconstrained. The limit binds a set, not
-/// a card, so the window offers every copy and this rejects the response.
+/// title's [`remaining_allowance`], and return `indices` if it holds. A card
+/// with no cap, or no registry entry, is unconstrained. The window offers
+/// every copy of a title with any allowance left, so a pick of more copies
+/// than are left is rejected here.
 fn check_commit_limits(
     state: &GameState,
     cards: &CardRegistry,
@@ -2296,21 +2516,22 @@ fn check_commit_limits(
     indices: Vec<u8>,
 ) -> Result<Vec<u8>, EngineOutcome> {
     let hand = &state.investigators[&committer].hand;
-    let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
+    // Copies picked per title, with a code to look the allowance up by.
+    let mut picked: BTreeMap<&str, (&CardCode, u8)> = BTreeMap::new();
     for &i in &indices {
-        *counts.entry(&hand[usize::from(i)]).or_insert(0) += 1;
+        let code = &hand[usize::from(i)];
+        let Some(meta) = (cards.metadata_for)(code) else {
+            continue;
+        };
+        picked.entry(meta.name.as_str()).or_insert((code, 0)).1 += 1;
     }
-    for (code, count) in counts {
-        let cap = (cards.metadata_for)(code).and_then(|m| match m.kind {
-            CardKind::Skill { commit_limit, .. } => commit_limit,
-            _ => None,
-        });
-        if let Some(limit) = cap {
-            if count > limit {
+    for (title, (code, count)) in picked {
+        if let Some(left) = remaining_allowance(state, cards, code) {
+            if count > left {
                 return Err(EngineOutcome::Rejected {
                     reason: format!(
-                        "skill-test commit: {code} allows at most {limit} committed per skill \
-                         test, but {count} were committed"
+                        "skill-test commit: {left} more {title} ({code}) may be committed to \
+                         this skill test, but {count} were picked"
                     )
                     .into(),
                 });
@@ -2427,10 +2648,10 @@ fn push_committed_icons(
 }
 
 /// RR ST.8: *"Discard all cards that were committed to this skill test."* Move
-/// the committed cards out of limbo and into the controller's discard pile,
-/// emitting [`Event::CardDiscarded`] for each. Per the
-/// [`Event::SkillTestEnded`] docs, these discards precede the
-/// `SkillTestEnded` cleanup marker.
+/// the committed cards out of limbo and into each card's owner's discard pile
+/// (its [committer](CommittedCard::committer)'s), emitting
+/// [`Event::CardDiscarded`] for each. Per the [`Event::SkillTestEnded`] docs,
+/// these discards precede the `SkillTestEnded` cleanup marker.
 ///
 /// A card whose own success effect overrode its
 /// [destination](CommittedCard::destination) goes back to hand instead,
@@ -2443,24 +2664,27 @@ fn push_committed_icons(
 /// that a Fast play in the ST.2→ST.3 window has since shifted. The emitted
 /// `from` is still [`Zone::Hand`]: limbo is not a zone the event vocabulary
 /// models, and the hand is where the cards came from.
-fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
-    if committed.is_empty() {
-        return;
-    }
-    // Unreachable: `advance`'s Status gate abandons the test before
-    // teardown if the tester was eliminated. Total rather than `expect` so a
-    // future path can't panic a production apply (a panic escapes `apply_via`'s
-    // rollback) — the committed cards then simply stay in limbo and die with
-    // the frame, which is what elimination wants anyway.
-    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
-        debug_assert!(
-            false,
-            "discard_committed_cards: investigator {investigator:?} vanished after follow-up; \
-             this is a state-corruption invariant violation",
-        );
-        return;
-    };
-    for CommittedCard { code, destination } in committed {
+fn discard_committed_cards(cx: &mut Cx, committed: &[CommittedCard]) {
+    for CommittedCard {
+        code,
+        committer,
+        destination,
+    } in committed
+    {
+        let investigator = *committer;
+        // Unreachable: an investigator is never removed from the map, and
+        // elimination takes an eliminated committer's cards off the test.
+        // Total rather than `expect` so a future path can't panic a
+        // production apply (a panic escapes `apply_via`'s rollback) — the card
+        // then simply stays in limbo and dies with the frame.
+        let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+            debug_assert!(
+                false,
+                "discard_committed_cards: committer {investigator:?} vanished mid-test; \
+                 this is a state-corruption invariant violation",
+            );
+            continue;
+        };
         match destination {
             CommittedCardDestination::Discard => {
                 inv.discard.push(code.clone());
@@ -2499,7 +2723,10 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// resolves cleanly.
 ///
 /// Each effect comes paired with its card's position in `committed`, which
-/// `ApplyResults` binds for the effect to name its own card.
+/// `ApplyResults` binds for the effect to name its own card, and with the
+/// ability's [`ResultController`], which `ApplyResults` reads for whose "you"
+/// an addition is. Modifiers are evaluated for the performer, the controller
+/// every `modifies_result` declares.
 ///
 /// No abilities for the codes → empty list: engine-only tests that don't touch
 /// card data never reach a committed card's ability. Silent skip mirrors
@@ -2509,7 +2736,7 @@ fn collect_result_contributions(
     committed: &[CommittedCard],
     succeeded: bool,
     contribution: ResultContribution,
-) -> Vec<(CommittedIndex, Effect)> {
+) -> Vec<(CommittedIndex, Effect, ResultController)> {
     let outcome_now = if succeeded {
         TestOutcome::Success
     } else {
@@ -2529,6 +2756,7 @@ fn collect_result_contributions(
             let Trigger::OnSkillTestResolution {
                 outcome,
                 contributes,
+                controller,
             } = ability.trigger
             else {
                 continue;
@@ -2536,7 +2764,7 @@ fn collect_result_contributions(
             if outcome != outcome_now || contributes != contribution {
                 continue;
             }
-            effects.push((index, ability.effect));
+            effects.push((index, ability.effect, controller));
         }
     }
     effects

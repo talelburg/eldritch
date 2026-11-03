@@ -64,7 +64,7 @@ fn return_to_hand(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, ResultContribution, Trigger};
+    use card_dsl::dsl::{Effect, ResultContribution, ResultController, Trigger};
 
     use super::*;
 
@@ -77,6 +77,7 @@ mod tests {
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
                 contributes: ResultContribution::Adds,
+                controller: ResultController::Committer,
             },
         );
         let Effect::If {

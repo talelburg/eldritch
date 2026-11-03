@@ -36,6 +36,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 
 | Issue | Work |
 |---|---|
+| #65 | Each other investigator at the performer's location may commit one card to their skill test, asked in player order before the performer; a committed card's result addition is its committer's, a modifier the performer's, PR #1321; slices #1316, #1317, #1318, #1319, #1320 |
 | #151 | An engagement tie is the lead's to answer, wherever an enemy comes to stand ready beside several investigators its prey can't tell apart, PR #1310; slices #1306, #1307, #1308, #1309 |
 | #371 | Location-attachment ownership, PR #984 |
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
@@ -99,7 +100,7 @@ landed, before phase 9 is scoped.
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65. #359 and #1061 follow #1086 and pair on one
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 and #1061 follow #1086 and pair on one
   choose-and-keep primitive.
 - After the wire break: #153 (also after #573) and #146 (after #1194).
 
@@ -107,7 +108,9 @@ landed, before phase 9 is scoped.
 rarely used, so it comes late and stays small. #1274, returning to the page a
 sign-in started from, follows #1237 and #1239.
 
-**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243.**
+**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243 and #1322.**
+#1322, the board surface for committed cards, also follows #65, which records each
+card's committer.
 
 **6. Reconnect and presence.** #587 and #582, after #1230, put the full history
 in `Hello`. #1232 follows #1230, #1140 and #1241.

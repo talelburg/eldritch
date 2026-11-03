@@ -13,13 +13,8 @@
 //!
 //! Ruling (<https://arkhamdb.com/card/01067>): *"If you commit this card to
 //! another player's skill test, and the test is successful, you heal 1 horror
-//! (not the other player)."* `You` binds to the test's performer today, which
-//! is the committer only in solo.
-//!
-//! # Module gap
-//!
-//! TODO(#65): bind `You` to the committer once another investigator can commit
-//! to a test — until then the committer is always the performer.
+//! (not the other player)."* `dsl::adds_result` makes the addition its
+//! committer's, so `You` is whoever committed the card.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, TestOutcome};
 

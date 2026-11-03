@@ -16,8 +16,9 @@
 //! # Engine consumers
 //!
 //! The skill-test commit window is the prompt tests answer most: the
-//! active investigator replies with [`InputResponse::PickMultiple`] (each
-//! `OptionId` one of the hand cards the window offers).
+//! investigator it asks (a helper, or the performer) replies with
+//! [`InputResponse::PickMultiple`] (each `OptionId` one of the hand cards the
+//! window offers).
 //! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests pass card
 //! codes, the resolver finds those cards in the hand using [`GameState`] at
 //! resolve time and names the options anchored to them. Other prompts are
@@ -55,6 +56,7 @@ use crate::card_registry::CardRegistry;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     enumerate, ApplyResult, ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget,
+    Responder,
 };
 use crate::state::{CardCode, GameState, InvestigatorId};
 
@@ -93,9 +95,10 @@ pub struct ScriptedResolver {
 #[derive(Debug, Clone)]
 enum ScriptedStep {
     Response(InputResponse),
-    /// Commit a set of cards from the active investigator's hand to a
-    /// skill test. A by-`CardCode` convenience over the option-id commit
-    /// flow (resolves codes to the options anchored to them at replay time).
+    /// Commit a set of cards to a skill test from the hand of the
+    /// investigator the commit prompt asks. A by-`CardCode` convenience over
+    /// the option-id commit flow (resolves codes to the options anchored to
+    /// them at replay time).
     CommitCards(Vec<CardCode>),
     /// Pick the one offered option anchored to this target, resolved to
     /// `PickSingle(option.id)` at replay time.
@@ -138,10 +141,10 @@ impl ScriptedResolver {
         self
     }
 
-    /// Commit cards (by code) from the in-flight skill test's
-    /// investigator's hand. The resolver translates each code to the
-    /// first matching not-yet-committed hand card at resolve time
-    /// using the [`GameState`] passed into [`next`](Self::next), and
+    /// Commit cards (by code) from the hand of the investigator the commit
+    /// prompt asks: a helper, or the performer. The resolver translates
+    /// each code to the first matching not-yet-committed hand card at
+    /// resolve time using the [`GameState`] passed into [`next`](Self::next), and
     /// names the commit window's option anchored to it. Duplicate codes
     /// pick distinct cards in left-to-right order; a code missing from
     /// the hand, or a card the window does not offer, panics.
@@ -197,9 +200,9 @@ pub(super) fn card_codes(codes: &[&str]) -> Vec<CardCode> {
     codes.iter().copied().map(CardCode::new).collect()
 }
 
-/// Translate scripted commit-card codes to the commit window's options, for
-/// the in-flight skill test's investigator on `state`, through
-/// [`hand_options_of`].
+/// Translate scripted commit-card codes to a commit prompt's options, for the
+/// investigator `request` asks (its [`Responder::Investigator`]; otherwise the
+/// in-flight skill test's performer) on `state`, through [`hand_options_of`].
 pub(super) fn resolve_commit_codes(
     codes: &[CardCode],
     state: &GameState,
@@ -216,7 +219,13 @@ pub(super) fn resolve_commit_codes(
             request.prompt,
         )
     });
-    hand_options_of(codes, state, in_flight.investigator, request, caller)
+    // A commit prompt names who answers it: a helper's is the helper's, so
+    // the codes are their hand's. Otherwise the performer commits.
+    let committer = match request.responder {
+        Responder::Investigator(id) => id,
+        _ => in_flight.investigator,
+    };
+    hand_options_of(codes, state, committer, request, caller)
 }
 
 /// Translate card codes to the options of `request` anchored to those cards in
@@ -460,7 +469,7 @@ mod tests {
     use card_dsl::dsl::SkillTestKind;
 
     use super::*;
-    use crate::engine::{self, InputKind, Responder};
+    use crate::engine::{self, InputKind};
     use crate::event::Event;
     use crate::state::SkillKind;
     use crate::state::{ChaosBag, ChaosToken, Continuation, GameStateBuilder, SkillTestId};

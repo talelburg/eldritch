@@ -68,7 +68,7 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger,
+        Condition, Effect, ResultContribution, ResultController, SkillTestKind, TestOutcome, Trigger,
     };
 
     #[test]
@@ -80,6 +80,7 @@ mod tests {
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
                 contributes: ResultContribution::Modifies,
+                controller: ResultController::Performer,
             },
         );
         // If(SkillTestKind(Fight), BoostAttackDamage(1)) — "during an attack".

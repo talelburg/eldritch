@@ -1001,12 +1001,14 @@ impl Continuation {
         }
     }
 
-    /// Take `investigator`'s cards-committed-to-a-skill-test off this frame,
-    /// leaving the in-flight test holding none. Returns an empty `Vec` when the
-    /// frame is not a [`SkillTest`](Self::SkillTest), belongs to someone else,
-    /// or has already been emptied. A card's [destination](CommittedCard::destination)
-    /// is dropped: elimination removes it from the game wherever ST.8 would
-    /// have sent it.
+    /// Take the cards `investigator` committed off this frame's skill test,
+    /// whoever is performing it, and leave every other committer's card where
+    /// it is. Returns an empty `Vec` when the frame is not a
+    /// [`SkillTest`](Self::SkillTest) or holds none of `investigator`'s cards.
+    /// A card's [destination](CommittedCard::destination) is dropped:
+    /// elimination removes it from the game wherever ST.8 would have sent it.
+    /// A card another investigator committed is still theirs, so the test's
+    /// teardown discards it to its owner's pile.
     ///
     /// The sibling of [`take_play_in_progress`](Self::take_play_in_progress),
     /// for the other card state that is in **no zone**: a card committed to a
@@ -1018,11 +1020,12 @@ impl Continuation {
     /// order-independence argument as the play sweep.
     pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
         match self {
-            Continuation::SkillTest(t) if t.investigator == investigator => {
-                mem::take(&mut t.committed_by_active)
+            Continuation::SkillTest(t) => {
+                let (theirs, others): (Vec<_>, Vec<_>) = mem::take(&mut t.committed)
                     .into_iter()
-                    .map(|c| c.code)
-                    .collect()
+                    .partition(|c| c.committer == investigator);
+                t.committed = others;
+                theirs.into_iter().map(|c| c.code).collect()
             }
             _ => Vec::new(),
         }
@@ -1340,11 +1343,14 @@ pub enum TimingSub {
 }
 
 /// A card committed to an in-flight skill test, held in limbo on
-/// [`InFlightSkillTest::committed_by_active`] until RR ST.8 sends it on.
+/// [`InFlightSkillTest::committed`] until RR ST.8 sends it on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCard {
     /// The committed card.
     pub code: CardCode,
+    /// The investigator who committed it, from their own hand — so also the
+    /// card's owner, whose discard pile ST.8 sends it to.
+    pub committer: InvestigatorId,
     /// Where ST.8 sends it.
     pub destination: CommittedCardDestination,
 }
@@ -1353,16 +1359,17 @@ impl CommittedCard {
     /// A freshly committed card, bound for the discard pile as RR ST.8 says:
     /// *"Discard all cards that were committed to this skill test."*
     #[must_use]
-    pub fn new(code: CardCode) -> Self {
+    pub fn new(code: CardCode, committer: InvestigatorId) -> Self {
         Self {
             code,
+            committer,
             destination: CommittedCardDestination::Discard,
         }
     }
 }
 
 /// A card's zero-based position in an in-flight test's committed list
-/// ([`InFlightSkillTest::committed_by_active`]).
+/// ([`InFlightSkillTest::committed`]).
 ///
 /// Its own type so it cannot be mixed up with an [`AdditionIndex`], which
 /// counts result additions rather than committed cards.
@@ -1397,10 +1404,10 @@ pub enum CommittedCardDestination {
 /// Pushed by the skill-test initiator (a plain skill test, `Investigate`,
 /// `Fight`, `Evade`) after [`SkillTestStarted`] fires; consumed by the
 /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) dispatch
-/// once the active investigator submits their commit list. The follow-
-/// up describes the action-specific success path: discover a clue
-/// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
-/// or nothing (a bare plain skill test).
+/// once each commit prompt (each helper's, then the performer's) is
+/// answered. The follow-up describes the action-specific success path:
+/// discover a clue (Investigate), deal damage (Fight), disengage and exhaust
+/// (Evade), or nothing (a bare plain skill test).
 ///
 /// [`SkillTestStarted`]: crate::event::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1433,18 +1440,19 @@ pub struct InFlightSkillTest {
     /// the underlying location's shroud or enemy's fight/evade as the board
     /// stands at ST.6. [`DifficultyBasis`] carries the rule.
     pub difficulty_basis: DifficultyBasis,
-    /// The cards the active investigator has committed to the test, in
-    /// commit order — **held here, not in hand**. Rules Reference glossary
-    /// "Limbo": *"A skill card enters limbo as it is committed to a skill
-    /// test. … It is no longer considered to be in any investigator's hand,
-    /// but it has not yet been placed in any discard pile."*
+    /// The cards committed to the test, in commit order, each with its
+    /// [committer](CommittedCard::committer) — **held here, not in hand**.
+    /// Rules Reference glossary "Limbo": *"A skill card enters limbo as it is
+    /// committed to a skill test. … It is no longer considered to be in any
+    /// investigator's hand, but it has not yet been placed in any discard
+    /// pile."*
     ///
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
     /// dispatch, which removes the named cards from the hand and moves them
     /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
     /// codes off this field (e.g. `collect_result_contributions` /
-    /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
+    /// `discard_committed_cards` via `in_flight.committed`), so it
     /// must stay accurate across suspensions — don't treat it as
     /// inspection-only metadata.
     ///
@@ -1456,10 +1464,7 @@ pub struct InFlightSkillTest {
     /// Each entry carries where ST.8 sends the card
     /// ([`CommittedCard::destination`]), which a committed card's own success
     /// effect may change (Opportunist 01053).
-    ///
-    /// Only the active investigator's commits live here. TODO(#65): the
-    /// rule "any investigator at the same location may commit".
-    pub committed_by_active: Vec<CommittedCard>,
+    pub committed: Vec<CommittedCard>,
     /// The location the test is associated with, snapshotted at skill-test
     /// start (`engine::dispatch::start_skill_test`) from the investigator's
     /// current location. Used by
@@ -1583,8 +1588,9 @@ pub struct InFlightSkillTest {
     /// [`NativeCx::discard_after_this_test`](crate::engine::NativeCx::discard_after_this_test)),
     /// and the teardown does the discard. A test abandoned because its target
     /// left play discards it too, since the symbol was still revealed during
-    /// it; one abandoned on the tester's elimination does not, as elimination
-    /// removes the card from the game. `None` for every other test.
+    /// it; one abandoned on the performer's elimination does not, as
+    /// elimination removes the card from the game. `None` for every other
+    /// test.
     pub discard_after: Option<CardInstanceId>,
 }
 
@@ -1692,7 +1698,10 @@ impl ResolvedTest {
 /// Variants:
 ///
 /// - [`PreCommitWindow`](Self::PreCommitWindow) — initial state; `advance` opens
-///   the ST.1→ST.2 player window, then pre-advances to `AwaitingCommit`.
+///   the ST.1→ST.2 player window, then pre-advances to `NextHelper`.
+/// - [`NextHelper`](Self::NextHelper) /
+///   [`AwaitingHelperCommit`](Self::AwaitingHelperCommit) — ST.2's commit
+///   queue: each co-located helper, in player order, commits at most one card.
 /// - [`AwaitingCommit`](Self::AwaitingCommit) — `advance`'s `AwaitingCommit` arm
 ///   emits the commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
@@ -1728,10 +1737,51 @@ impl ResolvedTest {
 pub enum SkillTestStep {
     /// The RR p.26 player window after ST.1 (skill determined) and before ST.2
     /// (commit). The initial state at skill-test start. `advance` opens the
-    /// window here, pre-advancing to [`AwaitingCommit`](Self::AwaitingCommit).
+    /// window here, pre-advancing to
+    /// [`NextHelper { after: None }`](Self::NextHelper).
     PreCommitWindow,
-    /// Initial state: waiting on the commit-window
-    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
+    /// RR ST.2's **commit queue**: find the next helper to ask, after `after`
+    /// (`None`: from the start). Appendix II, ST.2: *"Each other investigator
+    /// at the same location as the investigator performing the skill test may
+    /// commit one card with an appropriate skill icon to this test."* A
+    /// **helper** is such an investigator, Active, holding at least one card
+    /// they could commit. Helpers are asked one at a time in player order
+    /// (`glossary/In_Player_Order.md`: *"the lead investigator performs his
+    /// or her part of the sequence first, followed by the other players in
+    /// clockwise order"*), and the performer last, at
+    /// [`AwaitingCommit`](Self::AwaitingCommit), so they spend their own cards
+    /// knowing what help has come. The rules don't order ST.2's two
+    /// permissions.
+    ///
+    /// The queue is not stored. Each visit walks player order past `after`
+    /// and re-checks each investigator's candidates now, so a helper whose
+    /// candidates an earlier commit emptied is skipped rather than asked.
+    /// `advance` sets [`AwaitingHelperCommit`](Self::AwaitingHelperCommit) for
+    /// the first one found, or `AwaitingCommit` when none is left.
+    ///
+    /// The follow-up, if playtests show the fixed order getting in the way, is
+    /// a **shared commit window**: every eligible investigator answers once,
+    /// in any order, under
+    /// [`Responder::Several`](crate::engine::Responder::Several). It is not
+    /// built because it needs a several-answerer `PickMultiple` with a
+    /// different limit per answerer ("any number" for the performer, "one"
+    /// for a helper), and a request's single
+    /// [`PickCount`](crate::engine::PickCount) can't say that.
+    NextHelper {
+        /// The helper last asked, or `None` before the first.
+        after: Option<InvestigatorId>,
+    },
+    /// Waiting on `helper`'s commit of at most one card: a
+    /// [`PickMultiple`](crate::action::InputResponse::PickMultiple) addressed
+    /// to them alone. The answer appends the card to the test's committed
+    /// list and sets [`NextHelper`](Self::NextHelper) after them.
+    AwaitingHelperCommit {
+        /// The helper being asked.
+        helper: InvestigatorId,
+    },
+    /// Waiting on the performer's commit-window
+    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput), after
+    /// every helper has answered.
     AwaitingCommit,
     /// The RR p.26 player window after ST.2 (commit) and before ST.3 (reveal
     /// chaos token). Set by `finish_skill_test` once the commit is stored;

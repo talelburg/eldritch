@@ -4,7 +4,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::{ChaosToken, GameState, TokenResolution};
+use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
@@ -365,9 +365,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             // The prompt still held here is the one this answers: an earlier
             // position was dropped above, and the server answers in order.
             let answered = state.outcome.replace(outcome);
+            let picking = MultiPick::answered_on(state.game.as_ref());
             state.game = Some(*s);
             state.prompt = prompt;
-            let header = batch_header(state, answered.as_ref(), by, &response);
+            let header = batch_header(state, answered.as_ref(), picking, by, &response);
             // Walk the batch in order, latching what the result panel renders
             // from. Order matters within a batch as much as across batches:
             // `SkillTestStarted` clears the *previous* test's token and result,
@@ -454,23 +455,69 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
     }
 }
 
+/// What a multi-pick answer did, which its wire form doesn't say: a mulligan, a
+/// hand-size discard and a commit all arrive as the same
+/// [`LoggedResponse::PickMultiple`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MultiPick {
+    /// Cards committed to a skill test.
+    Commit,
+    /// Cards set aside and redrawn in a setup mulligan.
+    Mulligan,
+    /// Cards discarded down to the Upkeep hand size.
+    HandSizeDiscard,
+    /// A multi-pick on any other top frame, or with no game held. No prompt
+    /// takes one today, so the header names the cards without saying what
+    /// they did rather than guess.
+    Unrecognised,
+}
+
+impl MultiPick {
+    /// What a multi-pick answered on `game` (the game before the answer
+    /// applied) does, read off its top frame: a skill test's commit prompt, a
+    /// mulligan, or a hand-size discard.
+    fn answered_on(game: Option<&GameState>) -> Self {
+        match game.and_then(|game| game.continuations.top()) {
+            Some(Continuation::SkillTest(_)) => Self::Commit,
+            Some(Continuation::Mulligan(_)) => Self::Mulligan,
+            Some(Continuation::HandSizeDiscard(_)) => Self::HandSizeDiscard,
+            _ => Self::Unrecognised,
+        }
+    }
+}
+
 /// The event-log header for an answer `by` gave with `response`, to the prompt
 /// `answered` (the outcome the client held before the answer applied), named
 /// from `state`'s game, the one the answer produced: who answered, then what
 /// they answered.
 ///
-/// A pick names its option. A `Confirm` carries nothing, so it is named by the
-/// prompt it confirmed: the Mythos draw is the `Confirm` anchored to the
+/// A pick names its option, and a multi-pick names each of its options under
+/// what `picking` says it did. A `Confirm` carries nothing, so it is named by
+/// the prompt it confirmed: the Mythos draw is the `Confirm` anchored to the
 /// encounter deck (ADR 0011).
 fn batch_header(
     state: &ClientState,
     answered: Option<&EngineOutcome>,
+    picking: MultiPick,
     by: InvestigatorId,
     response: &LoggedResponse,
 ) -> String {
     let what = match response {
         LoggedResponse::PickSingle { option } => option.label.clone(),
-        LoggedResponse::PickMultiple { options } => format!("Commit {} card(s)", options.len()),
+        LoggedResponse::PickMultiple { options } => {
+            let names: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
+            match (picking, names.is_empty()) {
+                (MultiPick::Commit, true) => "Commit no cards".into(),
+                (MultiPick::Mulligan, true) => "Keep opening hand".into(),
+                (MultiPick::Commit, false) => format!("Commit {}", names.join(", ")),
+                (MultiPick::Mulligan, false) => format!("Mulligan {}", names.join(", ")),
+                // Never empty: the engine asks for exactly the excess, which is
+                // at least one card.
+                (MultiPick::HandSizeDiscard, _) => format!("Discard {}", names.join(", ")),
+                (MultiPick::Unrecognised, true) => "Pick no cards".into(),
+                (MultiPick::Unrecognised, false) => format!("Pick {}", names.join(", ")),
+            }
+        }
         LoggedResponse::Skip => "Pass".into(),
         LoggedResponse::Confirm => match answered {
             Some(EngineOutcome::AwaitingInput { request, .. })
@@ -507,9 +554,10 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
+    use card_dsl::dsl::SkillTestKind;
     use game_core::engine::{ChoiceOption, OptionId};
     use game_core::event::FailureReason;
-    use game_core::state::GameStateBuilder;
+    use game_core::state::{GameStateBuilder, SkillTestId};
     use game_core::test_support;
     use protocol::logged_answer::LoggedOption;
 
@@ -1164,9 +1212,25 @@ mod tests {
         assert_eq!(only_header(&s), "Test Investigator 2: Fight: Ghoul Priest");
     }
 
+    /// The [`two_seats`] board with seat 1's skill test on top, at its commit
+    /// prompt.
+    fn committing() -> GameState {
+        GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
+            .with_frame(Continuation::SkillTest(test_support::test_skill_test(
+                SkillTestId(0),
+                InvestigatorId(1),
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+                3,
+            )))
+            .build()
+    }
+
     #[test]
-    fn a_multi_pick_is_logged_with_how_many_it_committed() {
-        let mut s = holding(test_support::awaiting_commit_input("Commit", &[0, 1]));
+    fn a_commit_is_logged_with_the_cards_it_committed() {
+        let mut s = picking_over(committing());
         reduce(
             &mut s,
             applied_by(
@@ -1176,7 +1240,102 @@ mod tests {
                 },
             ),
         );
-        assert_eq!(only_header(&s), "Test Investigator 1: Commit 2 card(s)");
+        assert_eq!(
+            only_header(&s),
+            "Test Investigator 1: Commit Guts, Overpower"
+        );
+    }
+
+    /// The [`two_seats`] board with seat 1's setup mulligan on top.
+    fn mulliganing() -> GameState {
+        GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
+            .with_mulligan_remaining([InvestigatorId(1), InvestigatorId(2)])
+            .build()
+    }
+
+    /// The client's state on `game`, holding a multi-pick prompt for seat 1.
+    fn picking_over(game: GameState) -> ClientState {
+        ClientState {
+            game: Some(game),
+            outcome: Some(test_support::awaiting_commit_input("Pick", &[0, 1])),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_mulligan_is_logged_with_the_cards_it_redrew() {
+        let mut s = picking_over(mulliganing());
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts"), option(1, "Overpower")],
+                },
+            ),
+        );
+        assert_eq!(
+            only_header(&s),
+            "Test Investigator 1: Mulligan Guts, Overpower"
+        );
+    }
+
+    #[test]
+    fn a_hand_size_discard_is_logged_with_the_cards_it_discarded() {
+        let game = GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
+            .with_hand_size_discard_pending([InvestigatorId(1)])
+            .build();
+        let mut s = picking_over(game);
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts")],
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Discard Guts");
+    }
+
+    #[test]
+    fn an_empty_commit_is_logged_as_committing_nothing() {
+        let mut s = picking_over(committing());
+        reduce(
+            &mut s,
+            applied_by(1, LoggedResponse::PickMultiple { options: vec![] }),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Commit no cards");
+    }
+
+    /// A multi-pick on a frame that takes none says only what was picked.
+    #[test]
+    fn a_multi_pick_on_an_unrecognised_frame_is_logged_as_a_pick() {
+        let mut s = picking_over(two_seats());
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts")],
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Pick Guts");
+    }
+
+    #[test]
+    fn an_empty_mulligan_is_logged_as_keeping_the_opening_hand() {
+        let mut s = picking_over(mulliganing());
+        reduce(
+            &mut s,
+            applied_by(1, LoggedResponse::PickMultiple { options: vec![] }),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Keep opening hand");
     }
 
     #[test]

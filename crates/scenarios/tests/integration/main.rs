@@ -6,6 +6,7 @@
 //! mock in the same process panics.
 
 mod act_clues_per_investigator;
+mod helper_commits;
 mod issue_476_fast_window;
 mod issue_482_advance;
 mod st7_result_order;

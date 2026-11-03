@@ -116,7 +116,7 @@ pub struct RevelationBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCardBinding {
     /// The card's position among the in-flight test's committed cards
-    /// ([`InFlightSkillTest::committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    /// ([`InFlightSkillTest::committed`](crate::state::InFlightSkillTest::committed)).
     pub index: u8,
 }
 
@@ -1882,7 +1882,7 @@ fn modify(
 /// surface as an unexplained automatic result on whatever test came next,
 /// which is the same failure mode a test-scoped `Modify` is refused for.
 ///
-/// The row names the **tester**, not the effect's controller: the
+/// The row names the **performer**, not the effect's controller: the
 /// determination belongs to the test, and a card may latch one on a test
 /// another investigator is taking. `source` is the effect's own, so the
 /// event and the row agree on attribution.
