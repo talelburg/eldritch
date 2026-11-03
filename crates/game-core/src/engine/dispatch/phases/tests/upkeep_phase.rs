@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::EngineOutcome;
+use crate::engine::outcome::{EngineOutcome, InputKind, Responder};
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, enemy, location, BoardLookup as _, TestSession, TEST_REGISTRIES};
@@ -301,6 +301,125 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
         Event::CardsDrawn { investigator, .. } if *investigator == a,
         Event::ResourcesGained { investigator, .. } if *investigator == b,
         Event::ResourcesGained { investigator, .. } if *investigator == a,
+    );
+}
+
+/// Daisy evaded a Ghoul in the Hallway, where Agnes also stands: Upkeep 4.3
+/// readies each of `enemies` beside the two of them, seat 1 leading, each
+/// seat with a card to draw in 4.4. `glossary/Enemy_Engagement.md`: *"if an
+/// exhausted enemy at the same location as an investigator becomes ready, it
+/// engages as soon as it is readied."* A stock enemy prints no prey, so the two
+/// tie, and `glossary/Prey.md` leaves the tie to the lead: *"if multiple
+/// investigators are tied in meeting these instructions, the lead investigator
+/// may decide among them"*.
+fn exhausted_enemies_beside_two_in_upkeep(enemies: &[EnemyId]) -> TestSession {
+    let mut builder = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(test_support::seat(1).at(LocationId(10)).deck(["filler0"]))
+        .with_seat(test_support::seat(2).at(LocationId(10)).deck(["filler1"]))
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
+        .with_location(location(10));
+    for id in enemies {
+        builder = builder.with_enemy(enemy(id.0).exhausted().at(LocationId(10)));
+    }
+    run_upkeep(builder)
+}
+
+#[test]
+fn an_enemy_readying_beside_two_investigators_asks_the_lead_before_any_draw() {
+    let session = exhausted_enemies_beside_two_in_upkeep(&[EnemyId(1)]);
+    let first = session.state().investigators[&InvestigatorId(1)].card_anchor();
+    let second = session.state().investigators[&InvestigatorId(2)].card_anchor();
+
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::PickSingle, "{prompt:?}");
+    assert_eq!(prompt.responder, Responder::Lead(InvestigatorId(1)));
+    assert_eq!(
+        (
+            session.offered_at(&first),
+            session.offered_at(&second),
+            prompt.options.len()
+        ),
+        (1, 1, 2),
+        "the tie offers the two investigators: {prompt:?}",
+    );
+    assert_eq!(session.state().enemies[&EnemyId(1)].engaged_with, None);
+    assert_event!(session.events(), Event::EnemyReadied { enemy } if *enemy == EnemyId(1));
+    assert_no_event!(session.events(), Event::CardsDrawn { .. });
+}
+
+/// The lead's answer engages the investigator she chose, and only then does
+/// Upkeep go on: the 4.4 draws in player order, the resources, 4.5 (under the
+/// cap, so silent) and 4.6, into Mythos.
+#[test]
+fn the_answer_engages_the_chosen_investigator_then_upkeep_draws_and_ends() {
+    let session = exhausted_enemies_beside_two_in_upkeep(&[EnemyId(1)]);
+    let second = session.state().investigators[&InvestigatorId(2)].card_anchor();
+
+    let session = session.pick(second);
+
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        Some(InvestigatorId(2))
+    );
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == InvestigatorId(2),
+        Event::CardsDrawn { investigator, .. } if *investigator == InvestigatorId(1),
+        Event::CardsDrawn { investigator, .. } if *investigator == InvestigatorId(2),
+        Event::ResourcesGained { investigator, .. } if *investigator == InvestigatorId(1),
+        Event::ResourcesGained { investigator, .. } if *investigator == InvestigatorId(2),
+        Event::PhaseEnded { phase: Phase::Upkeep },
+        Event::PhaseStarted { phase: Phase::Mythos },
+    );
+}
+
+/// Two enemies readying into ties leave one frame, asked in enemy-id order:
+/// the second enemy's tie is asked only once the first is answered, and the
+/// draws wait for both.
+#[test]
+fn two_enemies_readying_into_ties_are_asked_in_enemy_id_order_on_one_frame() {
+    let session = exhausted_enemies_beside_two_in_upkeep(&[EnemyId(2), EnemyId(1)]);
+    let first = session.state().investigators[&InvestigatorId(1)].card_anchor();
+    let second = session.state().investigators[&InvestigatorId(2)].card_anchor();
+
+    let ties: Vec<_> = session
+        .state()
+        .continuations
+        .iter()
+        .filter_map(|frame| match frame {
+            Continuation::EngagementTie(frame) => Some(frame.ties.clone()),
+            _ => None,
+        })
+        .collect();
+    let [ties] = &ties[..] else {
+        panic!("one engagement-tie frame, got {ties:?}");
+    };
+    assert_eq!(
+        ties.iter().map(|tie| tie.enemy).collect::<Vec<_>>(),
+        vec![EnemyId(1), EnemyId(2)]
+    );
+
+    let session = session.pick(second);
+    assert_eq!(
+        session.state().enemies[&EnemyId(1)].engaged_with,
+        Some(InvestigatorId(2))
+    );
+    assert_eq!(session.state().enemies[&EnemyId(2)].engaged_with, None);
+    assert_eq!(session.prompt().kind, InputKind::PickSingle);
+    assert_no_event!(session.events(), Event::CardsDrawn { .. });
+
+    let session = session.pick(first);
+    assert_eq!(
+        session.state().enemies[&EnemyId(2)].engaged_with,
+        Some(InvestigatorId(1))
+    );
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(1),
+        Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(2),
+        Event::CardsDrawn { .. },
     );
 }
 

@@ -1206,6 +1206,12 @@ pub enum UpkeepResume {
     AfterPhaseStartForced,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
+    /// Step 4.3 readied enemies into engagement ties, and their
+    /// [`EngagementTie`](Continuation::EngagementTie) frame sits above this
+    /// anchor for the lead to answer. On re-exposure — once every tie is
+    /// answered — run the step-4.4 draws from the first investigator, then 4.5
+    /// and 4.6. With no tie, 4.4 follows 4.3 inline and nothing parks here.
+    AfterReady,
     /// Step 4.4's per-investigator cursor: `drew` has drawn their card, and the
     /// draw pushed frames above this anchor (the deck-out horror's deal, a drawn
     /// weakness's Revelation) that ceded to the drive loop. On re-exposure —
