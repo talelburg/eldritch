@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, RevealClause, SkillTestKind, Stat, TestOutcome, TokenOutcome,
-    Trigger,
+    Determination, Effect, IntExpr, ResultContribution, RevealClause, SkillTestKind, Stat,
+    TestOutcome, TokenOutcome, Trigger,
 };
 
 use crate::action::InputResponse;
@@ -636,7 +636,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
     // considered to be in any investigator's hand").
     //
     // Snapshot in the order the player submitted the indices — that is the
-    // order the ST.7 `OnCommit` / `OnSkillTestResolution` collectors fire in and
+    // order the ST.7 result modifiers and additions apply in, and
     // the order ST.8 discards in, so it is the player's to choose. The drain
     // then walks descending, which keeps the still-pending positions stable.
     // Both steps are index-safe: `hand_pick::picked` proved every index unique
@@ -676,7 +676,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
 /// Resume the cosmetic acknowledgment pause: the player has Confirmed the
 /// skill-test result. Validate-first — the in-flight test's cursor must be at
 /// [`SkillTestStep::AcknowledgeOutcome`] — then advance it to
-/// [`SkillTestStep::FireOnCommit`] and return [`EngineOutcome::Done`] so the
+/// [`SkillTestStep::ApplyResultModifiers`] and return [`EngineOutcome::Done`] so the
 /// caller's `drive` loop runs the ST.7 consequences. Mirrors
 /// [`finish_skill_test`]'s park-and-return-`Done` shape; on a bad cursor or no
 /// in-flight test it rejects with state and events untouched.
@@ -698,7 +698,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .continuation = SkillTestStep::FireOnCommit;
+        .continuation = SkillTestStep::ApplyResultModifiers;
     EngineOutcome::Done
 }
 
@@ -1091,29 +1091,33 @@ fn resolved(cx: &Cx) -> ResolvedTest {
         .expect("resolved: set at the DetermineOutcome step (ST.5–ST.6) for every later step")
 }
 
-/// RR ST.7 head — the [`FireOnCommit`](SkillTestStep::FireOnCommit) step.
-/// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
-/// Blow 01025's `BoostAttackDamage`, Deduction 01039's
+/// RR ST.7 head — the [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers)
+/// step. Collect the committed cards' [result
+/// modifiers](ResultContribution::Modifies) whose outcome matches the resolved
+/// test (Vicious Blow 01025's `BoostAttackDamage`, Deduction 01039's
 /// `DiscoverAdditionalClues`), combine them into one
-/// [`Effect::Seq`](card_dsl::dsl::Effect::Seq), and `push_effect` it for the drive
-/// loop (push nothing if no committed card carries an `OnCommit` trigger).
-/// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
-/// **before** the push, so a suspending effect would resume past this step.
+/// [`Effect::Seq`](card_dsl::dsl::Effect::Seq), and `push_effect` it for the
+/// drive loop (push nothing if none matches). Pre-advances the cursor to
+/// [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) **before** the push, so a
+/// suspending effect would resume past this step.
 ///
-/// **Ungated on outcome** — every committed `OnCommit` effect runs whether the
-/// test passed or failed. The cards carrying one all say "if this skill test is
-/// successful…", and that qualifier is honored downstream instead: each
-/// accumulator's only reader is a success-only follow-up
-/// ([`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)), so on a failed test the
-/// accumulator is populated, never read, and discarded with the test's frame.
-/// This step sits after the token resolves (so the outcome is already on the
-/// frame) but **before** `ApplyFollowUp` reads the accumulators.
-///
-/// Both in-scope effects are non-suspending stat boosts, so the loop drives the
-/// `Seq` and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
+/// A modifier changes a consequence the test already produces, so it runs
+/// before `ApplyFollowUp` produces it, and outside the results the performer
+/// orders (**Result modifier** in `GLOSSARY.md`). Both in-scope effects are
+/// non-suspending accumulator writes, so the loop drives the `Seq` and
+/// re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
 /// now-populated accumulators.
-fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
-    let effects = collect_on_commit(cx.cards, committed);
+fn apply_result_modifiers_step(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    committed: &[CommittedCard],
+) {
+    let succeeded = resolved(cx).succeeded;
+    let effects: Vec<Effect> =
+        collect_result_contributions(cx.cards, committed, succeeded, ResultContribution::Modifies)
+            .into_iter()
+            .map(|(_, effect)| effect)
+            .collect();
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
@@ -1450,7 +1454,7 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// Nothing is parked for this step. It looks the token's outcome up again
 /// through [`chaos_symbol_effect`] from the token on
 /// [`revealed`](InFlightSkillTest::revealed), the way
-/// [`FireOnCommit`](SkillTestStep::FireOnCommit) and
+/// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) and
 /// [`FireOnResolution`](SkillTestStep::FireOnResolution) look up the committed
 /// cards' abilities: an elder sign from the investigator card, sourced to it;
 /// a scenario symbol from the scenario's symbol hook, controller-only. No
@@ -1493,8 +1497,9 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// RR ST.7 — the [`FireOnResolution`](SkillTestStep::FireOnResolution) step.
-/// Fire the committed cards' `OnSkillTestResolution` triggers, one effect per
-/// visit, in committed-card order. Collect the matching effects, push the
+/// Fire the committed cards' [result additions](ResultContribution::Adds) whose
+/// outcome matches the resolved test, one effect per visit, in committed-card
+/// order. Collect the matching effects, push the
 /// `next`th (pre-advancing `next` first), and yield (the pushed Effect frame is
 /// the new top); when `next` runs past the list, advance to
 /// [`PostRetaliate`](SkillTestStep::PostRetaliate).
@@ -1511,7 +1516,12 @@ fn fire_on_resolution_step(
     next: u32,
 ) {
     let resolved_test = resolved(cx);
-    let effects = collect_on_skill_test_resolution(cx.cards, committed, resolved_test.succeeded);
+    let effects = collect_result_contributions(
+        cx.cards,
+        committed,
+        resolved_test.succeeded,
+        ResultContribution::Adds,
+    );
     let idx = next as usize;
     if let Some((card_index, effect)) = effects.get(idx) {
         cx.state
@@ -1630,8 +1640,8 @@ fn open_skill_test_player_window(
 ///   event, before the ST.7 consequences; advance to
 ///   [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome), or back here
 ///   if the re-total flipped the verdict.
-/// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
-///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
+/// - [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) → ST.7 head
+///   (committed cards' result modifiers); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
 /// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
 ///   (the clue discovery); advance to
 ///   [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
@@ -1642,7 +1652,7 @@ fn open_skill_test_player_window(
 ///   token's `on_success` / `on_fail` part (Cultist horror); advance to
 ///   [`FireOnResolution`](SkillTestStep::FireOnResolution).
 /// - [`FireOnResolution`](SkillTestStep::FireOnResolution) → fire committed
-///   cards' `OnSkillTestResolution` triggers (one per visit); advance to
+///   cards' result additions (one per visit); advance to
 ///   [`PostRetaliate`](SkillTestStep::PostRetaliate).
 /// - [`PostRetaliate`](SkillTestStep::PostRetaliate) → fire a Retaliate attack
 ///   (failed Fight vs ready retaliate enemy); advance to
@@ -1784,22 +1794,23 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // AcknowledgeOutcome across the suspension — `acknowledge_outcome`
                 // advances it on the Confirm resume (the AwaitingCommit /
                 // finish_skill_test handshake). When off, advance straight to
-                // FireOnCommit so non-interactive drives are unchanged.
+                // ApplyResultModifiers so non-interactive drives are unchanged.
                 if cx.state.interactive_acknowledge {
                     return prompt::suspend(cx.state, cx.cards);
                 }
                 cx.state
                     .current_skill_test_mut()
                     .expect("the SkillTest frame must persist across driver steps")
-                    .continuation = SkillTestStep::FireOnCommit;
+                    .continuation = SkillTestStep::ApplyResultModifiers;
             }
-            SkillTestStep::FireOnCommit => {
+            SkillTestStep::ApplyResultModifiers => {
                 // RR ST.7 head. Pre-advances the cursor to ApplyFollowUp, then
-                // pushes the committed cards' OnCommit effects (Vicious Blow's
-                // BoostAttackDamage) as one Seq. The loop drives them (non-
-                // suspending stat boosts in scope) and re-dispatches at
-                // ApplyFollowUp, which reads the now-populated accumulator.
-                fire_on_commit_step(cx, investigator, &committed);
+                // pushes the committed cards' matching result modifiers
+                // (Vicious Blow's BoostAttackDamage) as one Seq. The loop
+                // drives them (non-suspending accumulator writes in scope) and
+                // re-dispatches at ApplyFollowUp, which reads the
+                // now-populated accumulator.
+                apply_result_modifiers_step(cx, investigator, &committed);
             }
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
@@ -2210,27 +2221,31 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 }
 
 /// Collect, in committed-card order, the effects of every committed card's
-/// [`Trigger::OnSkillTestResolution`] ability that matches the resolved
-/// outcome.
+/// [`Trigger::OnSkillTestResolution`] ability that makes the given
+/// `contribution` and matches the resolved outcome.
 ///
-/// The [`FireOnResolution`](SkillTestStep::FireOnResolution) driver step
-/// indexes into this flat list, pushing one effect per visit so they
+/// The one collector behind both ST.7 steps, so they can't drift in how they
+/// gate or source effects.
+/// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) combines the
+/// [`Modifies`](ResultContribution::Modifies) list into one `Seq`;
+/// [`FireOnResolution`](SkillTestStep::FireOnResolution) indexes into the
+/// [`Adds`](ResultContribution::Adds) list, pushing one effect per visit so they
 /// cursor-sequence (no LIFO). At collection time the committed cards are in
 /// limbo on the in-flight record (discard happens at teardown), which also
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.
 ///
 /// Each effect comes paired with its card's position in `committed`, which
-/// the driver step binds for the effect to name its own card.
+/// `FireOnResolution` binds for the effect to name its own card.
 ///
-/// No abilities for the codes → empty list:
-/// engine-only tests that don't touch card data never reach
-/// `OnSkillTestResolution`. Silent skip mirrors `constant_skill_modifier`'s
-/// behavior.
-fn collect_on_skill_test_resolution(
+/// No abilities for the codes → empty list: engine-only tests that don't touch
+/// card data never reach a committed card's ability. Silent skip mirrors
+/// `constant_skill_modifier`'s behavior.
+fn collect_result_contributions(
     cards: &CardRegistry,
     committed: &[CommittedCard],
     succeeded: bool,
+    contribution: ResultContribution,
 ) -> Vec<(u8, Effect)> {
     let outcome_now = if succeeded {
         TestOutcome::Success
@@ -2247,46 +2262,17 @@ fn collect_on_skill_test_resolution(
             continue;
         };
         for ability in abilities {
-            let Trigger::OnSkillTestResolution { outcome } = ability.trigger else {
+            let Trigger::OnSkillTestResolution {
+                outcome,
+                contributes,
+            } = ability.trigger
+            else {
                 continue;
             };
-            if outcome != outcome_now {
+            if outcome != outcome_now || contributes != contribution {
                 continue;
             }
             effects.push((index, ability.effect));
-        }
-    }
-    effects
-}
-
-/// Collect, in committed-card order, the effects of every committed card's
-/// [`Trigger::OnCommit`] ability.
-///
-/// The [`FireOnCommit`](SkillTestStep::FireOnCommit) driver step combines these
-/// into one [`Effect::Seq`](card_dsl::dsl::Effect::Seq) and `push_effect`s it for
-/// the drive loop. They run at the head of ST.7 (after the token resolves) but
-/// before [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) reads the
-/// `bonus_attack_damage` accumulator the in-scope consumer
-/// ([`Effect::BoostAttackDamage`](card_dsl::dsl::Effect::BoostAttackDamage),
-/// Vicious Blow 01025) populates — and that consumer is conditional on success
-/// ("If this skill test is successful during an attack…"). The committed cards
-/// are in limbo on the in-flight record at this point (discard happens at
-/// teardown).
-///
-/// No abilities for the codes → empty list:
-/// engine-only tests that don't touch card data never commit real cards. Silent
-/// skip mirrors `constant_skill_modifier`'s behavior.
-fn collect_on_commit(cards: &CardRegistry, committed: &[CommittedCard]) -> Vec<Effect> {
-    let mut effects = Vec::new();
-    for CommittedCard { code, .. } in committed {
-        let Some(abilities) = (cards.abilities_for)(code) else {
-            continue;
-        };
-        for ability in abilities {
-            if !matches!(ability.trigger, Trigger::OnCommit) {
-                continue;
-            }
-            effects.push(ability.effect);
         }
     }
     effects

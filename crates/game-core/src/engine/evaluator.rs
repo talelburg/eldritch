@@ -108,8 +108,9 @@ pub struct RevelationBinding {
     pub revealed_card_owner: Owner,
 }
 
-/// The committed card an `OnSkillTestResolution` effect is printed on (bound
-/// only while resolving one, at RR ST.7). The effect names its own card through
+/// The committed card a result addition (`ResultContribution::Adds`) is printed
+/// on (bound only while resolving one, at RR ST.7). Result modifiers run
+/// combined into one `Seq` and get no binding. The effect names its own card through
 /// it: Opportunist 01053 returns itself to hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCardBinding {
@@ -185,7 +186,7 @@ pub struct EvalContext {
     /// [`Self::revealed_card_owner`]. `None` outside that window.
     pub revelation: Option<RevelationBinding>,
     /// Committed-card binding, bound only while resolving a committed card's
-    /// `OnSkillTestResolution` effect. Read via [`Self::committed_card`].
+    /// result addition. Read via [`Self::committed_card`].
     /// `None` outside that window.
     pub committed_card: Option<CommittedCardBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation.
@@ -333,7 +334,7 @@ impl EvalContext {
         self.revelation.map(|b| b.revealed_card_owner)
     }
     /// Position, among the in-flight test's committed cards, of the card whose
-    /// `OnSkillTestResolution` effect is resolving.
+    /// result addition is resolving.
     #[must_use]
     pub fn committed_card(&self) -> Option<u8> {
         self.committed_card.map(|b| b.index)

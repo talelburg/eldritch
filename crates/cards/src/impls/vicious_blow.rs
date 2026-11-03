@@ -13,11 +13,19 @@
 //! (`finish_skill_test` reads icons via the registry's `metadata_for`),
 //! not through the DSL.
 //!
-//! `abilities()` describes only the triggered effect: a
-//! [`Trigger::OnCommit`] running [`Effect::BoostAttackDamage`], gated by an
-//! [`if_`] over [`Condition::SkillTestKind`] of [`SkillTestKind::Fight`].
+//! `abilities()` describes only the triggered effect: a success-gated
+//! [result modifier](ResultContribution::Modifies) running
+//! [`Effect::BoostAttackDamage`], gated by an [`if_`] over
+//! [`Condition::SkillTestKind`] of [`SkillTestKind::Fight`].
 //!
-//! The **"during an attack"** qualifier is expressed by that kind gate —
+//! It is a modifier because the ruling says so: *"“that attack” is given +1
+//! damage, rather than Vicious Blow itself dealing 1 damage"*
+//! (<https://arkhamdb.com/card/01025>). So it applies at the head of ST.7,
+//! before the Fight follow-up deals the attack's damage (**Result modifier** in
+//! `GLOSSARY.md`). The trigger's `Success` gate is the **"if this skill test is
+//! successful"** qualifier.
+//!
+//! The **"during an attack"** qualifier is expressed by the kind gate —
 //! symmetric to Deduction 01039's "while investigating"
 //! ([`Condition::SkillTestKind`] of [`SkillTestKind::Investigate`]). Every
 //! attack in the engine, whether the Fight *action* or a designated **Fight**
@@ -27,17 +35,6 @@
 //! [`InFlightSkillTest::bonus_attack_damage`]) keeps the buff from leaking
 //! into a non-attack test even if a second reader is added later.
 //!
-//! The **"if successful"** qualifier stays intrinsic to
-//! [`Effect::BoostAttackDamage`]: the bonus is
-//! consumed by the Fight follow-up, which deals damage only on success, so
-//! on a failed test it is accumulated, never read, and thrown away with the
-//! test's frame. It is **not** that the outcome is unknown at commit — the
-//! `FireOnCommit` step runs after `DetermineOutcome`, so the outcome is on the
-//! frame. `OnCommit` (not `OnSkillTestResolution`) is required regardless,
-//! because the follow-up deals the attack's damage *during* resolution, before
-//! the resolution trigger fires.
-//!
-//! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::BoostAttackDamage`]: card_dsl::dsl::Effect::BoostAttackDamage
 //! [`Condition::SkillTestKind`]: card_dsl::dsl::Condition::SkillTestKind
 //! [`SkillTestKind::Fight`]: card_dsl::dsl::SkillTestKind::Fight
@@ -45,7 +42,7 @@
 //! [`if_`]: card_dsl::dsl::if_
 //! [`InFlightSkillTest::bonus_attack_damage`]: game_core::state::InFlightSkillTest::bonus_attack_damage
 
-use card_dsl::dsl::{self, Ability, Condition, SkillTestKind};
+use card_dsl::dsl::{self, Ability, Condition, ResultContribution, SkillTestKind, TestOutcome};
 
 use crate::impls::CardRecord;
 
@@ -55,25 +52,34 @@ pub const CODE: &str = "01025";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// On commit to a Fight test, add +1 to the attack's damage (consumed by
-/// the Fight follow-up, which deals damage only on success).
+/// On a successful Fight test, add +1 to the attack's damage before the Fight
+/// follow-up deals it.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_commit(dsl::if_(
+    vec![dsl::modifies_result(
+        TestOutcome::Success,
+        dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Fight),
         dsl::boost_attack_damage(1),
-    ))]
+        ),
+    )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Condition, Effect, SkillTestKind, Trigger};
+    use card_dsl::dsl::{Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger};
 
     #[test]
-    fn abilities_are_one_on_commit_attack_buff() {
+    fn abilities_are_one_success_modifier_attack_buff() {
         let abilities = super::abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::OnCommit);
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::OnSkillTestResolution {
+                outcome: TestOutcome::Success,
+                contributes: ResultContribution::Modifies,
+            },
+        );
         // If(SkillTestKind(Fight), BoostAttackDamage(1)) — "during an attack".
         let Effect::If {
             condition, then, ..

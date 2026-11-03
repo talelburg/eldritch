@@ -311,7 +311,7 @@ fn attack_damage(
 /// retaliate attack."*
 ///
 /// The skill-test driver calls this at its `PostRetaliate` step — after
-/// `fire_on_skill_test_resolution` (the rest of ST.7) and before the
+/// `fire_on_resolution_step` (the rest of ST.7) and before the
 /// `PostOnResolution` teardown (ST.8) — matching "after applying all results."
 /// Routes through [`combat::drive_retaliate`] so the attack opens its
 /// before-attack cancel window (Dodge 01023) and per-soaked-asset soak window

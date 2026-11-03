@@ -127,7 +127,7 @@ fn table(
             | SkillTestStep::PreTokenWindow
             | SkillTestStep::Resolving
             | SkillTestStep::DetermineOutcome
-            | SkillTestStep::FireOnCommit
+            | SkillTestStep::ApplyResultModifiers
             | SkillTestStep::ApplyFollowUp
             | SkillTestStep::ApplyResultEffect
             | SkillTestStep::ApplyTokenResult

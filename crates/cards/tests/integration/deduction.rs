@@ -110,9 +110,8 @@ fn deduction_at_a_one_clue_location_discovers_exactly_one() {
 #[test]
 fn failed_investigate_discovers_no_clues() {
     // Shroud 99 — even with Deduction's 1 intellect icon, 3 + 0 + 1 = 4
-    // << 99 → fail by 95. Deduction's `OnCommit` accumulate is ungated on
-    // outcome and does run, but the Investigate follow-up is success-only,
-    // so nothing ever reads it and no clue moves.
+    // << 99 → fail by 95. Deduction's modifier is gated on success, so it
+    // never applies, and the Investigate follow-up discovers nothing.
     let session = board_with_deduction(2, 99);
     let result = drive_committing_deduction(session);
 

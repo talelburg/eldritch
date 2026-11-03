@@ -712,7 +712,7 @@ impl<'a> NativeCx<'a> {
     }
 
     /// Return the committed card at `index` — the one an
-    /// `OnSkillTestResolution` effect is printed on, read from
+    /// result addition is printed on, read from
     /// [`EvalContext::committed_card`](crate::engine::evaluator::EvalContext::committed_card)
     /// — to its investigator's hand when the test ends, instead of discarding
     /// it. Emits

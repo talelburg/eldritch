@@ -11,9 +11,10 @@
 //! The agility icon is printed metadata. `abilities()` is the one
 //! [`Trigger::OnSkillTestResolution`] ability on a success, gated by an
 //! [`if_`](dsl::if_) over [`Condition::SkillTestKind`] of
-//! [`SkillTestKind::Evade`] — Deduction 01039's kind gate, on resolution rather
-//! than commit so that a failed test runs nothing. On any other test, or a
-//! failed evasion, the card is inert.
+//! [`SkillTestKind::Evade`] — Deduction 01039's kind gate. It is a result
+//! addition (`dsl::adds_result`): the disengage and move are consequences of
+//! its own, not a change to the evasion's. On any other test, or a failed
+//! evasion, the card is inert.
 //!
 //! The ability's controller is the tester, so *"the evading investigator"* is
 //! who acts even when someone else committed the card. The evasion's own
@@ -95,7 +96,7 @@ const STAY_LABEL: &str = "Do not move";
 /// connecting location, then the engagement rule.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_skill_test_resolution(
+    vec![dsl::adds_result(
         TestOutcome::Success,
         dsl::if_(
             Condition::SkillTestKind(SkillTestKind::Evade),

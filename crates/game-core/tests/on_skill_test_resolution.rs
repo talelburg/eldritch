@@ -1,6 +1,6 @@
 //! End-to-end `Trigger::OnSkillTestResolution` flow with a mock
-//! `CardRegistry` covering one success-gated and one failure-gated
-//! ability.
+//! `CardRegistry`: success- and failure-gated result additions, and a result
+//! modifier against an addition.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own integration-
 //! test process (a process holds one `MockRegistry`), letting it build
@@ -12,7 +12,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::dsl::{self, LocationTarget, ModifierScope, Stat, TestOutcome};
+use card_dsl::dsl::{self, InvestigatorTarget, LocationTarget, ModifierScope, Stat, TestOutcome};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::Registries;
 use game_core::event::Event;
@@ -34,9 +34,18 @@ const BONUS_CLUE_FAILURE: &str = "MOCK-OSR-F";
 
 /// Mock: a constant +1 intellect modifier (passive, not a resolution
 /// trigger) PLUS a success-gated `OnSkillTestResolution`. Exercises
-/// the inner trigger-filter inside `fire_on_skill_test_resolution`:
+/// the inner trigger-filter inside `collect_result_contributions`:
 /// the constant ability must NOT fire as a resolution trigger.
 const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
+
+/// Mock: a success-gated result **modifier** gaining 1 resource. Gaining a
+/// resource modifies nothing; the effect only makes the step that applies it
+/// visible in the event log.
+const MODIFIER_SUCCESS: &str = "MOCK-OSR-MOD";
+
+/// Mock: a success-gated result **addition** gaining 1 resource, the
+/// counterpart of [`MODIFIER_SUCCESS`].
+const ADDITION_SUCCESS: &str = "MOCK-OSR-ADD";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -45,13 +54,13 @@ fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
             .with_abilities(BONUS_CLUE_SUCCESS, || {
-                vec![dsl::on_skill_test_resolution(
+                vec![dsl::adds_result(
                     TestOutcome::Success,
                     dsl::discover_clue(LocationTarget::TestedLocation, 1),
                 )]
             })
             .with_abilities(BONUS_CLUE_FAILURE, || {
-                vec![dsl::on_skill_test_resolution(
+                vec![dsl::adds_result(
                     TestOutcome::Failure,
                     dsl::discover_clue(LocationTarget::TestedLocation, 1),
                 )]
@@ -59,11 +68,23 @@ fn registries() -> Registries {
             .with_abilities(MIXED_TRIGGERS, || {
                 vec![
                     dsl::constant(dsl::modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-                    dsl::on_skill_test_resolution(
+                    dsl::adds_result(
                         TestOutcome::Success,
                         dsl::discover_clue(LocationTarget::TestedLocation, 1),
                     ),
                 ]
+            })
+            .with_abilities(MODIFIER_SUCCESS, || {
+                vec![dsl::modifies_result(
+                    TestOutcome::Success,
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_abilities(ADDITION_SUCCESS, || {
+                vec![dsl::adds_result(
+                    TestOutcome::Success,
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
             })
             .build(),
         scenarios: &ScenarioRegistry::EMPTY,
@@ -211,7 +232,7 @@ fn mixed_triggers_card_only_fires_the_resolution_ability() {
     // contribution (would be queried via `constant_skill_modifier`
     // if the card were in play, but it's in hand here so doesn't
     // contribute to the test total either — the test just confirms
-    // the trigger-filter inside `fire_on_skill_test_resolution` skips
+    // the trigger-filter inside `collect_result_contributions` skips
     // non-matching trigger variants on the same card).
     let session = skill_test_with_commits(&[MIXED_TRIGGERS], 2, &[MIXED_TRIGGERS]);
 
@@ -290,4 +311,45 @@ fn investigate_canonical_event_order_with_on_resolution() {
     assert!(location_clue_indices[0] < clue_indices[1]);
     assert!(clue_indices[1] < location_clue_indices[1]);
     assert!(location_clue_indices[1] < discarded);
+}
+
+#[test]
+fn a_modifier_applies_before_the_follow_up_and_an_addition_after_it() {
+    // Investigate with both mocks committed, the addition first so committed
+    // order can't explain the result. Base 3 + 0 (token) vs shroud 2: passes.
+    // ST.7's "contribute additional consequences, or modify existing
+    // consequences": the modifier is in place before the follow-up's
+    // discovery, and the addition applies after it.
+    let session = session_with_hand(&[ADDITION_SUCCESS, MODIFIER_SUCCESS])
+        .take(&TurnAction::Investigate { investigator: INV })
+        .commit(&[ADDITION_SUCCESS, MODIFIER_SUCCESS]);
+
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
+    let gained: Vec<usize> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, ev)| matches!(ev, Event::ResourcesGained { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let discovery = events
+        .iter()
+        .position(|ev| matches!(ev, Event::CluePlaced { .. }))
+        .expect("the follow-up discovers a clue");
+    assert_eq!(gained.len(), 2, "one resource gain per mock");
+    assert!(
+        gained[0] < discovery && discovery < gained[1],
+        "modifier before the discovery, addition after: {events:#?}"
+    );
+}
+
+#[test]
+fn a_success_gated_modifier_does_not_apply_on_a_failing_test() {
+    // Difficulty 99: base 3 + 0 = 3, fails by 96. The modifier is gated on
+    // Success by its trigger, so it applies nothing.
+    let session = skill_test_with_commits(&[MODIFIER_SUCCESS], 99, &[MODIFIER_SUCCESS]);
+
+    session.assert_at_turn_menu(INV);
+    assert_event!(session.events(), Event::SkillTestFailed { .. });
+    assert_no_event!(session.events(), Event::ResourcesGained { .. });
 }

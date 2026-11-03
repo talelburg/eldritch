@@ -34,7 +34,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 /// On any successful test this is committed to, heal 1 horror.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_skill_test_resolution(
+    vec![dsl::adds_result(
         TestOutcome::Success,
         dsl::heal_horror(InvestigatorTarget::You, 1),
     )]

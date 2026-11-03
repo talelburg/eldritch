@@ -469,14 +469,6 @@ pub enum Trigger {
     /// effect *is* the card's resolution; for assets it triggers
     /// once at enter-play time (separately from any constant abilities).
     OnPlay,
-    /// Fires when the card is committed to a skill test from hand.
-    /// Distinct from [`OnPlay`](Self::OnPlay) — commit happens during
-    /// any skill test (not just the controller's turn), doesn't cost
-    /// resources, and the card discards after the test resolves
-    /// rather than entering play. Used by skill cards and a handful
-    /// of player cards with commit-time effects (e.g. Deduction's
-    /// "if your skill test is successful while investigating, …").
-    OnCommit,
     /// Fires when the owning card is drawn: from the encounter deck, or — a
     /// weakness — from its bearer's deck.
     ///
@@ -512,22 +504,30 @@ pub enum Trigger {
         /// [`Ability::designator`].
         action_cost: u8,
     },
-    /// Fires during the resolution of a skill test the card is
-    /// committed to, after the outcome is determined and gated on
-    /// `outcome` matching it.
+    /// Fires at ST.7 of a skill test the card is committed to, gated on
+    /// `outcome` matching the test's. ST.7
+    /// (`data/rules-reference/rules/Appendix_II_Timing_and_Gameplay.md`)
+    /// names two kinds of contribution: *"some other card abilities may
+    /// contribute additional consequences, or modify existing consequences,
+    /// at this time."* `contributes` says which this ability is, and that
+    /// decides where it applies:
+    ///
+    /// - [`Modifies`](ResultContribution::Modifies) applies at the head of
+    ///   ST.7, before the action-specific `SkillTestFollowUp` (in
+    ///   `game_core::state`), so the consequence it changes reads it. Vicious
+    ///   Blow 01025's +1 attack damage and Deduction 01039's additional clue
+    ///   are modifiers by their rulings; see **Result modifier** in
+    ///   `GLOSSARY.md`.
+    /// - [`Adds`](ResultContribution::Adds) applies after the follow-up and the
+    ///   card and token results, one effect at a time in committed-card order.
+    ///   Guts 01089's *"draw 1 card"* is one.
+    ///
+    /// Both apply before the committed cards discard at ST.8, so the
+    /// committed card is still in limbo on the in-flight test record and
+    /// [`LocationTarget::TestedLocation`] resolves against it.
     ///
     /// This is not a reaction window (no player decision, no "may");
-    /// it's part of the test's own resolution machinery. The effect
-    /// evaluates after the action-specific
-    /// `SkillTestFollowUp` (in `game_core::state`) and
-    /// before the committed cards discard, so the committed card is
-    /// still in hand at evaluation time and
-    /// [`LocationTarget::TestedLocation`] resolves against the
-    /// in-flight test record.
-    ///
-    /// Canonical motivating card: Deduction (01039) — "If this skill
-    /// test is successful while investigating a location, discover 1
-    /// additional clue at that location."
+    /// it's part of the test's own resolution machinery.
     ///
     /// Kind narrowing (the "while investigating" qualifier) is not
     /// baked into the trigger; it's expressed as an [`Effect::If`]
@@ -545,6 +545,9 @@ pub enum Trigger {
         /// Whether the trigger fires on success or on failure of the
         /// resolving test.
         outcome: TestOutcome,
+        /// Whether the ability modifies a consequence the test already
+        /// produces or adds one of its own.
+        contributes: ResultContribution,
     },
     /// Fires when an engine `Event` (in `game_core`) matching `pattern` reaches
     /// the timing cell `timing` names. `kind` says whether the ability is
@@ -1806,7 +1809,6 @@ impl Ability {
             // event pattern names what happened, never a condition on it.
             Trigger::Constant
             | Trigger::OnPlay
-            | Trigger::OnCommit
             | Trigger::Revelation
             | Trigger::OnSkillTestResolution { .. }
             | Trigger::OnEvent { .. }
@@ -2352,21 +2354,16 @@ pub enum Effect {
         count: IntExpr,
     },
     /// Add `N` to the in-flight skill test's bonus attack damage —
-    /// Vicious Blow 01025's "that attack deals +1 damage." Accumulated at
-    /// commit time (under [`Trigger::OnCommit`]) onto the in-flight
-    /// record; **only a Fight skill test's follow-up reads it**, so the
-    /// "during an attack" qualifier is intrinsic (committing to a
-    /// non-attack test accumulates harmlessly and changes nothing), as is
-    /// "if successful" (the Fight follow-up deals damage only on success).
+    /// Vicious Blow 01025's "that attack deals +1 damage." Accumulated by a
+    /// [result modifier](ResultContribution::Modifies) onto the in-flight
+    /// record; **only a successful Fight skill test's follow-up reads it**.
     /// A no-op when there is no in-flight test.
     BoostAttackDamage(u8),
     /// Add `N` to the in-flight skill test's bonus clue count — Deduction
     /// 01039's "discover 1 **additional** clue at that location."
-    /// Accumulated at commit time (under [`Trigger::OnCommit`]) onto the
-    /// in-flight record; **only an Investigate skill test's follow-up reads
-    /// it**, so the "while investigating" qualifier is intrinsic, as is "if
-    /// successful" (that follow-up discovers only on success). A no-op when
-    /// there is no in-flight test.
+    /// Accumulated by a [result modifier](ResultContribution::Modifies) onto
+    /// the in-flight record; **only a successful Investigate skill test's
+    /// follow-up reads it**. A no-op when there is no in-flight test.
     ///
     /// It raises that one discovery's count rather than making a second
     /// discovery — a card-text distinction, not an implementation detail; see
@@ -3525,6 +3522,23 @@ pub enum TestOutcome {
     Failure,
 }
 
+/// Which of ST.7's two kinds of contribution a
+/// [`Trigger::OnSkillTestResolution`] ability makes: *"some other card
+/// abilities may contribute additional consequences, or modify existing
+/// consequences, at this time."* See **Result modifier** in `GLOSSARY.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ResultContribution {
+    /// Changes a consequence the test already produces, so it is in place
+    /// before that consequence applies, and it is not one of the results the
+    /// performer orders. Deduction 01039: *"it modifies the number of clues
+    /// that you would find, it does not add an extra effect"*
+    /// (<https://arkhamdb.com/card/01039>).
+    Modifies,
+    /// Contributes a consequence of its own, such as Guts 01089's *"draw 1
+    /// card"*.
+    Adds,
+}
+
 // ---- builders --------------------------------------------------
 
 /// Construct a [`Trigger::Constant`]-driven [`Ability`] wrapping the
@@ -3579,30 +3593,36 @@ pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
     }
 }
 
-/// Construct a [`Trigger::OnCommit`]-driven [`Ability`] wrapping the
-/// given effect. Used by skill cards and other commit-trigger cards.
+/// Construct a committed card's [`Trigger::OnSkillTestResolution`] ability that
+/// [modifies](ResultContribution::Modifies) a consequence the test already
+/// produces, gated on the given outcome. Vicious Blow 01025's +1 attack damage.
 #[must_use]
-pub fn on_commit(effect: Effect) -> Ability {
-    Ability {
-        trigger: Trigger::OnCommit,
-        designator: None,
-        costs: Vec::new(),
-        effect,
-        usage_limit: None,
-        eligibility: None,
-        active_in: AbilityZone::InPlay,
-    }
+pub fn modifies_result(outcome: TestOutcome, effect: Effect) -> Ability {
+    on_skill_test_resolution(outcome, ResultContribution::Modifies, effect)
 }
 
-/// Construct a [`Trigger::OnSkillTestResolution`] ability gated on the given
-/// outcome.
+/// Construct a committed card's [`Trigger::OnSkillTestResolution`] ability that
+/// [adds](ResultContribution::Adds) a consequence of its own, gated on the given
+/// outcome. Guts 01089's *"draw 1 card"*.
+#[must_use]
+pub fn adds_result(outcome: TestOutcome, effect: Effect) -> Ability {
+    on_skill_test_resolution(outcome, ResultContribution::Adds, effect)
+}
+
+/// The shared body of [`modifies_result`] and [`adds_result`].
 ///
 /// Costs are empty — resolution-time triggers fire automatically as part of the
 /// test's machinery, not via player activation.
-#[must_use]
-pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability {
+fn on_skill_test_resolution(
+    outcome: TestOutcome,
+    contributes: ResultContribution,
+    effect: Effect,
+) -> Ability {
     Ability {
-        trigger: Trigger::OnSkillTestResolution { outcome },
+        trigger: Trigger::OnSkillTestResolution {
+            outcome,
+            contributes,
+        },
         designator: None,
         costs: Vec::new(),
         effect,
@@ -3654,7 +3674,7 @@ pub fn reaction_on_event(pattern: EventPattern, timing: EventTiming, effect: Eff
 /// Construct a [`Trigger::Revelation`]-driven [`Ability`] wrapping the given
 /// effect.
 ///
-/// Mirrors [`on_play`] / [`on_commit`]; costs and usage limits are empty
+/// Mirrors [`on_play`]; costs and usage limits are empty
 /// (Revelation effects pay nothing and have no per-period cap — the rules treat
 /// each draw as a fresh occurrence).
 #[must_use]

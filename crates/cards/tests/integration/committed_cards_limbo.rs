@@ -148,7 +148,7 @@ fn a_fast_play_in_the_st2_window_does_not_move_the_committed_card() {
     );
 
     // Three clues off the location: 1 for Working a Hunch's OnPlay, 1 for the
-    // successful Investigate, 1 more for Deduction's OnSkillTestResolution.
+    // successful Investigate, 1 more for Deduction's result modifier.
     assert_eq!(r.state().locations[&HERE].clues, 0);
     assert_eq!(inv.clues, 3);
 }

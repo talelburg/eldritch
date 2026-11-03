@@ -1,42 +1,42 @@
 use super::*;
 
-/// Deduction-shaped commit-trigger ability: `on_commit` builds a trigger
-/// distinct from `on_play`.
+/// `modifies_result` and `adds_result` build the same outcome-gated trigger,
+/// differing only in the contribution they declare, and accept
+/// `TestedLocation`-targeted effects.
 #[test]
-fn on_commit_distinct_from_on_play() {
-    let ability = on_commit(if_(
-        Condition::SkillTestKind(SkillTestKind::Investigate),
-        discover_clue(LocationTarget::YourLocation, 1),
-    ));
-    assert_eq!(ability.trigger, Trigger::OnCommit);
-    // Distinct enum variant — compiler enforces the difference at
-    // every match site, which is the whole point of separating
-    // them rather than reusing OnPlay.
-    assert_ne!(ability.trigger, Trigger::OnPlay);
-}
-
-/// `on_skill_test_resolution` builds the outcome-gated trigger
-/// and accepts `TestedLocation`-targeted effects.
-#[test]
-fn on_skill_test_resolution_builder() {
-    let ability = on_skill_test_resolution(
-        TestOutcome::Success,
-        discover_clue(LocationTarget::TestedLocation, 1),
-    );
-    assert_eq!(
-        ability.trigger,
-        Trigger::OnSkillTestResolution {
-            outcome: TestOutcome::Success,
-        },
-    );
-    assert!(matches!(
-        ability.effect,
-        Effect::DiscoverClue {
-            from: LocationTarget::TestedLocation,
-            count: 1,
-        },
-    ));
-    assert!(ability.costs.is_empty());
+fn result_builders_declare_their_contribution() {
+    for (ability, contributes) in [
+        (
+            modifies_result(
+                TestOutcome::Success,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            ),
+            ResultContribution::Modifies,
+        ),
+        (
+            adds_result(
+                TestOutcome::Success,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            ),
+            ResultContribution::Adds,
+        ),
+    ] {
+        assert_eq!(
+            ability.trigger,
+            Trigger::OnSkillTestResolution {
+                outcome: TestOutcome::Success,
+                contributes,
+            },
+        );
+        assert!(matches!(
+            ability.effect,
+            Effect::DiscoverClue {
+                from: LocationTarget::TestedLocation,
+                count: 1,
+            },
+        ));
+        assert!(ability.costs.is_empty());
+    }
 }
 
 /// Roland-Banks-shaped reaction: "after you defeat an enemy,
@@ -108,7 +108,6 @@ fn on_event_distinct_from_other_triggers_and_internally() {
     };
     assert_ne!(after_any, Trigger::Constant);
     assert_ne!(after_any, Trigger::OnPlay);
-    assert_ne!(after_any, Trigger::OnCommit);
     assert_ne!(after_any, after_controller);
     assert_ne!(after_controller, when_controller);
 }
@@ -224,7 +223,7 @@ fn on_event_carries_trigger_kind() {
 }
 
 /// The `revelation` builder produces the new Trigger variant with
-/// the given effect. Distinct from `OnPlay` / `OnCommit` at the type
+/// the given effect. Distinct from `OnPlay` at the type
 /// level so the compiler enforces the difference at every match site.
 #[test]
 fn revelation_builder_constructs_treachery_shape() {
@@ -244,7 +243,6 @@ fn revelation_builder_constructs_treachery_shape() {
 #[test]
 fn revelation_distinct_from_other_triggers() {
     assert_ne!(Trigger::Revelation, Trigger::OnPlay);
-    assert_ne!(Trigger::Revelation, Trigger::OnCommit);
     assert_ne!(Trigger::Revelation, Trigger::Constant);
 }
 

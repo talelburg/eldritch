@@ -17,7 +17,9 @@
 //! gated on `Success` that, when [`Quantity::SkillTestSucceededBy`] is 3 or
 //! more, runs a native that sets the card's ST.8 destination to its hand. The
 //! native names its own card through the committed-card binding the engine
-//! gives every `OnSkillTestResolution` effect. A card-local native rather than
+//! gives every result addition. It is a result addition
+//! (`dsl::adds_result`): the return changes ST.8's discard, not a consequence
+//! the test's initiator produces. A card-local native rather than
 //! a DSL effect: Opportunist is the only implemented card returning a
 //! committed card (Try and Try Again 02309 would be the second).
 //!
@@ -41,7 +43,7 @@ const RETURN_TO_HAND: &str = "01053:return-to-hand";
 /// On a success by 3 or more, return this card to hand after the test.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_skill_test_resolution(
+    vec![dsl::adds_result(
         TestOutcome::Success,
         dsl::if_(dsl::succeeded_by(3), dsl::native(RETURN_TO_HAND)),
     )]
@@ -62,7 +64,7 @@ fn return_to_hand(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, ResultContribution, Trigger};
 
     use super::*;
 
@@ -74,6 +76,7 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnSkillTestResolution {
                 outcome: TestOutcome::Success,
+                contributes: ResultContribution::Adds,
             },
         );
         let Effect::If {

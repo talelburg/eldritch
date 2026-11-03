@@ -13,18 +13,22 @@
 //! (`finish_skill_test` reads icons via the registry's
 //! `metadata_for`), not through the DSL.
 //!
-//! `abilities()` describes only the triggered effect: a
-//! [`Trigger::OnCommit`] running [`Effect::DiscoverAdditionalClues`], gated by
-//! an [`if_`] over [`Condition::SkillTestKind`] of
-//! [`SkillTestKind::Investigate`].
+//! `abilities()` describes only the triggered effect: a success-gated
+//! [result modifier](ResultContribution::Modifies) running
+//! [`Effect::DiscoverAdditionalClues`], gated by an [`if_`] over
+//! [`Condition::SkillTestKind`] of [`SkillTestKind::Investigate`]. The
+//! trigger's `Success` gate is the **"if this skill test is successful"**
+//! qualifier.
 //!
 //! **"1 additional clue" raises one discovery's count; it does not make a
 //! second discovery.** The card's FAQ is explicit: *"The word 'Additional'
 //! means 'in addition to other clues you discover', i.e. it modifies the number
 //! of clues that you would find, it does not add an extra effect on top of any
-//! other effects."* So the bonus rides
-//! [`InFlightSkillTest::bonus_clues_discovered`] — accumulated here at commit,
-//! read by the Investigate follow-up, which makes a single discovery of
+//! other effects."* (<https://arkhamdb.com/card/01039>) That is what makes it a
+//! modifier, applied at the head of ST.7 before the follow-up's discovery
+//! (**Result modifier** in `GLOSSARY.md`). So the bonus rides
+//! [`InFlightSkillTest::bonus_clues_discovered`] — accumulated here, read by
+//! the Investigate follow-up, which makes a single discovery of
 //! `1 + bonus`. A second `DiscoverClue` would be observably wrong, not merely
 //! differently shaped: Cover Up 01007 replaces *a discovery*, so two of 1
 //! discard 2 clues from Cover Up where one of 2 (capped at the location's
@@ -39,14 +43,6 @@
 //! Fight test use intellect, which Deduction's intellect icon makes committable
 //! — and that test is still a Fight, so no clue bonus applies.
 //!
-//! The **"if this skill test is successful"** qualifier stays intrinsic to
-//! [`Effect::DiscoverAdditionalClues`]. `OnCommit` effects fire ungated on
-//! outcome, but the accumulator's only reader is the Investigate follow-up,
-//! which runs on success only — so on a failed test the bonus is accumulated,
-//! never read, and thrown away with the test's frame. (Not "because the outcome
-//! isn't known yet": the `FireOnCommit` step runs *after* `DetermineOutcome`,
-//! so it is on the frame.)
-//!
 //! "At that location" is likewise intrinsic: the follow-up discovers at the
 //! test's [`LocationTarget::TestedLocation`] snapshot, and the accumulator lives
 //! on the in-flight test — which is why the FAQ's *"If you commit Deduction to
@@ -54,7 +50,6 @@
 //! additional clue, not you"* holds structurally. The bonus is a property of the
 //! test, not of the committer.
 //!
-//! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::DiscoverAdditionalClues`]: card_dsl::dsl::Effect::DiscoverAdditionalClues
 //! [`if_`]: card_dsl::dsl::if_
 //! [`Condition::SkillTestKind`]: card_dsl::dsl::Condition::SkillTestKind
@@ -63,7 +58,7 @@
 //! [`LocationTarget::TestedLocation`]: card_dsl::dsl::LocationTarget::TestedLocation
 //! [`InFlightSkillTest::bonus_clues_discovered`]: game_core::state::InFlightSkillTest::bonus_clues_discovered
 
-use card_dsl::dsl::{self, Ability, Condition, SkillTestKind};
+use card_dsl::dsl::{self, Ability, Condition, ResultContribution, SkillTestKind, TestOutcome};
 
 use crate::impls::CardRecord;
 
@@ -73,26 +68,34 @@ pub const CODE: &str = "01039";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// On commit to an Investigate test, add +1 to the investigation's discovery
-/// count (consumed by the Investigate follow-up, which discovers only on
-/// success).
+/// On a successful Investigate test, add +1 to the investigation's discovery
+/// count before the Investigate follow-up discovers.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_commit(dsl::if_(
+    vec![dsl::modifies_result(
+        TestOutcome::Success,
+        dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Investigate),
         dsl::discover_additional_clues(1),
-    ))]
+        ),
+    )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Condition, Effect, SkillTestKind, Trigger};
+    use card_dsl::dsl::{Condition, Effect, ResultContribution, SkillTestKind, TestOutcome, Trigger};
 
     #[test]
-    fn abilities_are_one_on_commit_clue_buff() {
+    fn abilities_are_one_success_modifier_clue_buff() {
         let abilities = super::abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::OnCommit);
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::OnSkillTestResolution {
+                outcome: TestOutcome::Success,
+                contributes: ResultContribution::Modifies,
+            },
+        );
         // If(SkillTestKind(Investigate), DiscoverAdditionalClues(1)) —
         // "while investigating a location".
         let Effect::If {
