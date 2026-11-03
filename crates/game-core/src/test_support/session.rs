@@ -49,7 +49,8 @@ use crate::test_support::resolver::{
 /// - **Readers** — [`prompt`](Self::prompt),
 ///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
 ///   [`state`](Self::state), [`events`](Self::events),
-///   [`offered_at`](Self::offered_at),
+///   [`offered_at`](Self::offered_at), [`offered_to`](Self::offered_to),
+///   [`offered_targets`](Self::offered_targets),
 ///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
 ///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) and
 ///   [`assert_lead_asked_between`](Self::assert_lead_asked_between) — look at the
