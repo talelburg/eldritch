@@ -183,10 +183,32 @@ pub(super) fn engage_or_report_tie(cx: &mut Cx, enemy_id: EnemyId) -> Option<Tie
     }
 }
 
+/// Apply [`engage_or_report_tie`] to each of `enemies`, in the order given, and
+/// push the ties it reports as one
+/// [`EngagementTie`](crate::state::Continuation::EngagementTie) frame for the
+/// lead, in that same order. Returns whether a frame was pushed. A caller that
+/// handles several enemies passes them in enemy-id order, so one step leaves
+/// one frame, its ties asked in that order.
+///
+/// Pushed and returned from, as [`push_engagement_ties`].
+pub(super) fn engage_each_or_push_ties(
+    cx: &mut Cx,
+    enemies: impl IntoIterator<Item = EnemyId>,
+) -> bool {
+    let ties: Vec<TiedEngagement> = enemies
+        .into_iter()
+        .filter_map(|enemy_id| engage_or_report_tie(cx, enemy_id))
+        .collect();
+    let tied = !ties.is_empty();
+    push_engagement_ties(cx, ties);
+    tied
+}
+
 /// Push one [`EngagementTie`](crate::state::Continuation::EngagementTie) frame
 /// holding `ties`, answered in the order given, or nothing when `ties` is
 /// empty. A caller that handles several enemies collects their ties in enemy-id
-/// order first, so one step leaves one frame.
+/// order first, so one step leaves one frame; [`engage_each_or_push_ties`] does
+/// both.
 ///
 /// Pushed and returned from: the `drive` loop surfaces the prompt, and the
 /// frame beneath continues once the last tie is answered.
@@ -286,11 +308,7 @@ pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
         .filter(|(_, e)| !e.exhausted && e.engaged_with.is_none() && e.current_location.is_some())
         .map(|(id, _)| *id)
         .collect();
-    let ties = unengaged
-        .into_iter()
-        .filter_map(|enemy_id| engage_or_report_tie(cx, enemy_id))
-        .collect();
-    push_engagement_ties(cx, ties);
+    engage_each_or_push_ties(cx, unengaged);
 }
 
 /// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged

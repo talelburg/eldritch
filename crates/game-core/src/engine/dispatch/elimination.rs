@@ -457,11 +457,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // enemy-id order, and steps 4–6 run on beneath it, so the lead answers once
     // the elimination has finished, and a lead eliminated here has already
     // handed over to the next (step 5).
-    let ties = affected
-        .into_iter()
-        .filter_map(|eid| engagement::engage_or_report_tie(cx, eid))
-        .collect();
-    engagement::push_engagement_ties(cx, ties);
+    engagement::engage_each_or_push_ties(cx, affected);
 
     // Step 4: "All other cards in the eliminated investigator's threat area are
     // placed in the appropriate discard pile" (Rules Reference p.10) — each

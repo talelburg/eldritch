@@ -379,11 +379,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     // goes on one frame, in enemy-id order, pushed from `LeftLocation`'s
     // resolve step, so the lead answers before its `at` and `after` cells and
     // before the arrival's `MoveEnter` frame beneath.
-    let ties = stranded
-        .into_iter()
-        .filter_map(|enemy_id| engagement::engage_or_report_tie(cx, enemy_id))
-        .collect();
-    engagement::push_engagement_ties(cx, ties);
+    engagement::engage_each_or_push_ties(cx, stranded);
 }
 
 /// The entered-location half of a Move, run when the `drive` loop re-exposes the

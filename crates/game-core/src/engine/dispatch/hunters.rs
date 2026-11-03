@@ -304,8 +304,7 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 pub(crate) fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
     if cx.state.enemies[&enemy_id].engaged_with.is_none() {
-        let tie = engagement::engage_or_report_tie(cx, enemy_id);
-        engagement::push_engagement_ties(cx, tie.into_iter().collect());
+        engagement::engage_each_or_push_ties(cx, [enemy_id]);
     }
 }
 
@@ -318,10 +317,7 @@ fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> bool {
         cx.state.enemies[&enemy_id].current_location.is_some(),
         "engage_on_arrival: enemy {enemy_id:?} has no location; state corruption"
     );
-    let tie = engagement::engage_or_report_tie(cx, enemy_id);
-    let tied = tie.is_some();
-    engagement::push_engagement_ties(cx, tie.into_iter().collect());
-    tied
+    engagement::engage_each_or_push_ties(cx, [enemy_id])
 }
 
 /// Process a single hunter (movement + engage-on-arrival). Returns whether it

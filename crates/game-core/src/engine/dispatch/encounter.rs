@@ -112,8 +112,9 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// 01064).
 ///
 /// Body: emits [`Event::CardRevealed`], pushes a
-/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) disposition frame (treachery → `Discard`,
-/// enemy → `Spawn`), then announces the draw,
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard)
+/// disposition frame (treachery → `Discard`, enemy → `Spawn`), then announces
+/// the draw,
 /// [`TimingEvent::EncounterCardDrawn`], in tail position (ADR 0003). The
 /// revelation is that condition's resolve step ([`resolve_revelation`]),
 /// so a `when` ability can cancel it (Ward of Protection 01065); the disposal
@@ -635,10 +636,11 @@ pub(crate) fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 
-/// What the topmost [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw) frame asks of its current
-/// drawer (`remaining[0]`): a binary [`Confirm`](InputResponse::Confirm) (the
-/// draw carries no choice). One of the [prompt table](prompt::request)'s
-/// helpers.
+/// What the topmost
+/// [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw)
+/// frame asks of its current drawer (`remaining[0]`): a binary
+/// [`Confirm`](InputResponse::Confirm) (the draw carries no choice). One of the
+/// [prompt table](prompt::request)'s helpers.
 pub(super) fn encounter_draw_request(state: &GameState) -> InputRequest {
     let drawer = state
         .current_encounter_drawer()
@@ -693,9 +695,10 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     EngineOutcome::Done
 }
 
-/// Drive one step of the topmost [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw) frame (the
-/// `drive` loop's `PlayerDraw` arm). The frame owns one drawer's Mythos surge
-/// chain:
+/// Drive one step of the topmost
+/// [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw) frame
+/// (the `drive` loop's `PlayerDraw` arm). The frame owns one drawer's Mythos
+/// surge chain:
 ///
 /// - On the first step (`chain_count == 0`) or when the last-drawn card surged
 ///   (`surge_pending`), draw the next card via [`draw_encounter_card_into_frame`]
@@ -708,8 +711,10 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
 ///   [`advance_encounter_draw`] moves the loop to the next drawer / opens the
 ///   post-1.4 window.
 ///
-/// Never awaits input itself (mirrors [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard)); a draw
-/// may suspend on a spawn-engagement tie or reject — propagated to the caller.
+/// Never awaits input itself (mirrors
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard));
+/// a draw may suspend on a spawn-engagement tie or reject — propagated to the
+/// caller.
 pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
     let PlayerDrawFrame {
         investigator,
@@ -725,10 +730,12 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// Draw one card into an [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) frame for the global
-/// `drive` loop to resolve. The shared per-card prelude of
+/// Draw one card into an
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard)
+/// frame for the global `drive` loop to resolve. The shared per-card prelude of
 /// the Mythos surge chain: bump the topmost
-/// [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw) frame's `chain_count`, enforce
+/// [`Continuation::PlayerDraw`](crate::state::Continuation::PlayerDraw)
+/// frame's `chain_count`, enforce
 /// [`MAX_SURGE_CHAIN`], [`draw_encounter_top`], run the peril check, record the
 /// drawn card's `surge` bit back onto the `PlayerDraw` frame (so the next
 /// [`drive_player_draw`] step knows whether to draw again), then push the card's
@@ -815,7 +822,9 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
 }
 
 /// Advance the encounter-draw loop after a completed chain: drop the just-finished
-/// drawer from the topmost [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw) frame, then skip any
+/// drawer from the topmost
+/// [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw)
+/// frame, then skip any
 /// now-eliminated investigators (an encounter card may have eliminated a later
 /// drawer — Rules Reference p.10: eliminated investigators do not draw,
 /// mirroring `next_in_player_order`'s skip). When a drawer remains,
@@ -870,8 +879,9 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// If the top continuation frame is a [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard), dispose
-/// of its card per its [`EncounterDisposition`] and pop the frame. A no-op
+/// If the top continuation frame is a
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard),
+/// dispose of its card per its [`EncounterDisposition`] and pop the frame. A no-op
 /// when no such frame is on top; returns
 /// [`EngineOutcome::Done`] unless an enemy spawn suspends / rejects (propagated
 /// immediately).
@@ -895,8 +905,10 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 ///   case the loop continues past the (already-popped) frame as usual.
 ///
 /// A frame whose card elimination has taken (a drawn weakness whose bearer was
-/// defeated mid-resolution, [`Continuation::take_resolving_weakness`](crate::state::Continuation::take_resolving_weakness)) is
-/// popped with nothing disposed of: the card is already removed from the game.
+/// defeated mid-resolution,
+/// [`Continuation::take_resolving_weakness`](crate::state::Continuation::take_resolving_weakness))
+/// is popped with nothing disposed of: the card is already removed from the
+/// game.
 ///
 /// After disposal the frame is gone and the loop re-dispatches whatever is
 /// beneath: a [`PlayerDraw`](crate::state::Continuation::PlayerDraw) frame (Mythos chain →
@@ -904,8 +916,10 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// (engine-record reveal, agenda reverse-draw → done). The `while` keeps
 /// draining any further stacked `EncounterCard` frames.
 ///
-/// Called from the `drive` loop's [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard) arm once a
-/// Revelation's whole sub-resolution completes and the frame is top again.
+/// Called from the `drive` loop's
+/// [`Continuation::EncounterCard`](crate::state::Continuation::EncounterCard)
+/// arm once a Revelation's whole sub-resolution completes and the frame is top
+/// again.
 pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
     while cx
         .state
