@@ -21,8 +21,8 @@ use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
     EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
     InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
-    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, TurnChoiceFrame,
-    UpkeepPhaseFrame, UpkeepResume, Zone,
+    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, TiedEngagement,
+    TurnChoiceFrame, UpkeepPhaseFrame, UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -1126,6 +1126,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             upkeep_resume(cx)
         }
+        // Step 4.3's engagement ties have been answered, re-exposing this
+        // anchor: the step-4.4 draws start from the first investigator.
+        Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+            resume: UpkeepResume::AfterReady,
+        })) => upkeep_draws_after(cx, None),
         // One investigator's step-4.4 draw (its deck-out horror, a drawn
         // weakness's Revelation) has resolved, re-exposing this anchor:
         // the next investigator draws, or 4.4 completes.
@@ -1319,14 +1324,24 @@ fn upkeep_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 
 /// The post-4.1 window continuation. Steps 4.2 and 4.3 run inline, then the 4.4
 /// draws start from the first active investigator ([`upkeep_draws_after`]),
-/// which runs 4.5/4.6 inline once every draw has resolved. Step 4.5
+/// which runs 4.5/4.6 inline once every draw has resolved. When 4.3 leaves
+/// engagement ties for the lead, their frame is pushed and the anchor parks at
+/// [`AfterReady`](crate::state::UpkeepResume::AfterReady), so no 4.4 card is
+/// drawn until every tie is answered. Step 4.5
 /// ([`check_hand_size`]) may suspend with [`EngineOutcome::AwaitingInput`] when
 /// an investigator is over the hand cap — in which case 4.6 runs only once the
 /// discard resolves — else it hands to [`upkeep_phase_end`] for 4.6 +
 /// transition.
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
-    ready_exhausted_cards(cx); // 4.3
+    let ties = ready_exhausted_cards(cx); // 4.3
+    if !ties.is_empty() {
+        // Park before pushing (ADR 0003): the frame resolves above the anchor,
+        // which then runs 4.4 on re-exposure.
+        set_upkeep_resume(cx, UpkeepResume::AfterReady);
+        engagement::push_engagement_ties(cx, ties);
+        return EngineOutcome::Done;
+    }
     upkeep_draws_after(cx, None) // 4.4, then 4.5 + 4.6
 }
 
@@ -1478,10 +1493,12 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
 ///
 /// After readying, each enemy that became ready while unengaged and
 /// co-located with an investigator engages it via
-/// [`engagement::reengage_at_location`]
-/// (Rules Reference p.10: "if an exhausted enemy at the same location as an
-/// investigator becomes ready, it engages as soon as it is readied").
-fn ready_exhausted_cards(cx: &mut Cx) {
+/// [`engagement::engage_or_report_tie`] (`glossary/Enemy_Engagement.md`: *"if
+/// an exhausted enemy at the same location as an investigator becomes ready,
+/// it engages as soon as it is readied"*). An enemy whose prey leaves several
+/// investigators tied engages no one here: its tie is returned, the ties in
+/// enemy-id order, for [`upkeep_resume`] to push as one frame for the lead.
+fn ready_exhausted_cards(cx: &mut Cx) -> Vec<TiedEngagement> {
     let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for id in inv_ids {
         let inv = cx.state.investigators.get_mut(&id).expect("id from keys");
@@ -1510,14 +1527,17 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     // becomes ready, it engages as soon as it is readied." Runs after the
     // (simultaneous, RR p.25) readying pass. Only newly-readied enemies are
     // checked ("becomes ready"), and only those still unengaged —
-    // reengage_at_location's precondition is engaged_with == None, so an enemy
+    // engage_or_report_tie's precondition is engaged_with == None, so an enemy
     // that readied while still engaged keeps its existing engagement.
-    // newly_readied is in ascending EnemyId order (BTreeMap key order).
+    // newly_readied is in ascending EnemyId order (BTreeMap key order), so the
+    // ties are too.
+    let mut ties = Vec::new();
     for eid in newly_readied {
         if cx.state.enemies[&eid].engaged_with.is_none() {
-            engagement::reengage_at_location(cx, eid);
+            ties.extend(engagement::engage_or_report_tie(cx, eid));
         }
     }
+    ties
 }
 
 /// Maximum hand size (Rules Reference p.25 step 4.5: discard down to 8). A module
