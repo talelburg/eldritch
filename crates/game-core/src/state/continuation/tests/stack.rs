@@ -292,3 +292,35 @@ fn the_unchecked_constructor_builds_stacks_the_checks_would_refuse() {
     let stack = test_support::from_frames_unchecked(frames.clone());
     assert_eq!(stack, frames);
 }
+
+// --- The limbo sweep --------------------------------------------------------
+
+/// Elimination takes only the eliminated investigator's own committed cards,
+/// whoever's test they sit on, and leaves every other committer's card on the
+/// test for its teardown to discard.
+#[test]
+fn taking_committed_cards_takes_only_the_named_committers_cards() {
+    let (performer, helper) = (InvestigatorId(1), InvestigatorId(2));
+    let mut frame = Continuation::SkillTest(InFlightSkillTest {
+        committed: vec![
+            CommittedCard::new(CardCode::new("_mine_a"), performer),
+            CommittedCard::new(CardCode::new("_theirs"), helper),
+            CommittedCard::new(CardCode::new("_mine_b"), performer),
+        ],
+        ..skill_test(0)
+    });
+
+    assert_eq!(
+        frame.take_committed_cards(helper),
+        vec![CardCode::new("_theirs")],
+        "a helper's own card is taken off the performer's test",
+    );
+    assert_eq!(
+        frame.take_committed_cards(performer),
+        vec![CardCode::new("_mine_a"), CardCode::new("_mine_b")],
+    );
+    let Continuation::SkillTest(test) = frame else {
+        unreachable!("the frame is the skill test built above");
+    };
+    assert!(test.committed.is_empty());
+}

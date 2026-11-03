@@ -1001,12 +1001,14 @@ impl Continuation {
         }
     }
 
-    /// Take `investigator`'s cards-committed-to-a-skill-test off this frame,
-    /// leaving the in-flight test holding none. Returns an empty `Vec` when the
-    /// frame is not a [`SkillTest`](Self::SkillTest), belongs to someone else,
-    /// or has already been emptied. A card's [destination](CommittedCard::destination)
-    /// is dropped: elimination removes it from the game wherever ST.8 would
-    /// have sent it.
+    /// Take the cards `investigator` committed off this frame's skill test,
+    /// whoever is performing it, and leave every other committer's card where
+    /// it is. Returns an empty `Vec` when the frame is not a
+    /// [`SkillTest`](Self::SkillTest) or holds none of `investigator`'s cards.
+    /// A card's [destination](CommittedCard::destination) is dropped:
+    /// elimination removes it from the game wherever ST.8 would have sent it.
+    /// A card another investigator committed is still theirs, so the test's
+    /// teardown discards it to its owner's pile.
     ///
     /// The sibling of [`take_play_in_progress`](Self::take_play_in_progress),
     /// for the other card state that is in **no zone**: a card committed to a
@@ -1018,11 +1020,12 @@ impl Continuation {
     /// order-independence argument as the play sweep.
     pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
         match self {
-            Continuation::SkillTest(t) if t.investigator == investigator => {
-                mem::take(&mut t.committed_by_active)
+            Continuation::SkillTest(t) => {
+                let (theirs, others): (Vec<_>, Vec<_>) = mem::take(&mut t.committed)
                     .into_iter()
-                    .map(|c| c.code)
-                    .collect()
+                    .partition(|c| c.committer == investigator);
+                t.committed = others;
+                theirs.into_iter().map(|c| c.code).collect()
             }
             _ => Vec::new(),
         }
@@ -1340,11 +1343,14 @@ pub enum TimingSub {
 }
 
 /// A card committed to an in-flight skill test, held in limbo on
-/// [`InFlightSkillTest::committed_by_active`] until RR ST.8 sends it on.
+/// [`InFlightSkillTest::committed`] until RR ST.8 sends it on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedCard {
     /// The committed card.
     pub code: CardCode,
+    /// The investigator who committed it, from their own hand — so also the
+    /// card's owner, whose discard pile ST.8 sends it to.
+    pub committer: InvestigatorId,
     /// Where ST.8 sends it.
     pub destination: CommittedCardDestination,
 }
@@ -1353,16 +1359,17 @@ impl CommittedCard {
     /// A freshly committed card, bound for the discard pile as RR ST.8 says:
     /// *"Discard all cards that were committed to this skill test."*
     #[must_use]
-    pub fn new(code: CardCode) -> Self {
+    pub fn new(code: CardCode, committer: InvestigatorId) -> Self {
         Self {
             code,
+            committer,
             destination: CommittedCardDestination::Discard,
         }
     }
 }
 
 /// A card's zero-based position in an in-flight test's committed list
-/// ([`InFlightSkillTest::committed_by_active`]).
+/// ([`InFlightSkillTest::committed`]).
 ///
 /// Its own type so it cannot be mixed up with an [`AdditionIndex`], which
 /// counts result additions rather than committed cards.
@@ -1433,9 +1440,9 @@ pub struct InFlightSkillTest {
     /// the underlying location's shroud or enemy's fight/evade as the board
     /// stands at ST.6. [`DifficultyBasis`] carries the rule.
     pub difficulty_basis: DifficultyBasis,
-    /// The cards the active investigator has committed to the test, in
-    /// commit order — **held here, not in hand**. Rules Reference glossary
-    /// "Limbo": *"A skill card enters limbo as it is committed to a skill
+    /// The cards committed to the test, in commit order, each with its
+    /// [committer](CommittedCard::committer) — **held here, not in hand**.
+    /// Rules Reference glossary "Limbo": *"A skill card enters limbo as it is committed to a skill
     /// test. … It is no longer considered to be in any investigator's hand,
     /// but it has not yet been placed in any discard pile."*
     ///
@@ -1444,7 +1451,7 @@ pub struct InFlightSkillTest {
     /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
     /// codes off this field (e.g. `collect_result_contributions` /
-    /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
+    /// `discard_committed_cards` via `in_flight.committed`), so it
     /// must stay accurate across suspensions — don't treat it as
     /// inspection-only metadata.
     ///
@@ -1456,10 +1463,7 @@ pub struct InFlightSkillTest {
     /// Each entry carries where ST.8 sends the card
     /// ([`CommittedCard::destination`]), which a committed card's own success
     /// effect may change (Opportunist 01053).
-    ///
-    /// Only the active investigator's commits live here. TODO(#65): the
-    /// rule "any investigator at the same location may commit".
-    pub committed_by_active: Vec<CommittedCard>,
+    pub committed: Vec<CommittedCard>,
     /// The location the test is associated with, snapshotted at skill-test
     /// start (`engine::dispatch::start_skill_test`) from the investigator's
     /// current location. Used by

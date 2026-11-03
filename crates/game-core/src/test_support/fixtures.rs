@@ -229,7 +229,7 @@ pub fn test_skill_test(
         // — a fixture that wants a location's shroud or an enemy's fight
         // sets `difficulty_basis` itself with functional update syntax.
         difficulty_basis: DifficultyBasis::Fixed(difficulty),
-        committed_by_active: Vec::new(),
+        committed: Vec::new(),
         tested_location: None,
         follow_up: SkillTestFollowUp::None,
         on_fail: None,

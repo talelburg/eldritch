@@ -308,7 +308,7 @@ pub(crate) fn anchor_label(
         OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
         OptionTarget::CommittedCard { index } => state
             .current_skill_test()
-            .and_then(|test| test.committed_by_active.get(index.to_usize()))
+            .and_then(|test| test.committed.get(index.to_usize()))
             .map(|committed| card_name(cards, &committed.code)),
     };
     found.unwrap_or_else(|| {

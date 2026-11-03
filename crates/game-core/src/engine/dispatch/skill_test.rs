@@ -330,7 +330,7 @@ pub(in crate::engine) fn start_skill_test(
             skill,
             kind,
             difficulty_basis,
-            committed_by_active: Vec::new(),
+            committed: Vec::new(),
             tested_location,
             follow_up,
             on_fail,
@@ -431,7 +431,7 @@ pub(crate) fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     let card = cx
         .state
         .current_skill_test_mut()
-        .and_then(|t| t.committed_by_active.get_mut(usize::from(index)));
+        .and_then(|t| t.committed.get_mut(usize::from(index)));
     debug_assert!(
         card.is_some(),
         "return_committed_card_to_hand: no committed card at {index} on an in-flight test",
@@ -658,7 +658,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
         .expect("the window offered cards from the investigator's hand");
     let committed: Vec<CommittedCard> = indices_u8
         .iter()
-        .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone()))
+        .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone(), investigator))
         .collect();
     let mut descending = indices_u8;
     descending.sort_unstable_by(|a, b| b.cmp(a));
@@ -675,7 +675,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOut
         .state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above");
-    t.committed_by_active = committed;
+    t.committed = committed;
     t.continuation = SkillTestStep::PreTokenWindow;
     EngineOutcome::Done
 }
@@ -1285,14 +1285,7 @@ pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
     // it folds and the clamp applied once at the end.
-    let total = sum_skill_value(
-        state,
-        cards,
-        t.investigator,
-        t.skill,
-        t.kind,
-        &t.committed_by_active,
-    );
+    let total = sum_skill_value(state, cards, t.investigator, t.skill, t.kind, &t.committed);
     // Both quantities above already carry the ST.6 substitution, applied as
     // the last stage of the fold that produced them:
     // `glossary/Automatic_Failure_Success.md` — *"If a skill test
@@ -1593,7 +1586,7 @@ fn result_option(
             let card = test.resolved.and_then(|resolved| {
                 collect_result_contributions(
                     cards,
-                    &test.committed_by_active,
+                    &test.committed,
                     resolved.succeeded,
                     ResultContribution::Adds,
                 )
@@ -1691,7 +1684,7 @@ pub(super) fn resume_result_order(cx: &mut Cx, response: &InputResponse) -> Engi
             .into(),
         };
     };
-    let (investigator, committed) = (t.investigator, t.committed_by_active.clone());
+    let (investigator, committed) = (t.investigator, t.committed.clone());
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
@@ -1951,16 +1944,16 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             (
                 in_flight.continuation,
                 in_flight.investigator,
-                in_flight.committed_by_active.clone(),
+                in_flight.committed.clone(),
                 in_flight.difficulty_basis,
                 in_flight.resolved.is_some(),
             )
         };
 
         // RR p.10 Elimination step 1 removed every card this investigator owns
-        // from the game — including the cards this test holds in limbo. Abandon
-        // the test rather than resolve it on behalf of someone who has left the
-        // scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
+        // from the game — including the cards they committed to this test,
+        // which it held in limbo. Abandon the test rather than resolve it on
+        // behalf of someone who has left the scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
         // which drops remaining attackers on the same signal.
         //
         // This is the single choke point: both the `drive` loop's `SkillTest`
@@ -1971,7 +1964,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             .get(&investigator)
             .is_some_and(|inv| inv.status != Status::Active)
         {
-            return tear_down_test(cx, investigator, None);
+            return tear_down_test(cx, investigator, &committed, TestEnd::PerformerEliminated);
         }
 
         // The test's difficulty *is* a quantity of some entity on the
@@ -1986,7 +1979,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // what defeats the enemy. Only a test that has not yet been compared
         // can still be abandoned.
         if !past_st6 && difficulty_target_left_play(cx.state, difficulty_basis) {
-            return tear_down_test(cx, investigator, Some(&committed));
+            return tear_down_test(cx, investigator, &committed, TestEnd::PerformerRemains);
         }
 
         match continuation {
@@ -2143,7 +2136,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // run); the loop's `InvestigatorTurn { ending: true }` arm runs
                 // `resume_end_turn` once this returns — no reach-down here (the
                 // same path a 2+ forced run takes).
-                return tear_down_test(cx, investigator, Some(&committed));
+                return tear_down_test(cx, investigator, &committed, TestEnd::PerformerRemains);
             }
         }
     }
@@ -2186,34 +2179,24 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 /// and the two abandoned cases in [`advance`]'s loop preamble, where the tester
 /// was eliminated mid-resolution or the test's difficulty target left play.
 ///
-/// `committed` names the cards to discard out of limbo, or is `None` to drop
-/// them with the frame:
-///
-/// - **ST.8** passes `Some`: *"Discard all cards that were committed to this
-///   skill test"* (Appendix II, ST.8).
-/// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
-///   step 1 ("The cards he or she controls in play and all of the cards in his
-///   or her out-of-play areas (such as hand, deck, discard pile) are removed
-///   from the game") removes every card that investigator owns, so discarding
-///   here would instead resurrect them into a pile.
-/// - **Target left play** passes `Some`. The investigator is still in the
-///   scenario and the cards are still theirs; dropping them silently would
-///   delete cards off the board, so they go to the discard pile exactly as an
-///   ST.8 teardown would send them, and so does the card the test was marked
-///   to discard ([`InFlightSkillTest::discard_after`]).
+/// `committed` is the cards still in limbo on the test, each discarded to its
+/// owner's pile: *"Discard all cards that were committed to this skill test"*
+/// (Appendix II, ST.8). The test's [`TestEnd`] decides whether the card the
+/// test was marked to discard ([`InFlightSkillTest::discard_after`]) goes with
+/// them.
 ///
 /// [`Event::SkillTestEnded`] still fires either way: the test *is* over, and it
 /// is the documented "test is fully over" signal downstream listeners key on.
 fn tear_down_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    committed: Option<&[CommittedCard]>,
+    committed: &[CommittedCard],
+    end: TestEnd,
 ) -> EngineOutcome {
-    if let Some(cards) = committed {
-        discard_committed_cards(cx, investigator, cards);
+    discard_committed_cards(cx, committed);
+    if end == TestEnd::PerformerRemains {
         // The marked card goes with them: the symbol that marked it was
-        // revealed during this test, abandoned or not. An eliminated tester's
-        // cards are removed from the game instead, so `None` skips it.
+        // revealed during this test, abandoned or not.
         discard_marked_card(cx);
     }
     cx.events.push(Event::SkillTestEnded { investigator });
@@ -2228,6 +2211,28 @@ fn tear_down_test(
         "skill-test teardown: no SkillTest frame on the continuation stack",
     );
     EngineOutcome::Done
+}
+
+/// How a skill test came to [tear down](tear_down_test), which decides what
+/// its teardown discards beyond the committed cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TestEnd {
+    /// The performer is still in the scenario: RR ST.8's normal end, or a test
+    /// abandoned because its difficulty target left play. The cards are still
+    /// their owners', so dropping them silently would delete cards off the
+    /// board; they go to the discard pile exactly as an ST.8 teardown would
+    /// send them, and so does the card the test was marked to discard.
+    PerformerRemains,
+    /// The performer was eliminated mid-test. Rules Reference p.10 Elimination
+    /// step 1 (*"The cards he or she controls in play and all of the cards in
+    /// his or her out-of-play areas (such as hand, deck, discard pile) are
+    /// removed from the game"*) has already taken the performer's own
+    /// committed cards off the test
+    /// ([`Continuation::take_committed_cards`]), so what is left is other
+    /// committers', still theirs and discarded to their piles. The marked card
+    /// is in play under the performer, so the same step removed it from the
+    /// game and it is not discarded here.
+    PerformerEliminated,
 }
 
 /// Who is committing, to whose test: the two differ once another investigator
@@ -2427,10 +2432,10 @@ fn push_committed_icons(
 }
 
 /// RR ST.8: *"Discard all cards that were committed to this skill test."* Move
-/// the committed cards out of limbo and into the controller's discard pile,
-/// emitting [`Event::CardDiscarded`] for each. Per the
-/// [`Event::SkillTestEnded`] docs, these discards precede the
-/// `SkillTestEnded` cleanup marker.
+/// the committed cards out of limbo and into each card's owner's discard pile
+/// (its [committer](CommittedCard::committer)'s), emitting
+/// [`Event::CardDiscarded`] for each. Per the [`Event::SkillTestEnded`] docs,
+/// these discards precede the `SkillTestEnded` cleanup marker.
 ///
 /// A card whose own success effect overrode its
 /// [destination](CommittedCard::destination) goes back to hand instead,
@@ -2443,24 +2448,27 @@ fn push_committed_icons(
 /// that a Fast play in the ST.2→ST.3 window has since shifted. The emitted
 /// `from` is still [`Zone::Hand`]: limbo is not a zone the event vocabulary
 /// models, and the hand is where the cards came from.
-fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
-    if committed.is_empty() {
-        return;
-    }
-    // Unreachable: `advance`'s Status gate abandons the test before
-    // teardown if the tester was eliminated. Total rather than `expect` so a
-    // future path can't panic a production apply (a panic escapes `apply_via`'s
-    // rollback) — the committed cards then simply stay in limbo and die with
-    // the frame, which is what elimination wants anyway.
-    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
-        debug_assert!(
-            false,
-            "discard_committed_cards: investigator {investigator:?} vanished after follow-up; \
-             this is a state-corruption invariant violation",
-        );
-        return;
-    };
-    for CommittedCard { code, destination } in committed {
+fn discard_committed_cards(cx: &mut Cx, committed: &[CommittedCard]) {
+    for CommittedCard {
+        code,
+        committer,
+        destination,
+    } in committed
+    {
+        let investigator = *committer;
+        // Unreachable: an investigator is never removed from the map, and
+        // elimination takes an eliminated committer's cards off the test.
+        // Total rather than `expect` so a future path can't panic a
+        // production apply (a panic escapes `apply_via`'s rollback) — the card
+        // then simply stays in limbo and dies with the frame.
+        let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+            debug_assert!(
+                false,
+                "discard_committed_cards: committer {investigator:?} vanished mid-test; \
+                 this is a state-corruption invariant violation",
+            );
+            continue;
+        };
         match destination {
             CommittedCardDestination::Discard => {
                 inv.discard.push(code.clone());
