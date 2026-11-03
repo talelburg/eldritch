@@ -1537,7 +1537,7 @@ pub struct InFlightSkillTest {
     /// The counted token ([`counts_as`](RevealedToken::counts_as)) is
     /// engine-read: it identifies the chaos symbol effect whose
     /// result-conditional parts the
-    /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step (RR ST.7)
+    /// [`ApplyResults`](SkillTestStep::ApplyResults) step (RR ST.7)
     /// looks up again — the investigator card's `[elder_sign]` ability, or the
     /// scenario's symbol hook. Which token came out of the bag, and what it
     /// counted as when it did, are fixed facts of this test, not snapshots of
@@ -1690,13 +1690,14 @@ impl ResolvedTest {
 ///   timing point, **before** any ST.7 consequence resolves.
 /// - [`ApplyResultModifiers`](Self::ApplyResultModifiers) — the ST.7 head:
 ///   the committed cards' result modifiers, before the consequence they change.
-/// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
-///   [`ApplyResultEffect`](Self::ApplyResultEffect) — the ST.7 "apply results"
-///   sub-steps: action follow-up (the clue discovery), then the
-///   success/failure card effect. Each effect is pushed for the global drive
-///   loop and cursor-sequenced so results resolve in ST order.
-/// - [`ApplyResultAdditions`](Self::ApplyResultAdditions) — apply the committed cards'
-///   result additions, one per visit.
+/// - [`ApplyFollowUp`](Self::ApplyFollowUp) — the action's own ST.7
+///   consequence (the clue discovery), before any ST.7 result.
+/// - [`CollectResults`](Self::CollectResults) /
+///   [`ApplyResults`](Self::ApplyResults) — settle the pending **ST.7
+///   results** once, then apply them one per visit. Each effect is pushed for
+///   the global drive loop and cursor-sequenced so results resolve in ST order.
+/// - [`PostRetaliate`](Self::PostRetaliate) — a failed Fight's Retaliate
+///   attack, after every ST.7 result.
 /// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -1726,8 +1727,7 @@ pub enum SkillTestStep {
     /// and belong after the symbol effects have resolved.
     /// The outcome's result-conditional parts are not kept either: the token
     /// goes on [`InFlightSkillTest::revealed`], and
-    /// [`ApplyTokenResult`](Self::ApplyTokenResult) looks its outcome up again
-    /// at ST.7.
+    /// [`ApplyResults`](Self::ApplyResults) looks its outcome up again at ST.7.
     ///
     /// **A cancelled token comes back here.** A `when`-cell cancel skips the
     /// resolve step, so the token writes nothing, and
@@ -1816,52 +1816,33 @@ pub enum SkillTestStep {
     /// Fight's: the attack's damage is dealt to the investigator engaged with
     /// the attacked enemy, if that is someone other than the fighter, and the
     /// deal's frame yields the same way. Pre-advances to
-    /// [`ApplyResultEffect`](Self::ApplyResultEffect).
+    /// [`CollectResults`](Self::CollectResults).
     ApplyFollowUp,
-    /// RR ST.7 part 2 — push the success/failure card effect: `on_success`
-    /// on a passing draw (Frozen in Fear 01164's self-discard), or `on_fail`
-    /// on a failing draw (Crypt Chill 01167's discard choice, Grasping Hands
-    /// 01162's margin damage). Exactly one (or neither) is pushed; it runs
-    /// after the follow-up because this step is sequenced after
-    /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
-    /// [`ApplyTokenResult`](Self::ApplyTokenResult).
-    ApplyResultEffect,
-    /// RR ST.7 — push the revealed chaos token's result-conditional part:
-    /// `on_success` when the test succeeded, `on_fail` (with the failure
-    /// margin threaded in) when it failed (Cultist 01104's horror). Nothing is
-    /// stored for it: the step looks the token's
-    /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome) up again from
-    /// [`InFlightSkillTest::revealed`], as
-    /// [`ApplyResultModifiers`](Self::ApplyResultModifiers) and
-    /// [`ApplyResultAdditions`](Self::ApplyResultAdditions) look up the committed
-    /// cards' abilities — an elder sign from the investigator card, sourced to
-    /// it, and a scenario symbol from the scenario's symbol hook, with the
-    /// controller-only context. Pushed as an effect frame, so a sanity-soak
-    /// (Holy Rosary 01028) on an [`Effect::Deal`] suspends cleanly.
-    /// Pre-advances to [`ApplyResultAdditions`](Self::ApplyResultAdditions) before the
-    /// push.
+    /// RR ST.7 — settle which **ST.7 results** (`GLOSSARY.md`) are pending,
+    /// once, after the follow-up and everything it pushed have resolved: the
+    /// card result (the test's own `on_success` / `on_fail`), the token result
+    /// (the revealed token's result-conditional part), and one entry per
+    /// committed card's [result
+    /// addition](card_dsl::dsl::ResultContribution::Adds) whose outcome
+    /// matches. Pushes nothing; sets [`ApplyResults`](Self::ApplyResults) with
+    /// the set.
+    CollectResults,
+    /// RR ST.7 — apply the pending ST.7 results one at a time. Each visit takes
+    /// one entry out of `pending`, pre-advances to `ApplyResults` with the rest
+    /// **before** pushing its effect, and yields, so a result that suspends
+    /// (a sanity soak, Holy Rosary 01028, on an [`Effect::Deal`]) resumes at the
+    /// next entry. An entry records only which result it is: its effect is
+    /// looked up and evaluated when it is applied, with the test's margin bound.
+    /// When nothing is pending, advances to [`PostRetaliate`](Self::PostRetaliate).
     ///
-    /// Sits among the ST.7 result effects, after the action follow-up and the
-    /// card result of [`ApplyResultEffect`](Self::ApplyResultEffect). RR ST.7:
-    /// *"If there are multiple results to be applied during this step, the
-    /// investigator performing the test applies those results in the order of
-    /// his or her choice."* The engine sequences them in this fixed order
-    /// instead. TODO(#642): let the performer choose the order.
-    ApplyTokenResult,
-    /// RR ST.7 — apply the committed cards' [result
-    /// additions](card_dsl::dsl::ResultContribution::Adds) whose outcome matches
-    /// the resolved test, one effect per driver visit so they cursor-sequence in committed-card
-    /// order (no LIFO). `next` is the index into the flattened
-    /// (card, matching-ability) list of the next trigger to fire; each visit
-    /// pushes that effect, advances `next`, and yields. When `next` runs past
-    /// the list, advances to [`PostRetaliate`](Self::PostRetaliate).
-    ///
-    /// The test outcome (`succeeded`/`margin`) is read off
-    /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
-    /// is the only step-specific state this variant needs.
-    ApplyResultAdditions {
-        /// Index of the next matching (card, ability) trigger to fire.
-        next: u32,
+    /// RR ST.7: *"If there are multiple results to be applied during this
+    /// step, the investigator performing the test applies those results in the
+    /// order of his or her choice."* The engine applies them in a fixed order
+    /// instead: the card result, the token result, then the additions in
+    /// committed-card order. TODO(#642): let the performer choose the order.
+    ApplyResults {
+        /// The ST.7 results not yet applied.
+        pending: PendingResults,
     },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration fires a Retaliate attack if the test was a failed Fight
@@ -1874,6 +1855,93 @@ pub enum SkillTestStep {
     /// [`SkillTestEnded`](crate::event::Event::SkillTestEnded), and clears
     /// the in-flight record.
     PostOnResolution,
+}
+
+/// One **ST.7 result** (`GLOSSARY.md`): which consequence it is, not the
+/// effect itself, which [`ApplyResults`](SkillTestStep::ApplyResults) looks up
+/// when it applies the entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum St7Result {
+    /// The `on_success` / `on_fail` printed on the card or rule that
+    /// initiated the test (Rotting Remains 01163's horror).
+    Card,
+    /// The revealed chaos token's result-conditional part (the elder sign's
+    /// *"If you succeed, gain 2 resources."* on Skids O'Toole 01003).
+    Token,
+    /// A committed card's [result
+    /// addition](card_dsl::dsl::ResultContribution::Adds), by its position
+    /// among the additions matching the outcome, in committed-card order.
+    Addition {
+        /// Position in the flattened (committed card, matching ability) list.
+        index: u8,
+    },
+}
+
+/// The ST.7 results a test has still to apply.
+///
+/// Held in the [`ApplyResults`](SkillTestStep::ApplyResults) cursor as a
+/// `Copy` set: whether the card and token results are pending, and one bit per
+/// [`St7Result::Addition`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PendingResults {
+    card: bool,
+    token: bool,
+    additions: u64,
+}
+
+impl PendingResults {
+    /// The set holding the card result if `card`, the token result if
+    /// `token`, and the first `additions` additions.
+    ///
+    /// # Panics
+    ///
+    /// If `additions` exceeds 64. Each addition is printed on a card committed
+    /// from a hand, so a test never reaches that many.
+    #[must_use]
+    pub(crate) fn new(card: bool, token: bool, additions: usize) -> Self {
+        let count = u32::try_from(additions)
+            .ok()
+            .filter(|&count| count <= u64::BITS)
+            .expect("a skill test's result additions fit the 64-entry set");
+        Self {
+            card,
+            token,
+            additions: 1u64.checked_shl(count).map_or(u64::MAX, |bit| bit - 1),
+        }
+    }
+
+    /// The pending results, in the engine's fixed order: the card result, the
+    /// token result, then the additions in committed-card order.
+    pub fn iter(self) -> impl Iterator<Item = St7Result> {
+        let additions = (0..64u8)
+            .filter(move |&index| self.additions & (1u64 << index) != 0)
+            .map(|index| St7Result::Addition { index });
+        self.card
+            .then_some(St7Result::Card)
+            .into_iter()
+            .chain(self.token.then_some(St7Result::Token))
+            .chain(additions)
+    }
+
+    /// This set without `result`.
+    #[must_use]
+    pub(crate) fn without(self, result: St7Result) -> Self {
+        match result {
+            St7Result::Card => Self {
+                card: false,
+                ..self
+            },
+            St7Result::Token => Self {
+                token: false,
+                ..self
+            },
+            St7Result::Addition { index } => Self {
+                additions: self.additions & !(1u64 << index),
+                ..self
+            },
+        }
+    }
 }
 
 /// What to do after the bracketing skill test resolves, depending on

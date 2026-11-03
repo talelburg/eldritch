@@ -29,6 +29,7 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, PickCount};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
+use crate::state::continuation::{PendingResults, St7Result};
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
     CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, EnemyId, FastWindowKind,
@@ -766,8 +767,8 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// them on [`revealed`](InFlightSkillTest::revealed). The skip above, and a
 /// cancelled token, leave it `None`. The outcome's result-conditional parts
 /// (Cultist 01104's `on_fail` horror) are not kept: the ST.7
-/// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step looks the outcome
-/// up again from the counted token and picks one part by the (by then known)
+/// [`ApplyResults`](SkillTestStep::ApplyResults) step looks the outcome up
+/// again from the counted token and picks one part by the (by then known)
 /// result.
 ///
 /// A scenario symbol's modifier is an [`IntExpr`]. The recorded row keeps it
@@ -969,7 +970,7 @@ fn counted_token(cx: &Cx, drawn: ChaosToken, investigator: InvestigatorId) -> Ch
 /// sourced to that card, so whatever it latches names it.
 ///
 /// Called at ST.3 by [`run_resolution`] and again at ST.7 by
-/// [`apply_token_result_step`], so each step reads the outcome as the board
+/// [`collect_results_step`] and [`apply_result`], so each step reads the outcome as the board
 /// stands when it uses it (ADR 0005) rather than a copy parked at reveal.
 fn chaos_symbol_effect(
     cx: &Cx,
@@ -1138,10 +1139,10 @@ fn apply_result_modifiers_step(
 /// with the attacked enemy, if that is someone other than the fighter
 /// (`glossary/Fight_Action.md`), and that deal pushes its frame the way the
 /// Investigate discovery does. The cursor is pre-advanced to
-/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
+/// [`CollectResults`](SkillTestStep::CollectResults) **before** any push,
 /// so a suspending discovery (Cover Up 01007's before-discover interrupt) or
 /// evasion (Pickpocketing 01046's after-evade reaction window) resumes at
-/// `ApplyResultEffect` rather than re-running the follow-up. (The
+/// `CollectResults` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
 /// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
@@ -1149,7 +1150,7 @@ fn apply_result_modifiers_step(
 /// When the Investigate or Evade follow-up, or a failed Fight's redirected
 /// damage, pushes its frame the `advance` loop's top-frame check yields on the
 /// next iteration (that frame is now `last()`); otherwise nothing is pushed and
-/// the loop `continue`s on this frame straight into `ApplyResultEffect`.
+/// the loop `continue`s on this frame straight into `CollectResults`.
 ///
 /// The Fight follow-up evaluates its `extra_damage` here, on either outcome,
 /// and an expression the evaluator can't answer comes back as the rejection
@@ -1167,7 +1168,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .continuation = SkillTestStep::ApplyResultEffect;
+        .continuation = SkillTestStep::CollectResults;
 
     // Each basic action owns its after-test step; the test procedure only
     // dispatches by kind and outcome.
@@ -1405,140 +1406,172 @@ pub(super) fn resolve_verdict(
     EngineOutcome::Done
 }
 
-/// RR ST.7 part 2 — the [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect)
-/// step. Push the success/failure card effect (exactly one, or neither):
-/// `on_success` on a passing draw (Frozen in Fear 01164), `on_fail` on a failing
-/// draw (Crypt Chill 01167, Grasping Hands 01162). Pre-advances the cursor to
-/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) **before** the push so a
-/// suspending effect resumes past this step. The push (if any) makes an Effect
-/// frame the new top → the `advance` loop yields to drive it.
-fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let resolved_test = resolved(cx);
-    let (on_success, on_fail, source) = {
+/// RR ST.7 — the [`CollectResults`](SkillTestStep::CollectResults) step. Settle
+/// which **ST.7 results** (`GLOSSARY.md`) are pending, once, now that the
+/// follow-up has resolved, and set the cursor to
+/// [`ApplyResults`](SkillTestStep::ApplyResults) with them:
+///
+/// - the card result, when the test carries an effect for its outcome
+///   (`on_success` on a pass, `on_fail` on a failure);
+/// - the token result, when the revealed token's outcome
+///   ([`chaos_symbol_effect`]) has a part for the test's outcome. No token was
+///   revealed when a determination skipped the draw, so there is none;
+/// - one addition per committed card's [result
+///   addition](ResultContribution::Adds) whose outcome matches.
+///
+/// The set is not recomputed: nothing during ST.7 changes what decides
+/// membership. Each entry's effect is looked up again when it is applied.
+fn collect_results_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
+    let succeeded = resolved(cx).succeeded;
+    let (card, token) = {
         let t = cx
             .state
             .current_skill_test()
-            .expect("apply_result_effect_step: the SkillTest frame must persist");
-        (t.on_success.clone(), t.on_fail.clone(), t.source)
+            .expect("collect_results_step: the SkillTest frame must persist");
+        let card = if succeeded {
+            t.on_success.is_some()
+        } else {
+            t.on_fail.is_some()
+        };
+        (card, t.revealed.map(|revealed| revealed.counts_as))
     };
+    let token = token.is_some_and(|token| {
+        chaos_symbol_effect(cx, token, investigator)
+            .0
+            .is_some_and(|outcome| token_result_part(&outcome, succeeded).is_some())
+    });
+    let additions =
+        collect_result_contributions(cx.cards, committed, succeeded, ResultContribution::Adds)
+            .len();
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::ApplyTokenResult;
-    // Rebuild the context from the parked source: `Effect::DiscardSelf` finds
-    // itself across the suspend/resume boundary, and a `ChooseOne` in either
-    // branch keeps the anchor the activation gave it.
-    let card_ctx =
-        |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
-    // The margin is bound either way: `Quantity::SkillTestSucceededBy` on a
-    // pass, `Quantity::SkillTestFailedBy` on a failure (Grasping Hands 01162,
-    // Rotting Remains 01163 scale by it).
-    let effect = if resolved_test.succeeded {
-        &on_success
-    } else {
-        &on_fail
+        .continuation = SkillTestStep::ApplyResults {
+        pending: PendingResults::new(card, token, additions),
     };
-    if let Some(effect) = effect {
-        let mut ctx = card_ctx(investigator);
-        ctx.bind_resolved(&resolved_test);
-        evaluator::push_effect(cx, effect, ctx);
-    }
 }
 
-/// RR ST.7 — the [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step.
-/// Push the revealed token's result-conditional part: `on_success` on a pass,
-/// `on_fail` on a failure (Cultist 01104's horror) with the failure margin
-/// threaded in, exactly as the card's own `on_fail` gets it at
-/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
-///
-/// Nothing is parked for this step. It looks the token's outcome up again
-/// through [`chaos_symbol_effect`] from the token on
-/// [`revealed`](InFlightSkillTest::revealed), the way
-/// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) and
-/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) look up the committed
-/// cards' abilities: an elder sign from the investigator card, sourced to it;
-/// a scenario symbol from the scenario's symbol hook, controller-only. No
-/// token was revealed when a determination skipped the draw, so nothing is
-/// pushed.
-///
-/// Pre-advances the cursor to
-/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) **before** the push, so
-/// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
-/// step. TODO(#642): the token result's fixed position after the card result
-/// ignores the performer's chosen order of the ST.7 results.
-fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let resolved_test = resolved(cx);
-    let token = cx
-        .state
-        .current_skill_test()
-        .expect("apply_token_result_step: the SkillTest frame must persist")
-        .revealed
-        .map(|revealed| revealed.counts_as);
-    cx.state
-        .current_skill_test_mut()
-        .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::ApplyResultAdditions { next: 0 };
-    let Some(token) = token else {
-        return;
-    };
-    let (outcome, mut ctx) = chaos_symbol_effect(cx, token, investigator);
-    let Some(outcome) = outcome else {
-        return;
-    };
-    let effect = if resolved_test.succeeded {
-        &outcome.on_success
-    } else {
-        &outcome.on_fail
-    };
-    if let Some(effect) = effect {
-        ctx.bind_resolved(&resolved_test);
-        evaluator::push_effect(cx, effect, ctx);
-    }
-}
-
-/// RR ST.7 — the [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) step.
-/// Apply the committed cards' [result additions](ResultContribution::Adds) whose
-/// outcome matches the resolved test, one effect per visit, in committed-card
-/// order. Collect the matching effects, push the
-/// `next`th (pre-advancing `next` first), and yield (the pushed Effect frame is
-/// the new top); when `next` runs past the list, advance to
+/// RR ST.7 — the [`ApplyResults`](SkillTestStep::ApplyResults) step. Take the
+/// next pending ST.7 result, pre-advance the cursor to `ApplyResults` with the
+/// rest **before** pushing its effect, so a result that suspends (a sanity soak
+/// on an `Effect::Deal`) resumes at the next entry, and apply it
+/// ([`apply_result`]). The push (if any) makes an Effect frame the new top, and
+/// the `advance` loop yields to drive it. With nothing pending, advance to
 /// [`PostRetaliate`](SkillTestStep::PostRetaliate).
 ///
-/// Each effect runs with the test's margin bound, as every ST.7 result does —
-/// [`Quantity::SkillTestSucceededBy`](card_dsl::dsl::Quantity::SkillTestSucceededBy)
-/// on a success, the failure margin on a failure — and with the position of the
-/// committed card it is printed on, so the effect can name its own card
-/// (Opportunist 01053 returns itself to hand).
-fn apply_result_additions_step(
+/// RR ST.7: *"If there are multiple results to be applied during this step,
+/// the investigator performing the test applies those results in the order of
+/// his or her choice."* The next result is the first in the engine's fixed
+/// order instead: the card result, the token result, then the additions in
+/// committed-card order. TODO(#642): let the performer choose the order.
+fn apply_results_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
     committed: &[CommittedCard],
-    next: u32,
+    pending: PendingResults,
+) {
+    let next = pending.iter().next();
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame must persist across driver steps")
+        .continuation = match next {
+        Some(result) => SkillTestStep::ApplyResults {
+            pending: pending.without(result),
+        },
+        None => SkillTestStep::PostRetaliate,
+    };
+    if let Some(result) = next {
+        apply_result(cx, investigator, committed, result);
+    }
+}
+
+/// Push one ST.7 result's effect, looked up now, with the test's margin bound
+/// as every ST.7 result has it:
+/// [`Quantity::SkillTestSucceededBy`](card_dsl::dsl::Quantity::SkillTestSucceededBy)
+/// on a pass, `Quantity::SkillTestFailedBy` on a failure (Grasping Hands 01162,
+/// Rotting Remains 01163 scale by it).
+///
+/// - [`St7Result::Card`]: the test's `on_success` / `on_fail` (Frozen in Fear
+///   01164's self-discard, Crypt Chill 01167's discard choice), in a context
+///   rebuilt from the parked source, so `Effect::DiscardSelf` finds itself
+///   across the suspend/resume boundary and a `ChooseOne` in either branch
+///   keeps the anchor the activation gave it.
+/// - [`St7Result::Token`]: the revealed token's part, looked up again through
+///   [`chaos_symbol_effect`] from the token on
+///   [`revealed`](InFlightSkillTest::revealed), the way the committed cards'
+///   abilities are looked up: an elder sign from the investigator card, sourced
+///   to it; a scenario symbol from the scenario's symbol hook, controller-only.
+/// - [`St7Result::Addition`]: the committed card's added effect, with the
+///   position of the card it is printed on, so the effect can name its own card
+///   (Opportunist 01053 returns itself to hand).
+///
+/// An entry whose effect is gone when it is applied pushes nothing.
+fn apply_result(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    committed: &[CommittedCard],
+    result: St7Result,
 ) {
     let resolved_test = resolved(cx);
-    let effects = collect_result_contributions(
-        cx.cards,
-        committed,
-        resolved_test.succeeded,
-        ResultContribution::Adds,
-    );
-    let idx = next as usize;
-    if let Some((card_index, effect)) = effects.get(idx) {
-        cx.state
-            .current_skill_test_mut()
-            .expect("the SkillTest frame must persist across driver steps")
-            .continuation = SkillTestStep::ApplyResultAdditions {
-            next: next.saturating_add(1),
-        };
-        let mut ctx = EvalContext::for_controller(investigator);
-        ctx.set_committed_card(*card_index);
+    let pushed = match result {
+        St7Result::Card => {
+            let (effect, source) = {
+                let t = cx
+                    .state
+                    .current_skill_test()
+                    .expect("apply_result: the SkillTest frame must persist");
+                let effect = if resolved_test.succeeded {
+                    &t.on_success
+                } else {
+                    &t.on_fail
+                };
+                (effect.clone(), t.source)
+            };
+            effect.map(|effect| {
+                (
+                    effect,
+                    EvalContext::for_controller_with_optional_source(investigator, source),
+                )
+            })
+        }
+        St7Result::Token => cx
+            .state
+            .current_skill_test()
+            .expect("apply_result: the SkillTest frame must persist")
+            .revealed
+            .and_then(|revealed| {
+                let (outcome, ctx) = chaos_symbol_effect(cx, revealed.counts_as, investigator);
+                outcome
+                    .and_then(|outcome| token_result_part(&outcome, resolved_test.succeeded))
+                    .map(|effect| (effect, ctx))
+            }),
+        St7Result::Addition { index } => collect_result_contributions(
+            cx.cards,
+            committed,
+            resolved_test.succeeded,
+            ResultContribution::Adds,
+        )
+        .into_iter()
+        .nth(usize::from(index))
+        .map(|(card_index, effect)| {
+            let mut ctx = EvalContext::for_controller(investigator);
+            ctx.set_committed_card(card_index);
+            (effect, ctx)
+        }),
+    };
+    if let Some((effect, mut ctx)) = pushed {
         ctx.bind_resolved(&resolved_test);
-        evaluator::push_effect(cx, effect, ctx);
+        evaluator::push_effect(cx, &effect, ctx);
+    }
+}
+
+/// The revealed token's result-conditional part for the test's outcome:
+/// `on_success` on a pass, `on_fail` on a failure (Cultist 01104's horror).
+fn token_result_part(outcome: &TokenOutcome, succeeded: bool) -> Option<Effect> {
+    if succeeded {
+        outcome.on_success.clone()
     } else {
-        cx.state
-            .current_skill_test_mut()
-            .expect("the SkillTest frame must persist across driver steps")
-            .continuation = SkillTestStep::PostRetaliate;
+        outcome.on_fail.clone()
     }
 }
 
@@ -1645,16 +1678,13 @@ fn open_skill_test_player_window(
 ///   [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
 /// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
 ///   (the clue discovery); advance to
-///   [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
-/// - [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) → push the
-///   success/failure card effect; advance to
-///   [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult).
-/// - [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) → push the revealed
-///   token's `on_success` / `on_fail` part (Cultist horror); advance to
-///   [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions).
-/// - [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) → apply committed
-///   cards' result additions (one per visit); advance to
-///   [`PostRetaliate`](SkillTestStep::PostRetaliate).
+///   [`CollectResults`](SkillTestStep::CollectResults).
+/// - [`CollectResults`](SkillTestStep::CollectResults) → settle the pending
+///   ST.7 results (card, token, additions); advance to
+///   [`ApplyResults`](SkillTestStep::ApplyResults).
+/// - [`ApplyResults`](SkillTestStep::ApplyResults) → apply one pending ST.7
+///   result per visit; advance to
+///   [`PostRetaliate`](SkillTestStep::PostRetaliate) once none is left.
 /// - [`PostRetaliate`](SkillTestStep::PostRetaliate) → fire a Retaliate attack
 ///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
@@ -1814,7 +1844,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 apply_result_modifiers_step(cx, investigator, &committed);
             }
             SkillTestStep::ApplyFollowUp => {
-                // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
+                // RR ST.7 part 1. Pre-advances the cursor to CollectResults,
                 // then applies the action follow-up (success-only, but for a
                 // failed Fight's redirected damage). The Investigate follow-up
                 // pushes discover_clue, the Evade one its EnemyEvaded
@@ -1828,14 +1858,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     return outcome;
                 }
             }
-            SkillTestStep::ApplyResultEffect => {
-                apply_result_effect_step(cx, investigator);
+            SkillTestStep::CollectResults => {
+                collect_results_step(cx, investigator, &committed);
             }
-            SkillTestStep::ApplyTokenResult => {
-                apply_token_result_step(cx, investigator);
-            }
-            SkillTestStep::ApplyResultAdditions { next } => {
-                apply_result_additions_step(cx, investigator, &committed, next);
+            SkillTestStep::ApplyResults { pending } => {
+                // RR ST.7 results, one per visit, in the engine's fixed order.
+                apply_results_step(cx, investigator, &committed, pending);
             }
             SkillTestStep::PostRetaliate => {
                 // Retaliate fires here — after ST.7, before the ST.8 teardown
@@ -2229,15 +2257,16 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// gate or source effects.
 /// [`ApplyResultModifiers`](SkillTestStep::ApplyResultModifiers) combines the
 /// [`Modifies`](ResultContribution::Modifies) list into one `Seq`;
-/// [`ApplyResultAdditions`](SkillTestStep::ApplyResultAdditions) indexes into the
-/// [`Adds`](ResultContribution::Adds) list, pushing one effect per visit so they
-/// cursor-sequence (no LIFO). At collection time the committed cards are in
+/// [`CollectResults`](SkillTestStep::CollectResults) counts the
+/// [`Adds`](ResultContribution::Adds) list as pending ST.7 results, and
+/// [`ApplyResults`](SkillTestStep::ApplyResults) indexes into it, pushing one
+/// effect per visit so they cursor-sequence (no LIFO). At collection time the committed cards are in
 /// limbo on the in-flight record (discard happens at teardown), which also
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.
 ///
 /// Each effect comes paired with its card's position in `committed`, which
-/// `ApplyResultAdditions` binds for the effect to name its own card.
+/// `ApplyResults` binds for the effect to name its own card.
 ///
 /// No abilities for the codes → empty list: engine-only tests that don't touch
 /// card data never reach a committed card's ability. Silent skip mirrors

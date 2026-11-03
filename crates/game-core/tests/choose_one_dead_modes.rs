@@ -150,7 +150,7 @@ fn every_mode_dead_under_a_skill_test_skips_rather_than_rejecting() {
 /// **The anchor survives the chaos-token suspension.**
 ///
 /// The eval context that runs the `on_success` is not the one that started the
-/// test — it is rebuilt at `apply_result_effect_step` from the source parked on
+/// test — it is rebuilt at the `ApplyResults` step from the source parked on
 /// `InFlightSkillTest`. Park the `AbilitySource::instance()` projection there
 /// instead of the whole descriptor and this still passes for an in-play card
 /// while silently un-anchoring every board source (an act's `on_fail`), which

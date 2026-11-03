@@ -193,7 +193,7 @@ pub(crate) fn perform(
 ///
 /// The discovery may suspend on a before-timing interrupt (Cover Up 01007); the
 /// loop drives it to completion either way, then re-dispatches the skill test
-/// at its `ApplyResultEffect` step. The "after you successfully investigate"
+/// at its `CollectResults` step. The "after you successfully investigate"
 /// timing point already fired at the preceding `DetermineOutcome` step, on the
 /// ST.6 success, before this discovery. The discovery comes from the action,
 /// not from an ability source, so `for_controller` is correct.

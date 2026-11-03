@@ -129,9 +129,8 @@ fn table(
             | SkillTestStep::DetermineOutcome
             | SkillTestStep::ApplyResultModifiers
             | SkillTestStep::ApplyFollowUp
-            | SkillTestStep::ApplyResultEffect
-            | SkillTestStep::ApplyTokenResult
-            | SkillTestStep::ApplyResultAdditions { .. }
+            | SkillTestStep::CollectResults
+            | SkillTestStep::ApplyResults { .. }
             | SkillTestStep::PostRetaliate
             | SkillTestStep::PostOnResolution => None,
         }
