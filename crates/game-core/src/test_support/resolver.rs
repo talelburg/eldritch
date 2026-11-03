@@ -16,8 +16,9 @@
 //! # Engine consumers
 //!
 //! The skill-test commit window is the prompt tests answer most: the
-//! active investigator replies with [`InputResponse::PickMultiple`] (each
-//! `OptionId` one of the hand cards the window offers).
+//! investigator it asks (a helper, or the performer) replies with
+//! [`InputResponse::PickMultiple`] (each `OptionId` one of the hand cards the
+//! window offers).
 //! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests pass card
 //! codes, the resolver finds those cards in the hand using [`GameState`] at
 //! resolve time and names the options anchored to them. Other prompts are
@@ -94,9 +95,10 @@ pub struct ScriptedResolver {
 #[derive(Debug, Clone)]
 enum ScriptedStep {
     Response(InputResponse),
-    /// Commit a set of cards from the active investigator's hand to a
-    /// skill test. A by-`CardCode` convenience over the option-id commit
-    /// flow (resolves codes to the options anchored to them at replay time).
+    /// Commit a set of cards to a skill test from the hand of the
+    /// investigator the commit prompt asks. A by-`CardCode` convenience over
+    /// the option-id commit flow (resolves codes to the options anchored to
+    /// them at replay time).
     CommitCards(Vec<CardCode>),
     /// Pick the one offered option anchored to this target, resolved to
     /// `PickSingle(option.id)` at replay time.

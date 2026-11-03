@@ -27,7 +27,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, CommittedIndex, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, Status,
 };
-use game_core::test_support::{enemy, location, seat, Seat, TestSession};
+use game_core::test_support::{enemy, location, seat, BoardLookup as _, Seat, TestSession};
 
 const UNEXPECTED_COURAGE: &str = "01093";
 /// Overpower 01091: two combat icons, no wild, so no appropriate icon for an
@@ -84,8 +84,8 @@ fn rolands_test_with_daisy_holding(hand: &[&str]) -> TestSession {
         .test_skill(ROLAND, SkillKind::Intellect, 5)
 }
 
-/// The issue's original criterion: Daisy's wild icons count toward Roland's
-/// skill value. Intellect 3 + 2 wild = 5 meets difficulty 5.
+/// Daisy's committed wild icons count toward Roland's skill value.
+/// Intellect 3 + 2 wild = 5 meets difficulty 5.
 #[test]
 fn a_helpers_icons_count_toward_the_performers_skill_value() {
     let session = rolands_test_with_daisy_holding(&[UNEXPECTED_COURAGE])
@@ -99,10 +99,10 @@ fn a_helpers_icons_count_toward_the_performers_skill_value() {
     );
 }
 
-/// Daisy's hand card at `hand_index`, as an option anchor.
-fn daisys_card(hand_index: u8) -> OptionTarget {
+/// The card at `hand_index` in `holder`'s hand, as an option anchor.
+fn hand_card(holder: InvestigatorId, hand_index: u8) -> OptionTarget {
     OptionTarget::HandCard {
-        investigator: DAISY,
+        investigator: holder,
         hand_index,
     }
 }
@@ -127,8 +127,12 @@ fn a_helpers_prompt_is_addressed_to_the_helper() {
 #[test]
 fn a_helper_is_offered_only_cards_with_an_appropriate_icon() {
     let session = rolands_test_with_daisy_holding(&[OVERPOWER, UNEXPECTED_COURAGE]);
-    assert_eq!(session.offered_at(&daisys_card(0)), 0, "Overpower");
-    assert_eq!(session.offered_at(&daisys_card(1)), 1, "Unexpected Courage");
+    assert_eq!(session.offered_at(&hand_card(DAISY, 0)), 0, "Overpower");
+    assert_eq!(
+        session.offered_at(&hand_card(DAISY, 1)),
+        1,
+        "Unexpected Courage"
+    );
 }
 
 /// ST.2: a helper *"may commit one card"*. A pick of two is rejected and the
@@ -168,7 +172,7 @@ fn assert_only_roland_is_asked(daisy: Seat) {
         .session()
         .test_skill(ROLAND, SkillKind::Intellect, 5);
     assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
-    assert_eq!(session.offered_at(&daisys_card(0)), 0);
+    assert_eq!(session.offered_at(&hand_card(DAISY, 0)), 0);
 }
 
 /// A co-located investigator with no card they could commit is not asked.
@@ -198,14 +202,19 @@ fn an_eliminated_investigator_is_not_asked() {
 const AGNES: InvestigatorId = InvestigatorId(3);
 
 /// Roland, Daisy and Agnes at `HERE`, seated in that order with Agnes the
-/// lead, started into Roland's Intellect-vs-5 test. Agnes holds Unexpected
-/// Courage and Daisy Working a Hunch. Player order from the lead is Agnes,
-/// Roland, Daisy, so the helpers are Agnes then Daisy.
-fn rolands_test_with_two_helpers() -> TestSession {
-    board(seat(2).at(HERE).hand([WORKING_A_HUNCH]))
-        .with_seat(seat(3).at(HERE).hand([UNEXPECTED_COURAGE]))
+/// lead, Daisy holding `daisy` and Agnes `agnes`. Player order from the lead
+/// is Agnes, Roland, Daisy, so the helpers are Agnes then Daisy.
+fn board_with_two_helpers(daisy: &[&str], agnes: &[&str]) -> GameStateBuilder {
+    board(seat(2).at(HERE).hand(daisy.iter().copied()))
+        .with_seat(seat(3).at(HERE).hand(agnes.iter().copied()))
         .with_seating([ROLAND, DAISY, AGNES])
         .with_lead(AGNES)
+}
+
+/// [`board_with_two_helpers`] with Agnes holding Unexpected Courage and Daisy
+/// Working a Hunch, started into Roland's Intellect-vs-5 test.
+fn rolands_test_with_two_helpers() -> TestSession {
+    board_with_two_helpers(&[WORKING_A_HUNCH], &[UNEXPECTED_COURAGE])
         .session()
         .test_skill(ROLAND, SkillKind::Intellect, 5)
 }
@@ -229,11 +238,6 @@ fn two_helpers_are_asked_in_player_order_then_the_performer() {
     );
 }
 
-/// `investigator`'s name, as the prompts print it.
-fn name(session: &TestSession, investigator: InvestigatorId) -> String {
-    session.state().investigators[&investigator].name.clone()
-}
-
 /// The helper's prompt names the performer's test and its difficulty, and
 /// every later prompt names the commits made so far, card and committer.
 #[test]
@@ -243,13 +247,13 @@ fn each_prompt_names_the_commits_so_far() {
     assert!(
         agnes_prompt.contains(&format!(
             "{}'s Intellect test (difficulty 5)",
-            name(&session, ROLAND)
+            session.state().name_of(ROLAND)
         )),
         "{agnes_prompt}"
     );
     assert!(!agnes_prompt.contains("Committed so far"), "{agnes_prompt}");
 
-    let agnes_commit = format!("Unexpected Courage ({})", name(&session, AGNES));
+    let agnes_commit = format!("Unexpected Courage ({})", session.state().name_of(AGNES));
     let session = session.commit(&[UNEXPECTED_COURAGE]);
     let daisy_prompt = session.prompt().prompt.clone();
     assert!(
@@ -257,7 +261,7 @@ fn each_prompt_names_the_commits_so_far() {
         "{daisy_prompt}"
     );
 
-    let daisy_commit = format!("Working a Hunch ({})", name(&session, DAISY));
+    let daisy_commit = format!("Working a Hunch ({})", session.state().name_of(DAISY));
     let session = session.commit(&[WORKING_A_HUNCH]);
     let roland_prompt = session.prompt().prompt.clone();
     assert!(
@@ -301,16 +305,12 @@ const OPPORTUNIST: &str = "01053";
 fn a_helper_is_not_offered_opportunist() {
     let session = rolands_test_with_daisy_holding(&[OPPORTUNIST, UNEXPECTED_COURAGE]);
     assert_eq!(session.prompt().responder, Responder::Investigator(DAISY));
-    assert_eq!(session.offered_at(&daisys_card(0)), 0, "Opportunist");
-    assert_eq!(session.offered_at(&daisys_card(1)), 1, "Unexpected Courage");
-}
-
-/// Roland's hand card at `hand_index`, as an option anchor.
-fn rolands_card(hand_index: u8) -> OptionTarget {
-    OptionTarget::HandCard {
-        investigator: ROLAND,
-        hand_index,
-    }
+    assert_eq!(session.offered_at(&hand_card(DAISY, 0)), 0, "Opportunist");
+    assert_eq!(
+        session.offered_at(&hand_card(DAISY, 1)),
+        1,
+        "Unexpected Courage"
+    );
 }
 
 /// The performer is still offered their own Opportunist, with a helper beside
@@ -321,7 +321,7 @@ fn the_performer_is_offered_their_own_opportunist() {
         .session()
         .test_skill(ROLAND, SkillKind::Intellect, 5);
     assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
-    assert_eq!(session.offered_at(&rolands_card(0)), 1);
+    assert_eq!(session.offered_at(&hand_card(ROLAND, 0)), 1);
 }
 
 /// Guts 01089: *"Max 1 committed per skill test. If this test is successful,
@@ -339,7 +339,24 @@ fn after_a_helper_commits_guts_the_performer_is_not_offered_guts() {
         .test_skill(ROLAND, SkillKind::Willpower, 1)
         .commit(&[GUTS]);
     assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
-    assert_eq!(session.offered_at(&rolands_card(0)), 0, "Roland's Guts");
+    assert_eq!(
+        session.offered_at(&hand_card(ROLAND, 0)),
+        0,
+        "Roland's Guts"
+    );
+}
+
+/// A helper whose only candidate an earlier helper's commit filtered out is
+/// skipped, not asked. Agnes and Daisy each hold only Guts; once Agnes commits
+/// hers the cap is reached, so the next prompt is Roland's.
+#[test]
+fn a_helper_left_with_no_candidate_by_an_earlier_commit_is_not_asked() {
+    let session = board_with_two_helpers(&[GUTS], &[GUTS])
+        .session()
+        .test_skill(ROLAND, SkillKind::Willpower, 1);
+    assert_eq!(session.prompt().responder, Responder::Investigator(AGNES));
+    let session = session.commit(&[GUTS]);
+    assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
 }
 
 // ---- whose result a helper's card is -------------------------------------

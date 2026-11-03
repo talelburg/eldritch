@@ -131,13 +131,23 @@
       "difficulty_basis": {
         "Fixed": 3
       },
-      "committed": [],
+      "committed": [
+        {
+          "code": "01093",
+          "committer": 3,
+          "destination": "Discard"
+        }
+      ],
       "tested_location": null,
       "follow_up": "None",
       "on_fail": null,
       "on_success": null,
       "source": null,
-      "continuation": "AwaitingCommit",
+      "continuation": {
+        "AwaitingHelperCommit": {
+          "helper": 2
+        }
+      },
       "bonus_attack_damage": 0,
       "bonus_clues_discovered": 0,
       "resolved": null,

@@ -1404,10 +1404,10 @@ pub enum CommittedCardDestination {
 /// Pushed by the skill-test initiator (a plain skill test, `Investigate`,
 /// `Fight`, `Evade`) after [`SkillTestStarted`] fires; consumed by the
 /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) dispatch
-/// once the active investigator submits their commit list. The follow-
-/// up describes the action-specific success path: discover a clue
-/// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
-/// or nothing (a bare plain skill test).
+/// once each commit prompt (each helper's, then the performer's) is
+/// answered. The follow-up describes the action-specific success path:
+/// discover a clue (Investigate), deal damage (Fight), disengage and exhaust
+/// (Evade), or nothing (a bare plain skill test).
 ///
 /// [`SkillTestStarted`]: crate::event::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1442,9 +1442,10 @@ pub struct InFlightSkillTest {
     pub difficulty_basis: DifficultyBasis,
     /// The cards committed to the test, in commit order, each with its
     /// [committer](CommittedCard::committer) — **held here, not in hand**.
-    /// Rules Reference glossary "Limbo": *"A skill card enters limbo as it is committed to a skill
-    /// test. … It is no longer considered to be in any investigator's hand,
-    /// but it has not yet been placed in any discard pile."*
+    /// Rules Reference glossary "Limbo": *"A skill card enters limbo as it is
+    /// committed to a skill test. … It is no longer considered to be in any
+    /// investigator's hand, but it has not yet been placed in any discard
+    /// pile."*
     ///
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
     /// dispatch, which removes the named cards from the hand and moves them
@@ -1587,8 +1588,9 @@ pub struct InFlightSkillTest {
     /// [`NativeCx::discard_after_this_test`](crate::engine::NativeCx::discard_after_this_test)),
     /// and the teardown does the discard. A test abandoned because its target
     /// left play discards it too, since the symbol was still revealed during
-    /// it; one abandoned on the tester's elimination does not, as elimination
-    /// removes the card from the game. `None` for every other test.
+    /// it; one abandoned on the performer's elimination does not, as
+    /// elimination removes the card from the game. `None` for every other
+    /// test.
     pub discard_after: Option<CardInstanceId>,
 }
 

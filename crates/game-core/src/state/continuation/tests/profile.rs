@@ -294,13 +294,24 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::SkillTest(test_support::test_skill_test(
-                SkillTestId(0),
-                InvestigatorId(1),
-                SkillKind::Willpower,
-                SkillTestKind::Plain,
-                3,
-            )),
+            // At a helper's commit prompt, with a card already committed by
+            // another helper, so the wire pins both the committer and the step.
+            Continuation::SkillTest(InFlightSkillTest {
+                committed: vec![CommittedCard::new(
+                    CardCode::new("01093"),
+                    InvestigatorId(3),
+                )],
+                continuation: SkillTestStep::AwaitingHelperCommit {
+                    helper: InvestigatorId(2),
+                },
+                ..test_support::test_skill_test(
+                    SkillTestId(0),
+                    InvestigatorId(1),
+                    SkillKind::Willpower,
+                    SkillTestKind::Plain,
+                    3,
+                )
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (

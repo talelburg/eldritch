@@ -466,18 +466,22 @@ enum MultiPick {
     Mulligan,
     /// Cards discarded down to the Upkeep hand size.
     HandSizeDiscard,
+    /// A multi-pick on any other top frame, or with no game held. No prompt
+    /// takes one today, so the header names the cards without saying what
+    /// they did rather than guess.
+    Unrecognised,
 }
 
 impl MultiPick {
     /// What a multi-pick answered on `game` (the game before the answer
-    /// applied) does, read off its top frame. Only these three prompts take a
-    /// multi-pick, so a top frame that is neither a mulligan nor a hand-size
-    /// discard is a commit.
+    /// applied) does, read off its top frame: a skill test's commit prompt, a
+    /// mulligan, or a hand-size discard.
     fn answered_on(game: Option<&GameState>) -> Self {
         match game.and_then(|game| game.continuations.top()) {
+            Some(Continuation::SkillTest(_)) => Self::Commit,
             Some(Continuation::Mulligan(_)) => Self::Mulligan,
             Some(Continuation::HandSizeDiscard(_)) => Self::HandSizeDiscard,
-            _ => Self::Commit,
+            _ => Self::Unrecognised,
         }
     }
 }
@@ -510,6 +514,8 @@ fn batch_header(
                 // Never empty: the engine asks for exactly the excess, which is
                 // at least one card.
                 (MultiPick::HandSizeDiscard, _) => format!("Discard {}", names.join(", ")),
+                (MultiPick::Unrecognised, true) => "Pick no cards".into(),
+                (MultiPick::Unrecognised, false) => format!("Pick {}", names.join(", ")),
             }
         }
         LoggedResponse::Skip => "Pass".into(),
@@ -548,9 +554,10 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
+    use card_dsl::dsl::SkillTestKind;
     use game_core::engine::{ChoiceOption, OptionId};
     use game_core::event::FailureReason;
-    use game_core::state::GameStateBuilder;
+    use game_core::state::{GameStateBuilder, SkillTestId};
     use game_core::test_support;
     use protocol::logged_answer::LoggedOption;
 
@@ -1205,11 +1212,25 @@ mod tests {
         assert_eq!(only_header(&s), "Test Investigator 2: Fight: Ghoul Priest");
     }
 
-    /// The board answered from has no mulligan or hand-size discard on top, so
-    /// the multi-pick is a commit.
+    /// The [`two_seats`] board with seat 1's skill test on top, at its commit
+    /// prompt.
+    fn committing() -> GameState {
+        GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
+            .with_frame(Continuation::SkillTest(test_support::test_skill_test(
+                SkillTestId(0),
+                InvestigatorId(1),
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+                3,
+            )))
+            .build()
+    }
+
     #[test]
     fn a_commit_is_logged_with_the_cards_it_committed() {
-        let mut s = holding(test_support::awaiting_commit_input("Commit", &[0, 1]));
+        let mut s = picking_over(committing());
         reduce(
             &mut s,
             applied_by(
@@ -1283,12 +1304,28 @@ mod tests {
 
     #[test]
     fn an_empty_commit_is_logged_as_committing_nothing() {
-        let mut s = holding(test_support::awaiting_commit_input("Commit", &[0, 1]));
+        let mut s = picking_over(committing());
         reduce(
             &mut s,
             applied_by(1, LoggedResponse::PickMultiple { options: vec![] }),
         );
         assert_eq!(only_header(&s), "Test Investigator 1: Commit no cards");
+    }
+
+    /// A multi-pick on a frame that takes none says only what was picked.
+    #[test]
+    fn a_multi_pick_on_an_unrecognised_frame_is_logged_as_a_pick() {
+        let mut s = picking_over(two_seats());
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts")],
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Pick Guts");
     }
 
     #[test]
