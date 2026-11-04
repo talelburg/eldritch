@@ -23,6 +23,7 @@ pub mod live;
 pub mod lobby;
 pub mod logged_answer;
 
+use crate::live::{LiveGame, LiveSummary};
 use crate::lobby::{Direction, LobbyRefusal, LobbyView, Member};
 use crate::logged_answer::LoggedResponse;
 
@@ -413,21 +414,7 @@ impl GameEntry {
                 lead: view.lead.as_ref() == Some(&pick.investigator),
             })
             .collect();
-        let mut mentioned = vec![view.creator];
-        for investigator in &investigators {
-            if !mentioned.contains(&investigator.holder) {
-                mentioned.push(investigator.holder);
-            }
-        }
-        let names = mentioned
-            .into_iter()
-            .filter_map(|account| {
-                view.member_name(account).map(|name| Member {
-                    account,
-                    display_name: name.to_owned(),
-                })
-            })
-            .collect();
+        let names = mentioned_names(view.creator, &investigators, &[], &view.members);
         Self {
             game_id,
             scenario_id: view.scenario_id.clone(),
@@ -436,6 +423,51 @@ impl GameEntry {
             names,
             last_activity: created_at,
             state: GameEntryState::Lobby,
+        }
+    }
+
+    /// The entry `account` is shown for the started game `live` under
+    /// `game_id`, a game of `scenario_id` created by `creator`: its seated
+    /// investigators in seating order, and its [`LiveSummary`] for `account`.
+    /// `members` names every account the game has; `last_activity` is when it
+    /// last moved, in unix millis.
+    #[must_use]
+    pub fn of_live(
+        game_id: GameId,
+        scenario_id: ScenarioId,
+        creator: AccountId,
+        live: &LiveGame,
+        account: AccountId,
+        members: &[Member],
+        last_activity: i64,
+    ) -> Self {
+        let state = live.state();
+        let lead = game_core::engine::the_lead(state).or(state.lead);
+        let investigators: Vec<EntryInvestigator> = state
+            .seating
+            .iter()
+            .filter_map(|id| {
+                let investigator = state.investigators.get(id)?;
+                // Start gives every seat a holder, so no seat of a started
+                // game is left out here.
+                let holder = live.assignment().holder(*id)?;
+                Some(EntryInvestigator {
+                    investigator: investigator.investigator_card.code.clone(),
+                    holder,
+                    lead: lead == Some(*id),
+                })
+            })
+            .collect();
+        let summary = live.summary_for(account);
+        let names = mentioned_names(creator, &investigators, &summary.waiting_for(), members);
+        Self {
+            game_id,
+            scenario_id,
+            creator,
+            investigators,
+            names,
+            last_activity,
+            state: GameEntryState::Live(summary),
         }
     }
 
@@ -465,6 +497,32 @@ pub struct EntryInvestigator {
 pub enum GameEntryState {
     /// In its lobby, waiting for its creator to press Start.
     Lobby,
+    /// Started, and loaded by this build: who it waits on, summarised for the
+    /// account listing it.
+    Live(LiveSummary),
+}
+
+/// The display name of every account an entry mentions, each once, from
+/// `members`: its creator, each investigator's holder, then each account
+/// in `also`.
+fn mentioned_names(
+    creator: AccountId,
+    investigators: &[EntryInvestigator],
+    also: &[AccountId],
+    members: &[Member],
+) -> Vec<Member> {
+    let mut mentioned = vec![creator];
+    let holders = investigators.iter().map(|investigator| investigator.holder);
+    for account in holders.chain(also.iter().copied()) {
+        if !mentioned.contains(&account) {
+            mentioned.push(account);
+        }
+    }
+    mentioned
+        .into_iter()
+        .filter_map(|account| members.iter().find(|member| member.account == account))
+        .cloned()
+        .collect()
 }
 
 /// The close code ending a game's WebSocket whose upgrade had no valid session.

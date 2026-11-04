@@ -82,7 +82,7 @@ pub(crate) const DAISY: &str = "01002";
 /// "Skids" O'Toole 01003.
 const SKIDS: &str = "01003";
 /// Agnes Baker 01004.
-const AGNES: &str = "01004";
+pub(crate) const AGNES: &str = "01004";
 /// Wendy Adams 01005.
 const WENDY: &str = "01005";
 
@@ -105,7 +105,7 @@ pub(crate) async fn tal_and_sam() -> TwoMembers {
 }
 
 /// [`TwoMembers`] in a lobby of `scenario_id`, served `registries`.
-async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers {
+pub(crate) async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers {
     let pool = common::memory_pool().await;
     let tal = common::test_account(&pool).await;
     let sam = common::add_account(&pool, OTHER_ACCOUNT).await;
@@ -129,7 +129,7 @@ async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers
 
 /// Sam's Daisy, then Tal's Roland and Agnes, every `Lobby` read on both
 /// sockets: Daisy leads, since she was picked first. Returns the last view.
-async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
+pub(crate) async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
     take_seen_by_both(&mut members.sam_ws, &mut members.tal_ws, DAISY).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, ROLAND).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, AGNES).await

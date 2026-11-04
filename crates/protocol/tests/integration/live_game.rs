@@ -3,12 +3,12 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::{ChoiceOption, InputRequest, OptionId, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::rng::RngState;
-use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{self, location, seat, TEST_REGISTRIES};
-use protocol::live::{LiveGame, Refused};
+use protocol::live::{LiveGame, LiveSummary, Refused};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{AccountId, Assignment, LogPosition, ServerMessage};
 
@@ -311,4 +311,129 @@ fn hello_carries_the_build_account_assignment_position_outcome_and_setup_events(
     assert_eq!(state.rng, RngState::new(0), "Hello carries no RNG state");
     assert_eq!(outcome, *live.outcome());
     assert_eq!(events, vec![Event::ScenarioStarted]);
+}
+
+// The summary for an account, which "Your games" reads.
+
+/// Tal's account, holding [`INV`].
+const TAL: AccountId = AccountId(1);
+/// Sam's account, holding [`INV2`].
+const SAM: AccountId = AccountId(2);
+/// The second seated investigator.
+const INV2: InvestigatorId = InvestigatorId(2);
+
+/// Two investigators, [`INV`] held by [`TAL`] and [`INV2`] by [`SAM`], in
+/// round 3's Investigation phase, waiting on `request`.
+fn two_seats_awaiting(request: InputRequest) -> LiveGame {
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(HERE))
+        .with_seat(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE))
+        .build();
+    state.round = 3;
+    state.phase = Phase::Investigation;
+    LiveGame::new(
+        state,
+        test_support::awaiting_request(request),
+        Vec::new(),
+        LogPosition(0),
+        Assignment::from_iter([(INV, TAL), (INV2, SAM)]),
+        TEST_REGISTRIES,
+    )
+}
+
+/// The investigators a summary waits on, as `(investigator, holder, yours)`.
+fn waited(summary: &LiveSummary) -> Vec<(InvestigatorId, Option<AccountId>, bool)> {
+    summary
+        .waiting_on
+        .iter()
+        .map(|waited| (waited.investigator, waited.holder, waited.yours))
+        .collect()
+}
+
+#[test]
+fn a_prompt_for_your_investigator_needs_you() {
+    let live = two_seats_awaiting(
+        InputRequest::confirm("Mulligan?").answered_by(Responder::Investigator(INV2)),
+    );
+
+    let summary = live.summary_for(SAM);
+
+    assert_eq!(waited(&summary), vec![(INV2, Some(SAM), true)]);
+    assert!(summary.needs_you());
+    assert_eq!(summary.waiting_for(), vec![SAM]);
+    assert_eq!((summary.round, summary.phase), (3, Phase::Investigation));
+}
+
+#[test]
+fn a_prompt_for_another_accounts_investigator_waits_for_that_account() {
+    let live = two_seats_awaiting(
+        InputRequest::confirm("Mulligan?").answered_by(Responder::Investigator(INV)),
+    );
+
+    let summary = live.summary_for(SAM);
+
+    assert_eq!(waited(&summary), vec![(INV, Some(TAL), false)]);
+    assert!(!summary.needs_you());
+    assert_eq!(summary.waiting_for(), vec![TAL]);
+}
+
+#[test]
+fn a_lead_prompt_waits_on_the_lead_investigator() {
+    let live = two_seats_awaiting(
+        InputRequest::confirm("Advance the act?").answered_by(Responder::Lead(INV2)),
+    );
+
+    assert_eq!(
+        waited(&live.summary_for(SAM)),
+        vec![(INV2, Some(SAM), true)]
+    );
+    assert_eq!(live.summary_for(TAL).waiting_for(), vec![SAM]);
+}
+
+#[test]
+fn a_window_holding_options_for_two_accounts_needs_both() {
+    let live = two_seats_awaiting(
+        InputRequest::pick_single(
+            "Reaction window",
+            vec![
+                ChoiceOption::new(OptionId(0), "Tal's reaction").offered_to(INV),
+                ChoiceOption::new(OptionId(1), "Sam's reaction").offered_to(INV2),
+                ChoiceOption::new(OptionId(2), "Tal passes").offered_to(INV),
+            ],
+        )
+        .answered_by(Responder::Several),
+    );
+
+    let for_sam = live.summary_for(SAM);
+    let for_tal = live.summary_for(TAL);
+
+    assert_eq!(
+        waited(&for_sam),
+        vec![(INV, Some(TAL), false), (INV2, Some(SAM), true)]
+    );
+    assert!(for_sam.needs_you(), "Sam holds an option");
+    assert!(for_tal.needs_you(), "Tal holds an option");
+    assert_eq!(for_sam.waiting_for(), vec![TAL, SAM]);
+}
+
+#[test]
+fn a_viewer_is_never_needed() {
+    let live = two_seats_awaiting(
+        InputRequest::pick_single(
+            "Reaction window",
+            vec![
+                ChoiceOption::new(OptionId(0), "Tal's reaction").offered_to(INV),
+                ChoiceOption::new(OptionId(1), "Sam's reaction").offered_to(INV2),
+            ],
+        )
+        .answered_by(Responder::Several),
+    );
+
+    let summary = live.summary_for(VIEWER);
+
+    assert!(!summary.needs_you());
+    assert!(summary.waiting_on.iter().all(|waited| !waited.yours));
+    assert_eq!(summary.waiting_for(), vec![TAL, SAM]);
 }

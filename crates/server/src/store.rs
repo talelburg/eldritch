@@ -10,9 +10,10 @@ use sqlx::{Error, SqliteConnection, SqlitePool};
 /// What a `games` row holds to rebuild its game: the creation inputs, in their
 /// column form, the record of what setup decided, and the account that created
 /// it. No serialized engine state (ADR 0022), and not who holds each
-/// investigator, which is stored beside it (ADR 0024). The row's diagnostic
-/// columns, `created_build` and `created_at`, are written beside it and never
-/// read back.
+/// investigator, which is stored beside it (ADR 0024). The row's
+/// `created_build` and `created_at` are written beside it: `created_at` is
+/// read back by [`started_games_of`] as a game's last activity before any
+/// answer is logged, and `created_build` is never read back.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
@@ -123,6 +124,44 @@ pub(crate) async fn insert_action(
         .execute(db)
         .await?;
     Ok(())
+}
+
+/// A started game an account is a member of, as "Your games" lists it.
+pub(crate) struct StartedGame {
+    pub(crate) game_id: GameId,
+    pub(crate) scenario_id: String,
+    /// The creating account; `None` for a row stored before the column
+    /// existed.
+    pub(crate) creator: Option<AccountId>,
+    /// When the game last moved, in unix millis: its last logged answer's
+    /// `at`, or its `created_at` with none logged.
+    pub(crate) last_activity: i64,
+}
+
+/// Every started game `account` is a member of: each with a `games` row.
+pub(crate) async fn started_games_of(
+    db: &SqlitePool,
+    account: AccountId,
+) -> Result<Vec<StartedGame>, Error> {
+    let rows: Vec<(String, String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT g.game_id, g.scenario_id, g.creator, \
+         COALESCE((SELECT MAX(a.at) FROM actions a WHERE a.game_id = g.game_id), g.created_at) \
+         FROM game_members m JOIN games g ON g.game_id = m.game_id WHERE m.account_id = ?",
+    )
+    .bind(account.0)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(game_id, scenario_id, creator, last_activity)| StartedGame {
+                game_id: GameId::new(game_id),
+                scenario_id,
+                creator: creator.map(AccountId),
+                last_activity,
+            },
+        )
+        .collect())
 }
 
 /// The columns [`load_game`] selects, in order.

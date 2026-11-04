@@ -375,6 +375,10 @@
 .row-investigators { display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
 .row-holder { font-size: 0.8rem; opacity: 0.7; margin-left: 0.3rem; }
 .row-status { font-style: italic; margin-left: auto; }
+.row-pill {
+    background: #fff7d6; border: 1px solid #e0b84c; border-radius: 1rem;
+    padding: 0.1rem 0.6rem; font-size: 0.85rem; font-weight: bold;
+}
 
 /* Lobby header (#1231 variant C): the members, then the invite link and Copy. */
 .lobby { justify-content: flex-start; padding: 1.5rem; }

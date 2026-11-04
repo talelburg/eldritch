@@ -6,8 +6,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::scenario::ScenarioId;
-use game_core::state::CardCode;
+use game_core::state::{CardCode, InvestigatorId, Phase};
 use leptos::task;
+use protocol::live::{LiveSummary, WaitedOn};
 use protocol::lobby::Member;
 use protocol::{AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId};
 use web::store::{ClientState, ConnStatus};
@@ -117,4 +118,90 @@ async fn new_game_sits_in_the_heading_and_an_empty_listing_shows_no_group() {
         ["New game"]
     );
     assert!(texts(&handle, ".games-group").is_empty(), "no empty group");
+}
+
+/// Thursday's game, created by Tal, with Sam's Daisy leading and Tal's
+/// Roland, in round 3's Investigation phase, last moving at `at`, waiting on
+/// each of `waiting_on` as Sam sees it.
+fn thursday(game_id: &str, at: i64, waiting_on: &[(u32, &str, AccountId)]) -> GameEntry {
+    let mut entry = lobby(game_id, TAL, "Tal", at);
+    entry.investigators.push(EntryInvestigator {
+        investigator: CardCode::new(ROLAND),
+        holder: TAL,
+        lead: false,
+    });
+    entry.state = GameEntryState::Live(LiveSummary {
+        round: 3,
+        phase: Phase::Investigation,
+        waiting_on: waiting_on
+            .iter()
+            .map(|&(id, card, holder)| WaitedOn {
+                investigator: InvestigatorId(id),
+                card: CardCode::new(card),
+                holder: Some(holder),
+                yours: holder == SAM,
+            })
+            .collect(),
+    });
+    entry
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_game_waiting_on_your_investigator_is_listed_first_under_needs_you_naming_it() {
+    let handle = mount_page(Some(vec![
+        lobby("g-lobby", TAL, "Tal", 3_000),
+        thursday("g-tals-turn", 2_000, &[(2, ROLAND, TAL)]),
+        thursday("g-thursday", 1_000, &[(1, DAISY, SAM)]),
+    ]))
+    .await;
+
+    assert_eq!(
+        texts(&handle, ".games-group-title"),
+        ["Needs you", "Lobby", "In progress"]
+    );
+    let needs_you = handle
+        .root
+        .query_selector(r#".game-row[href="/games/g-thursday"]"#)
+        .expect("query")
+        .expect("Thursday's game is listed");
+    assert_eq!(texts(&handle, ".row-pill"), ["Daisy Walker needs you"]);
+    let text = needs_you.text_content().unwrap_or_default();
+    assert!(
+        text.contains("Round 3 · Investigation · waiting for Sam"),
+        "{text}"
+    );
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_game_waiting_on_another_account_is_in_progress_with_its_round_phase_and_who() {
+    let handle = mount_page(Some(vec![thursday(
+        "g-tals-turn",
+        2_000,
+        &[(2, ROLAND, TAL)],
+    )]))
+    .await;
+
+    assert_eq!(texts(&handle, ".games-group-title"), ["In progress"]);
+    assert_eq!(
+        texts(&handle, ".game-row .row-status"),
+        ["Round 3 · Investigation · waiting for Tal"]
+    );
+    assert!(texts(&handle, ".row-pill").is_empty(), "nothing is Sam's");
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_window_waiting_on_two_accounts_names_both_and_needs_you() {
+    let handle = mount_page(Some(vec![thursday(
+        "g-window",
+        2_000,
+        &[(1, DAISY, SAM), (2, ROLAND, TAL)],
+    )]))
+    .await;
+
+    assert_eq!(texts(&handle, ".games-group-title"), ["Needs you"]);
+    assert_eq!(
+        texts(&handle, ".game-row .row-status"),
+        ["Round 3 · Investigation · waiting for Sam and Tal"]
+    );
+    assert_eq!(texts(&handle, ".row-pill"), ["Daisy Walker needs you"]);
 }

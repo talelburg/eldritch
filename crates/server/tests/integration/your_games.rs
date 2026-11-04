@@ -4,11 +4,18 @@
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use protocol::{AccountId, GameEntry, GameEntryState, GameId};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::Phase;
+use protocol::live::LiveSummary;
+use protocol::{
+    AccountId, ClientMessage, GameEntry, GameEntryState, GameId, LogPosition, ServerMessage,
+};
 use reqwest::StatusCode;
+use scenarios::the_gathering::ID as GATHERING;
 
-use crate::common::{self, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID};
-use crate::lobby::{self, DAISY, ROLAND};
+use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID};
+use crate::lobby::{self, AGNES, DAISY, ROLAND};
 
 /// `GET /games` at `addr` with `cookie`, if there is one.
 async fn get_games(addr: SocketAddr, cookie: Option<&str>) -> reqwest::Response {
@@ -90,4 +97,105 @@ async fn a_signed_out_request_is_refused() {
     let response = get_games(addr, None).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// The next frame on `ws`, which must be `kind`.
+async fn expect_frame(ws: &mut Client, kind: &str) {
+    let frame = common::recv_within(ws).await;
+    let seen = match &frame {
+        ServerMessage::Hello { .. } => "Hello",
+        ServerMessage::Applied(_) => "Applied",
+        _ => "another frame",
+    };
+    assert_eq!(seen, kind, "{frame:?}");
+}
+
+/// The summary of a Live entry.
+fn summary(entry: &GameEntry) -> &LiveSummary {
+    match &entry.state {
+        GameEntryState::Live(summary) => summary,
+        other => panic!("expected a Live entry, got {other:?}"),
+    }
+}
+
+/// The investigators a summary waits on, as `(card code, holder, yours)`.
+fn waited(summary: &LiveSummary) -> Vec<(&str, Option<AccountId>, bool)> {
+    summary
+        .waiting_on
+        .iter()
+        .map(|waited| (waited.card.as_str(), waited.holder, waited.yours))
+        .collect()
+}
+
+/// Tal and Sam start The Gathering with Sam's Daisy leading, so the mulligan
+/// asks Daisy first, then Tal's Roland once Sam keeps Daisy's hand.
+#[tokio::test]
+async fn a_started_game_is_live_with_who_it_waits_on_and_its_last_activity() {
+    let mut members = lobby::tal_and_sam_at(server::REGISTRIES, GATHERING).await;
+    lobby::daisy_roland_agnes(&mut members).await;
+    let before_start = now_millis();
+    common::send(&mut members.tal_ws, &ClientMessage::Start).await;
+    expect_frame(&mut members.tal_ws, "Hello").await;
+    expect_frame(&mut members.sam_ws, "Hello").await;
+    let after_start = now_millis();
+
+    let listing = listing_for(members.addr, OTHER_ACCOUNT).await;
+
+    let [entry] = listing.as_slice() else {
+        panic!("Sam is a member of one game: {listing:?}");
+    };
+    assert_eq!(entry.game_id, GameId::new(members.game_id.as_str()));
+    assert_eq!(entry.scenario_id.as_str(), GATHERING);
+    assert_eq!(entry.creator, members.tal);
+    assert_eq!(
+        investigators(entry),
+        [
+            (DAISY, members.sam, true),
+            (ROLAND, members.tal, false),
+            (AGNES, members.tal, false)
+        ],
+        "the seated investigators in seating order, Daisy leading"
+    );
+    assert_eq!(entry.name(members.tal), Some(TEST_ACCOUNT));
+    assert_eq!(entry.name(members.sam), Some(OTHER_ACCOUNT));
+    let sams = summary(entry);
+    assert_eq!(waited(sams), [(DAISY, Some(members.sam), true)]);
+    assert!(sams.needs_you(), "the mulligan asks Sam's Daisy");
+    assert_eq!((sams.round, sams.phase), (1, Phase::Investigation));
+    assert!(
+        (before_start..=after_start).contains(&entry.last_activity),
+        "with nothing logged, last activity is when the game started: {}",
+        entry.last_activity
+    );
+
+    let before_answer = now_millis();
+    common::send(
+        &mut members.sam_ws,
+        &ClientMessage::Submit {
+            prompt: LogPosition(0),
+            action: PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        },
+    )
+    .await;
+    expect_frame(&mut members.sam_ws, "Applied").await;
+    expect_frame(&mut members.tal_ws, "Applied").await;
+    let after_answer = now_millis();
+
+    let listing = listing_for(members.addr, OTHER_ACCOUNT).await;
+
+    let [entry] = listing.as_slice() else {
+        panic!("Sam is a member of one game: {listing:?}");
+    };
+    let sams = summary(entry);
+    assert_eq!(waited(sams), [(ROLAND, Some(members.tal), false)]);
+    assert!(!sams.needs_you(), "the mulligan now asks Tal's Roland");
+    assert_eq!(sams.waiting_for(), [members.tal]);
+    assert!(
+        (before_answer..=after_answer).contains(&entry.last_activity),
+        "last activity is when the last answer was logged: {}",
+        entry.last_activity
+    );
 }

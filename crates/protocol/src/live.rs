@@ -21,11 +21,12 @@
 //! bag or a shuffle.
 
 use game_core::action::{Action, PlayerAction};
-use game_core::engine::{self, EngineOutcome, Registries};
+use game_core::engine::{self, EngineOutcome, InputRequest, Registries, Responder};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::GameState;
+use game_core::state::{CardCode, GameState, Phase};
+use serde::{Deserialize, Serialize};
 
 use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
 use crate::{AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage};
@@ -177,6 +178,36 @@ impl LiveGame {
         }
     }
 
+    /// Where the game stands, as `account` sees it on "Your games": the round
+    /// and phase, and each investigator the live prompt waits on, with its
+    /// holder and whether that is `account`. Nothing is waited on with no
+    /// prompt live.
+    #[must_use]
+    pub fn summary_for(&self, account: AccountId) -> LiveSummary {
+        let waited = match &self.outcome {
+            EngineOutcome::AwaitingInput { request } => waited_on(request),
+            _ => Vec::new(),
+        };
+        let waiting_on = waited
+            .into_iter()
+            .filter_map(|investigator| {
+                let card = self.state.investigators.get(&investigator)?;
+                let holder = self.assignment.holder(investigator);
+                Some(WaitedOn {
+                    investigator,
+                    card: card.investigator_card.code.clone(),
+                    holder,
+                    yours: holder == Some(account),
+                })
+            })
+            .collect();
+        LiveSummary {
+            round: self.state.round,
+            phase: self.state.phase,
+            waiting_on,
+        }
+    }
+
     /// Decide `action`, `account`'s answer to the prompt at `prompt`: check it
     /// answers the prompt the game awaits, check `account` holds the
     /// investigator it answers for, run the engine on a copy of the state,
@@ -272,6 +303,73 @@ impl Committed {
         let mut applied = self.0.clone();
         applied.state = Box::new(view_for(account, *applied.state));
         applied
+    }
+}
+
+/// A live game's place summarised for one account: what "Your games" shows
+/// of a started game. Read off the game each time it is asked for, never
+/// stored (ADR 0022).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveSummary {
+    /// The round, from 1.
+    pub round: u32,
+    /// The phase.
+    pub phase: Phase,
+    /// Each investigator the live prompt waits on, in the order the prompt
+    /// names them; empty with no prompt live.
+    pub waiting_on: Vec<WaitedOn>,
+}
+
+impl LiveSummary {
+    /// Whether the prompt waits on an investigator the account holds.
+    #[must_use]
+    pub fn needs_you(&self) -> bool {
+        self.waiting_on.iter().any(|waited| waited.yours)
+    }
+
+    /// The waited-on investigators the account holds.
+    pub fn yours(&self) -> impl Iterator<Item = &WaitedOn> {
+        self.waiting_on.iter().filter(|waited| waited.yours)
+    }
+
+    /// The accounts holding a waited-on investigator, each once, in the
+    /// order their investigators are waited on.
+    #[must_use]
+    pub fn waiting_for(&self) -> Vec<AccountId> {
+        let mut accounts = Vec::new();
+        for holder in self.waiting_on.iter().filter_map(|waited| waited.holder) {
+            if !accounts.contains(&holder) {
+                accounts.push(holder);
+            }
+        }
+        accounts
+    }
+}
+
+/// One investigator a live prompt waits on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitedOn {
+    /// The investigator.
+    pub investigator: InvestigatorId,
+    /// Its investigator card, which names it.
+    pub card: CardCode,
+    /// The account holding it, if one does.
+    pub holder: Option<AccountId>,
+    /// Whether the account the summary is for holds it.
+    pub yours: bool,
+}
+
+/// Who `request` waits on, read off its [`Responder`] as the board's status
+/// bar reads it: the one investigator a prompt for an investigator or for the
+/// lead names, or in a window several answer, each investigator holding an
+/// option.
+fn waited_on(request: &InputRequest) -> Vec<InvestigatorId> {
+    match request.responder {
+        Responder::Investigator(id) | Responder::Lead(id) => vec![id],
+        Responder::Several => request.holders(),
+        // `Responder` is non-exhaustive; a kind this build does not know
+        // names nobody it can show.
+        _ => Vec::new(),
     }
 }
 

@@ -59,14 +59,7 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
     let Some((scenario_id, creator, lead)) = row else {
         return Ok(None);
     };
-    let members: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT m.account_id, a.display_name FROM game_members m \
-         JOIN accounts a ON a.account_id = m.account_id \
-         WHERE m.game_id = ? ORDER BY m.rowid",
-    )
-    .bind(game_id.as_str())
-    .fetch_all(db)
-    .await?;
+    let members = named_members(db, game_id).await?;
     let picks: Vec<(String, i64, String)> = sqlx::query_as(
         "SELECT investigator, account_id, weakness FROM lobby_picks \
          WHERE game_id = ? ORDER BY position",
@@ -74,18 +67,7 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
     .bind(game_id.as_str())
     .fetch_all(db)
     .await?;
-    let lobby = Lobby::new(
-        ScenarioId::new(scenario_id),
-        AccountId(creator),
-        members
-            .into_iter()
-            .map(|(account, display_name)| Member {
-                account: AccountId(account),
-                display_name,
-            })
-            .collect(),
-    )
-    .with_picks(
+    let lobby = Lobby::new(ScenarioId::new(scenario_id), AccountId(creator), members).with_picks(
         picks
             .into_iter()
             .map(|(investigator, account, weakness)| {
@@ -99,6 +81,33 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
         lead.map(CardCode::new),
     );
     Ok(Some(lobby))
+}
+
+/// The members of the game or lobby `game_id`, with their display names, in
+/// the order they joined.
+///
+/// # Errors
+///
+/// The database failed.
+pub(crate) async fn named_members(
+    db: &SqlitePool,
+    game_id: &GameId,
+) -> Result<Vec<Member>, sqlx::Error> {
+    let members: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT m.account_id, a.display_name FROM game_members m \
+         JOIN accounts a ON a.account_id = m.account_id \
+         WHERE m.game_id = ? ORDER BY m.rowid",
+    )
+    .bind(game_id.as_str())
+    .fetch_all(db)
+    .await?;
+    Ok(members
+        .into_iter()
+        .map(|(account, display_name)| Member {
+            account: AccountId(account),
+            display_name,
+        })
+        .collect())
 }
 
 /// Every lobby `account` is a member of, as its id, its view and its
