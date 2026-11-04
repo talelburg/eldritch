@@ -247,7 +247,7 @@ An account that has opened a game's link; the link is the invitation, and the al
 _Avoid_: Reading membership as control. A member answers prompts only for investigators assigned to them.
 
 **Stored game**:
-What the server keeps of a game: its creation inputs (scenario, roster, lead, RNG seed, whether skill-test results wait to be acknowledged) and its action log, each logged answer carrying the option and prompt it answered. Never its state. Loading re-runs setup and replays the log, checking each step.
+What the server keeps of a game: its creation inputs (scenario, roster, lead, RNG seed, whether skill-test results wait to be acknowledged) and its action log, each logged answer carrying the option and prompt it answered. Beside them, but not among the creation inputs, it keeps the assignment: which account holds each investigator (ADR 0024). Never its state. Loading re-runs setup and replays the log, checking each step.
 _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored game isn't, and **Snapshot** already names the vendored card data.
 
 **Live game**:

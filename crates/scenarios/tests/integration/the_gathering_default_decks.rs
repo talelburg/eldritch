@@ -34,7 +34,7 @@ use scenarios::the_gathering;
 /// What the server passes to every `apply`: the real corpus and the real
 /// scenario modules, with no synthetic test cards composed in. Not
 /// `scenarios::TEST_REGISTRIES`, because each walk's claim is that the roster
-/// the picker sends plays in production.
+/// the lobby's Start seats plays in production.
 const REGISTRIES: Registries = Registries {
     cards: &cards::REGISTRY,
     scenarios: &scenarios::REGISTRY,
@@ -50,7 +50,7 @@ const BACKSTAB: &str = "01051";
 const WENDYS_AMULET: &str = "01014";
 
 /// The Gathering set up and `deck`'s investigator seated solo with the roster
-/// entry the picker sends by default, at the mulligan, which keeps the hand.
+/// entry the lobby's Start seats a new pick with, at the mulligan, which keeps the hand.
 fn seated(deck: &DefaultDeck) -> TestSession {
     let mut state = the_gathering::setup();
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
