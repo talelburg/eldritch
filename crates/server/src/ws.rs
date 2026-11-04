@@ -356,6 +356,18 @@ async fn handle_client_message(
                 })
                 .await
             }
+            Ok(ClientMessage::MoveSeat {
+                investigator,
+                direction,
+            }) => {
+                change_lobby(room, |lobby| {
+                    lobby.move_in_seating(account, &investigator, direction)
+                })
+                .await
+            }
+            Ok(ClientMessage::SetLead { investigator }) => {
+                change_lobby(room, |lobby| lobby.set_lead(account, &investigator)).await
+            }
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
             )))),

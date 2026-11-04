@@ -7,6 +7,7 @@
 
 mod picks;
 mod weakness;
+mod seating;
 
 use std::net::SocketAddr;
 

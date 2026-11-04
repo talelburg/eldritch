@@ -405,6 +405,12 @@
 .seat.lead { border: 1px solid #e0b84c; }
 .lead-star { color: #c9971c; margin-left: auto; }
 
+/* The creator's seating controls: ◀ ▶ and the ★ that makes a pick the lead. */
+.seating-controls { display: flex; gap: 0.2rem; margin-left: auto; }
+.lead-star + .seating-controls { margin-left: 0; }
+.seating-controls button { padding: 0.1rem 0.35rem; }
+.seating-controls .set-lead { color: #c9971c; }
+
 /* Toast: why a lobby command was refused. Above the lobby (30) and the lock
    banner (35), below the terminal overlays (38 and up). */
 .toast {

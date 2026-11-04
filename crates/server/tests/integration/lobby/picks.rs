@@ -45,7 +45,7 @@ pub(super) async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
 }
 
 /// A view's picks as `(investigator, account)`, in seating order.
-fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
+pub(super) fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
     view.picks
         .iter()
         .map(
@@ -59,7 +59,7 @@ fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
 }
 
 /// The lead a view names, by card code.
-fn lead(view: &LobbyView) -> Option<&str> {
+pub(super) fn lead(view: &LobbyView) -> Option<&str> {
     view.lead.as_ref().map(CardCode::as_str)
 }
 

@@ -8,6 +8,7 @@ mod header;
 mod picks;
 mod pool;
 mod seating;
+mod seating_controls;
 mod toast;
 mod weakness;
 

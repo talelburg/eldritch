@@ -78,6 +78,20 @@ pub enum ClientMessage {
         /// The fixed weakness, or a random one.
         choice: cards::decks::WeaknessChoice,
     },
+    /// The creator moves an investigator one position along the lobby's
+    /// seating: [`Lobby::move_in_seating`](lobby::Lobby::move_in_seating).
+    MoveSeat {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+        /// Which way they move.
+        direction: lobby::Direction,
+    },
+    /// The creator makes a pick the lead investigator:
+    /// [`Lobby::set_lead`](lobby::Lobby::set_lead).
+    SetLead {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+    },
 }
 
 /// A message sent from the server to a client. Externally tagged for
