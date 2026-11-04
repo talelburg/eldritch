@@ -14,7 +14,7 @@ const SKIDS: &str = "01003";
 const AGNES: &str = "01004";
 const WENDY: &str = "01005";
 
-/// Send a Take of `investigator` on `ws`.
+/// Send a `Take` of `investigator` on `ws`.
 async fn take(ws: &mut Client, investigator: &str) {
     common::send(
         ws,
@@ -25,7 +25,7 @@ async fn take(ws: &mut Client, investigator: &str) {
     .await;
 }
 
-/// Send a GiveUp of `investigator` on `ws`.
+/// Send a `GiveUp` of `investigator` on `ws`.
 async fn give_up(ws: &mut Client, investigator: &str) {
     common::send(
         ws,
@@ -94,7 +94,7 @@ async fn tal_and_sam() -> Table {
     }
 }
 
-/// Send a Take of `investigator` on `ws`, and read the `Lobby` it brings to
+/// Send a `Take` of `investigator` on `ws`. and read the `Lobby` it brings to
 /// both sockets. Returns the view the other socket was sent.
 async fn take_seen_by_both(ws: &mut Client, other: &mut Client, investigator: &str) -> LobbyView {
     take(ws, investigator).await;
