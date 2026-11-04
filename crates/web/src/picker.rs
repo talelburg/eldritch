@@ -1,7 +1,9 @@
 //! Pre-game investigator/scenario picker (wasm-only).
 //!
 //! Collects a roster and submits a `CreateGameRequest` on the `CreateTx`
-//! channel; the transport creates the game.
+//! channel; the transport creates the game, seated at once, and goes to it.
+//! It sits on the home page beside New game, as a quick start until Start
+//! seats a lobby's picks (#1336).
 
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;
@@ -22,8 +24,8 @@ fn label(deck: &DefaultDeck) -> String {
     format!(" {} ({})", meta.name, deck.investigator)
 }
 
-/// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
-/// `status == AwaitingRoster` — i.e. only before there is a board — and submits a
+/// Pre-game picker, a panel of the home page. Renders only at
+/// [`ConnStatus::Home`] — i.e. only when there is no game — and submits a
 /// `CreateGameRequest` (The Gathering + the picked investigator's
 /// [default deck](cards::decks::DefaultDeck)) on click. The deck brings its
 /// fixed weakness unless "Random basic weakness" is checked.
@@ -39,16 +41,13 @@ pub fn PickerView() -> impl IntoView {
 
     view! {
         {move || {
-            if store.get().status != ConnStatus::AwaitingRoster {
+            if store.get().status != ConnStatus::Home {
                 return ().into_any();
             }
             let tx = create_tx.clone();
             view! {
-                // A full pre-game overlay: it only renders at `AwaitingRoster`,
-                // when there is no board behind it, so it shares no container
-                // with in-game controls it has nothing to do with.
-                <section class="picker picker-overlay">
-                    <h2>"New Game"</h2>
+                <section class="picker">
+                    <h2>"Quick start"</h2>
                     <label>"Scenario: " <select><option>"The Gathering"</option></select></label>
                     <fieldset>
                         <legend>"Investigator"</legend>
@@ -93,10 +92,11 @@ pub fn PickerView() -> impl IntoView {
                             if let Some(tx) = tx.clone() {
                                 let _ = tx.unbounded_send(CreateGameRequest {
                                     scenario_id: ScenarioId::new("the-gathering"),
-                                    roster: vec![decks::DEFAULT_DECKS[picked.get_untracked()]
-                                        .roster_entry(weakness.get_untracked())],
+                                    roster: Some(vec![decks::DEFAULT_DECKS
+                                        [picked.get_untracked()]
+                                    .roster_entry(weakness.get_untracked())]),
                                     // One seat, so the lead can only be the first.
-                                    lead: 0,
+                                    lead: Some(0),
                                 });
                             }
                         }

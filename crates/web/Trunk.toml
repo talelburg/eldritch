@@ -7,9 +7,12 @@ addresses = ["127.0.0.1"]
 
 # Proxy the API + WebSocket to the server during dev. Each entry sits at a
 # DISTINCT prefix so trunk's per-entry axum `.nest()` doesn't collide:
-# `/games` carries the REST (`POST /games`), `/ws` carries the WebSocket
-# upgrade (`/ws/{game_id}` — the reason the WS lives at its own top-level
-# route, not under `/games`). Neither is at the root `/`, which trunk 0.21
+# `/games` carries the REST (`POST /games`) and every game's page
+# (`GET /games/{id}`, a game's link): the server answers the page from its SPA
+# fallback, `crates/web/dist/index.html` relative to its working directory, so
+# run it from the workspace root after trunk has built `dist`. `/ws` carries
+# the WebSocket upgrade (`/ws/{game_id}` — the reason the WS lives at its own
+# top-level route, not under `/games`). Neither is at the root `/`, which trunk 0.21
 # panics on. The WS backend MUST use the `ws://` scheme: with `http://`,
 # trunk completes the client handshake but fails to open the upstream
 # socket (`Url(UnsupportedUrlScheme)`) and the connection dies (close 1006).

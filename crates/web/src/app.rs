@@ -9,9 +9,11 @@ use crate::board::BoardView;
 use crate::decision::DecisionView;
 use crate::decision::{self, DecisionLive};
 use crate::event_log::EventLogView;
+#[cfg(target_arch = "wasm32")]
+use crate::home::HomeView;
 use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 #[cfg(target_arch = "wasm32")]
-use crate::picker::PickerView;
+use crate::lobby::LobbyScreen;
 #[cfg(target_arch = "wasm32")]
 use crate::prompt_banner::PromptBanner;
 #[cfg(target_arch = "wasm32")]
@@ -98,7 +100,7 @@ pub fn provide_board_contexts(store: StoreSignal) {
 }
 
 /// The main column: the board and its in-game modals inside the lockout
-/// wrapper, then the lock banner, then the picker and the terminal screens.
+/// wrapper, then the lock banner, then the pre-game and terminal screens.
 ///
 /// A component rather than inline tags so a headless test can mount the exact
 /// composition the app does. The web tests' `mount_board` mounts it, so every
@@ -158,13 +160,13 @@ fn LockBanner() -> impl IntoView {
     }
 }
 
-/// The screens that take input while the board is locked: the pre-game
-/// picker, the sign-in screen, the unresumable-game overlay and the
+/// The screens that take input while the board is locked: the home page, the
+/// lobby, the sign-in screen, the unresumable-game overlay and the
 /// version-mismatch overlay. Each shows only at a status other than
 /// `Connected`, so all of them sit outside the lockout wrapper.
 ///
-/// The picker only renders pre-game. The sign-in screen covers the rest, since
-/// nothing behind it answers while signed out. The unresumable overlay is
+/// The home page and the lobby only render pre-game. The sign-in screen covers
+/// the rest, since nothing behind it answers while signed out. The unresumable overlay is
 /// terminal and covers the board it can't resume. The version-mismatch overlay
 /// is last, and stacks above everything: it is terminal, so nothing it covers
 /// can still be acted on.
@@ -174,7 +176,8 @@ fn Screens() -> impl IntoView {
         {
             #[cfg(target_arch = "wasm32")]
             { view! {
-                <PickerView/>
+                <HomeView/>
+                <LobbyScreen/>
                 <SignInView/>
                 <UnresumableView/>
                 <VersionMismatchView/>

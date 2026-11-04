@@ -1,4 +1,5 @@
-//! Headless browser test for `PickerView`: clicking "Create game" sends a
+//! Headless browser test for `PickerView`, the home page's quick start:
+//! clicking "Create game" sends a
 //! `CreateGameRequest` with the picked investigator's default-deck roster on
 //! the `CreateTx` channel — with the deck's fixed weakness by default, or a
 //! random basic weakness once the checkbox is checked.
@@ -18,14 +19,14 @@ use web::picker::{CreateTx, PickerView};
 use web::store::{ClientState, ConnStatus};
 use web_sys::HtmlElement;
 
-/// Mount a fresh picker awaiting a roster; returns its store and the receiving
+/// Mount a fresh picker on the home page; returns its store and the receiving
 /// end of its `CreateTx`.
 fn mount_picker() -> (
     RwSignal<ClientState>,
     mpsc::UnboundedReceiver<CreateGameRequest>,
 ) {
     let store = RwSignal::new(ClientState {
-        status: ConnStatus::AwaitingRoster,
+        status: ConnStatus::Home,
         ..Default::default()
     });
     let (tx, rx) = mpsc::unbounded::<CreateGameRequest>();
@@ -67,9 +68,9 @@ async fn create_button_sends_rolands_fixed_roster_by_default() {
     assert_eq!(req.scenario_id.as_str(), "the-gathering");
     assert_eq!(
         req.roster,
-        vec![decks::ROLAND.roster_entry(WeaknessChoice::Fixed)]
+        Some(vec![decks::ROLAND.roster_entry(WeaknessChoice::Fixed)])
     );
-    assert_eq!(req.lead, 0, "the one seat is the lead");
+    assert_eq!(req.lead, Some(0), "the one seat is the lead");
 }
 
 #[wasm_bindgen_test]
@@ -80,7 +81,7 @@ async fn each_radio_sends_its_investigators_fixed_roster() {
         let req = create(&mut rx).await;
         assert_eq!(
             req.roster,
-            vec![deck.roster_entry(WeaknessChoice::Fixed)],
+            Some(vec![deck.roster_entry(WeaknessChoice::Fixed)]),
             "{}",
             deck.investigator
         );
@@ -96,7 +97,7 @@ async fn checking_random_basic_weakness_sends_the_random_roster() {
     click_last(RANDOM_WEAKNESS);
     let req = create(&mut rx).await;
 
-    let entry = &req.roster[0];
+    let entry = &req.roster.expect("a roster")[0];
     assert_eq!(entry, &decks::SKIDS.roster_entry(WeaknessChoice::Random));
     assert!(!entry
         .deck
@@ -117,6 +118,6 @@ async fn the_checkbox_and_the_pick_survive_a_re_render() {
     let req = create(&mut rx).await;
     assert_eq!(
         req.roster,
-        vec![decks::AGNES.roster_entry(WeaknessChoice::Random)]
+        Some(vec![decks::AGNES.roster_entry(WeaknessChoice::Random)])
     );
 }

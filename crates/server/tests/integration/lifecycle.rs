@@ -104,6 +104,49 @@ async fn post_games_unknown_scenario_is_bad_request() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+/// Post `body` to `POST /games` as the signed-in [`common::TEST_ACCOUNT`];
+/// return the response's status.
+async fn post_games_status(body: &str) -> StatusCode {
+    let pool = common::memory_pool().await;
+    let (app, cookie) = common::signed_in_app(pool, common::REGISTRIES).await;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/games")
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    app.oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn post_games_with_the_scenario_alone_creates_a_lobby() {
+    let body = format!(r#"{{"scenario_id":"{TEST_SCENARIO_ID}"}}"#);
+    assert_eq!(post_games_status(&body).await, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn a_lobby_of_an_unknown_scenario_is_bad_request() {
+    let body = r#"{"scenario_id":"no-such-scenario"}"#;
+    assert_eq!(post_games_status(body).await, StatusCode::BAD_REQUEST);
+}
+
+/// A roster and a lead come together or not at all.
+#[tokio::test]
+async fn a_roster_without_a_lead_or_a_lead_without_a_roster_is_bad_request() {
+    let roster_only = format!(
+        r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}]}}"#
+    );
+    let lead_only = format!(r#"{{"scenario_id":"{TEST_SCENARIO_ID}","lead":0}}"#);
+    for body in [roster_only, lead_only] {
+        assert_eq!(
+            post_games_status(&body).await,
+            StatusCode::BAD_REQUEST,
+            "{body}"
+        );
+    }
+}
+
 /// A lead index past the roster names no investigator: the engine rejects the
 /// seating, which creation reports as unprocessable.
 #[tokio::test]

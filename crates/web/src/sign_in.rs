@@ -3,8 +3,8 @@
 //! It renders at [`ConnStatus::SignedOut`], from the methods the server's
 //! `GET /auth/me` listed: each is a link the browser follows to sign in. With
 //! none listed it says so, rather than offering a link that leads nowhere.
-//! The saved game id survives, so the page a sign-in lands back on resumes
-//! the same game.
+//! A sign-in lands on the home page: returning to the game's link after it is
+//! #1274.
 
 use leptos::prelude::*;
 

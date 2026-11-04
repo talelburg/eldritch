@@ -6,9 +6,11 @@ use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
+use protocol::lobby::LobbyView;
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
-    AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage, SignInMethod, SignedIn,
+    AccountId, Applied, Assignment, GameId, LogPosition, Refusal, ServerMessage, SignInMethod,
+    SignedIn,
 };
 
 use crate::socket_ending::SocketEnding;
@@ -24,18 +26,20 @@ pub enum ConnStatus {
     /// attempts that follow, however they fail, until the next `Hello`.
     Restarting,
     Failed,
-    /// No saved game and no roster chosen yet — render the picker.
-    AwaitingRoster,
+    /// The page's address names no game: render the home page, with its New
+    /// game button and the picker.
+    Home,
+    /// The game is in its lobby: render the lobby. Set by each `Lobby` frame.
+    InLobby,
     /// The server's `Hello` named another build, or a server frame failed to
     /// deserialize: the client and server binaries disagree on the wire
     /// format. Terminal: nothing more is sent, and the player reloads.
     VersionMismatch,
-    /// Not signed in: render the sign-in screen, offering these methods. The
-    /// saved game id is kept, so signing in returns to the same game.
+    /// Not signed in: render the sign-in screen, offering these methods.
     SignedOut(Vec<SignInMethod>),
     /// The server can't rebuild this game on its current build: an
-    /// unresumable game. Terminal: the transport stops retrying and keeps the
-    /// saved id, which a rollback to an earlier build can resume.
+    /// unresumable game. Terminal: the transport stops retrying. The game's
+    /// link still names it, so a rollback to an earlier build can resume it.
     Unresumable,
 }
 
@@ -58,8 +62,9 @@ impl ConnStatus {
     }
 
     /// The banner that says why the board is locked, at the statuses that have
-    /// one. The picker and the terminal screens cover the board and explain
-    /// themselves, and the first connect has nothing to explain yet.
+    /// one. The home page, the lobby and the terminal screens cover the board
+    /// and explain themselves, and the first connect has nothing to explain
+    /// yet.
     #[must_use]
     pub fn lock_banner(&self) -> Option<&'static str> {
         match self {
@@ -117,6 +122,16 @@ pub struct RevealedToken {
 /// frame arrives.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ClientState {
+    /// The game the page's address names, which its invite link sends. Set by
+    /// the transport, not by `reduce`.
+    pub game_id: Option<GameId>,
+    /// The game's lobby, from the last `Lobby`, while it is in one. Cleared
+    /// by `Hello`.
+    pub lobby: Option<LobbyView>,
+    /// Whether opening this page is what made this account a member of the
+    /// game, which the lobby's banner says. Set by the `Lobby` that says so,
+    /// and kept through the `Lobby`s after it, which don't.
+    pub joined: bool,
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
     /// The log position of the prompt `outcome` holds, which every submit
@@ -270,6 +285,8 @@ impl ClientState {
 pub enum Received {
     /// A `Hello` from this client's build: the board is `Connected`.
     Hello,
+    /// A `Lobby` from this client's build: the status is `InLobby`.
+    Lobby,
     /// Any other frame, reduced in.
     Message,
     /// A `Hello` from another build, or a frame that didn't parse: the status
@@ -277,11 +294,13 @@ pub enum Received {
     VersionMismatch,
 }
 
-/// The one field of a `{"hello": {...}}` frame read before the rest: every
-/// other field is skipped unparsed, so it reads a `Hello` of any shape.
+/// The one field of a `{"hello": {...}}` or `{"lobby": {...}}` frame read
+/// before the rest: every other field is skipped unparsed, so it reads either
+/// frame of any shape. Any other frame reads with neither.
 #[derive(serde::Deserialize)]
-struct HelloBuild {
-    hello: BuildOnly,
+struct FirstFrameBuild {
+    hello: Option<BuildOnly>,
+    lobby: Option<BuildOnly>,
 }
 
 #[derive(serde::Deserialize)]
@@ -291,15 +310,19 @@ struct BuildOnly {
 
 /// Take one text frame from the server: the transport's whole decode.
 ///
-/// A `Hello` is checked for its build before anything else is parsed, since
-/// the rest of a `Hello` from another build may not deserialize here; a
-/// mismatch sets [`ConnStatus::VersionMismatch`] and reduces nothing. Any
-/// other frame, or a `Hello` from this build, is parsed in full and
-/// [`reduce`]d, and a `Hello` also sets the status `Connected`, in the same
-/// update as its state. A frame that doesn't parse is a wire-format skew too.
+/// A `Hello` or a `Lobby`, the frames a socket opens with, is checked for its
+/// build before anything else is parsed, since the rest of it from another
+/// build may not deserialize here; a mismatch sets
+/// [`ConnStatus::VersionMismatch`] and reduces nothing. Any other frame, or
+/// one from this build, is parsed in full and [`reduce`]d. A `Hello` also sets
+/// the status `Connected`, and a `Lobby` sets it `InLobby`, in the same update
+/// as what they carry. A frame that doesn't parse is a wire-format skew too.
 pub fn receive(state: &mut ClientState, frame: &str) -> Received {
-    if let Ok(HelloBuild { hello }) = serde_json::from_str::<HelloBuild>(frame) {
-        if hello.build != protocol::build_id() {
+    if let Ok(FirstFrameBuild { hello, lobby }) = serde_json::from_str(frame) {
+        if hello
+            .or(lobby)
+            .is_some_and(|first| first.build != protocol::build_id())
+        {
             state.status = ConnStatus::VersionMismatch;
             return Received::VersionMismatch;
         }
@@ -308,14 +331,18 @@ pub fn receive(state: &mut ClientState, frame: &str) -> Received {
         state.status = ConnStatus::VersionMismatch;
         return Received::VersionMismatch;
     };
-    let is_hello = matches!(msg, ServerMessage::Hello { .. });
+    let received = match msg {
+        ServerMessage::Hello { .. } => Received::Hello,
+        ServerMessage::Lobby { .. } => Received::Lobby,
+        _ => Received::Message,
+    };
     reduce(state, msg);
-    if is_hello {
-        state.status = ConnStatus::Connected;
-        Received::Hello
-    } else {
-        Received::Message
+    match received {
+        Received::Hello => state.status = ConnStatus::Connected,
+        Received::Lobby => state.status = ConnStatus::InLobby,
+        Received::Message | Received::VersionMismatch => {}
     }
+    received
 }
 
 /// Fold one server message into the client state. Data only — never
@@ -334,6 +361,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         } => {
             state.you = Some(you);
             state.assigned = assigned;
+            state.lobby = None;
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.prompt = prompt;
@@ -348,6 +376,16 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     events,
                 });
             }
+        }
+        ServerMessage::Lobby {
+            build: _,
+            you,
+            view,
+            joined,
+        } => {
+            state.you = Some(you);
+            state.lobby = Some(view);
+            state.joined |= joined;
         }
         // An answer to a position before the current one is already in this
         // state: a socket attaching can be sent an `Applied` its `Hello`
@@ -429,29 +467,36 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             }
             state.log.push(LogBatch { header, events });
         }
-        ServerMessage::Rejected(refusal) => {
-            match refusal {
-                // The newer state is already here, or on its way.
-                Refusal::StalePrompt => {}
-                Refusal::Engine(reason) => state.last_rejection = Some(reason),
-                Refusal::Failed(reason) => {
-                    leptos::logging::warn!("the server couldn't save an answer: {reason}");
-                    state.last_rejection = Some(SAVE_ERROR.into());
-                }
-                Refusal::Malformed => {
-                    leptos::logging::error!("the server couldn't parse a frame this client sent");
-                    state.last_rejection = Some(CLIENT_BUG.into());
-                }
-                Refusal::NotYours => {
-                    leptos::logging::error!(
-                        "this client answered for an investigator its account doesn't hold"
-                    );
-                    state.last_rejection = Some(CLIENT_BUG.into());
-                }
-            }
-        }
+        ServerMessage::Rejected(refusal) => reduce_refusal(state, refusal),
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
+    }
+}
+
+/// Fold a `Rejected` into the client state: what the status bar says of it.
+fn reduce_refusal(state: &mut ClientState, refusal: Refusal) {
+    match refusal {
+        // The newer state is already here, or on its way.
+        Refusal::StalePrompt => {}
+        Refusal::Engine(reason) => state.last_rejection = Some(reason),
+        Refusal::Failed(reason) => {
+            leptos::logging::warn!("the server couldn't save an answer: {reason}");
+            state.last_rejection = Some(SAVE_ERROR.into());
+        }
+        Refusal::Malformed => {
+            leptos::logging::error!("the server couldn't parse a frame this client sent");
+            state.last_rejection = Some(CLIENT_BUG.into());
+        }
+        Refusal::NotStarted => {
+            leptos::logging::error!("this client answered a game still in its lobby");
+            state.last_rejection = Some(CLIENT_BUG.into());
+        }
+        Refusal::NotYours => {
+            leptos::logging::error!(
+                "this client answered for an investigator its account doesn't hold"
+            );
+            state.last_rejection = Some(CLIENT_BUG.into());
+        }
     }
 }
 
@@ -557,8 +602,10 @@ mod tests {
     use card_dsl::dsl::SkillTestKind;
     use game_core::engine::{ChoiceOption, OptionId};
     use game_core::event::FailureReason;
+    use game_core::scenario::ScenarioId;
     use game_core::state::{GameStateBuilder, SkillTestId};
     use game_core::test_support;
+    use protocol::lobby::{Lobby, Member};
     use protocol::logged_answer::LoggedOption;
 
     use super::*;
@@ -820,6 +867,67 @@ mod tests {
         assert_eq!(s.status, ConnStatus::Connected);
         assert!(s.game.is_some(), "the Hello's state is reduced in");
         assert_eq!(s.log.len(), 1, "setup's events are logged");
+    }
+
+    /// The JSON frame of a `Lobby` from build `build`, created by account 1
+    /// with account 2 a member too, and `joined` as given.
+    fn lobby_frame(build: &str, joined: bool) -> String {
+        let mut lobby = Lobby::new(
+            ScenarioId::new("the-gathering"),
+            ACCOUNT_1,
+            vec![Member {
+                account: ACCOUNT_1,
+                display_name: "Tal".to_string(),
+            }],
+        );
+        lobby.join(Member {
+            account: AccountId(2),
+            display_name: "Sam".to_string(),
+        });
+        serde_json::to_string(&ServerMessage::Lobby {
+            build: build.to_string(),
+            you: AccountId(2),
+            view: lobby.view(),
+            joined,
+        })
+        .expect("a Lobby serializes")
+    }
+
+    #[test]
+    fn a_lobby_from_this_build_shows_the_lobby() {
+        let mut s = ClientState::default();
+        let received = receive(&mut s, &lobby_frame(protocol::build_id(), true));
+        assert_eq!(received, Received::Lobby);
+        assert_eq!(s.status, ConnStatus::InLobby);
+        assert_eq!(s.you, Some(AccountId(2)));
+        assert_eq!(s.lobby.map(|lobby| lobby.members.len()), Some(2));
+        assert!(s.joined);
+    }
+
+    #[test]
+    fn a_lobby_from_another_build_is_a_version_mismatch_that_reduces_nothing() {
+        let mut s = ClientState::default();
+        let received = receive(&mut s, &lobby_frame(&another_build(), true));
+        assert_eq!(received, Received::VersionMismatch);
+        assert_eq!(s.status, ConnStatus::VersionMismatch);
+        assert_eq!(s.lobby, None);
+    }
+
+    #[test]
+    fn the_joined_banner_outlasts_the_lobbies_after_it() {
+        let mut s = ClientState::default();
+        receive(&mut s, &lobby_frame(protocol::build_id(), true));
+        receive(&mut s, &lobby_frame(protocol::build_id(), false));
+        assert!(s.joined, "a later Lobby is someone else's change");
+    }
+
+    #[test]
+    fn a_hello_ends_the_lobby() {
+        let mut s = ClientState::default();
+        receive(&mut s, &lobby_frame(protocol::build_id(), false));
+        receive(&mut s, &hello_frame(protocol::build_id(), Vec::new()));
+        assert_eq!(s.status, ConnStatus::Connected);
+        assert_eq!(s.lobby, None);
     }
 
     #[test]
@@ -1461,7 +1569,8 @@ mod tests {
             ConnStatus::Connecting,
             ConnStatus::Connected,
             ConnStatus::Reconnecting,
-            ConnStatus::AwaitingRoster,
+            ConnStatus::Home,
+            ConnStatus::InLobby,
         ] {
             assert_eq!(
                 current.retrying_after(SocketEnding::Disconnected),

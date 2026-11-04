@@ -19,8 +19,10 @@ use game_core::state::GameState;
 use serde::{Deserialize, Serialize};
 
 pub mod live;
+pub mod lobby;
 pub mod logged_answer;
 
+use lobby::LobbyView;
 use logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
@@ -94,6 +96,21 @@ pub enum ServerMessage {
         /// reloaded games (the server persists them); empty only for games
         /// created before this was added.
         events: Vec<Event>,
+    },
+    /// The whole lobby: the first message on a socket to a game still in its
+    /// lobby, and sent again to every connection after each change to it.
+    Lobby {
+        /// The server's [`build_id`], read first as `Hello`'s is: the
+        /// `"lobby"` tag and this `"build"` key keep their names in every
+        /// build.
+        build: String,
+        /// The account this connection is signed in as.
+        you: AccountId,
+        /// The lobby as every member sees it.
+        view: LobbyView,
+        /// Whether opening this connection is what made `you` a member. Set
+        /// only on the first `Lobby` sent to that connection.
+        joined: bool,
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied(Applied),
@@ -178,6 +195,9 @@ pub enum Refusal {
     Engine(String),
     /// The frame didn't parse as a [`ClientMessage`]: a client bug.
     Malformed,
+    /// It answered a game still in its lobby, which has no prompt to answer:
+    /// a client bug.
+    NotStarted,
     /// The engine accepted the answer but it couldn't be saved, for this
     /// reason: the log can't record it, or the store write failed. Nothing
     /// changed, and the player may try again.
@@ -281,13 +301,31 @@ pub struct CreateGameRequest {
     /// The investigators to seat at creation, each paired with the deck the
     /// player chose. Seated at creation and stored as the game's roster; a
     /// rejected seating fails creation with no game row.
-    pub roster: Vec<RosterEntry>,
+    ///
+    /// Sent with [`lead`](Self::lead) or not at all. Without either, the game
+    /// is created as a lobby, with nothing seated; one without the other is
+    /// refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roster: Option<Vec<RosterEntry>>,
     /// The lead investigator, as an index into [`roster`](Self::roster):
     /// Appendix III step 3, *"Choose one of those investigators to be the lead
-    /// investigator for this game."* Required on the wire; a client with no
-    /// choice to offer sends `0`, the first seat. An index past the roster
-    /// fails creation as a rejected seating.
-    pub lead: usize,
+    /// investigator for this game."* A client with no choice to offer sends
+    /// `0`, the first seat. An index past the roster fails creation as a
+    /// rejected seating.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead: Option<usize>,
+}
+
+impl CreateGameRequest {
+    /// A request creating a lobby of `scenario_id`, with nothing seated.
+    #[must_use]
+    pub fn lobby(scenario_id: ScenarioId) -> Self {
+        Self {
+            scenario_id,
+            roster: None,
+            lead: None,
+        }
+    }
 }
 
 /// Response to a successful `POST /games`.
@@ -310,8 +348,8 @@ pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
 /// The close code ending a game's WebSocket when the server has no game with
 /// that id.
 ///
-/// This is the only ending that means a stale id: a client forgets its saved
-/// game id on this code and on no other. Every other close, before or after
+/// This is the only ending that means a dead link: a client leaves the game's
+/// address on this code and on no other. Every other close, before or after
 /// `Hello`, may be a server restarting or a network drop, and is retried.
 pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 
@@ -319,14 +357,16 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// unresumable game: its stored rows can't be rebuilt by this server's build.
 ///
 /// It fails the same way on every attempt until the build changes, so a
-/// client stops retrying and keeps the saved id, which a rollback can resume.
+/// client stops retrying. The game's link still names it, and a rollback can
+/// resume it.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
 /// The close code every open WebSocket gets when the server shuts down for a
 /// restart: 1012, the standard "Service Restart" code.
 ///
-/// The server is expected back, so a client keeps its saved id and retries
-/// with backoff, saying the server is restarting until the next `Hello`.
+/// The server is expected back, so a client stays on the game and retries
+/// with backoff, saying the server is restarting until the next `Hello` or
+/// `Lobby`.
 pub const CLOSE_SERVER_RESTARTING: u16 = 1012;
 
 // Liveness. Any frame proves a connection is alive, in both directions: every
@@ -510,12 +550,12 @@ mod tests {
     fn create_game_request_round_trips_with_a_roster() {
         let req = CreateGameRequest {
             scenario_id: ScenarioId::new("the-gathering"),
-            roster: vec![RosterEntry {
+            roster: Some(vec![RosterEntry {
                 investigator: CardCode::new("01001"),
                 deck: vec![],
                 random_basic_weaknesses: 0,
-            }],
-            lead: 0,
+            }]),
+            lead: Some(0),
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert_eq!(
@@ -524,18 +564,54 @@ mod tests {
             "the scenario id is a bare string on the wire"
         );
         let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.roster.len(), 1);
+        assert_eq!(back.roster.map(|roster| roster.len()), Some(1));
         assert_eq!(back.scenario_id.as_str(), "the-gathering");
-        assert_eq!(back.lead, 0);
+        assert_eq!(back.lead, Some(0));
     }
 
     #[test]
-    fn create_game_request_without_a_lead_is_refused() {
-        let json = r#"{"scenario_id":"the-gathering","roster":[]}"#;
+    fn a_lobby_request_is_the_scenario_alone() {
+        let req = CreateGameRequest::lobby(ScenarioId::new("the-gathering"));
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert_eq!(json, r#"{"scenario_id":"the-gathering"}"#);
+        let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
+        assert!(back.roster.is_none() && back.lead.is_none());
+    }
+
+    #[test]
+    fn a_lobby_round_trips_through_json_under_its_stable_tag() {
+        let view = lobby::Lobby::new(
+            ScenarioId::new("the-gathering"),
+            AccountId(1),
+            vec![lobby::Member {
+                account: AccountId(1),
+                display_name: "Tal".to_string(),
+            }],
+        )
+        .view();
+        let msg = ServerMessage::Lobby {
+            build: "a1b2c3".to_string(),
+            you: AccountId(2),
+            view: view.clone(),
+            joined: true,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
         assert!(
-            serde_json::from_str::<CreateGameRequest>(json).is_err(),
-            "the lead is required on the wire, with no default"
+            json.starts_with(r#"{"lobby":{"build":"a1b2c3""#),
+            "the tag and the build key a client of any build reads: {json}"
         );
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+        let ServerMessage::Lobby {
+            you,
+            view: v,
+            joined,
+            ..
+        } = back
+        else {
+            panic!("expected Lobby, got {back:?}");
+        };
+        assert_eq!((you, v, joined), (AccountId(2), view, true));
     }
 
     #[test]

@@ -26,7 +26,8 @@ pub fn StatusBarView() -> impl IntoView {
         ConnStatus::Reconnecting => "reconnecting",
         ConnStatus::Restarting => "server restarting",
         ConnStatus::Failed => "failed",
-        ConnStatus::AwaitingRoster => "awaiting-roster",
+        ConnStatus::Home => "no game",
+        ConnStatus::InLobby => "in lobby",
         ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
         ConnStatus::SignedOut(_) => "signed out",
         ConnStatus::Unresumable => "unresumable game",
@@ -60,7 +61,7 @@ pub fn StatusBarView() -> impl IntoView {
                     view! {
                         <button
                             class="new-game"
-                            on:click=move |_| transport::start_new_game()
+                            on:click=move |_| transport::new_game(store)
                         >
                             "New game"
                         </button>

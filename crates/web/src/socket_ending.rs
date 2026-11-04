@@ -17,25 +17,15 @@ pub enum SocketEnding {
     Restarting,
     /// The server closed it with
     /// [`CLOSE_UNRESUMABLE`](protocol::CLOSE_UNRESUMABLE): the game exists
-    /// but this server's build can't rebuild it. Stop, keeping the saved id.
+    /// but this server's build can't rebuild it. Stop.
     Unresumable,
     /// The server closed it with
     /// [`CLOSE_GAME_NOT_FOUND`](protocol::CLOSE_GAME_NOT_FOUND): the server
-    /// doesn't know the id. Drop it and open the picker.
+    /// has no game at this link. Go to the home page.
     StaleId,
     /// Any other ending: a network drop, or a server down or going down
     /// without saying why. Reconnect.
     Disconnected,
-}
-
-impl SocketEnding {
-    /// Whether the saved game id survives this ending. Only a stale id is
-    /// dropped. Signing back in returns to the same game, and a rollback to
-    /// an earlier build can resume an unresumable one.
-    #[must_use]
-    pub fn keeps_saved_game(self) -> bool {
-        self != Self::StaleId
-    }
 }
 
 /// Sort a socket's ending from the close code, if the socket reported one.
@@ -43,7 +33,8 @@ impl SocketEnding {
 /// Only the server's explicit codes say anything about the game, the session
 /// or the server, and each means the same whether or not `Hello` arrived.
 /// Every other ending is a disconnect: a server that is down refuses the
-/// connect before `Hello` too, and must not cost the player their saved game.
+/// connect before `Hello` too, and must not send the player away from their
+/// game.
 #[must_use]
 pub fn sort(close_code: Option<u16>) -> SocketEnding {
     match close_code {
@@ -76,31 +67,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unauthenticated_keeps_the_saved_game() {
-        let ending = sort(Some(CLOSE_UNAUTHENTICATED));
-        assert_eq!(ending, SocketEnding::Unauthenticated);
-        assert!(ending.keeps_saved_game());
+    fn unauthenticated_is_sorted_by_its_code() {
+        assert_eq!(
+            sort(Some(CLOSE_UNAUTHENTICATED)),
+            SocketEnding::Unauthenticated
+        );
     }
 
     #[test]
-    fn unresumable_keeps_the_saved_game() {
-        let ending = sort(Some(CLOSE_UNRESUMABLE));
-        assert_eq!(ending, SocketEnding::Unresumable);
-        assert!(ending.keeps_saved_game());
+    fn unresumable_is_sorted_by_its_code() {
+        assert_eq!(sort(Some(CLOSE_UNRESUMABLE)), SocketEnding::Unresumable);
     }
 
     #[test]
-    fn server_restarting_keeps_the_saved_game() {
-        let ending = sort(Some(CLOSE_SERVER_RESTARTING));
-        assert_eq!(ending, SocketEnding::Restarting);
-        assert!(ending.keeps_saved_game());
+    fn server_restarting_is_sorted_by_its_code() {
+        assert_eq!(
+            sort(Some(CLOSE_SERVER_RESTARTING)),
+            SocketEnding::Restarting
+        );
     }
 
     #[test]
     fn game_not_found_is_a_stale_id() {
-        let ending = sort(Some(CLOSE_GAME_NOT_FOUND));
-        assert_eq!(ending, SocketEnding::StaleId);
-        assert!(!ending.keeps_saved_game());
+        assert_eq!(sort(Some(CLOSE_GAME_NOT_FOUND)), SocketEnding::StaleId);
     }
 
     #[test]
@@ -108,9 +97,7 @@ mod tests {
         // 1006 is what a browser reports for a socket that dropped without a
         // close frame, which is how a server that is down ends it.
         for code in [Some(1006), Some(1000), None] {
-            let ending = sort(code);
-            assert_eq!(ending, SocketEnding::Disconnected, "{code:?}");
-            assert!(ending.keeps_saved_game());
+            assert_eq!(sort(code), SocketEnding::Disconnected, "{code:?}");
         }
     }
 

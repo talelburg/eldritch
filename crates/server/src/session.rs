@@ -524,7 +524,7 @@ fn from_sql_integer(integer: i64) -> u64 {
 
 /// Milliseconds since the Unix epoch, for the `created_at` and `at` columns.
 /// Never replay-load-bearing.
-fn unix_millis() -> i64 {
+pub(crate) fn unix_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
