@@ -6,6 +6,9 @@
 //! [`LiveGame`](crate::live::LiveGame) does for a started game: the server's
 //! room calls it, stores what it changed, and sends every member the
 //! [`LobbyView`] it renders.
+//!
+//! Each command a member sends is one function here, which applies it, or
+//! refuses it with a [`LobbyRefusal`] and changes nothing.
 
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
@@ -13,25 +16,46 @@ use serde::{Deserialize, Serialize};
 
 use crate::AccountId;
 
-/// A game in its lobby: who created it and who has joined it.
+/// The most investigators a lobby seats. Project scope, not a rule: Appendix
+/// III caps nothing, and the phase-8 doc supports *"1–4 investigators"*.
+pub const MAX_PICKS: usize = 4;
+
+/// A game in its lobby: who created it, who has joined it, and the
+/// investigators they have picked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lobby {
     scenario_id: ScenarioId,
     creator: AccountId,
     /// In the order they joined, the creator first.
     members: Vec<Member>,
+    /// In seating order: the first sits in position 1.
+    picks: Vec<Pick>,
+    /// The lead investigator's card code: one of the picks', or `None`
+    /// exactly when there are none.
+    lead: Option<CardCode>,
 }
 
 impl Lobby {
     /// A lobby of `scenario_id` as it is stored: created by `creator`, with
-    /// `members` in the order they joined.
+    /// `members` in the order they joined, and nothing picked.
     #[must_use]
     pub fn new(scenario_id: ScenarioId, creator: AccountId, members: Vec<Member>) -> Self {
         Self {
             scenario_id,
             creator,
             members,
+            picks: Vec::new(),
+            lead: None,
         }
+    }
+
+    /// This lobby with `picks`, in seating order, and `lead`, as they are
+    /// stored.
+    #[must_use]
+    pub fn with_picks(mut self, picks: Vec<Pick>, lead: Option<CardCode>) -> Self {
+        self.picks = picks;
+        self.lead = lead;
+        self
     }
 
     /// Add `member` at the end of the members, unless their account is one
@@ -50,6 +74,70 @@ impl Lobby {
         self.members.iter().any(|member| member.account == account)
     }
 
+    /// `account` takes `investigator`: the pick joins the end of the seating,
+    /// and the first pick becomes the lead (Appendix III step 3: *"Choose one
+    /// of those investigators to be the lead investigator for this game."*).
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::Taken`] if the investigator is already picked (Appendix
+    /// III step 1: *"Each player chooses a different investigator"*), and
+    /// [`LobbyRefusal::TableFull`] if [`MAX_PICKS`] are.
+    pub fn take(&mut self, account: AccountId, investigator: CardCode) -> Result<(), LobbyRefusal> {
+        if let Some(held) = self.pick_of(&investigator) {
+            return Err(LobbyRefusal::Taken {
+                investigator,
+                by: held.account,
+            });
+        }
+        if self.picks.len() >= MAX_PICKS {
+            return Err(LobbyRefusal::TableFull);
+        }
+        if self.lead.is_none() {
+            self.lead = Some(investigator.clone());
+        }
+        self.picks.push(Pick {
+            investigator,
+            account,
+        });
+        Ok(())
+    }
+
+    /// `account` gives up its pick of `investigator`. The seating closes the
+    /// gap, and a lead given up passes to the new first position, or to nobody
+    /// when no picks remain.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotYourPick`] unless `account` holds the investigator.
+    pub fn give_up(
+        &mut self,
+        account: AccountId,
+        investigator: &CardCode,
+    ) -> Result<(), LobbyRefusal> {
+        let Some(position) = self
+            .picks
+            .iter()
+            .position(|pick| pick.investigator == *investigator && pick.account == account)
+        else {
+            return Err(LobbyRefusal::NotYourPick {
+                investigator: investigator.clone(),
+            });
+        };
+        self.picks.remove(position);
+        if self.lead.as_ref() == Some(investigator) {
+            self.lead = self.picks.first().map(|pick| pick.investigator.clone());
+        }
+        Ok(())
+    }
+
+    /// The pick of `investigator`, if anyone has taken them.
+    fn pick_of(&self, investigator: &CardCode) -> Option<&Pick> {
+        self.picks
+            .iter()
+            .find(|pick| pick.investigator == *investigator)
+    }
+
     /// What every member is sent of the lobby.
     #[must_use]
     pub fn view(&self) -> LobbyView {
@@ -57,10 +145,43 @@ impl Lobby {
             scenario_id: self.scenario_id.clone(),
             creator: self.creator,
             members: self.members.clone(),
-            picks: Vec::new(),
-            lead: None,
+            picks: self.picks.clone(),
+            lead: self.lead.clone(),
         }
     }
+}
+
+/// Why a lobby command was refused: the body of
+/// [`ServerMessage::LobbyRefused`](crate::ServerMessage::LobbyRefused), sent
+/// only to the account that sent it. Nothing changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LobbyRefusal {
+    /// The investigator is already picked, by the account `by`: most likely a
+    /// moment earlier, by a member whose Take arrived first.
+    Taken {
+        /// The investigator asked for.
+        investigator: CardCode,
+        /// The member who holds them.
+        by: AccountId,
+    },
+    /// [`MAX_PICKS`] investigators are already picked.
+    TableFull,
+    /// The investigator has no default deck to play, so isn't in the pool.
+    NotInPool {
+        /// The investigator asked for.
+        investigator: CardCode,
+    },
+    /// The command names a pick the sending account doesn't hold.
+    NotYourPick {
+        /// The investigator named.
+        investigator: CardCode,
+    },
+    /// The game has started, and its roster is frozen.
+    Started,
+    /// The lobby accepted the command but it couldn't be saved, for this
+    /// reason. Nothing changed, and the member may try again.
+    Failed(String),
 }
 
 /// An account that has opened a game's link, with the name it is shown by.
@@ -101,10 +222,27 @@ pub struct LobbyView {
 mod tests {
     use super::*;
 
+    const ROLAND: &str = "01001";
+    const DAISY: &str = "01002";
+    const SKIDS: &str = "01003";
+    const AGNES: &str = "01004";
+    const WENDY: &str = "01005";
+
     fn member(account: i64, name: &str) -> Member {
         Member {
             account: AccountId(account),
             display_name: name.to_string(),
+        }
+    }
+
+    fn code(code: &str) -> CardCode {
+        CardCode::new(code)
+    }
+
+    fn pick(investigator: &str, account: i64) -> Pick {
+        Pick {
+            investigator: code(investigator),
+            account: AccountId(account),
         }
     }
 
@@ -114,6 +252,23 @@ mod tests {
             AccountId(1),
             vec![member(1, "Tal")],
         )
+    }
+
+    /// Tal's lobby, which Sam joined, with Sam's Daisy, then Tal's Roland and
+    /// Agnes picked.
+    fn three_picked() -> Lobby {
+        let mut lobby = tals_lobby();
+        lobby.join(member(2, "Sam"));
+        lobby
+            .take(AccountId(2), code(DAISY))
+            .expect("Daisy is free");
+        lobby
+            .take(AccountId(1), code(ROLAND))
+            .expect("Roland is free");
+        lobby
+            .take(AccountId(1), code(AGNES))
+            .expect("Agnes is free");
+        lobby
     }
 
     #[test]
@@ -136,5 +291,123 @@ mod tests {
         assert_eq!(view.creator, AccountId(1));
         assert!(view.picks.is_empty());
         assert_eq!(view.lead, None);
+    }
+
+    #[test]
+    fn the_first_pick_sits_first_and_leads() {
+        let mut lobby = tals_lobby();
+        lobby
+            .take(AccountId(1), code(ROLAND))
+            .expect("Roland is free");
+        let view = lobby.view();
+        assert_eq!(view.picks, [pick(ROLAND, 1)]);
+        assert_eq!(view.lead, Some(code(ROLAND)));
+    }
+
+    #[test]
+    fn later_picks_join_the_end_of_the_seating_and_the_lead_stays() {
+        let view = three_picked().view();
+        assert_eq!(
+            view.picks,
+            [pick(DAISY, 2), pick(ROLAND, 1), pick(AGNES, 1)]
+        );
+        assert_eq!(view.lead, Some(code(DAISY)));
+    }
+
+    #[test]
+    fn taking_an_investigator_already_picked_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.take(AccountId(2), code(ROLAND)),
+            Err(LobbyRefusal::Taken {
+                investigator: code(ROLAND),
+                by: AccountId(1),
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn a_fifth_take_is_refused() {
+        let mut lobby = three_picked();
+        lobby
+            .take(AccountId(2), code(SKIDS))
+            .expect("a fourth fits");
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.take(AccountId(2), code(WENDY)),
+            Err(LobbyRefusal::TableFull)
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn giving_up_a_pick_closes_the_gap_and_keeps_the_lead() {
+        let mut lobby = three_picked();
+        lobby
+            .give_up(AccountId(1), &code(ROLAND))
+            .expect("Tal holds Roland");
+        let view = lobby.view();
+        assert_eq!(view.picks, [pick(DAISY, 2), pick(AGNES, 1)]);
+        assert_eq!(view.lead, Some(code(DAISY)));
+    }
+
+    #[test]
+    fn a_given_up_lead_falls_to_the_new_first_position() {
+        let mut lobby = three_picked();
+        lobby
+            .give_up(AccountId(2), &code(DAISY))
+            .expect("Sam holds Daisy");
+        let view = lobby.view();
+        assert_eq!(view.picks, [pick(ROLAND, 1), pick(AGNES, 1)]);
+        assert_eq!(view.lead, Some(code(ROLAND)));
+    }
+
+    #[test]
+    fn giving_up_the_last_pick_leaves_no_lead() {
+        let mut lobby = tals_lobby();
+        lobby
+            .take(AccountId(1), code(WENDY))
+            .expect("Wendy is free");
+        lobby
+            .give_up(AccountId(1), &code(WENDY))
+            .expect("Tal holds Wendy");
+        let view = lobby.view();
+        assert!(view.picks.is_empty());
+        assert_eq!(view.lead, None);
+    }
+
+    #[test]
+    fn giving_up_another_members_pick_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.give_up(AccountId(1), &code(DAISY)),
+            Err(LobbyRefusal::NotYourPick {
+                investigator: code(DAISY)
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn giving_up_an_investigator_nobody_picked_is_refused() {
+        let mut lobby = three_picked();
+        assert_eq!(
+            lobby.give_up(AccountId(1), &code(WENDY)),
+            Err(LobbyRefusal::NotYourPick {
+                investigator: code(WENDY)
+            })
+        );
+    }
+
+    #[test]
+    fn a_stored_lobby_keeps_its_picks_and_lead() {
+        let stored = three_picked().view();
+        let restored = tals_lobby()
+            .with_picks(stored.picks.clone(), stored.lead.clone())
+            .view();
+        assert_eq!((restored.picks, restored.lead), (stored.picks, stored.lead));
     }
 }

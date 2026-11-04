@@ -23,6 +23,8 @@ use crate::skill_test_result::SkillTestResultView;
 use crate::status_bar::StatusBarView;
 use crate::store::{self, StoreSignal};
 #[cfg(target_arch = "wasm32")]
+use crate::toast::Toast;
+#[cfg(target_arch = "wasm32")]
 use crate::transport;
 use crate::turn_tracker::TurnTrackerView;
 #[cfg(target_arch = "wasm32")]
@@ -165,6 +167,9 @@ fn LockBanner() -> impl IntoView {
 /// version-mismatch overlay. Each shows only at a status other than
 /// `Connected`, so all of them sit outside the lockout wrapper.
 ///
+/// The toast sits among them too, so it shows over the lobby whose command
+/// was refused. It is not a screen: it takes no input.
+///
 /// The home page and the lobby only render pre-game. The sign-in screen covers
 /// the rest, since nothing behind it answers while signed out. The unresumable overlay is
 /// terminal and covers the board it can't resume. The version-mismatch overlay
@@ -178,6 +183,7 @@ fn Screens() -> impl IntoView {
             { view! {
                 <HomeView/>
                 <LobbyScreen/>
+                <Toast/>
                 <SignInView/>
                 <UnresumableView/>
                 <VersionMismatchView/>

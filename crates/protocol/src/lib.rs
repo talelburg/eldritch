@@ -15,14 +15,14 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::GameState;
+use game_core::state::{CardCode, GameState};
 use serde::{Deserialize, Serialize};
 
 pub mod live;
 pub mod lobby;
 pub mod logged_answer;
 
-use lobby::LobbyView;
+use lobby::{LobbyRefusal, LobbyView};
 use logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
@@ -59,6 +59,17 @@ pub enum ClientMessage {
     /// is alive. Sent every [`PING_INTERVAL`], and at once when the tab comes
     /// back to the front.
     Ping,
+    /// Take an investigator in the lobby: [`Lobby::take`](lobby::Lobby::take).
+    Take {
+        /// The investigator's card code.
+        investigator: CardCode,
+    },
+    /// Give up one of the sender's picks in the lobby:
+    /// [`Lobby::give_up`](lobby::Lobby::give_up).
+    GiveUp {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+    },
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -111,6 +122,12 @@ pub enum ServerMessage {
         /// Whether opening this connection is what made `you` a member. Set
         /// only on the first `Lobby` sent to that connection.
         joined: bool,
+    },
+    /// Sent only to the connection whose lobby command was refused, never
+    /// broadcast to the room. The lobby is unchanged.
+    LobbyRefused {
+        /// Why it was refused.
+        reason: LobbyRefusal,
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied(Applied),

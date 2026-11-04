@@ -1,12 +1,14 @@
-//! A game's lobby and its members, as stored (ADR 0024).
+//! A game's lobby, its members and its picks, as stored (ADR 0024).
 //!
-//! A lobby is a `lobbies` row until Start. Its members are `game_members`
+//! A lobby is a `lobbies` row, with its lead, and its picks' `lobby_picks`
+//! rows, until Start. Its members are `game_members`
 //! rows, which outlive Start: every account that opens a game's link, lobby
 //! or started game, becomes a member. The lobby's rules are
 //! [`protocol::lobby::Lobby`]'s; this module only moves its rows in and out.
 
 use game_core::scenario::ScenarioId;
-use protocol::lobby::{Lobby, Member};
+use game_core::state::CardCode;
+use protocol::lobby::{Lobby, LobbyView, Member, Pick};
 use protocol::{AccountId, GameId};
 use sqlx::{Sqlite, SqlitePool};
 
@@ -44,12 +46,12 @@ pub(crate) async fn create(
 ///
 /// The database failed.
 pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lobby>, sqlx::Error> {
-    let row: Option<(String, i64)> =
-        sqlx::query_as("SELECT scenario_id, creator FROM lobbies WHERE game_id = ?")
+    let row: Option<(String, i64, Option<String>)> =
+        sqlx::query_as("SELECT scenario_id, creator, lead FROM lobbies WHERE game_id = ?")
             .bind(game_id.as_str())
             .fetch_optional(db)
             .await?;
-    let Some((scenario_id, creator)) = row else {
+    let Some((scenario_id, creator, lead)) = row else {
         return Ok(None);
     };
     let members: Vec<(i64, String)> = sqlx::query_as(
@@ -60,7 +62,13 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
     .bind(game_id.as_str())
     .fetch_all(db)
     .await?;
-    Ok(Some(Lobby::new(
+    let picks: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT investigator, account_id FROM lobby_picks WHERE game_id = ? ORDER BY position",
+    )
+    .bind(game_id.as_str())
+    .fetch_all(db)
+    .await?;
+    let lobby = Lobby::new(
         ScenarioId::new(scenario_id),
         AccountId(creator),
         members
@@ -70,7 +78,54 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
                 display_name,
             })
             .collect(),
-    )))
+    )
+    .with_picks(
+        picks
+            .into_iter()
+            .map(|(investigator, account)| Pick {
+                investigator: CardCode::new(investigator),
+                account: AccountId(account),
+            })
+            .collect(),
+        lead.map(CardCode::new),
+    );
+    Ok(Some(lobby))
+}
+
+/// Store `view`'s picks, in its seating order, and its lead as the lobby
+/// `game_id`'s, in place of those stored.
+///
+/// # Errors
+///
+/// The database failed, or the view picks one investigator twice.
+pub(crate) async fn save_picks(
+    db: &SqlitePool,
+    game_id: &GameId,
+    view: &LobbyView,
+) -> Result<(), sqlx::Error> {
+    let mut tx = db.begin().await?;
+    sqlx::query("DELETE FROM lobby_picks WHERE game_id = ?")
+        .bind(game_id.as_str())
+        .execute(&mut *tx)
+        .await?;
+    for (position, pick) in (0_i64..).zip(&view.picks) {
+        sqlx::query(
+            "INSERT INTO lobby_picks (game_id, investigator, account_id, position) \
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(game_id.as_str())
+        .bind(pick.investigator.as_str())
+        .bind(pick.account.0)
+        .bind(position)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("UPDATE lobbies SET lead = ? WHERE game_id = ?")
+        .bind(view.lead.as_ref().map(CardCode::as_str))
+        .bind(game_id.as_str())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await
 }
 
 /// Make `account` a member of the game `game_id`, if it isn't one. Returns

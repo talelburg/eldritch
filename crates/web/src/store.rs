@@ -4,9 +4,9 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
+use game_core::state::{CardCode, ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
-use protocol::lobby::LobbyView;
+use protocol::lobby::{LobbyRefusal, LobbyView};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
     AccountId, Applied, Assignment, GameId, LogPosition, Refusal, ServerMessage, SignInMethod,
@@ -132,6 +132,10 @@ pub struct ClientState {
     /// game, which the lobby's banner says. Set by the `Lobby` that says so,
     /// and kept through the `Lobby`s after it, which don't.
     pub joined: bool,
+    /// What the toast says: why the last lobby command this client sent was
+    /// refused. Set by `LobbyRefused`, cleared by `Hello`, and dismissed by
+    /// the toast itself after a while.
+    pub toast: Option<String>,
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
     /// The log position of the prompt `outcome` holds, which every submit
@@ -362,6 +366,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.you = Some(you);
             state.assigned = assigned;
             state.lobby = None;
+            state.toast = None;
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.prompt = prompt;
@@ -386,6 +391,9 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.you = Some(you);
             state.lobby = Some(view);
             state.joined |= joined;
+        }
+        ServerMessage::LobbyRefused { reason } => {
+            state.toast = Some(lobby_refusal_text(state.lobby.as_ref(), reason));
         }
         // An answer to a position before the current one is already in this
         // state: a socket attaching can be sent an `Applied` its `Hello`
@@ -498,6 +506,44 @@ fn reduce_refusal(state: &mut ClientState, refusal: Refusal) {
             state.last_rejection = Some(CLIENT_BUG.into());
         }
     }
+}
+
+/// What the toast says of a `LobbyRefused` for `reason`, naming members from
+/// `lobby`, the lobby the refused command was sent to.
+fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String {
+    match reason {
+        LobbyRefusal::Taken { investigator, by } => {
+            let holder = lobby
+                .and_then(|lobby| lobby.members.iter().find(|member| member.account == by))
+                .map_or("another member", |member| member.display_name.as_str());
+            format!(
+                "{} was just taken by {holder}.",
+                investigator_name(&investigator)
+            )
+        }
+        LobbyRefusal::TableFull => "The table is full: four investigators are picked.".into(),
+        LobbyRefusal::Started => "The game has started, so its roster can't change.".into(),
+        LobbyRefusal::Failed(reason) => {
+            leptos::logging::warn!("the server couldn't save a lobby change: {reason}");
+            SAVE_ERROR.into()
+        }
+        // The lobby offers only the pool's investigators, and only your own
+        // picks to give up.
+        LobbyRefusal::NotInPool { investigator } => {
+            leptos::logging::error!("this client took {investigator}, which isn't in the pool");
+            CLIENT_BUG.into()
+        }
+        LobbyRefusal::NotYourPick { investigator } => {
+            leptos::logging::error!("this client gave up {investigator}, which it doesn't hold");
+            CLIENT_BUG.into()
+        }
+    }
+}
+
+/// The investigator `code`'s printed name, or the code if the corpus has no
+/// such card.
+fn investigator_name(code: &CardCode) -> String {
+    cards::by_code(code.as_str()).map_or_else(|| code.to_string(), |card| card.name.clone())
 }
 
 /// What a multi-pick answer did, which its wire form doesn't say: a mulligan, a

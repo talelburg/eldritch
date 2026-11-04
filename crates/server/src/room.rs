@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use protocol::live::Committed;
-use protocol::lobby::{Lobby, LobbyView, Member};
+use protocol::lobby::{Lobby, LobbyRefusal, LobbyView, Member};
 use protocol::{AccountId, GameId, ServerMessage};
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::{self, Receiver, Sender};
@@ -102,6 +102,40 @@ impl GameRoom {
             rx: self.tx.subscribe(),
             first,
         })
+    }
+
+    /// Apply one lobby command, `command`, to the room's lobby: store what it
+    /// changed and broadcast the lobby to every connection. One command at a
+    /// time per room, so of two racing Takes the second is refused.
+    ///
+    /// `command` runs on a copy, which replaces the lobby only once it is
+    /// stored: a refused command, or one that couldn't be saved, changes
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// The command's own refusal; [`LobbyRefusal::Started`] in a live room;
+    /// [`LobbyRefusal::Failed`] if it couldn't be stored.
+    pub(crate) async fn change_lobby(
+        &self,
+        command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
+    ) -> Result<(), LobbyRefusal> {
+        let mut game = self.game.lock().await;
+        let RoomGame::Lobby(lobby) = &mut *game else {
+            return Err(LobbyRefusal::Started);
+        };
+        let mut changed = lobby.clone();
+        command(&mut changed)?;
+        let view = changed.view();
+        lobby::save_picks(&self.db, &self.game_id, &view)
+            .await
+            .map_err(|error| LobbyRefusal::Failed(error.to_string()))?;
+        *lobby = changed;
+        // Sent under the game's lock, which a connection attaching also holds
+        // while it subscribes. A send fails only when no connection is
+        // subscribed, and the one that sent this command is.
+        let _ = self.tx.send(RoomEvent::Lobby(Arc::new(view)));
+        Ok(())
     }
 }
 

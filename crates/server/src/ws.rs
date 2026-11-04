@@ -10,10 +10,12 @@ use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpg
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
 use axum_extra::extract::cookie::CookieJar;
+use cards::decks::DEFAULT_DECKS;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
-use protocol::lobby::{Lobby, Member};
+use game_core::state::CardCode;
+use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
     AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
     CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
@@ -304,8 +306,12 @@ enum Disposition {
 
 /// Apply one inbound frame from a connection signed in as `account`. An
 /// accepted action's commit is broadcast to the whole room (returning `None`
-/// here — the sender receives its `Applied` via its own subscription);
-/// rejections and malformed frames reply to the sender only.
+/// here — the sender receives its `Applied` via its own subscription), and so
+/// is an accepted lobby command's lobby; rejections, lobby refusals and
+/// malformed frames reply to the sender only.
+///
+/// Each lobby command is one arm, mapping it to its [`Lobby`] function through
+/// [`change_lobby`].
 async fn handle_client_message(
     room: &GameRoom,
     account: AccountId,
@@ -337,6 +343,12 @@ async fn handle_client_message(
                 }
             }
             Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
+            Ok(ClientMessage::Take { investigator }) => {
+                change_lobby(room, |lobby| take(lobby, account, investigator)).await
+            }
+            Ok(ClientMessage::GiveUp { investigator }) => {
+                change_lobby(room, |lobby| lobby.give_up(account, &investigator)).await
+            }
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
             )))),
@@ -346,6 +358,32 @@ async fn handle_client_message(
         // protocol; ignore them. They still reset the silence deadline.
         _ => None,
     }
+}
+
+/// Apply one lobby command through [`GameRoom::change_lobby`]. An accepted
+/// command's lobby is broadcast to the whole room, the sender's connection
+/// included, so nothing is replied; a refusal goes to the sender only.
+async fn change_lobby(
+    room: &GameRoom,
+    command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
+) -> Option<Disposition> {
+    room.change_lobby(command)
+        .await
+        .err()
+        .map(|reason| Disposition::Reply(Box::new(ServerMessage::LobbyRefused { reason })))
+}
+
+/// [`Lobby::take`], refused first for an investigator with no default deck:
+/// the pool is the default decks' investigators, since Start seats each pick
+/// with its default deck.
+fn take(lobby: &mut Lobby, account: AccountId, investigator: CardCode) -> Result<(), LobbyRefusal> {
+    if !DEFAULT_DECKS
+        .iter()
+        .any(|deck| deck.investigator == investigator.as_str())
+    {
+        return Err(LobbyRefusal::NotInPool { investigator });
+    }
+    lobby.take(account, investigator)
 }
 
 /// The refusal a client is sent for an answer [`GameSession::apply`] didn't

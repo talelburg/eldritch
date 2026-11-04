@@ -5,14 +5,19 @@
 
 mod banner;
 mod header;
+mod picks;
 mod pool;
+mod seating;
+mod toast;
 
 use game_core::scenario::ScenarioId;
+use game_core::state::CardCode;
 use leptos::task;
 use protocol::lobby::{Lobby, LobbyView, Member};
-use protocol::{AccountId, GameId, ServerMessage};
+use protocol::{AccountId, ClientMessage, GameId, ServerMessage};
+use wasm_bindgen::JsCast;
 use web::store::{self, ClientState};
-use web_sys::Element;
+use web_sys::{Element, HtmlElement};
 
 use crate::common::{self, BoardHandle, YOU};
 
@@ -24,19 +29,47 @@ pub(crate) const SAM: AccountId = AccountId(2);
 
 /// Tal's lobby of The Gathering, signed in as [`YOU`], which Sam has joined.
 pub(crate) fn tals_lobby_with_sam() -> LobbyView {
+    tals_lobby_with_picks(&[])
+}
+
+/// [`tals_lobby_with_sam`], with `picks` taken in order: each an
+/// investigator's card code and the member who takes it.
+pub(crate) fn tals_lobby_with_picks(picks: &[(&str, AccountId)]) -> LobbyView {
     let mut lobby = Lobby::new(
         ScenarioId::new("the-gathering"),
         YOU,
-        vec![Member {
-            account: YOU,
-            display_name: "Tal".to_string(),
-        }],
+        vec![
+            Member {
+                account: YOU,
+                display_name: "Tal".to_string(),
+            },
+            Member {
+                account: SAM,
+                display_name: "Sam".to_string(),
+            },
+        ],
     );
-    lobby.join(Member {
-        account: SAM,
-        display_name: "Sam".to_string(),
-    });
+    for (investigator, account) in picks {
+        lobby
+            .take(*account, CardCode::new(*investigator))
+            .expect("each test pick is free");
+    }
     lobby.view()
+}
+
+/// Click the one `sel` under `handle`'s root.
+pub(crate) fn click(handle: &BoardHandle, sel: &str) {
+    one(handle, sel)
+        .dyn_into::<HtmlElement>()
+        .expect("an HTML element")
+        .click();
+}
+
+/// The frame the lobby sent, which must be the only one.
+pub(crate) fn sent(handle: &mut BoardHandle) -> ClientMessage {
+    let frame = handle.rx.try_recv().expect("a frame was sent");
+    assert!(handle.rx.try_recv().is_err(), "only one frame was sent");
+    frame
 }
 
 /// Mount the app's main column at the game [`GAME_ID`], signed in as `you`,

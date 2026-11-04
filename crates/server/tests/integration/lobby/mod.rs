@@ -1,6 +1,11 @@
 //! The lobby: `POST /games` without a roster stores a lobby, and every
 //! signed-in account that opens its link becomes a member. Two accounts over
 //! real HTTP and WebSocket, as the spec's server seam describes.
+//!
+//! The shared helpers live here; each lobby command's tests get a file of
+//! their own.
+
+mod picks;
 
 use std::net::SocketAddr;
 
@@ -14,7 +19,7 @@ use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID}
 
 /// Create a lobby of the mock scenario over HTTP, signed in as the account
 /// named `name`; return its game id.
-async fn create_lobby(addr: SocketAddr, name: &str) -> String {
+pub(crate) async fn create_lobby(addr: SocketAddr, name: &str) -> String {
     let cookie = common::sign_in_over_http(addr, name).await;
     let response = common::send_with_cookie(
         common::http()
@@ -35,7 +40,7 @@ async fn create_lobby(addr: SocketAddr, name: &str) -> String {
 
 /// The next frame on `ws`, which must be a `Lobby`: its `you`, view and
 /// newly-joined flag.
-async fn recv_lobby(ws: &mut Client) -> (AccountId, LobbyView, bool) {
+pub(crate) async fn recv_lobby(ws: &mut Client) -> (AccountId, LobbyView, bool) {
     match common::recv_within(ws).await {
         ServerMessage::Lobby {
             build,
@@ -51,7 +56,7 @@ async fn recv_lobby(ws: &mut Client) -> (AccountId, LobbyView, bool) {
 }
 
 /// The members a view lists, by display name, in the order it lists them.
-fn member_names(view: &LobbyView) -> Vec<&str> {
+pub(crate) fn member_names(view: &LobbyView) -> Vec<&str> {
     view.members
         .iter()
         .map(|member| member.display_name.as_str())

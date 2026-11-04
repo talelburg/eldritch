@@ -384,6 +384,32 @@
 }
 .pool-name { font-weight: bold; text-align: center; }
 .pool-state { font-size: 0.8rem; text-transform: uppercase; opacity: 0.7; }
+/* Another member's pick: its default deck, read-only. */
+.pool-deck {
+    list-style: none; margin: 0; padding: 0; font-size: 0.7rem;
+    max-height: 10rem; overflow-y: auto; align-self: stretch;
+}
+
+/* Lobby seating: four numbered positions in clockwise order, the ★ on the lead. */
+.seating {
+    display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0;
+    width: 100%; max-width: 60rem; justify-content: center;
+}
+.seat {
+    display: flex; align-items: center; gap: 0.4rem; min-width: 10rem; min-height: 2rem;
+    background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 0.4rem 0.6rem;
+}
+.seat-number { font-weight: bold; opacity: 0.6; }
+.seat.lead { border: 1px solid #e0b84c; }
+.lead-star { color: #c9971c; margin-left: auto; }
+
+/* Toast: why a lobby command was refused. Above the lobby (30) and the lock
+   banner (35), below the terminal overlays (38 and up). */
+.toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 36;
+    background: #1a1a2e; color: #fff; border-radius: 6px; padding: 0.6rem 1.2rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
 
 /* Skill-test result modal (#478 panel, made modal by #541): centred over an inert
    scrim. The scrim has no click handler on purpose — dismissal submits engine

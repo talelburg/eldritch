@@ -40,6 +40,9 @@ pub mod home;
 pub mod lobby;
 
 #[cfg(target_arch = "wasm32")]
+pub mod toast;
+
+#[cfg(target_arch = "wasm32")]
 pub mod version_mismatch;
 
 #[cfg(target_arch = "wasm32")]

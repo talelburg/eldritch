@@ -2,16 +2,21 @@
 //!
 //! It is laid out as #1231's variant C. The header holds the members and the
 //! invite link with Copy; below it the banner, on the opening that made this
-//! account a member; then the pool of five investigators.
+//! account a member; then the pool of five investigators, and the seating's
+//! four numbered positions below the pool.
 //!
 //! Each part is a component of its own, reading what it shows from the store's
 //! [`LobbyView`](protocol::lobby::LobbyView).
 
 use cards::decks::{self, DefaultDeck};
+use game_core::state::CardCode;
 use leptos::prelude::*;
+use protocol::lobby::{LobbyView, MAX_PICKS};
+use protocol::{AccountId, ClientMessage};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
-use crate::store::{self, ConnStatus};
+use crate::store::{self, ClientState, ConnStatus};
+use crate::transport::OutboundTx;
 use crate::url;
 
 /// The lobby. Renders only at [`ConnStatus::InLobby`], with a lobby in the
@@ -29,6 +34,7 @@ pub fn LobbyScreen() -> impl IntoView {
                     <LobbyHeader/>
                     <JoinedBanner/>
                     <Pool/>
+                    <Seating/>
                 </section>
             }
         })
@@ -134,17 +140,176 @@ fn Pool() -> impl IntoView {
     }
 }
 
-/// One investigator of the pool, named, and marked with who holds them.
+/// Who holds one investigator of the pool, as this account sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Holding {
+    /// Nobody: free to take, unless the table is full.
+    Free {
+        /// [`MAX_PICKS`] investigators are already picked.
+        full: bool,
+    },
+    /// This account.
+    Yours,
+    /// Another member, by display name.
+    Held(String),
+}
+
+/// Who holds `investigator` in the store's lobby, as the account it names
+/// `you` sees it.
+fn holding(s: &ClientState, investigator: &str) -> Holding {
+    let Some(lobby) = &s.lobby else {
+        return Holding::Free { full: false };
+    };
+    let Some(pick) = lobby
+        .picks
+        .iter()
+        .find(|pick| pick.investigator.as_str() == investigator)
+    else {
+        return Holding::Free {
+            full: lobby.picks.len() >= MAX_PICKS,
+        };
+    };
+    if s.you == Some(pick.account) {
+        return Holding::Yours;
+    }
+    Holding::Held(display_name(lobby, pick.account))
+}
+
+/// The display name of the member `account`, from `lobby`.
+fn display_name(lobby: &LobbyView, account: AccountId) -> String {
+    lobby
+        .members
+        .iter()
+        .find(|member| member.account == account)
+        .map_or_else(String::new, |member| member.display_name.clone())
+}
+
+/// The printed name of the card `code`, which the corpus holds.
+fn card_name(code: &str) -> String {
+    cards::by_code(code)
+        .unwrap_or_else(|| panic!("a default deck's card {code} is in the corpus"))
+        .name
+        .clone()
+}
+
+/// Send `message` to the server, if a transport is mounted.
+fn send(message: ClientMessage) {
+    if let Some(tx) = use_context::<OutboundTx>() {
+        let _ = tx.unbounded_send(message);
+    }
+}
+
+/// One investigator of the pool, named, and marked with who holds them: free
+/// (Take), yours (Give up), or another member's (their name, and the default
+/// deck the pick plays, read-only).
 #[component]
 fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
-    let name = cards::by_code(deck.investigator)
-        .expect("a default deck's investigator is in the corpus")
-        .name
-        .clone();
+    let store = store::use_store();
+    let holding = Memo::new(move |_| store.with(|s| holding(s, deck.investigator)));
+    let investigator = move || CardCode::new(deck.investigator);
+
     view! {
         <div class="pool-entry" data-investigator=deck.investigator>
-            <span class="pool-name">{name}</span>
-            <span class="pool-state">"Free"</span>
+            <span class="pool-name">{card_name(deck.investigator)}</span>
+            {move || match holding.get() {
+                Holding::Free { full } => view! {
+                    <span class="pool-state">"Free"</span>
+                    <button
+                        class="take"
+                        disabled=full
+                        on:click=move |_| send(ClientMessage::Take { investigator: investigator() })
+                    >
+                        "Take"
+                    </button>
+                }
+                .into_any(),
+                Holding::Yours => view! {
+                    <span class="pool-state">"Yours"</span>
+                    <button
+                        class="give-up"
+                        on:click=move |_| send(ClientMessage::GiveUp { investigator: investigator() })
+                    >
+                        "Give up"
+                    </button>
+                }
+                .into_any(),
+                Holding::Held(member) => view! {
+                    <span class="pool-state">{member}</span>
+                    <DeckList deck=deck/>
+                }
+                .into_any(),
+            }}
         </div>
+    }
+}
+
+/// `deck`'s cards, read-only: the counted cards, then the signatures, then the
+/// fixed weakness, a repeated card shown once with its count.
+#[component]
+fn DeckList(deck: &'static DefaultDeck) -> impl IntoView {
+    let mut counted: Vec<(&str, usize)> = Vec::new();
+    for code in deck
+        .cards
+        .iter()
+        .chain(deck.signatures)
+        .chain([&deck.weakness])
+    {
+        match counted.iter_mut().find(|(seen, _)| seen == code) {
+            Some((_, count)) => *count += 1,
+            None => counted.push((code, 1)),
+        }
+    }
+    view! {
+        <ul class="pool-deck">
+            {counted
+                .into_iter()
+                .map(|(code, count)| {
+                    let name = card_name(code);
+                    let line = if count > 1 { format!("{count}× {name}") } else { name };
+                    view! { <li>{line}</li> }
+                })
+                .collect_view()}
+        </ul>
+    }
+}
+
+/// The seating, below the pool: [`MAX_PICKS`] numbered positions in clockwise
+/// order, the picks filling them from the first.
+#[component]
+fn Seating() -> impl IntoView {
+    view! {
+        <ol class="seating">
+            {(0..MAX_PICKS).map(|position| view! { <Seat position=position/> }).collect_view()}
+        </ol>
+    }
+}
+
+/// One position of the seating, from 0: the pick sitting there, named with
+/// its member, and the ★ if it leads. Empty while nobody sits there.
+#[component]
+fn Seat(position: usize) -> impl IntoView {
+    let store = store::use_store();
+    let seated = Memo::new(move |_| {
+        store.with(|s| {
+            let lobby = s.lobby.as_ref()?;
+            let pick = lobby.picks.get(position)?;
+            let text = format!(
+                "{} ({})",
+                card_name(pick.investigator.as_str()),
+                display_name(lobby, pick.account)
+            );
+            Some((text, lobby.lead.as_ref() == Some(&pick.investigator)))
+        })
+    });
+    let leads = move || seated.with(|seated| seated.as_ref().is_some_and(|(_, lead)| *lead));
+
+    view! {
+        <li class="seat" class:lead=leads>
+            <span class="seat-number">{position + 1}</span>
+            <span class="seat-pick">
+                {move || seated.get().map(|(text, _)| text).unwrap_or_default()}
+            </span>
+            {move || leads().then(|| view! { <span class="lead-star">"★"</span> })}
+        </li>
     }
 }
