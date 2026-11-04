@@ -10,6 +10,7 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use game_core::card_registry::CardRegistry;
+use game_core::scenario::ScenarioEnding;
 use game_core::state::Phase;
 use leptos::prelude::*;
 use protocol::live::LiveSummary;
@@ -57,13 +58,18 @@ enum Group {
     Lobby,
     /// Started games waiting on someone else, or on nobody.
     InProgress,
+    /// Finished games: their scenario reached an ending and finished
+    /// resolving it.
+    Finished,
 }
 
 impl Group {
-    /// The group an entry is listed under.
+    /// The group an entry is listed under. A finished game is listed only
+    /// under [`Group::Finished`].
     fn of(entry: &GameEntry) -> Self {
         match &entry.state {
             GameEntryState::Lobby => Group::Lobby,
+            GameEntryState::Live(summary) if summary.finished.is_some() => Group::Finished,
             GameEntryState::Live(summary) if summary.needs_you() => Group::NeedsYou,
             GameEntryState::Live(_) => Group::InProgress,
         }
@@ -75,6 +81,7 @@ impl Group {
             Group::NeedsYou => "Needs you",
             Group::Lobby => "Lobby",
             Group::InProgress => "In progress",
+            Group::Finished => "Finished",
         }
     }
 }
@@ -165,7 +172,24 @@ fn status_line(entry: &GameEntry) -> String {
             "Waiting for {} to start",
             entry.name(entry.creator).unwrap_or("its creator")
         ),
+        GameEntryState::Live(LiveSummary {
+            finished: Some(ending),
+            ..
+        }) => ending_reached(*ending),
         GameEntryState::Live(summary) => live_status(entry, summary),
+    }
+}
+
+/// The ending a finished game reached, as the campaign guide titles it:
+/// "Resolution 1", or "No resolution reached". It names the ending rather
+/// than a win or a loss (ADR 0012), as the board's banner does.
+fn ending_reached(ending: ScenarioEnding) -> String {
+    match ending {
+        ScenarioEnding::Resolution(id) => id.to_string(),
+        ScenarioEnding::NoResolution => "No resolution reached".to_owned(),
+        // `ScenarioEnding` is #[non_exhaustive]; a future variant is still
+        // finished.
+        _ => "Finished".to_owned(),
     }
 }
 

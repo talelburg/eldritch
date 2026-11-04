@@ -5,7 +5,7 @@
 //! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::scenario::ScenarioId;
+use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioId};
 use game_core::state::{CardCode, InvestigatorId, Phase};
 use leptos::task;
 use protocol::live::{LiveSummary, WaitedOn};
@@ -142,8 +142,49 @@ fn thursday(game_id: &str, at: i64, waiting_on: &[(u32, &str, AccountId)]) -> Ga
                 yours: holder == SAM,
             })
             .collect(),
+        finished: None,
     });
     entry
+}
+
+/// Thursday's game, finished at `ending`, its last action at `at`.
+fn finished(game_id: &str, at: i64, ending: ScenarioEnding) -> GameEntry {
+    let mut entry = thursday(game_id, at, &[]);
+    if let GameEntryState::Live(summary) = &mut entry.state {
+        summary.finished = Some(ending);
+    }
+    entry
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn finished_games_are_listed_last_under_finished_with_the_ending_reached() {
+    let handle = mount_page(Some(vec![
+        finished("g-no-resolution", 4_000, ScenarioEnding::NoResolution),
+        thursday("g-thursday", 1_000, &[(1, DAISY, SAM)]),
+        finished(
+            "g-resolved",
+            5_000,
+            ScenarioEnding::Resolution(ResolutionId::new(1)),
+        ),
+        thursday("g-tals-turn", 2_000, &[(2, ROLAND, TAL)]),
+    ]))
+    .await;
+
+    assert_eq!(
+        texts(&handle, ".games-group-title"),
+        ["Needs you", "In progress", "Finished"]
+    );
+    assert_eq!(
+        texts(&handle, ".games-group:last-of-type .row-status"),
+        ["Resolution 1", "No resolution reached"],
+        "each finished game says the ending it reached, newest first"
+    );
+    assert_eq!(
+        texts(&handle, ".game-row .row-status").len(),
+        4,
+        "a finished game is listed under no other group"
+    );
+    assert_eq!(texts(&handle, ".row-pill"), ["Daisy Walker needs you"]);
 }
 
 #[wasm_bindgen_test::wasm_bindgen_test]

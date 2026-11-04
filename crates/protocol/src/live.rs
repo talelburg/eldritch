@@ -24,6 +24,7 @@ use game_core::action::{Action, PlayerAction};
 use game_core::engine::{self, EngineOutcome, InputRequest, Registries, Responder};
 use game_core::event::Event;
 use game_core::rng::RngState;
+use game_core::scenario::ScenarioEnding;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::{CardCode, GameState, Phase};
 use serde::{Deserialize, Serialize};
@@ -181,7 +182,8 @@ impl LiveGame {
     /// Where the game stands, as `account` sees it on "Your games": the round
     /// and phase, and each investigator the live prompt waits on, with its
     /// holder and whether that is `account`. Nothing is waited on with no
-    /// prompt live.
+    /// prompt live. A game whose last apply came back `Done` with the ending
+    /// latched is finished, and carries that ending.
     #[must_use]
     pub fn summary_for(&self, account: AccountId) -> LiveSummary {
         let waited = match &self.outcome {
@@ -201,10 +203,15 @@ impl LiveGame {
                 })
             })
             .collect();
+        let finished = match self.outcome {
+            EngineOutcome::Done => self.state.ending,
+            _ => None,
+        };
         LiveSummary {
             round: self.state.round,
             phase: self.state.phase,
             waiting_on,
+            finished,
         }
     }
 
@@ -318,6 +325,11 @@ pub struct LiveSummary {
     /// Each investigator the live prompt waits on, in the order the prompt
     /// names them; empty with no prompt live.
     pub waiting_on: Vec<WaitedOn>,
+    /// The ending a **finished game** reached, "no resolution" included. A
+    /// game is finished once its scenario ending latched and finished
+    /// resolving, so nothing is left on the stack; `None` for a game still
+    /// being played or still resolving its ending.
+    pub finished: Option<ScenarioEnding>,
 }
 
 impl LiveSummary {

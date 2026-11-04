@@ -3,9 +3,12 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ChoiceOption, InputRequest, OptionId, OptionTarget, Responder};
+use game_core::engine::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, Responder,
+};
 use game_core::event::Event;
 use game_core::rng::RngState;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{self, location, seat, TEST_REGISTRIES};
 use protocol::live::{LiveGame, LiveSummary, Refused};
@@ -325,6 +328,12 @@ const INV2: InvestigatorId = InvestigatorId(2);
 /// Two investigators, [`INV`] held by [`TAL`] and [`INV2`] by [`SAM`], in
 /// round 3's Investigation phase, waiting on `request`.
 fn two_seats_awaiting(request: InputRequest) -> LiveGame {
+    two_seats(test_support::awaiting_request(request), None)
+}
+
+/// [`two_seats_awaiting`]'s two investigators, after an apply left `outcome`
+/// with the scenario's ending latched at `ending`.
+fn two_seats(outcome: EngineOutcome, ending: Option<ScenarioEnding>) -> LiveGame {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
@@ -333,9 +342,10 @@ fn two_seats_awaiting(request: InputRequest) -> LiveGame {
         .build();
     state.round = 3;
     state.phase = Phase::Investigation;
+    state.ending = ending;
     LiveGame::new(
         state,
-        test_support::awaiting_request(request),
+        outcome,
         Vec::new(),
         LogPosition(0),
         Assignment::from_iter([(INV, TAL), (INV2, SAM)]),
@@ -436,4 +446,51 @@ fn a_viewer_is_never_needed() {
     assert!(!summary.needs_you());
     assert!(summary.waiting_on.iter().all(|waited| !waited.yours));
     assert_eq!(summary.waiting_for(), vec![TAL, SAM]);
+}
+
+#[test]
+fn a_game_that_finished_resolving_its_ending_is_finished_with_that_ending() {
+    let ending = ScenarioEnding::Resolution(ResolutionId::new(1));
+    let live = two_seats(EngineOutcome::Done, Some(ending));
+
+    let summary = live.summary_for(SAM);
+
+    assert_eq!(summary.finished, Some(ending));
+    assert!(summary.waiting_on.is_empty());
+}
+
+#[test]
+fn a_game_that_reached_no_resolution_is_finished_too() {
+    let live = two_seats(EngineOutcome::Done, Some(ScenarioEnding::NoResolution));
+
+    assert_eq!(
+        live.summary_for(SAM).finished,
+        Some(ScenarioEnding::NoResolution)
+    );
+}
+
+#[test]
+fn a_game_still_resolving_its_ending_is_not_finished() {
+    // A game-end prompt, asked after the ending latched and before it
+    // finished resolving.
+    let live = two_seats(
+        test_support::awaiting_request(
+            InputRequest::confirm("Acknowledge").answered_by(Responder::Investigator(INV2)),
+        ),
+        Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
+    );
+
+    let summary = live.summary_for(SAM);
+
+    assert_eq!(summary.finished, None);
+    assert!(summary.needs_you());
+}
+
+#[test]
+fn a_game_being_played_is_not_finished() {
+    let live = two_seats_awaiting(
+        InputRequest::confirm("Mulligan?").answered_by(Responder::Investigator(INV2)),
+    );
+
+    assert_eq!(live.summary_for(SAM).finished, None);
 }
