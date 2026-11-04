@@ -7,10 +7,12 @@
 
 use leptos::prelude::*;
 use leptos::task;
+use protocol::{GameId, ReplayCause, UnresumableCause};
 use wasm_bindgen_test::*;
 use web::store::{ClientState, ConnStatus};
 
-use crate::common;
+use crate::common::{self, BoardHandle};
+use crate::your_games;
 
 #[wasm_bindgen_test]
 async fn the_overlay_is_absent_at_every_status_but_unresumable() {
@@ -66,4 +68,84 @@ async fn an_unresumable_game_says_why_and_offers_a_new_game_outside_the_lockout(
         "the board behind it is locked"
     );
     common::assert_live(&button, "the New game button");
+    assert!(
+        card.query_selector(".ur-kept").expect("query").is_none(),
+        "with no listing entry for the game, the card adds nothing: {text}"
+    );
+}
+
+/// The text of the `.unresumable` card under `handle`.
+fn card_text(handle: &BoardHandle) -> String {
+    handle
+        .root
+        .query_selector(".unresumable")
+        .expect("query")
+        .expect("an .unresumable card")
+        .text_content()
+        .unwrap_or_default()
+}
+
+#[wasm_bindgen_test]
+async fn a_members_unresumable_game_adds_where_it_stopped_both_builds_and_that_it_is_kept() {
+    let stale = your_games::stale(
+        "g-stale",
+        1_000,
+        UnresumableCause::Replay {
+            seq: 214,
+            cause: ReplayCause::Rejected,
+        },
+    );
+    let other = your_games::stale("g-other", 2_000, UnresumableCause::Fingerprint);
+    let client = ClientState {
+        status: ConnStatus::Unresumable,
+        game_id: Some(GameId::new("g-stale")),
+        games: Some(vec![other, stale]),
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+    task::tick().await;
+
+    let text = card_text(&handle);
+    for shown in [
+        "This game can't be resumed on this server version",
+        "Stopped at action 215 of 340: the engine now refuses that answer",
+        "older-build",
+        "newer-build",
+        "The game is kept as it was: if the server rolls back to its build, it opens again.",
+    ] {
+        assert!(text.contains(shown), "the card shows {shown}: {text}");
+    }
+    assert!(
+        !text.contains("Setup now deals differently"),
+        "only this game's reason: {text}"
+    );
+    assert!(
+        handle
+            .root
+            .query_selector(".unresumable .ur-new-game")
+            .expect("query")
+            .is_some(),
+        "the New game button stays"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn a_game_missing_from_the_listing_shows_the_sentence_alone() {
+    let client = ClientState {
+        status: ConnStatus::Unresumable,
+        game_id: Some(GameId::new("g-not-mine")),
+        games: Some(vec![your_games::stale(
+            "g-stale",
+            1_000,
+            UnresumableCause::Fingerprint,
+        )]),
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+    task::tick().await;
+
+    assert_eq!(
+        card_text(&handle).trim(),
+        "This game can't be resumed on this server versionNew game"
+    );
 }

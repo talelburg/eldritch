@@ -10,7 +10,10 @@ use game_core::state::{CardCode, InvestigatorId, Phase};
 use leptos::task;
 use protocol::live::{LiveSummary, WaitedOn};
 use protocol::lobby::Member;
-use protocol::{AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId};
+use protocol::{
+    AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId, ReplayCause, UnresumableCause,
+    UnresumableSummary,
+};
 use web::store::{ClientState, ConnStatus};
 
 use crate::common::{self, BoardHandle};
@@ -30,10 +33,10 @@ fn lobby(game_id: &str, creator: AccountId, creator_name: &str, created_at: i64)
     GameEntry {
         game_id: GameId::new(game_id),
         scenario_id: ScenarioId::new("the-gathering"),
-        creator,
+        creator: Some(creator),
         investigators: vec![EntryInvestigator {
             investigator: CardCode::new(DAISY),
-            holder: SAM,
+            holder: Some(SAM),
             lead: true,
         }],
         names: vec![
@@ -77,7 +80,7 @@ async fn lobbies_are_listed_under_lobby_newest_first_each_waiting_for_its_creato
     let mut tals = lobby("g-tal", TAL, "Tal", 1_000);
     tals.investigators.push(EntryInvestigator {
         investigator: CardCode::new(ROLAND),
-        holder: TAL,
+        holder: Some(TAL),
         lead: false,
     });
     let handle = mount_page(Some(vec![
@@ -127,7 +130,7 @@ fn thursday(game_id: &str, at: i64, waiting_on: &[(u32, &str, AccountId)]) -> Ga
     let mut entry = lobby(game_id, TAL, "Tal", at);
     entry.investigators.push(EntryInvestigator {
         investigator: CardCode::new(ROLAND),
-        holder: TAL,
+        holder: Some(TAL),
         lead: false,
     });
     entry.state = GameEntryState::Live(LiveSummary {
@@ -204,4 +207,114 @@ async fn a_window_waiting_on_two_accounts_names_both_and_needs_you() {
         ["Round 3 · Investigation · waiting for Sam and Tal"]
     );
     assert_eq!(texts(&handle, ".row-pill"), ["Daisy Walker needs you"]);
+}
+
+/// Thursday's game, last moving at `at`, which this build can't replay for
+/// `reason`, with 340 answers logged, created on build `"older-build"` and
+/// listed by a server running `"newer-build"`.
+pub(crate) fn stale(game_id: &str, at: i64, reason: UnresumableCause) -> GameEntry {
+    let mut entry = thursday(game_id, at, &[]);
+    entry.state = GameEntryState::Unresumable(UnresumableSummary {
+        reason,
+        logged_answers: 340,
+        created_build: "older-build".to_string(),
+        server_build: "newer-build".to_string(),
+    });
+    entry
+}
+
+/// The cause of a game stopped by its answer at zero-based `seq` failing
+/// `cause`.
+fn replay(seq: i64, cause: ReplayCause) -> UnresumableCause {
+    UnresumableCause::Replay { seq, cause }
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn an_unresumable_game_is_listed_last_with_where_it_stopped_and_why() {
+    let label = "Investigate: Hallway";
+    let not_found = ReplayCause::OptionNotFound {
+        label: label.to_string(),
+        matches: 0,
+    };
+    let handle = mount_page(Some(vec![
+        stale("g-stale", 3_000, replay(214, not_found)),
+        thursday("g-tals-turn", 2_000, &[(2, ROLAND, TAL)]),
+        lobby("g-lobby", TAL, "Tal", 1_000),
+    ]))
+    .await;
+
+    assert_eq!(
+        texts(&handle, ".games-group-title"),
+        ["Lobby", "In progress", "Can't resume on this build"]
+    );
+    let row = handle
+        .root
+        .query_selector(r#".game-row[href="/games/g-stale"]"#)
+        .expect("query")
+        .expect("the unresumable game is listed, at its link");
+    let text = row.text_content().unwrap_or_default();
+    for shown in [
+        r#"Stopped at action 215 of 340: no option labelled "Investigate: Hallway""#,
+        "The Gathering",
+        "Created by Tal",
+        "Daisy Walker",
+        "Roland Banks",
+    ] {
+        assert!(text.contains(shown), "the row shows {shown}: {text}");
+    }
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn each_reason_a_game_cannot_resume_reads_in_plain_words() {
+    let option = |matches| ReplayCause::OptionNotFound {
+        label: "Investigate: Hallway".to_string(),
+        matches,
+    };
+    let handle = mount_page(Some(vec![
+        stale("g-1", 9_000, replay(0, option(2))),
+        stale("g-2", 8_000, replay(1, ReplayCause::PromptChanged)),
+        stale("g-3", 7_000, replay(2, ReplayCause::Rejected)),
+        stale("g-4", 6_000, replay(3, ReplayCause::Draws)),
+        stale("g-5", 5_000, UnresumableCause::Fingerprint),
+        stale(
+            "g-6",
+            4_000,
+            UnresumableCause::Setup("unknown scenario: the-gathering".to_string()),
+        ),
+        stale("g-7", 3_000, UnresumableCause::Version),
+        stale("g-8", 2_000, UnresumableCause::NoAssignment),
+    ]))
+    .await;
+
+    assert_eq!(
+        texts(&handle, ".game-row .row-status"),
+        [
+            r#"Stopped at action 1 of 340: more than one option labelled "Investigate: Hallway""#,
+            "Stopped at action 2 of 340: the game now asks something else here",
+            "Stopped at action 3 of 340: the engine now refuses that answer",
+            "Stopped at action 4 of 340: the shuffle now comes out differently",
+            "Setup now deals differently",
+            "Setup no longer runs: unknown scenario: the-gathering",
+            "Stored by an older version of the server",
+            "Stored by an older version of the server",
+        ]
+    );
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn an_unresumable_game_with_no_creator_or_holders_still_lists_its_investigators() {
+    let mut entry = stale("g-old", 1_000, UnresumableCause::NoAssignment);
+    entry.creator = None;
+    for seat in &mut entry.investigators {
+        seat.holder = None;
+    }
+    let handle = mount_page(Some(vec![entry])).await;
+
+    assert!(
+        texts(&handle, ".row-holder").is_empty(),
+        "no holder is shown"
+    );
+    let text = texts(&handle, ".game-row").concat();
+    assert!(text.contains("Daisy Walker"), "{text}");
+    assert!(!text.contains("Created by"), "no creator is named: {text}");
 }

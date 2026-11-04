@@ -13,7 +13,9 @@ use game_core::card_registry::CardRegistry;
 use game_core::state::Phase;
 use leptos::prelude::*;
 use protocol::live::LiveSummary;
-use protocol::{AccountId, GameEntry, GameEntryState};
+use protocol::{
+    AccountId, GameEntry, GameEntryState, ReplayCause, UnresumableCause, UnresumableSummary,
+};
 use wasm_bindgen::JsValue;
 
 use crate::store::{self, ConnStatus};
@@ -57,6 +59,8 @@ enum Group {
     Lobby,
     /// Started games waiting on someone else, or on nobody.
     InProgress,
+    /// Started games this build can't replay.
+    Unresumable,
 }
 
 impl Group {
@@ -66,6 +70,7 @@ impl Group {
             GameEntryState::Lobby => Group::Lobby,
             GameEntryState::Live(summary) if summary.needs_you() => Group::NeedsYou,
             GameEntryState::Live(_) => Group::InProgress,
+            GameEntryState::Unresumable(_) => Group::Unresumable,
         }
     }
 
@@ -75,6 +80,7 @@ impl Group {
             Group::NeedsYou => "Needs you",
             Group::Lobby => "Lobby",
             Group::InProgress => "In progress",
+            Group::Unresumable => "Can't resume on this build",
         }
     }
 }
@@ -121,12 +127,12 @@ fn GameRow(entry: GameEntry) -> impl IntoView {
         .iter()
         .map(|seat| {
             let investigator = names::card_name(cards, &seat.investigator);
-            let holder = name(seat.holder);
+            let holder = seat.holder.map(name);
             view! {
                 <li class="row-investigator">
                     {investigator}
                     {seat.lead.then(|| view! { <span class="lead-star">"★"</span> })}
-                    <span class="row-holder">{holder}</span>
+                    {holder.map(|holder| view! { <span class="row-holder">{holder}</span> })}
                 </li>
             }
         })
@@ -134,7 +140,9 @@ fn GameRow(entry: GameEntry) -> impl IntoView {
     view! {
         <a class="game-row" href=url::game_path(&entry.game_id)>
             <span class="row-scenario">{names::scenario_name(&entry.scenario_id).to_owned()}</span>
-            <span class="row-creator">{format!("Created by {}", name(entry.creator))}</span>
+            {entry.creator.map(|creator| {
+                view! { <span class="row-creator">{format!("Created by {}", name(creator))}</span> }
+            })}
             <ul class="row-investigators">{investigators}</ul>
             {pills(cards, &entry)}
             <span class="row-status">{status_line(&entry)}</span>
@@ -163,9 +171,47 @@ fn status_line(entry: &GameEntry) -> String {
     match &entry.state {
         GameEntryState::Lobby => format!(
             "Waiting for {} to start",
-            entry.name(entry.creator).unwrap_or("its creator")
+            entry
+                .creator
+                .and_then(|creator| entry.name(creator))
+                .unwrap_or("its creator")
         ),
         GameEntryState::Live(summary) => live_status(entry, summary),
+        GameEntryState::Unresumable(summary) => unresumable_status(summary),
+    }
+}
+
+/// Where an unresumable game stopped and why, in plain words: "Stopped at
+/// action {n} of {count}: {why}" for a logged answer that no longer
+/// replays, and a sentence of its own for a game that stopped before any.
+pub(crate) fn unresumable_status(summary: &UnresumableSummary) -> String {
+    match &summary.reason {
+        UnresumableCause::Replay { seq, cause } => format!(
+            "Stopped at action {} of {}: {}",
+            seq + 1,
+            summary.logged_answers,
+            replay_words(cause)
+        ),
+        UnresumableCause::Fingerprint => "Setup now deals differently".to_owned(),
+        UnresumableCause::Setup(message) => format!("Setup no longer runs: {message}"),
+        UnresumableCause::Version | UnresumableCause::NoAssignment => {
+            "Stored by an older version of the server".to_owned()
+        }
+    }
+}
+
+/// Why a logged answer no longer replays, in plain words.
+fn replay_words(cause: &ReplayCause) -> String {
+    match cause {
+        ReplayCause::OptionNotFound { label, matches: 0 } => {
+            format!("no option labelled \"{label}\"")
+        }
+        ReplayCause::OptionNotFound { label, .. } => {
+            format!("more than one option labelled \"{label}\"")
+        }
+        ReplayCause::PromptChanged => "the game now asks something else here".to_owned(),
+        ReplayCause::Rejected => "the engine now refuses that answer".to_owned(),
+        ReplayCause::Draws => "the shuffle now comes out differently".to_owned(),
     }
 }
 

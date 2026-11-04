@@ -25,7 +25,7 @@ use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
 use protocol::lobby::Start;
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{AccountId, Assignment, GameId, LogPosition};
+use protocol::{AccountId, Assignment, GameId, LogPosition, UnresumableCause};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -129,6 +129,23 @@ pub enum UnresumableReason {
         /// The check it fails.
         reason: ReplayFailure,
     },
+}
+
+impl UnresumableReason {
+    /// The reason as "Your games" lists it.
+    #[must_use]
+    pub fn cause(&self) -> UnresumableCause {
+        match self {
+            Self::Version { .. } => UnresumableCause::Version,
+            Self::NoAssignment => UnresumableCause::NoAssignment,
+            Self::Setup(message) => UnresumableCause::Setup(message.clone()),
+            Self::Fingerprint(_) => UnresumableCause::Fingerprint,
+            Self::Replay { seq, reason } => UnresumableCause::Replay {
+                seq: *seq,
+                cause: reason.into(),
+            },
+        }
+    }
 }
 
 /// A loaded game: its live game and its connection to the action log.

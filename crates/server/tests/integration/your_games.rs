@@ -7,12 +7,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::Phase;
+use game_core::test_support;
 use protocol::live::LiveSummary;
 use protocol::{
-    AccountId, ClientMessage, GameEntry, GameEntryState, GameId, LogPosition, ServerMessage,
+    AccountId, ClientMessage, GameEntry, GameEntryState, GameId, LogPosition, ReplayCause,
+    ServerMessage, UnresumableCause, UnresumableSummary,
 };
 use reqwest::StatusCode;
 use scenarios::the_gathering::ID as GATHERING;
+use sqlx::SqlitePool;
 
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID};
 use crate::lobby::{self, AGNES, DAISY, ROLAND};
@@ -40,7 +43,7 @@ fn now_millis() -> i64 {
 }
 
 /// An entry's investigators as `(card code, holder, lead)`, in seating order.
-fn investigators(entry: &GameEntry) -> Vec<(&str, AccountId, bool)> {
+fn investigators(entry: &GameEntry) -> Vec<(&str, Option<AccountId>, bool)> {
     entry
         .investigators
         .iter()
@@ -65,11 +68,14 @@ async fn a_member_sees_the_lobby_with_its_picks_and_never_a_game_it_is_not_a_mem
     };
     assert_eq!(entry.game_id, GameId::new(members.game_id.as_str()));
     assert_eq!(entry.scenario_id.as_str(), TEST_SCENARIO_ID);
-    assert_eq!(entry.creator, members.tal);
+    assert_eq!(entry.creator, Some(members.tal));
     assert_eq!(entry.state, GameEntryState::Lobby);
     assert_eq!(
         investigators(entry),
-        [(DAISY, members.sam, true), (ROLAND, members.tal, false)],
+        [
+            (DAISY, Some(members.sam), true),
+            (ROLAND, Some(members.tal), false)
+        ],
         "the picks in seating order, Daisy leading as the first picked"
     );
     assert_eq!(entry.name(members.tal), Some(TEST_ACCOUNT));
@@ -146,13 +152,13 @@ async fn a_started_game_is_live_with_who_it_waits_on_and_its_last_activity() {
     };
     assert_eq!(entry.game_id, GameId::new(members.game_id.as_str()));
     assert_eq!(entry.scenario_id.as_str(), GATHERING);
-    assert_eq!(entry.creator, members.tal);
+    assert_eq!(entry.creator, Some(members.tal));
     assert_eq!(
         investigators(entry),
         [
-            (DAISY, members.sam, true),
-            (ROLAND, members.tal, false),
-            (AGNES, members.tal, false)
+            (DAISY, Some(members.sam), true),
+            (ROLAND, Some(members.tal), false),
+            (AGNES, Some(members.tal), false)
         ],
         "the seated investigators in seating order, Daisy leading"
     );
@@ -198,4 +204,107 @@ async fn a_started_game_is_live_with_who_it_waits_on_and_its_last_activity() {
         "last activity is when the last answer was logged: {}",
         entry.last_activity
     );
+}
+
+/// Make `account` a member of `game_id` in `pool`, as opening its link does.
+async fn add_member(pool: &SqlitePool, game_id: &str, account: AccountId) {
+    sqlx::query("INSERT INTO game_members (game_id, account_id) VALUES (?, ?)")
+        .bind(game_id)
+        .bind(account.0)
+        .execute(pool)
+        .await
+        .expect("add a member");
+}
+
+/// A game of the mock scenario the [`TEST_ACCOUNT`] created, holds and is a
+/// member of, with its mulligan answered, stored by the build
+/// `"older-build"`. Returns the [`TEST_ACCOUNT`]'s id.
+async fn played_by_an_older_build(pool: &SqlitePool, game_id: &str) -> AccountId {
+    let tester = common::test_account(pool).await;
+    let mut session = common::create_game(pool, game_id).await;
+    session
+        .apply(
+            tester,
+            session.live().prompt(),
+            PlayerAction::ResolveInput {
+                investigator: InvestigatorId(1),
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
+        )
+        .await
+        .expect("the mulligan is accepted");
+    add_member(pool, game_id, tester).await;
+    sqlx::query("UPDATE games SET created_build = 'older-build' WHERE game_id = ?")
+        .bind(game_id)
+        .execute(pool)
+        .await
+        .expect("set the build it was created on");
+    tester
+}
+
+/// The game's logged mulligan is turned into a `Confirm`, which the engine
+/// rejects for it, as a build whose engine changed would.
+#[tokio::test]
+async fn a_game_whose_log_no_longer_replays_is_listed_unresumable_with_where_it_stopped() {
+    let pool = common::memory_pool().await;
+    let before = now_millis();
+    let tester = played_by_an_older_build(&pool, "stale").await;
+    let after = now_millis();
+    common::set_logged(&pool, "stale", 0, "$.response", "Confirm").await;
+    let addr = common::spawn_server(pool).await;
+
+    let listing = listing_for(addr, TEST_ACCOUNT).await;
+
+    let [entry] = listing.as_slice() else {
+        panic!("the Tester is a member of one game: {listing:?}");
+    };
+    assert_eq!(entry.game_id, GameId::new("stale"));
+    assert_eq!(entry.scenario_id.as_str(), TEST_SCENARIO_ID);
+    assert_eq!(entry.creator, Some(tester));
+    assert_eq!(
+        investigators(entry),
+        [(test_support::TEST_INV, Some(tester), true)]
+    );
+    assert_eq!(entry.name(tester), Some(TEST_ACCOUNT));
+    assert!(
+        (before..=after).contains(&entry.last_activity),
+        "last activity is when the last answer was logged: {}",
+        entry.last_activity
+    );
+    assert_eq!(
+        entry.state,
+        GameEntryState::Unresumable(UnresumableSummary {
+            reason: UnresumableCause::Replay {
+                seq: 0,
+                cause: ReplayCause::Rejected,
+            },
+            logged_answers: 1,
+            created_build: "older-build".to_owned(),
+            server_build: protocol::build_id().to_owned(),
+        })
+    );
+}
+
+/// A game whose assignment rows are gone: nobody holds its investigators.
+#[tokio::test]
+async fn an_unresumable_game_with_no_assignment_lists_its_investigators_with_no_holder() {
+    let pool = common::memory_pool().await;
+    let tester = played_by_an_older_build(&pool, "unheld").await;
+    sqlx::query("DELETE FROM game_assignments WHERE game_id = 'unheld'")
+        .execute(&pool)
+        .await
+        .expect("drop the assignment");
+    let addr = common::spawn_server(pool).await;
+
+    let listing = listing_for(addr, TEST_ACCOUNT).await;
+
+    let [entry] = listing.as_slice() else {
+        panic!("the Tester is a member of one game: {listing:?}");
+    };
+    assert_eq!(entry.creator, Some(tester));
+    assert_eq!(investigators(entry), [(test_support::TEST_INV, None, true)]);
+    let GameEntryState::Unresumable(summary) = &entry.state else {
+        panic!("expected an Unresumable entry, got {:?}", entry.state);
+    };
+    assert_eq!(summary.reason, UnresumableCause::NoAssignment);
 }
