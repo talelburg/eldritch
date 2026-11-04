@@ -7,6 +7,7 @@
 
 mod picks;
 mod seating;
+mod start;
 mod weakness;
 
 use std::net::SocketAddr;
@@ -22,12 +23,18 @@ use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID}
 /// Create a lobby of the mock scenario over HTTP, signed in as the account
 /// named `name`; return its game id.
 pub(crate) async fn create_lobby(addr: SocketAddr, name: &str) -> String {
+    create_lobby_of(addr, name, TEST_SCENARIO_ID).await
+}
+
+/// Create a lobby of `scenario_id` over HTTP, signed in as the account named
+/// `name`; return its game id.
+pub(crate) async fn create_lobby_of(addr: SocketAddr, name: &str, scenario_id: &str) -> String {
     let cookie = common::sign_in_over_http(addr, name).await;
     let response = common::send_with_cookie(
         common::http()
             .post(format!("http://{addr}/games"))
             .header("content-type", "application/json")
-            .body(format!(r#"{{"scenario_id":"{TEST_SCENARIO_ID}"}}"#)),
+            .body(format!(r#"{{"scenario_id":"{scenario_id}"}}"#)),
         Some(&cookie),
     )
     .await;

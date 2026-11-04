@@ -26,7 +26,7 @@ use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
 use protocol::{AccountId, Assignment, GameId, LogPosition};
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
 use crate::id;
@@ -149,6 +149,53 @@ struct Opened {
     events: Vec<Event>,
 }
 
+/// A new game [`GameSession::set_up`] seated and checked, not yet stored.
+pub(crate) struct NewGame {
+    game_id: GameId,
+    row: GameRow,
+    opened: Opened,
+    assignment: Assignment,
+    registries: Registries,
+}
+
+impl NewGame {
+    /// Store the game's row and its assignment on `db`, normally a
+    /// transaction the caller commits.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Db`] if a write fails.
+    pub(crate) async fn store(&self, db: &mut SqliteConnection) -> Result<(), SessionError> {
+        store::insert_game(
+            db,
+            &self.game_id,
+            &self.row,
+            protocol::build_id(),
+            unix_millis(),
+        )
+        .await?;
+        store::insert_assignment(db, &self.game_id, &self.assignment).await?;
+        Ok(())
+    }
+
+    /// The live session of the game, at the mulligan prompt, once it is
+    /// [stored](Self::store), writing its later answers to `db`.
+    pub(crate) fn into_session(self, db: SqlitePool) -> GameSession {
+        GameSession {
+            game_id: self.game_id,
+            live: LiveGame::new(
+                self.opened.state,
+                self.opened.outcome,
+                self.opened.events,
+                LogPosition::default(),
+                self.assignment,
+                self.registries,
+            ),
+            db,
+        }
+    }
+}
+
 /// A stored game's rows as [`GameSession::read`] fetched them, before any
 /// check: its `games` row, its assignment rows and its action rows in `seq`
 /// order.
@@ -251,6 +298,10 @@ impl GameSession {
     /// transaction, and returns a live session at the mulligan prompt in which
     /// `assignment` decides who answers for each investigator.
     ///
+    /// It is `set_up`, then `NewGame::store` in a transaction of its own. A
+    /// lobby's Start composes the two itself, to delete the lobby in the same
+    /// transaction.
+    ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
     ///
@@ -259,8 +310,9 @@ impl GameSession {
     /// - [`SessionError::UnknownScenario`] if no module is registered for
     ///   `scenario_id`.
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
-    ///   roster, a `lead` index past its end, unknown investigator code, unimplemented deck card, more
-    ///   random basic weaknesses than the weakness pool holds, etc.).
+    ///   roster, a `lead` index past its end, unknown investigator code,
+    ///   unimplemented deck card, more random basic weaknesses than the
+    ///   weakness pool holds, etc.).
     /// - [`SessionError::AssignmentMismatch`] if `assignment` doesn't give
     ///   exactly the seated investigators a holder.
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
@@ -279,6 +331,39 @@ impl GameSession {
         lead: usize,
         assignment: Assignment,
     ) -> Result<Self, SessionError> {
+        let new_game = Self::set_up(
+            registries,
+            game_id.into(),
+            creator,
+            scenario_id,
+            roster,
+            lead,
+            assignment,
+        )?;
+        let mut tx = db.begin().await?;
+        new_game.store(&mut tx).await?;
+        tx.commit().await?;
+        Ok(new_game.into_session(db))
+    }
+
+    /// The I/O-free half of [`GameSession::create`]: seat the roster and
+    /// check the assignment, storing nothing. A caller stores the
+    /// [`NewGame`] inside a transaction of its own, so it can write other
+    /// rows in the same one, as Start deletes the lobby's.
+    ///
+    /// # Errors
+    ///
+    /// As [`GameSession::create`], except [`SessionError::Db`], which only
+    /// storing reports.
+    pub(crate) fn set_up(
+        registries: Registries,
+        game_id: GameId,
+        creator: AccountId,
+        scenario_id: ScenarioId,
+        roster: Vec<RosterEntry>,
+        lead: usize,
+        assignment: Assignment,
+    ) -> Result<NewGame, SessionError> {
         let inputs = CreationInputs {
             scenario_id,
             roster,
@@ -302,23 +387,12 @@ impl GameSession {
             return Err(SessionError::AssignmentMismatch { seated, assigned });
         }
         let row = inputs.to_row(creator, &SetupFingerprint::of(&opened.state))?;
-        let game_id = game_id.into();
-        let mut tx = db.begin().await?;
-        store::insert_game(&mut tx, &game_id, &row, protocol::build_id(), unix_millis()).await?;
-        store::insert_assignment(&mut tx, &game_id, &assignment).await?;
-        tx.commit().await?;
-
-        Ok(Self {
+        Ok(NewGame {
             game_id,
-            live: LiveGame::new(
-                opened.state,
-                opened.outcome,
-                opened.events,
-                LogPosition::default(),
-                assignment,
-                registries,
-            ),
-            db,
+            row,
+            opened,
+            assignment,
+            registries,
         })
     }
 

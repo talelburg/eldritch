@@ -3,7 +3,7 @@
 //! `POST /games` for The Gathering succeeds and real card codes
 //! resolve. This module hands the server the *production* pairing,
 //! `server::REGISTRIES`, where the other test modules pass the mock pairing
-//! from `common`. It also creates a game from every roster the picker can send:
+//! from `common`. It also creates a game from every pick a lobby can seat:
 //! each default deck, with its fixed weakness and with a random one.
 
 use axum::body::Body;
@@ -11,8 +11,9 @@ use axum::http::{Request, StatusCode};
 use cards::decks::{self, WeaknessChoice};
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
-use protocol::CreateGameRequest;
+use protocol::GameId;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
+use server::session::GameSession;
 use tower::ServiceExt as _;
 
 use crate::common;
@@ -47,15 +48,13 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
     let pool = common::memory_pool().await;
     let (app, cookie) = common::signed_in_app(pool, server::REGISTRIES).await;
 
-    // Seat Roland Banks (01001) — a real investigator from the production
-    // card registry.
     let request = Request::builder()
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
         .header("cookie", &cookie)
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
+            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}"}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
@@ -63,34 +62,33 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
     assert_eq!(response.status(), StatusCode::CREATED);
 }
 
-/// Every roster the picker sends seats a game: each of the five default decks,
-/// in both weakness modes, ten creates in all.
+/// Every pick a lobby's Start can seat seats a game of The Gathering: each of
+/// the five default decks, in both weakness modes, ten games in all.
 #[tokio::test]
-async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
+async fn every_default_deck_seats_in_both_weakness_modes() {
     let pool = common::memory_pool().await;
-    let (app, cookie) = common::signed_in_app(pool, server::REGISTRIES).await;
+    let creator = common::test_account(&pool).await;
 
-    for deck in decks::DEFAULT_DECKS {
+    for (n, deck) in decks::DEFAULT_DECKS.iter().enumerate() {
         for choice in [WeaknessChoice::Fixed, WeaknessChoice::Random] {
-            let body = CreateGameRequest {
-                scenario_id: ScenarioId::new(GATHERING_SCENARIO_ID),
-                roster: Some(vec![deck.roster_entry(choice)]),
-                lead: Some(0),
-            };
-            let request = Request::builder()
-                .method("POST")
-                .uri("/games")
-                .header("content-type", "application/json")
-                .header("cookie", &cookie)
-                .body(Body::from(serde_json::to_string(&body).unwrap()))
-                .unwrap();
-            let response = app.clone().oneshot(request).await.unwrap();
+            let roster = vec![deck.roster_entry(choice)];
+            let created = GameSession::create(
+                pool.clone(),
+                server::REGISTRIES,
+                GameId::new(format!("g-{n}-{choice:?}")),
+                creator,
+                ScenarioId::new(GATHERING_SCENARIO_ID),
+                roster.clone(),
+                0,
+                common::assign_all(creator, &roster),
+            )
+            .await;
 
-            assert_eq!(
-                response.status(),
-                StatusCode::CREATED,
-                "{} {choice:?}",
-                deck.investigator
+            assert!(
+                created.is_ok(),
+                "{} {choice:?}: {:?}",
+                deck.investigator,
+                created.err()
             );
         }
     }

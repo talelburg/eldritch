@@ -1,12 +1,10 @@
 //! The lobby's header: the members by display name, and the invite link with
 //! its Copy button.
 
-use leptos::prelude::*;
 use wasm_bindgen_test::*;
-use web::store::ConnStatus;
 
 use super::{mount_lobby, one, tals_lobby_with_sam, texts, GAME_ID, SAM};
-use crate::common::{self, YOU};
+use crate::common::YOU;
 
 #[wasm_bindgen_test]
 async fn the_header_lists_the_members_by_display_name() {
@@ -29,17 +27,4 @@ async fn the_header_shows_the_games_link_with_a_copy_button() {
         one(&handle, "button.copy-link").text_content().as_deref(),
         Some("Copy")
     );
-}
-
-/// The lobby takes clicks while the board behind it is locked: the lobby
-/// status locks the board, and the lobby sits outside the lockout wrapper.
-#[wasm_bindgen_test]
-async fn the_lobby_stays_clickable_over_the_locked_board() {
-    let handle = mount_lobby(tals_lobby_with_sam(), YOU, false).await;
-    assert_eq!(
-        handle.store.with_untracked(|s| s.status.clone()),
-        ConnStatus::InLobby
-    );
-    assert!(handle.lock().has_attribute("inert"));
-    common::assert_live(&one(&handle, ".lobby"), "the lobby");
 }

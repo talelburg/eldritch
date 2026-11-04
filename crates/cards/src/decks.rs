@@ -1,5 +1,5 @@
 //! Deck-level card lists: the **weakness pool** a random basic weakness is
-//! drawn from, and the **default decks** the picker seats an investigator with
+//! drawn from, and the **default decks** a lobby's Start seats each pick with
 //! when the player brings none of their own.
 //!
 //! See **Default deck** in `GLOSSARY.md`.
@@ -77,7 +77,7 @@ fn build_weakness_pool(corpus: &[CardMetadata]) -> Vec<CardCode> {
         .collect()
 }
 
-/// The investigator's deck as the picker seats it: the counted cards and
+/// The investigator's deck as Start seats it: the counted cards and
 /// signatures, plus one basic weakness either fixed in the list or drawn at
 /// seating. See **Default deck** in `GLOSSARY.md`.
 pub struct DefaultDeck {
@@ -132,7 +132,7 @@ impl DefaultDeck {
     }
 }
 
-/// The five default decks, in the picker's order.
+/// The five default decks, in the order the lobby's pool shows them.
 pub const DEFAULT_DECKS: &[DefaultDeck] = &[ROLAND, DAISY, SKIDS, AGNES, WENDY];
 
 /// Roland Banks 01001's default deck.
@@ -492,9 +492,9 @@ mod tests {
         crate::by_code(code).unwrap_or_else(|| panic!("{code} is not in the corpus"))
     }
 
-    /// The picker offers the five core investigators, in card order.
+    /// The lobby's pool offers the five core investigators, in card order.
     #[test]
-    fn there_is_one_default_deck_per_core_investigator_in_picker_order() {
+    fn there_is_one_default_deck_per_core_investigator_in_pool_order() {
         let investigators: Vec<&str> = DEFAULT_DECKS.iter().map(|d| d.investigator).collect();
         assert_eq!(investigators, ["01001", "01002", "01003", "01004", "01005"]);
     }

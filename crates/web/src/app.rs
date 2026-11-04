@@ -20,6 +20,8 @@ use crate::prompt_banner::PromptBanner;
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]
 use crate::skill_test_result::SkillTestResultView;
+#[cfg(target_arch = "wasm32")]
+use crate::start_strip::StartStrip;
 use crate::status_bar::StatusBarView;
 use crate::store::{self, StoreSignal};
 #[cfg(target_arch = "wasm32")]
@@ -121,12 +123,27 @@ pub fn MainColumn() -> impl IntoView {
     view! {
         <div class="main-column">
             <div class="board-lock" inert=move || store.with(|s| s.status.locks_board())>
+                <BoardStrip/>
                 <BoardView/>
                 <BoardOverlays/>
             </div>
             <LockBanner/>
             <Screens/>
         </div>
+    }
+}
+
+/// The start strip, above the board: shown once, to a member present at
+/// Start.
+#[component]
+fn BoardStrip() -> impl IntoView {
+    view! {
+        {
+            #[cfg(target_arch = "wasm32")]
+            { view! { <StartStrip/> }.into_any() }
+            #[cfg(not(target_arch = "wasm32"))]
+            { ().into_any() }
+        }
     }
 }
 

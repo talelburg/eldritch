@@ -9,6 +9,7 @@ mod picks;
 mod pool;
 mod seating;
 mod seating_controls;
+mod start;
 mod toast;
 mod weakness;
 

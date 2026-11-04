@@ -233,6 +233,14 @@ pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     serve_dev_auth(pool, true).await
 }
 
+/// [`spawn_server`], serving `registries` in place of the mock
+/// [`REGISTRIES`]: how a test seats real investigators, or seats them against
+/// a registry the engine refuses them under.
+pub(crate) async fn spawn_server_on(pool: SqlitePool, registries: Registries) -> SocketAddr {
+    test_account(&pool).await;
+    serve(dev_auth_app(pool, registries, true)).await
+}
+
 /// [`spawn_server`], with its [`AppState`] passed through `configure` first:
 /// how a test injects what production takes from a constant, such as a short
 /// silence timeout.

@@ -33,7 +33,6 @@ mod location_card;
 mod map;
 mod map_node_layout;
 mod panel_controls;
-mod picker;
 mod prompt_banner;
 mod provisional_verdict;
 mod registry_smoke;
