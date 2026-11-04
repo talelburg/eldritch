@@ -390,7 +390,7 @@ fn SeatingControls(position: usize) -> impl IntoView {
                                     on:click=move |_| {
                                         send(ClientMessage::SetLead {
                                             investigator: starred.clone(),
-                                        })
+                                        });
                                     }
                                 >
                                     "★"
