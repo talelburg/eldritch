@@ -109,19 +109,19 @@ landed, before phase 9 is scoped.
   choose-and-keep primitive, specced in #1323 (✅ PR #1326).
 - After the wire break: #153 (✅ PR #1327, also after #573) and #146 (✅ PR #1332).
 
-**4. The lobby: #1236 + #1224 + #1230 → #1239 (✅ PR #1339) → #1240 and #1241.** #1241 is
+**4. The lobby: #1236 (✅ PR #1271) + #1224 (✅ PR #1264) + #1230 (✅ PR #1297) → #1239 (✅ PR #1339) → #1240 and #1241.** #1241 is
 rarely used, so it comes late and stays small. #1274, returning to the page a
-sign-in started from, follows #1237 and #1239.
+sign-in started from, follows #1237 (✅ PR #1277) and #1239 (✅ PR #1339).
 
-**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243 and #1322.**
-#1322, the board surface for committed cards, also follows #65, which records each
+**5. The table: #1230 (✅ PR #1297) → #1242 → #863 → #534 and #1101. #1242 → #1243 and #1322.**
+#1322, the board surface for committed cards, also follows #65 (✅ PR #1321), which records each
 card's committer.
 
-**6. Reconnect and presence.** #587 and #582, after #1230, put the full history
-in `Hello`. #1232 follows #1230, #1140 and #1241.
+**6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the full history
+in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290) and #1241.
 
-**7. Hardening.** #584 after #1225, #585 after #1236, #586 after #583, and #588
-after #458.
+**7. Hardening.** #584 after #1225 (✅ PR #1261), #585 after #1236 (✅ PR #1271), #586 after #583 (✅ PR #1297), and #588
+after #458 (✅ PR #1297).
 
 **8. Exit:** a two-account Gathering on the deployed host, then #1244.
 
