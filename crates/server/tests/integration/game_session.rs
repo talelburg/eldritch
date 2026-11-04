@@ -12,7 +12,7 @@ use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::live::Refused;
 use protocol::logged_answer::ReplayFailure;
-use protocol::GameId;
+use protocol::{Assignment, GameId};
 use server::session::{ApplyError, GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
@@ -32,6 +32,7 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("create");
@@ -75,6 +76,7 @@ async fn create_persists_seed_and_exposes_setup_state() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("create session");
@@ -110,10 +112,38 @@ async fn create_rejects_unknown_scenario() {
         ScenarioId::new("no-such-scenario"),
         vec![],
         0,
+        common::assign_all(creator, &[]),
     )
     .await;
 
     assert!(matches!(result, Err(SessionError::UnknownScenario(_))));
+}
+
+/// Every seated investigator needs exactly one holder, or nobody could answer
+/// its prompts: an assignment naming a seat the roster doesn't fill is
+/// refused, and nothing is stored.
+#[tokio::test]
+async fn create_refuses_an_assignment_that_is_not_the_seated_investigators() {
+    let pool = common::memory_pool().await;
+    let creator = common::test_account(&pool).await;
+
+    let result = GameSession::create(
+        pool.clone(),
+        common::REGISTRIES,
+        "mismatched",
+        creator,
+        ScenarioId::new(TEST_SCENARIO_ID),
+        common::roster(),
+        0,
+        Assignment::in_seating_order([creator, creator]),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(SessionError::AssignmentMismatch { .. })),
+        "a one-seat roster assigned two seats must be refused"
+    );
+    assert_eq!(common::stored_rows(&pool, "mismatched").await, (0, 0));
 }
 
 #[tokio::test]
@@ -129,6 +159,7 @@ async fn create_rejects_bad_roster() {
     }];
 
     let creator = common::test_account(&pool).await;
+    let assignment = common::assign_all(creator, &bad_roster);
     let result = GameSession::create(
         pool.clone(),
         common::REGISTRIES,
@@ -137,6 +168,7 @@ async fn create_rejects_bad_roster() {
         ScenarioId::new(TEST_SCENARIO_ID),
         bad_roster,
         0,
+        assignment,
     )
     .await;
 
@@ -166,6 +198,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .unwrap();
@@ -210,6 +243,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .unwrap();
@@ -262,6 +296,7 @@ async fn load_replays_log_to_reproduce_live_state() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .unwrap();
@@ -361,6 +396,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("create g1");
@@ -373,6 +409,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("create g2");
@@ -395,6 +432,7 @@ async fn create_enables_interactive_acknowledge() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("create");

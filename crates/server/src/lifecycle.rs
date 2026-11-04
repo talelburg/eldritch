@@ -1,11 +1,13 @@
 //! Game lifecycle HTTP: create a game.
 
+use std::iter;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use game_core::action::RosterEntry;
 use game_core::scenario::ScenarioId;
-use protocol::{CreateGameRequest, CreateGameResponse, GameId};
+use protocol::{Assignment, CreateGameRequest, CreateGameResponse, GameId};
 
 use crate::auth::SignedInAccount;
 use crate::session::{self, GameSession, SessionError};
@@ -16,7 +18,7 @@ use crate::{id, lobby, AppState};
 ///
 /// With neither a roster nor a lead, the game is stored as a lobby, with the
 /// creator as its first member. With both, the roster is seated at once and
-/// the creator holds every investigator.
+/// the creator is assigned every investigator.
 ///
 /// `201 Created` with the `game_id` on success; `401 Unauthorized` when not
 /// signed in, whatever the body; `400 Bad Request` for an unknown scenario,
@@ -62,7 +64,7 @@ async fn create_lobby(
 }
 
 /// Seat `roster` led by `lead` into a new game of `scenario_id`, created by
-/// `account`.
+/// `account` and assigning it every investigator.
 async fn seat(
     state: &AppState,
     account: &SignedInAccount,
@@ -70,6 +72,7 @@ async fn seat(
     roster: Vec<RosterEntry>,
     lead: usize,
 ) -> Result<GameId, StatusCode> {
+    let assignment = Assignment::in_seating_order(iter::repeat_n(account.id, roster.len()));
     match GameSession::create(
         state.db.clone(),
         state.registries,
@@ -78,6 +81,7 @@ async fn seat(
         scenario_id,
         roster,
         lead,
+        assignment,
     )
     .await
     {
