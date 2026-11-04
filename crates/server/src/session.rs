@@ -300,7 +300,7 @@ impl GameSession {
     /// investigator.
     ///
     /// It is the tests' one-call entry point. Production seats a game through
-    /// the lobby's Start, which calls `set_up` and stores the [`NewGame`] in a
+    /// the lobby's Start, which calls `set_up` and stores the new game in a
     /// transaction of its own, to delete the lobby in the same one.
     ///
     /// Looks the scenario module up in `registries`, and seats and later

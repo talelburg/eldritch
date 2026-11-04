@@ -168,7 +168,7 @@ async fn create_rejects_bad_roster() {
             scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
             roster: bad_roster,
             lead: 0,
-            assignment: assignment,
+            assignment,
         },
     )
     .await;
