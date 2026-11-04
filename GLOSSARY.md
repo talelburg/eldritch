@@ -234,6 +234,10 @@ _Avoid_: "Player" for an account. The rules' player is the person behind one inv
 A game before it starts. Creating a game picks the scenario and yields a link. Each **member** adds and removes their own investigators, a pick already taken is refused (Appendix III step 1: *"Each player chooses a different investigator"*), and the **creator** orders the seating, picks the lead and presses Start. Start seats the roster and freezes it. Nobody joins as a new investigator after that, though the creator, or the account holding an investigator, can reassign it to another member mid-game.
 _Avoid_: "Table", which is the in-game board each account sees. "Session" too, which is the sign-in session and `GameSession`'s live game. A play of a scenario is a **game**. And "group": there is no persistent set of friends. Who you play with is whoever is a member of your games.
 
+**Pick**:
+An investigator a member has taken in a lobby, with its default deck and whether its basic weakness is fixed or random. It belongs to the member who took it, and only they can give it up. At Start the picks, in seating order, become the game's investigators, and each pick's member becomes the account assigned to that investigator.
+_Avoid_: "Seat" for a pick, which **Seating** and **Account** both rule out. "Claim" too.
+
 **Creator**:
 The account that created a game. Only the creator orders the seating, picks the lead investigator, presses Start, removes a member from the lobby, and deletes the game. The players still choose the lead at the table (Appendix III step 3); the creator enters what they agreed.
 _Avoid_: "Host", which already names whoever runs the server and keeps the allowlist. And avoid "owner": the creator holds an investigator only by assignment, never by virtue of creating. Until the lobby stores an assignment (#1239), the creator is assigned every investigator; that interim assignment goes when the lobby lands.
