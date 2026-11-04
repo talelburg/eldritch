@@ -523,6 +523,19 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
         }
         LobbyRefusal::TableFull => "The table is full: four investigators are picked.".into(),
         LobbyRefusal::Started => "The game has started, so its roster can't change.".into(),
+        // A move or ★ that crossed a member's give-up, or another move.
+        LobbyRefusal::NotPicked { investigator } => {
+            format!("{} is no longer picked.", investigator_name(&investigator))
+        }
+        LobbyRefusal::NoNeighbour { investigator } => format!(
+            "{} is already at that end of the seating.",
+            investigator_name(&investigator)
+        ),
+        // The lobby offers the seating controls to the creator alone.
+        LobbyRefusal::NotCreator => {
+            leptos::logging::error!("this client ordered the seating, but didn't create the game");
+            CLIENT_BUG.into()
+        }
         LobbyRefusal::Failed(reason) => {
             leptos::logging::warn!("the server couldn't save a lobby change: {reason}");
             SAVE_ERROR.into()

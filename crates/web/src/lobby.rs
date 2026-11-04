@@ -11,7 +11,7 @@
 use cards::decks::{self, DefaultDeck};
 use game_core::state::CardCode;
 use leptos::prelude::*;
-use protocol::lobby::{LobbyView, MAX_PICKS};
+use protocol::lobby::{Direction, LobbyView, MAX_PICKS};
 use protocol::{AccountId, ClientMessage};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
@@ -285,7 +285,8 @@ fn Seating() -> impl IntoView {
 }
 
 /// One position of the seating, from 0: the pick sitting there, named with
-/// its member, and the ★ if it leads. Empty while nobody sits there.
+/// its member, and the ★ if it leads. Empty while nobody sits there. The
+/// creator also gets the [`SeatingControls`].
 #[component]
 fn Seat(position: usize) -> impl IntoView {
     let store = store::use_store();
@@ -310,6 +311,94 @@ fn Seat(position: usize) -> impl IntoView {
                 {move || seated.get().map(|(text, _)| text).unwrap_or_default()}
             </span>
             {move || leads().then(|| view! { <span class="lead-star">"★"</span> })}
+            <SeatingControls position=position/>
         </li>
+    }
+}
+
+/// What the creator can do with the pick at a position of the seating.
+#[derive(Clone, PartialEq)]
+struct Controls {
+    investigator: CardCode,
+    /// Whether the pick sits in position 1, with nobody to swap with ◀.
+    first: bool,
+    /// Whether the pick sits last, with nobody to swap with ▶.
+    last: bool,
+    /// Whether the pick already leads, so has no ★ to press.
+    leads: bool,
+}
+
+/// The creator's controls on the pick at `position`, from 0: ◀ ▶ to move it
+/// along the seating, disabled at the ends, and a ★ to make it the lead
+/// unless it already leads. Nothing for any other member, or at an empty
+/// position.
+#[component]
+fn SeatingControls(position: usize) -> impl IntoView {
+    let store = store::use_store();
+    let controls = Memo::new(move |_| {
+        store.with(|s| {
+            let lobby = s.lobby.as_ref()?;
+            if s.you != Some(lobby.creator) {
+                return None;
+            }
+            let pick = lobby.picks.get(position)?;
+            Some(Controls {
+                investigator: pick.investigator.clone(),
+                first: position == 0,
+                last: position + 1 == lobby.picks.len(),
+                leads: lobby.lead.as_ref() == Some(&pick.investigator),
+            })
+        })
+    });
+
+    move || {
+        controls.get().map(|controls| {
+            let moved = |direction: Direction| {
+                let investigator = controls.investigator.clone();
+                move |_| {
+                    send(ClientMessage::MoveSeat {
+                        investigator: investigator.clone(),
+                        direction,
+                    });
+                }
+            };
+            let starred = controls.investigator.clone();
+            view! {
+                <span class="seating-controls">
+                    <button
+                        class="move-earlier"
+                        title="Move earlier in the seating"
+                        disabled=controls.first
+                        on:click=moved(Direction::Earlier)
+                    >
+                        "◀"
+                    </button>
+                    <button
+                        class="move-later"
+                        title="Move later in the seating"
+                        disabled=controls.last
+                        on:click=moved(Direction::Later)
+                    >
+                        "▶"
+                    </button>
+                    {(!controls.leads)
+                        .then(|| {
+                            view! {
+                                <button
+                                    class="set-lead"
+                                    title="Make the lead investigator"
+                                    on:click=move |_| {
+                                        send(ClientMessage::SetLead {
+                                            investigator: starred.clone(),
+                                        })
+                                    }
+                                >
+                                    "★"
+                                </button>
+                            }
+                        })}
+                </span>
+            }
+        })
     }
 }

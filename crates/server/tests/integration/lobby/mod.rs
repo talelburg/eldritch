@@ -6,6 +6,7 @@
 //! their own.
 
 mod picks;
+mod seating;
 
 use std::net::SocketAddr;
 

@@ -8,6 +8,7 @@ mod header;
 mod picks;
 mod pool;
 mod seating;
+mod seating_controls;
 mod toast;
 
 use game_core::scenario::ScenarioId;

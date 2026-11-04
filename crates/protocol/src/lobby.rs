@@ -131,6 +131,74 @@ impl Lobby {
         Ok(())
     }
 
+    /// The creator `account` moves `investigator` one position along the
+    /// seating, swapping them with their neighbour that way. The lead stays
+    /// with its investigator wherever they move.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotCreator`] unless `account` created the lobby,
+    /// [`LobbyRefusal::NotPicked`] unless the investigator is picked, and
+    /// [`LobbyRefusal::NoNeighbour`] at the end of the seating `direction`
+    /// points past.
+    pub fn move_in_seating(
+        &mut self,
+        account: AccountId,
+        investigator: &CardCode,
+        direction: Direction,
+    ) -> Result<(), LobbyRefusal> {
+        self.check_creator(account)?;
+        let position = self.position_of(investigator)?;
+        let neighbour = match direction {
+            Direction::Earlier => position.checked_sub(1),
+            Direction::Later => Some(position + 1).filter(|&next| next < self.picks.len()),
+        }
+        .ok_or_else(|| LobbyRefusal::NoNeighbour {
+            investigator: investigator.clone(),
+        })?;
+        self.picks.swap(position, neighbour);
+        Ok(())
+    }
+
+    /// The creator `account` makes `investigator` the lead investigator: the
+    /// players' choice, which the creator enters (Appendix III step 3:
+    /// *"Choose one of those investigators to be the lead investigator for
+    /// this game."*).
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotCreator`] unless `account` created the lobby, and
+    /// [`LobbyRefusal::NotPicked`] unless the investigator is picked.
+    pub fn set_lead(
+        &mut self,
+        account: AccountId,
+        investigator: &CardCode,
+    ) -> Result<(), LobbyRefusal> {
+        self.check_creator(account)?;
+        self.position_of(investigator)?;
+        self.lead = Some(investigator.clone());
+        Ok(())
+    }
+
+    /// Refuses a creator-only command from any other `account`.
+    fn check_creator(&self, account: AccountId) -> Result<(), LobbyRefusal> {
+        if account == self.creator {
+            Ok(())
+        } else {
+            Err(LobbyRefusal::NotCreator)
+        }
+    }
+
+    /// Where `investigator` sits in the seating, counting from 0.
+    fn position_of(&self, investigator: &CardCode) -> Result<usize, LobbyRefusal> {
+        self.picks
+            .iter()
+            .position(|pick| pick.investigator == *investigator)
+            .ok_or_else(|| LobbyRefusal::NotPicked {
+                investigator: investigator.clone(),
+            })
+    }
+
     /// The pick of `investigator`, if anyone has taken them.
     fn pick_of(&self, investigator: &CardCode) -> Option<&Pick> {
         self.picks
@@ -177,11 +245,36 @@ pub enum LobbyRefusal {
         /// The investigator named.
         investigator: CardCode,
     },
+    /// The command is the creator's alone: ordering the seating and choosing
+    /// the lead.
+    NotCreator,
+    /// The command names an investigator nobody has picked.
+    NotPicked {
+        /// The investigator named.
+        investigator: CardCode,
+    },
+    /// The investigator sits at the end of the seating the move points past,
+    /// so has no neighbour to swap with.
+    NoNeighbour {
+        /// The investigator named.
+        investigator: CardCode,
+    },
     /// The game has started, and its roster is frozen.
     Started,
     /// The lobby accepted the command but it couldn't be saved, for this
     /// reason. Nothing changed, and the member may try again.
     Failed(String),
+}
+
+/// Which way [`Lobby::move_in_seating`] moves an investigator along the
+/// seating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    /// ◀: one position nearer position 1.
+    Earlier,
+    /// ▶: one position further from position 1.
+    Later,
 }
 
 /// An account that has opened a game's link, with the name it is shown by.
@@ -400,6 +493,140 @@ mod tests {
                 investigator: code(WENDY)
             })
         );
+    }
+
+    #[test]
+    fn the_creator_moves_a_pick_earlier_and_the_lead_stays_with_its_investigator() {
+        let mut lobby = three_picked();
+        lobby
+            .move_in_seating(AccountId(1), &code(AGNES), Direction::Earlier)
+            .expect("Agnes has a neighbour before her");
+        let view = lobby.view();
+        assert_eq!(
+            view.picks,
+            [pick(DAISY, 2), pick(AGNES, 1), pick(ROLAND, 1)]
+        );
+        assert_eq!(view.lead, Some(code(DAISY)));
+    }
+
+    #[test]
+    fn moving_the_lead_later_keeps_them_leading() {
+        let mut lobby = three_picked();
+        lobby
+            .move_in_seating(AccountId(1), &code(DAISY), Direction::Later)
+            .expect("Daisy has a neighbour after her");
+        let view = lobby.view();
+        assert_eq!(
+            view.picks,
+            [pick(ROLAND, 1), pick(DAISY, 2), pick(AGNES, 1)]
+        );
+        assert_eq!(view.lead, Some(code(DAISY)));
+    }
+
+    #[test]
+    fn moving_the_first_position_earlier_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.move_in_seating(AccountId(1), &code(DAISY), Direction::Earlier),
+            Err(LobbyRefusal::NoNeighbour {
+                investigator: code(DAISY)
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn moving_the_last_position_later_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.move_in_seating(AccountId(1), &code(AGNES), Direction::Later),
+            Err(LobbyRefusal::NoNeighbour {
+                investigator: code(AGNES)
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn moving_an_investigator_nobody_picked_is_refused() {
+        let mut lobby = three_picked();
+        assert_eq!(
+            lobby.move_in_seating(AccountId(1), &code(WENDY), Direction::Earlier),
+            Err(LobbyRefusal::NotPicked {
+                investigator: code(WENDY)
+            })
+        );
+    }
+
+    #[test]
+    fn a_member_who_is_not_the_creator_cannot_move_the_seating() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.move_in_seating(AccountId(2), &code(DAISY), Direction::Later),
+            Err(LobbyRefusal::NotCreator)
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn the_creator_stars_any_pick_as_lead() {
+        let mut lobby = three_picked();
+        lobby
+            .set_lead(AccountId(1), &code(AGNES))
+            .expect("Agnes is picked");
+        let view = lobby.view();
+        assert_eq!(view.lead, Some(code(AGNES)));
+        assert_eq!(
+            view.picks,
+            [pick(DAISY, 2), pick(ROLAND, 1), pick(AGNES, 1)]
+        );
+    }
+
+    #[test]
+    fn a_lead_moved_by_the_creator_stays_with_its_investigator_across_moves() {
+        let mut lobby = three_picked();
+        lobby
+            .set_lead(AccountId(1), &code(ROLAND))
+            .expect("Roland is picked");
+        lobby
+            .move_in_seating(AccountId(1), &code(ROLAND), Direction::Later)
+            .expect("Roland has a neighbour after him");
+        lobby
+            .move_in_seating(AccountId(1), &code(DAISY), Direction::Later)
+            .expect("Daisy has a neighbour after her");
+        let view = lobby.view();
+        assert_eq!(
+            view.picks,
+            [pick(AGNES, 1), pick(DAISY, 2), pick(ROLAND, 1)]
+        );
+        assert_eq!(view.lead, Some(code(ROLAND)));
+    }
+
+    #[test]
+    fn starring_an_investigator_nobody_picked_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.set_lead(AccountId(1), &code(WENDY)),
+            Err(LobbyRefusal::NotPicked {
+                investigator: code(WENDY)
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn a_member_who_is_not_the_creator_cannot_move_the_lead() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.set_lead(AccountId(2), &code(ROLAND)),
+            Err(LobbyRefusal::NotCreator)
+        );
+        assert_eq!(lobby, before);
     }
 
     #[test]
