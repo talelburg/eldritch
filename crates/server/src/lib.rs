@@ -12,6 +12,8 @@ pub mod db;
 pub mod fingerprint;
 mod id;
 pub mod lifecycle;
+pub mod lobby;
+mod room;
 mod rooms;
 pub mod session;
 pub mod shutdown;

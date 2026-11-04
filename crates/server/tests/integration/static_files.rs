@@ -69,3 +69,22 @@ async fn unknown_route_falls_back_to_index_html() {
         "an unmatched route falls back to index.html (SPA routing)"
     );
 }
+
+/// A game's link is `/games/{id}`: `POST /games` is routed, and a `GET` of a
+/// game's address falls through to the client, which reads the id.
+#[tokio::test]
+async fn a_games_link_serves_index_html() {
+    let app = app_with_fixture_dist().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/games/0b6f3f9e-2d1c-4c55-9d7e-3f6a1f2b8c4d")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("eldritch-test-bundle"));
+}

@@ -1,13 +1,15 @@
 //! While the client isn't connected, the board and its in-game modals take no
 //! input: they sit in one wrapper carrying the HTML `inert` attribute at every
-//! status but `Connected`. The picker and the terminal screens sit outside it,
-//! and so does the banner that says why the board is locked.
+//! status but `Connected`. The home page, the lobby and the terminal screens
+//! sit outside it, and so does the banner that says why the board is locked.
 //!
 //! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::scenario::ScenarioId;
 use leptos::prelude::*;
 use leptos::task;
+use protocol::lobby::{Lobby, Member};
 use protocol::SignInMethod;
 use wasm_bindgen_test::*;
 use web::store::{ClientState, ConnStatus};
@@ -57,18 +59,33 @@ fn rendered_and_live(handle: &BoardHandle, sel: &str, status: &ConnStatus) -> El
 }
 
 #[wasm_bindgen_test]
-async fn the_picker_and_the_terminal_screens_stay_clickable_while_the_board_is_locked() {
+async fn the_pre_game_and_terminal_screens_stay_clickable_while_the_board_is_locked() {
     let dev = SignInMethod {
         label: "Dev sign-in".to_string(),
         url: "/auth/dev".to_string(),
     };
+    // A lobby renders only with one in the store, which no other screen reads.
+    let lobby = Lobby::new(
+        ScenarioId::new("the-gathering"),
+        common::YOU,
+        vec![Member {
+            account: common::YOU,
+            display_name: "Tal".to_string(),
+        }],
+    )
+    .view();
     for (status, sel) in [
-        (ConnStatus::AwaitingRoster, ".picker-overlay"),
+        (ConnStatus::Home, ".home"),
+        (ConnStatus::InLobby, ".lobby"),
         (ConnStatus::SignedOut(vec![dev]), ".sign-in"),
         (ConnStatus::VersionMismatch, ".version-mismatch"),
         (ConnStatus::Unresumable, ".unresumable"),
     ] {
-        let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
+        let state = ClientState {
+            lobby: Some(lobby.clone()),
+            ..ClientState::default()
+        };
+        let handle = common::mount_board(state, &cards::TEST_REGISTRY).await;
         handle.store.update(|s| s.status = status.clone());
         task::tick().await;
 
@@ -115,7 +132,7 @@ async fn a_server_restart_shows_server_restarting_over_the_locked_board() {
 #[wasm_bindgen_test]
 async fn no_lock_banner_shows_at_any_other_status() {
     // `Reconnecting` and `Restarting` are the statuses with a banner: the
-    // picker and the terminal screens explain themselves, and a first connect
+    // pre-game and terminal screens explain themselves, and a first connect
     // has nothing to explain yet.
     let handle = common::mount_board(ClientState::default(), &cards::TEST_REGISTRY).await;
     for status in common::every_status()

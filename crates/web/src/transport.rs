@@ -1,6 +1,9 @@
-//! Browser transport (wasm only): check sign-in, bootstrap a game, connect
-//! its WebSocket, fold inbound frames into the store, forward outbound
-//! actions, and reconnect on close with backoff.
+//! Browser transport (wasm only): the client's connection to its game.
+//!
+//! It checks sign-in, reads the game from the page's address, connects its
+//! WebSocket, folds inbound frames into the store, forwards outbound actions,
+//! and reconnects on close with backoff. A page whose address names no game is
+//! the home page, which creates one and goes to it.
 
 use std::time::Duration;
 
@@ -8,6 +11,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::future::Fuse;
 use futures::stream::SplitSink;
 use futures::{select, FutureExt as _, SinkExt as _, StreamExt as _};
+use game_core::scenario::ScenarioId;
 use gloo_net::http::Request;
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::{Message, WebSocketError};
@@ -17,26 +21,23 @@ use protocol::{
     ClientMessage, CreateGameRequest, CreateGameResponse, GameId, SignInRequired, SignedIn,
 };
 use wasm_bindgen_futures::spawn_local;
-use web_sys::Storage;
 
-use crate::picker::CreateTx;
 use crate::socket_ending::{self, SocketEnding};
 use crate::store::{self, ConnStatus, Received, StoreSignal};
 use crate::url;
 
-/// localStorage key holding the active game id across reloads.
-const GAME_ID_KEY: &str = "eldritch_game_id";
+/// The scenario every new game plays: The Gathering is the only one.
+const SCENARIO_ID: &str = "the-gathering";
 /// HTTP 401, which the server answers when the request isn't signed in.
 const UNAUTHORIZED: u16 = 401;
 
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
 
-/// Start the transport: provide an `OutboundTx` and a `CreateTx` into context,
-/// then spawn the bootstrap + connect loop. Call once from `App` (wasm only).
+/// Start the transport: provide an `OutboundTx` into context, then spawn the
+/// connect loop. Call once from `App` (wasm only).
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
-    let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
     // A tab brought back to the front pings at once, rather than waiting on a
     // ping timer the browser may have throttled while the tab was hidden. A
     // dead socket then ends through the silence timeout. The listener lasts as
@@ -48,26 +49,24 @@ pub fn start(store: StoreSignal) {
         }
     });
     provide_context(tx);
-    provide_context::<CreateTx>(create_tx);
-    spawn_local(run(store, rx, create_rx));
+    spawn_local(run(store, rx));
 }
 
-async fn run(
-    store: StoreSignal,
-    mut rx: UnboundedReceiver<ClientMessage>,
-    mut create_rx: UnboundedReceiver<CreateGameRequest>,
-) {
+async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     // Signed out, the sign-in screen is up and a sign-in reloads the page.
     if !check_sign_in(store).await {
         return;
     }
-    let mut game_id: GameId = match bootstrap(store, &mut create_rx).await {
-        Some(id) => id,
-        None => return, // bootstrap set Failed or SignedOut already
+    let Some(game_id) = url::current_game_id() else {
+        // The home page; its New game button creates a lobby through
+        // [`new_game`] and goes to it.
+        store.update(|s| s.status = ConnStatus::Home);
+        return;
     };
+    store.update(|s| s.game_id = Some(game_id.clone()));
 
-    // Reconnect attempts since the last `Hello`, which sets it back to 0. A
-    // socket that opens and fails before `Hello` doesn't reset it, so a
+    // Reconnect attempts since the last `Hello` or `Lobby`, which set it back
+    // to 0. A socket that opens and fails before either doesn't reset it, so a
     // half-working server can't hold the client in a 1 s retry loop.
     let mut attempt: u32 = 0;
     loop {
@@ -80,15 +79,11 @@ async fn run(
                 SocketEnding::Disconnected
             }
         };
-        if !ending.keeps_saved_game() {
-            clear_saved_id();
-        }
         match outcome {
             // A wire-format skew: the status is already set to VersionMismatch.
             // Stop the loop entirely — retrying just hits the same stale server.
             ConnectOutcome::VersionMismatch => return,
-            // The session is gone. Show the sign-in screen and stop, keeping
-            // the saved id: a sign-in reloads the page onto the same game.
+            // The session is gone. Show the sign-in screen and stop.
             ConnectOutcome::Ended(SocketEnding::Unauthenticated) => {
                 // If `/auth/me` still signs us in, the server refused the
                 // socket a session it accepts over HTTP, which only a server
@@ -100,32 +95,22 @@ async fn run(
                 return;
             }
             // This server's build can't rebuild the game, and every attempt
-            // would fail the same way. Say so and stop, keeping the saved id:
-            // a rollback to an earlier build can still resume it.
+            // would fail the same way. Say so and stop: the link still names
+            // the game, and a rollback to an earlier build can resume it.
             ConnectOutcome::Ended(SocketEnding::Unresumable) => {
                 store.update(|s| s.status = ConnStatus::Unresumable);
                 return;
             }
-            // The server says it has no game with this id (e.g. a DB reset).
-            // It was discarded above; create a fresh game and connect to it
-            // at once. Nothing is being retried, so there's no backoff and no
-            // `Reconnecting` banner, and the new game starts a fresh count.
+            // The server has no game at this link (a typo, or a DB reset).
+            // Go to the home page, which offers a new one, in place of it.
             ConnectOutcome::Ended(SocketEnding::StaleId) => {
-                let Some(req) = await_roster(&store, &mut create_rx).await else {
-                    return;
-                };
-                match create_game(store, req).await {
-                    Some(id) => game_id = id,
-                    None => return,
-                }
-                attempt = 0;
-                continue;
+                go_to("/", Navigation::Replace);
+                return;
             }
             // Couldn't reach the server, a disconnect, or a server shutting
-            // down for a restart — keep the SAME id and just retry.
-            // Recreating here would abandon the game (and wipe the saved id)
-            // on every transient outage. A restart says so until the next
-            // `Hello`, through however many refused connects it takes.
+            // down for a restart — keep the SAME game and just retry. A
+            // restart says so until the next `Hello` or `Lobby`, through
+            // however many refused connects it takes.
             ConnectOutcome::Unreachable
             | ConnectOutcome::Ended(SocketEnding::Disconnected | SocketEnding::Restarting) => {}
         }
@@ -137,7 +122,7 @@ async fn run(
 }
 
 /// Outcome of one socket lifetime — the reconnect loop treats each case
-/// differently (only a stale id discards the saved game id).
+/// differently.
 enum ConnectOutcome {
     /// `WebSocket::open` failed: the server is unreachable (down or
     /// restarting). Keep the id and retry.
@@ -179,29 +164,8 @@ async fn check_sign_in(store: StoreSignal) -> bool {
     false
 }
 
-/// Resolve a game id: reuse a saved one, else await a roster from the picker
-/// and create. Returns `None` (and sets `Failed` or `SignedOut`) if
-/// creation fails.
-async fn bootstrap(
-    store: StoreSignal,
-    create_rx: &mut UnboundedReceiver<CreateGameRequest>,
-) -> Option<GameId> {
-    if let Some(id) = saved_id() {
-        return Some(id);
-    }
-    let req = await_roster(&store, create_rx).await?;
-    create_game(store, req).await
-}
-
-/// Set status to `AwaitingRoster` and block until the picker sends a request.
-async fn await_roster(
-    store: &StoreSignal,
-    create_rx: &mut UnboundedReceiver<CreateGameRequest>,
-) -> Option<CreateGameRequest> {
-    store.update(|s| s.status = ConnStatus::AwaitingRoster);
-    create_rx.next().await
-}
-
+/// `POST /games` with `request`; return the new game's id. Returns `None`
+/// (and sets `Failed` or `SignedOut`) if creation fails.
 async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<GameId> {
     let resp = Request::post("/games")
         .json(&request)
@@ -215,7 +179,6 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
         return None;
     }
     if let Ok(r) = resp.json::<CreateGameResponse>().await {
-        save_id(&r.game_id);
         Some(r.game_id)
     } else {
         store.update(|s| s.status = ConnStatus::Failed);
@@ -225,8 +188,8 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 
 /// One socket lifetime: open, pump inbound->reduce and outbound->sink,
 /// pinging every [`protocol::PING_INTERVAL`], until close or until the server
-/// is silent for [`protocol::CLIENT_SILENCE_TIMEOUT`], and mark Connected
-/// when the `Hello` arrives, which also sets `attempt` back to 0. The returned
+/// is silent for [`protocol::CLIENT_SILENCE_TIMEOUT`]. The `Hello` or `Lobby`
+/// the socket opens with sets the status, and `attempt` back to 0. The returned
 /// [`ConnectOutcome`] tells the reconnect loop whether the server is
 /// unreachable, the frames were skewed, or how the socket ended.
 ///
@@ -274,7 +237,7 @@ async fn connect_once(
                     let mut received = Received::Message;
                     store.update(|s| received = store::receive(s, &txt));
                     match received {
-                        Received::Hello => *attempt = 0,
+                        Received::Hello | Received::Lobby => *attempt = 0,
                         Received::Message => {}
                         // Another build's server, or a frame we can't parse
                         // from a server that IS talking to us: a wire-format
@@ -310,7 +273,7 @@ async fn connect_once(
     } else if silent {
         // Dropping the socket's halves closes it. Sorted directly rather than
         // by close code: a silent server is a disconnect, before or after
-        // `Hello`, and never a reason to forget the saved game.
+        // `Hello`, and never a reason to leave the game.
         ConnectOutcome::Ended(SocketEnding::Disconnected)
     } else {
         ConnectOutcome::Ended(socket_ending::sort(close_code))
@@ -336,26 +299,27 @@ fn millis(duration: Duration) -> u32 {
     u32::try_from(duration.as_millis()).expect("a liveness timing fits a browser timer")
 }
 
-fn local_storage() -> Option<Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
+/// How [`go_to`] moves the page.
+#[derive(Clone, Copy)]
+enum Navigation {
+    /// As a link does: the page left stays in the history.
+    Assign,
+    /// In place of the page left, which the back button then skips.
+    Replace,
 }
-fn saved_id() -> Option<GameId> {
-    let raw = local_storage()?.get_item(GAME_ID_KEY).ok().flatten()?;
-    Some(GameId::new(raw))
-}
-fn save_id(id: &GameId) {
-    if let Some(ls) = local_storage() {
-        let _ = ls.set_item(GAME_ID_KEY, id.as_str());
-    }
-}
-fn clear_saved_id() {
-    if let Some(ls) = local_storage() {
-        let _ = ls.remove_item(GAME_ID_KEY);
+
+/// Move the page to the same-origin `path`.
+fn go_to(path: &str, navigation: Navigation) {
+    if let Some(w) = web_sys::window() {
+        let location = w.location();
+        let _ = match navigation {
+            Navigation::Assign => location.assign(path),
+            Navigation::Replace => location.replace(path),
+        };
     }
 }
 
-/// Reload the page, keeping the saved game id — the *rejoin* counterpart to
-/// [`start_new_game`].
+/// Reload the page, which reopens the game its address names.
 ///
 /// Drives the version-mismatch overlay's button: the server-side game persists
 /// across a server restart, so the fix for a skew is to pick the same game back
@@ -368,7 +332,6 @@ pub fn reload() {
 
 /// Sign out, then reload: boot finds no session and shows the sign-in screen.
 ///
-/// The saved game id is kept, so signing back in returns to the same game.
 /// The reload happens even if the request fails, and the boot then shows
 /// whatever the server says.
 pub fn sign_out() {
@@ -378,12 +341,17 @@ pub fn sign_out() {
     });
 }
 
-/// Forget the saved game id and reload, so `bootstrap()` re-enters the picker
-/// (no saved id → `await_roster`).
+/// Create a game of The Gathering as a lobby, then go to its address.
 ///
-/// The server-side game persists; this only drops the local pointer. Pairs with
-/// the "New game" buttons in the status bar and the unresumable-game overlay.
-pub fn start_new_game() {
-    clear_saved_id();
-    reload();
+/// Every New game button calls this: the home page's, the status bar's and
+/// the unresumable-game overlay's. A failure is left on `store`'s status.
+pub fn new_game(store: StoreSignal) {
+    spawn_local(async move {
+        let request = CreateGameRequest {
+            scenario_id: ScenarioId::new(SCENARIO_ID),
+        };
+        if let Some(game_id) = create_game(store, request).await {
+            go_to(&url::game_path(&game_id), Navigation::Assign);
+        }
+    });
 }

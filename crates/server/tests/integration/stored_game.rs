@@ -236,20 +236,23 @@ async fn a_game_stored_before_games_recorded_a_creator_is_still_a_version_error(
     assert_eq!(common::stored_rows(&pool, "stored-before").await, (1, 0));
 }
 
+/// Every game stored before the assignment was stored beside it has no
+/// assignment rows, and nothing falls back to the creator holding everyone
+/// (ADR 0024).
 #[tokio::test]
-async fn a_current_game_with_no_creator_is_unresumable() {
+async fn a_stored_game_with_no_assignment_is_unresumable() {
     let pool = common::memory_pool().await;
-    common::create_game(&pool, "no-creator").await;
-    sqlx::query("UPDATE games SET creator = NULL WHERE game_id = ?")
-        .bind("no-creator")
+    common::create_game(&pool, "no-assignment").await;
+    sqlx::query("DELETE FROM game_assignments WHERE game_id = ?")
+        .bind("no-assignment")
         .execute(&pool)
         .await
         .unwrap();
 
-    let reason = expect_unresumable(&pool, "no-creator").await;
+    let reason = expect_unresumable(&pool, "no-assignment").await;
 
-    assert_eq!(reason, UnresumableReason::NoCreator);
-    assert_eq!(common::stored_rows(&pool, "no-creator").await, (1, 0));
+    assert_eq!(reason, UnresumableReason::NoAssignment);
+    assert_eq!(common::stored_rows(&pool, "no-assignment").await, (1, 0));
 }
 
 #[tokio::test]

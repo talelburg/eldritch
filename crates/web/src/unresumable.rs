@@ -7,9 +7,9 @@
 //! the player wouldn't learn why.
 //!
 //! Modelled on the version-mismatch overlay: a scrim and a card over the
-//! board, with no click handler on the scrim. The saved game id is kept, so a
-//! rollback to the previous build can still resume the game. The button moves
-//! on without it.
+//! board, with no click handler on the scrim. The game's link still names it,
+//! so a rollback to the previous build can resume the game. The button moves
+//! on to a new one.
 
 use leptos::prelude::*;
 
@@ -35,7 +35,7 @@ pub fn UnresumableView() -> impl IntoView {
                     </p>
                     <button
                         class="ur-new-game"
-                        on:click=move |_| transport::start_new_game()
+                        on:click=move |_| transport::new_game(store)
                     >
                         "New game"
                     </button>

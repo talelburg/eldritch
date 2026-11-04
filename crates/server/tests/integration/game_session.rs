@@ -11,8 +11,9 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::live::Refused;
+use protocol::lobby::Start;
 use protocol::logged_answer::ReplayFailure;
-use protocol::GameId;
+use protocol::{AccountId, Assignment, GameId};
 use server::session::{ApplyError, GameSession, SessionError, UnresumableReason};
 
 use crate::common::{self, TEST_SCENARIO_ID};
@@ -23,19 +24,8 @@ use crate::common::{self, TEST_SCENARIO_ID};
 #[tokio::test]
 async fn load_restores_awaiting_input_seed_with_empty_log() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "fresh",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("create");
-    // create seats at creation → mulligan-pending, no actions logged yet.
+    let session = common::create_game(&pool, "fresh").await;
+    // Seating runs at creation → mulligan-pending, no actions logged yet.
     assert!(matches!(
         session.live().outcome(),
         EngineOutcome::AwaitingInput { .. }
@@ -66,20 +56,9 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
 async fn create_persists_seed_and_exposes_setup_state() {
     let pool = common::memory_pool().await;
 
-    let creator = common::test_account(&pool).await;
-    let session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "game-1",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("create session");
+    let session = common::create_game(&pool, "game-1").await;
 
-    // create seats the roster: the investigator is present and round is 1.
+    // Creation seats the roster: the investigator is present and round is 1.
     assert!(session
         .live()
         .state()
@@ -97,29 +76,52 @@ async fn create_persists_seed_and_exposes_setup_state() {
     assert_eq!(count, 1);
 }
 
-#[tokio::test]
-async fn create_rejects_unknown_scenario() {
-    let pool = common::memory_pool().await;
+/// The account the refusal tests set a game up for. Setting up stores
+/// nothing, so it needn't exist in any database.
+const CREATOR: AccountId = AccountId(1);
 
-    let creator = common::test_account(&pool).await;
-    let result = GameSession::create(
-        pool,
+#[test]
+fn set_up_rejects_unknown_scenario() {
+    let result = GameSession::set_up(
         common::REGISTRIES,
-        "game-x",
-        creator,
-        ScenarioId::new("no-such-scenario"),
-        vec![],
-        0,
-    )
-    .await;
+        GameId::new("game-x"),
+        CREATOR,
+        Start {
+            scenario_id: ScenarioId::new("no-such-scenario"),
+            roster: vec![],
+            lead: 0,
+            assignment: common::assign_all(CREATOR, &[]),
+        },
+    );
 
     assert!(matches!(result, Err(SessionError::UnknownScenario(_))));
 }
 
-#[tokio::test]
-async fn create_rejects_bad_roster() {
-    let pool = common::memory_pool().await;
+/// Every seated investigator needs exactly one holder, or nobody could answer
+/// its prompts: an assignment naming a seat the roster doesn't fill is
+/// refused before there is a game to store.
+#[test]
+fn set_up_refuses_an_assignment_that_is_not_the_seated_investigators() {
+    let result = GameSession::set_up(
+        common::REGISTRIES,
+        GameId::new("mismatched"),
+        CREATOR,
+        Start {
+            scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+            roster: common::roster(),
+            lead: 0,
+            assignment: Assignment::in_seating_order([CREATOR, CREATOR]),
+        },
+    );
 
+    assert!(
+        matches!(result, Err(SessionError::AssignmentMismatch { .. })),
+        "a one-seat roster assigned two seats must be refused"
+    );
+}
+
+#[test]
+fn set_up_rejects_bad_roster() {
     // Use an obviously-unknown investigator code; the synthetic registry
     // resolves nothing for it, so seating rejects.
     let bad_roster = vec![RosterEntry {
@@ -128,49 +130,31 @@ async fn create_rejects_bad_roster() {
         random_basic_weaknesses: 0,
     }];
 
-    let creator = common::test_account(&pool).await;
-    let result = GameSession::create(
-        pool.clone(),
+    let assignment = common::assign_all(CREATOR, &bad_roster);
+    let result = GameSession::set_up(
         common::REGISTRIES,
-        "bad",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        bad_roster,
-        0,
-    )
-    .await;
+        GameId::new("bad"),
+        CREATOR,
+        Start {
+            scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+            roster: bad_roster,
+            lead: 0,
+            assignment,
+        },
+    );
 
     assert!(
         matches!(result, Err(SessionError::Seating(_))),
         "unknown investigator code must produce SessionError::Seating"
     );
-
-    // The rejection must persist nothing: no games row for "bad".
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games WHERE game_id = ?")
-        .bind("bad")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(count, 0, "seating rejection must not persist a games row");
 }
 
 #[tokio::test]
 async fn apply_persists_accepted_action_and_advances_state() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let mut session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "g2",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .unwrap();
+    let mut session = common::create_game(&pool, "g2").await;
 
-    // create lands at round-1 mulligan-pending; resolve the mulligan (keep
+    // Creation lands at round-1 mulligan-pending; resolve the mulligan (keep
     // the whole hand — empty redraw).
     session
         .apply(
@@ -201,20 +185,9 @@ async fn apply_persists_accepted_action_and_advances_state() {
 #[tokio::test]
 async fn apply_rejects_invalid_action_without_persisting() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let mut session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "g3",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .unwrap();
+    let mut session = common::create_game(&pool, "g3").await;
 
-    // Post-create the mulligan is pending. Selecting a non-existent hand
+    // After creation the mulligan is pending. Selecting a non-existent hand
     // index (OptionId(999_999)) is rejected by the mulligan handler since
     // the deck is empty (hand size 0, so any index ≥ 0 is out of bounds).
     let refused = session
@@ -253,18 +226,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
 #[tokio::test]
 async fn load_replays_log_to_reproduce_live_state() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let mut session = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "g4",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .unwrap();
+    let mut session = common::create_game(&pool, "g4").await;
     // Resolve the mulligan so the log has one action.
     session
         .apply(
@@ -349,33 +311,11 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
 #[tokio::test]
 async fn create_randomizes_the_setup_seed_per_game() {
     // The mock scenario's setup() pins a fixed
-    // builder seed (42); create() must override it with host entropy, so two
+    // builder seed (42); set_up must override it with host entropy, so two
     // games created from the same module hold distinct seeds.
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let one = GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "g1",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("create g1");
-    let creator = common::test_account(&pool).await;
-    let two = GameSession::create(
-        pool,
-        common::REGISTRIES,
-        "g2",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("create g2");
+    let one = common::create_game(&pool, "g1").await;
+    let two = common::create_game(&pool, "g2").await;
     assert_ne!(
         one.live().state().rng.seed,
         two.live().state().rng.seed,
@@ -386,18 +326,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
 #[tokio::test]
 async fn create_enables_interactive_acknowledge() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    let session = GameSession::create(
-        pool,
-        common::REGISTRIES,
-        "ack",
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("create");
+    let session = common::create_game(&pool, "ack").await;
     assert!(
         session.live().state().interactive_acknowledge,
         "human-play sessions pause to acknowledge skill-test results (#478)"

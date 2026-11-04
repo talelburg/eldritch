@@ -15,6 +15,7 @@ mod game_session;
 mod github;
 mod health;
 mod lifecycle;
+mod lobby;
 mod migrations;
 mod provider_sign_in;
 mod registries;

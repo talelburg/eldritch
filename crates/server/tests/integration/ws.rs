@@ -9,39 +9,21 @@ use futures_util::SinkExt as _;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::rng::RngState;
-use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
 use protocol::{
     Applied, ClientMessage, LogPosition, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
     CLOSE_SERVER_RESTARTING, CLOSE_UNRESUMABLE,
 };
-use server::session::GameSession;
 use server::shutdown::Shutdown;
-use sqlx::SqlitePool;
 use tokio::time;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::common::{self, OTHER_ACCOUNT, TEST_SCENARIO_ID};
-
-async fn seed_game(pool: &SqlitePool, game_id: &str) {
-    let creator = common::test_account(pool).await;
-    GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        game_id,
-        creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-    )
-    .await
-    .expect("seed game");
-}
+use crate::common::{self, OTHER_ACCOUNT};
 
 #[tokio::test]
 async fn connect_receives_hello_with_current_state() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-hello").await;
+    common::create_game(&pool, "g-hello").await;
     let addr = common::spawn_server(pool).await;
 
     let mut ws = common::connect(addr, "g-hello").await;
@@ -62,7 +44,7 @@ async fn connect_receives_hello_with_current_state() {
 #[tokio::test]
 async fn connect_to_a_missing_game_is_closed_as_not_found_and_a_real_game_still_attaches() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-real").await;
+    common::create_game(&pool, "g-real").await;
     let addr = common::spawn_server(pool).await;
 
     let mut missing = common::connect(addr, "g-missing").await;
@@ -78,7 +60,7 @@ async fn connect_to_a_missing_game_is_closed_as_not_found_and_a_real_game_still_
 #[tokio::test]
 async fn connect_to_an_unresumable_game_is_closed_as_unresumable() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-unresumable").await;
+    common::create_game(&pool, "g-unresumable").await;
     // A stored format version this build doesn't accept.
     common::set_format_version(&pool, "g-unresumable", 99).await;
     let addr = common::spawn_server(pool).await;
@@ -90,7 +72,7 @@ async fn connect_to_an_unresumable_game_is_closed_as_unresumable() {
 #[tokio::test]
 async fn accepted_action_broadcasts_applied_to_all_clients() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-bcast").await;
+    common::create_game(&pool, "g-bcast").await;
     let addr = common::spawn_server(pool).await;
 
     let mut a = common::connect(addr, "g-bcast").await;
@@ -133,7 +115,7 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
 #[tokio::test]
 async fn rejected_action_returns_rejected_to_sender_only() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-reject").await;
+    common::create_game(&pool, "g-reject").await;
     let addr = common::spawn_server(pool).await;
 
     let mut a = common::connect(addr, "g-reject").await;
@@ -201,7 +183,7 @@ async fn assert_stale(ws: &mut common::Client) {
 #[tokio::test]
 async fn a_second_tab_answering_the_prompt_already_answered_is_refused_as_stale() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-stale").await;
+    common::create_game(&pool, "g-stale").await;
     let addr = common::spawn_server(pool.clone()).await;
 
     // Two tabs of one account, both shown the mulligan.
@@ -234,7 +216,7 @@ async fn a_second_tab_answering_the_prompt_already_answered_is_refused_as_stale(
 #[tokio::test]
 async fn a_stale_answer_from_another_account_is_refused_as_stale() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-stale-other").await;
+    common::create_game(&pool, "g-stale-other").await;
     common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool.clone()).await;
 
@@ -256,7 +238,7 @@ async fn a_stale_answer_from_another_account_is_refused_as_stale() {
 #[tokio::test]
 async fn another_accounts_answer_is_refused_as_not_yours_and_nothing_is_stored() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-not-yours").await;
+    common::create_game(&pool, "g-not-yours").await;
     common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool.clone()).await;
 
@@ -276,7 +258,7 @@ async fn another_accounts_answer_is_refused_as_not_yours_and_nothing_is_stored()
 #[tokio::test]
 async fn hello_names_each_account_and_the_creator_holds_every_investigator() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-assigned").await;
+    common::create_game(&pool, "g-assigned").await;
     let creator = common::test_account(&pool).await;
     let other = common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool).await;
@@ -310,7 +292,7 @@ async fn hello_names_each_account_and_the_creator_holds_every_investigator() {
 #[tokio::test]
 async fn every_account_is_sent_the_answer_with_no_rng_state() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-per-account").await;
+    common::create_game(&pool, "g-per-account").await;
     common::add_account(&pool, OTHER_ACCOUNT).await;
     let addr = common::spawn_server(pool).await;
 
@@ -333,7 +315,7 @@ async fn every_account_is_sent_the_answer_with_no_rng_state() {
 #[tokio::test]
 async fn a_frame_that_does_not_parse_is_refused_as_malformed() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-malformed").await;
+    common::create_game(&pool, "g-malformed").await;
     let addr = common::spawn_server(pool).await;
 
     let mut ws = common::connect(addr, "g-malformed").await;
@@ -351,7 +333,7 @@ async fn a_frame_that_does_not_parse_is_refused_as_malformed() {
 #[tokio::test]
 async fn a_ping_is_answered_with_a_pong_to_that_socket_only() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-ping").await;
+    common::create_game(&pool, "g-ping").await;
     let addr = common::spawn_server(pool).await;
 
     let mut a = common::connect(addr, "g-ping").await;
@@ -382,7 +364,7 @@ async fn assert_pong(ws: &mut common::Client) {
 #[tokio::test]
 async fn a_socket_that_sends_nothing_is_closed_as_going_away() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-silent").await;
+    common::create_game(&pool, "g-silent").await;
     let addr =
         common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
 
@@ -395,7 +377,7 @@ async fn a_socket_that_sends_nothing_is_closed_as_going_away() {
 #[tokio::test]
 async fn a_socket_that_keeps_pinging_stays_open_past_the_timeout() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-pinging").await;
+    common::create_game(&pool, "g-pinging").await;
     let addr =
         common::spawn_server_with(pool, |state| state.with_silence_timeout(SHORT_SILENCE)).await;
 
@@ -414,8 +396,8 @@ async fn a_socket_that_keeps_pinging_stays_open_past_the_timeout() {
 #[tokio::test]
 async fn the_shutdown_trigger_closes_every_open_socket_as_restarting() {
     let pool = common::memory_pool().await;
-    seed_game(&pool, "g-one").await;
-    seed_game(&pool, "g-two").await;
+    common::create_game(&pool, "g-one").await;
+    common::create_game(&pool, "g-two").await;
     let shutdown = Shutdown::new();
     let trigger = shutdown.clone();
     let addr = common::spawn_server_with(pool, |state| state.with_shutdown(trigger)).await;

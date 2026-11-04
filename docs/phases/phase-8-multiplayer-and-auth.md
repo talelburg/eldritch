@@ -16,8 +16,8 @@ Gathering together, and any of them can drop and reconnect mid-game.
 
 ## Scope
 
-- **Hosting is in.** The phase ends with the server reachable over the
-  internet, not only on a LAN.
+- **Hosting is in.** The phase ends with the server reachable over the internet,
+  not only on a LAN.
 - **Any assignment of investigators to accounts, with 1–4 investigators.** The
   solo case, one account holding two investigators, is a case of the same model.
 - **A rules deferral is in** if it is observable in a 2–4 investigator Gathering
@@ -74,6 +74,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
 | #1237 | GitHub and Google sign-in against the allowlist, PR #1277; slices #1275, #1276 |
 | #1238 | Seating refuses a roster naming one investigator twice, PR #1281 |
+| #1239 | The lobby: creating a game makes a lobby at its own link, any account opening it becomes a member, members take and give up picks live, and the creator orders the seating, moves the lead and starts; Start stores the investigator → account assignment beside the game, PR #1339; slices #1333–#1338 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
@@ -86,42 +87,49 @@ tracker, and the tracker's dependency view is authoritative.
 
 **1. Start now.**
 
-- **Glossary:** Account, Lobby, Creator, Member and viewer, landed with this plan.
-- **Tests:** #1233 (✅ PR #1249) → #1234 (✅ PR #1259). #1179 (✅ PR #1260) follows #1233. The two-investigator engine tests
-  of lane 3 copy #1234's fixtures.
-- **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) → #1227 (✅ PR #1268).
+- **Glossary:** Account, Lobby, Creator, Member and viewer, landed with this
+  plan.
+- **Tests:** #1233 (✅ PR #1249) → #1234 (✅ PR #1259). #1179 (✅ PR #1260) follows
+  #1233. The two-investigator engine tests of lane 3 copy #1234's fixtures.
+- **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) →
+  #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
-- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580 (✅ PR #1285).
+- **Engine and server:** #1229 (✅ PR #1280), #1238 (✅ PR #1281), #580
+  (✅ PR #1285).
 - **Liveness:** #1140 (✅ PR #1290).
 
-**2. The wire break: #1229 + #1234 → #1230 (✅ PR #1297).** One change to the wire format.
-#458, #581, #583 and #1194 close with it. Until #1239 lands, a game's creator
-holds every investigator, and any other account is a viewer.
+**2. The wire break: #1229 + #1234 → #1230 (✅ PR #1297).** One change to the
+wire format. #458, #581, #583 and #1194 close with it.
 
 **→ The next architecture review** (#1145 step 5) is due now that #1230 has
 landed, before phase 9 is scoped.
 
 **3. Rules fixes, after #1234.**
 
-- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409 (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
+- Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409
+  (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
-- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359 (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
+- ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359
+  (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
   choose-and-keep primitive, specced in #1323 (✅ PR #1326).
-- After the wire break: #153 (✅ PR #1327, also after #573) and #146 (✅ PR #1332).
+- After the wire break: #153 (✅ PR #1327, also after #573) and #146
+  (✅ PR #1332).
 
-**4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
-rarely used, so it comes late and stays small. #1274, returning to the page a
-sign-in started from, follows #1237 and #1239.
+**4. The lobby: #1236 (✅ PR #1271) + #1224 (✅ PR #1264) + #1230 (✅ PR #1297) →
+#1239 (✅ PR #1339) → #1240 and #1241.** #1241 is rarely used, so it comes late
+and stays small. #1274, returning to the page a sign-in started from, follows
+#1237 (✅ PR #1277) and #1239 (✅ PR #1339).
 
-**5. The table: #1230 → #1242 → #863 → #534 and #1101. #1242 → #1243 and #1322.**
-#1322, the board surface for committed cards, also follows #65, which records each
-card's committer.
+**5. The table: #1230 (✅ PR #1297) → #1242 → #863 → #534 and #1101. #1242 →
+#1243 and #1322.** #1322, the board surface for committed cards, also follows
+#65 (✅ PR #1321), which records each card's committer.
 
-**6. Reconnect and presence.** #587 and #582, after #1230, put the full history
-in `Hello`. #1232 follows #1230, #1140 and #1241.
+**6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
+full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
+and #1241.
 
-**7. Hardening.** #584 after #1225, #585 after #1236, #586 after #583, and #588
-after #458.
+**7. Hardening.** #584 after #1225 (✅ PR #1261), #585 after #1236 (✅ PR #1271),
+#586 after #583 (✅ PR #1297), and #588 after #458 (✅ PR #1297).
 
 **8. Exit:** a two-account Gathering on the deployed host, then #1244.
 
@@ -134,8 +142,8 @@ still stands after another investigator plays a Fast card.
 
 - Phase 5 (server + persistence): the WebSocket sync layer.
 - Phase 6 (web client v0): the UI that hosts multiplayer.
-- Phase 7 (The Gathering) and 7.5 (all five investigators): the scenario and
-  the roster that are played over the wire.
+- Phase 7 (The Gathering) and 7.5 (all five investigators): the scenario and the
+  roster that are played over the wire.
 
 ## What "done" looks like
 

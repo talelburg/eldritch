@@ -1,8 +1,7 @@
-//! Websocket hub: one broadcast group per game, fanning each committed answer
-//! out to every connection while serializing applies through a per-game
-//! [`GameSession`] mutex. Each connection keeps the account it signed in as:
-//! it submits as that account, and is sent the `Hello` and the `Applied`
-//! built for it.
+//! Websocket hub: one [`GameRoom`] per game, fanning each change out to every
+//! connection while serializing changes through the room's mutex. Each
+//! connection keeps the account it signed in as: it submits as that account,
+//! and is sent the `Hello`, `Lobby` and `Applied` built for it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,26 +13,20 @@ use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
-use protocol::live::Committed;
+use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
     AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
     CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::broadcast::Sender;
-use tokio::sync::{broadcast, Mutex};
 use tokio::time::{self, Instant};
 
+use crate::auth::SignedInAccount;
+use crate::room::{self, Attached, GameRoom, RoomEvent, RoomGame};
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
 use crate::session::{ApplyError, GameSession, SessionError, StoredGame};
-use crate::{auth, AppState};
-
-/// Per-game broadcast buffer depth. Generous for the low message rate
-/// of a single scenario; a slow client that overruns it gets a
-/// `Lagged` and resyncs from subsequent frames rather than blocking
-/// the game.
-const BROADCAST_CAPACITY: usize = 256;
+use crate::{auth, lobby, AppState};
 
 /// How long a close may take, its frame's send and the wait for the client's
 /// reply together, before the socket is dropped. A peer that stopped reading
@@ -46,37 +39,50 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 /// otherwise wait until the OS gives up on the connection, many minutes later.
 const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// A loaded game's room: its session (behind a mutex so applies serialize across
-/// connections) and the broadcast channel its connections subscribe to. The
-/// channel carries each committed answer once, shared: every connection builds
-/// the `Applied` for its own account from it.
-pub(crate) struct GameRoom {
-    session: Mutex<GameSession>,
-    tx: Sender<Arc<Committed>>,
-}
-
 /// The production [`Loader`]: a game's room is loaded from its stored game,
-/// read from `db` and rebuilt against `registries`.
+/// read from `db` and rebuilt against `registries`, or from its stored lobby.
 pub(crate) struct StoredGames {
     db: SqlitePool,
     registries: Registries,
 }
 
+/// What is stored under a game id: a started game, or a lobby.
+pub(crate) enum Stored {
+    /// A started game's rows, to rebuild.
+    Game(StoredGame),
+    /// A lobby, read whole.
+    Lobby(GameId, Lobby),
+}
+
 impl Loader for StoredGames {
-    type Stored = StoredGame;
+    type Stored = Stored;
     type Room = GameRoom;
 
-    async fn read(&self, game_id: &GameId) -> Result<Option<StoredGame>, SessionError> {
-        GameSession::read(&self.db, game_id).await
+    /// A started game is looked for first: Start writes its row under the
+    /// lobby's id.
+    async fn read(&self, game_id: &GameId) -> Result<Option<Stored>, SessionError> {
+        if let Some(game) = GameSession::read(&self.db, game_id).await? {
+            return Ok(Some(Stored::Game(game)));
+        }
+        Ok(lobby::read(&self.db, game_id)
+            .await?
+            .map(|lobby| Stored::Lobby(game_id.clone(), lobby)))
     }
 
-    fn rebuild(&self, stored: StoredGame) -> Result<GameRoom, SessionError> {
-        let session = GameSession::rebuild(self.db.clone(), self.registries, stored)?;
-        let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
-        Ok(GameRoom {
-            session: Mutex::new(session),
-            tx,
-        })
+    fn rebuild(&self, stored: Stored) -> Result<GameRoom, SessionError> {
+        let (game_id, game) = match stored {
+            Stored::Game(stored) => {
+                let session = GameSession::rebuild(self.db.clone(), self.registries, stored)?;
+                (session.game_id.clone(), RoomGame::Live(Box::new(session)))
+            }
+            Stored::Lobby(game_id, lobby) => (game_id, RoomGame::Lobby(lobby)),
+        };
+        Ok(GameRoom::new(
+            game_id,
+            game,
+            self.db.clone(),
+            self.registries,
+        ))
     }
 
     /// An unresumable game fails the same way on every load until the build
@@ -87,7 +93,7 @@ impl Loader for StoredGames {
     }
 }
 
-/// The server's live games' rooms, loaded from their stored games.
+/// The server's games' rooms, loaded from their stored games and lobbies.
 pub(crate) type Rooms = Arc<RoomRegistry<StoredGames>>;
 
 /// Build an empty room registry for [`AppState`], loading from `db` against
@@ -105,7 +111,8 @@ pub(crate) fn rooms(db: SqlitePool, registries: Registries) -> Rooms {
 /// close code 1006, which reads the same as a network drop.
 ///
 /// An unknown game id is closed with [`CLOSE_GAME_NOT_FOUND`] and an
-/// unresumable game with [`CLOSE_UNRESUMABLE`], the same way.
+/// unresumable game with [`CLOSE_UNRESUMABLE`], the same way. Any other id,
+/// lobby or started game, makes the account a member of it.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
     Path(game_id): Path<GameId>,
@@ -114,7 +121,7 @@ pub(crate) async fn game_ws(
 ) -> Response {
     match auth::signed_in(&state.db, &jar).await {
         Ok(Some(account)) => {
-            ws.on_upgrade(move |socket| handle_socket(socket, state, game_id, account.id))
+            ws.on_upgrade(move |socket| handle_socket(socket, state, game_id, account))
         }
         Ok(None) => {
             ws.on_upgrade(|socket| close_with(socket, CLOSE_UNAUTHENTICATED, "not signed in"))
@@ -155,8 +162,14 @@ async fn close(
     let _ = time::timeout(CLOSE_TIMEOUT, closing).await;
 }
 
-/// Serve one connection, signed in as `account`, to the game `game_id`.
-async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId, account: AccountId) {
+/// Serve one connection, signed in as `signed_in`, to the game `game_id`.
+async fn handle_socket(
+    socket: WebSocket,
+    state: AppState,
+    game_id: GameId,
+    signed_in: SignedInAccount,
+) {
+    let account = signed_in.id;
     // Counted as open until this task returns, so shutdown waits for it.
     let _open = state.shutdown.track();
     // The connection lives as long as this socket does, however the socket
@@ -192,17 +205,29 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId, acco
         }
     };
     let room = connection.room();
-    // Subscribe and take the render baseline under the session lock. A submit
-    // broadcasts its commit under that same lock, so every commit this socket
-    // receives is one its `Hello` doesn't already include.
-    let (mut rx, hello) = {
-        let session = room.session.lock().await;
-        (room.tx.subscribe(), session.live().hello_for(account))
+    let member = Member {
+        account,
+        display_name: signed_in.display_name,
+    };
+    // Every event this socket receives is one its first message doesn't
+    // already include (see `GameRoom::attach`).
+    let Attached { mut rx, first } = match room.attach(member).await {
+        Ok(attached) => attached,
+        // Dropped bare, so the client reconnects and the membership is tried
+        // again.
+        Err(err) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to attach: the membership couldn't be stored",
+            );
+            return;
+        }
     };
     let (mut sink, mut stream) = socket.split();
 
     // Send the render baseline before streaming events.
-    if send_msg(&mut sink, &hello).await.is_err() {
+    if send_msg(&mut sink, &first).await.is_err() {
         return;
     }
 
@@ -230,9 +255,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId, acco
                 break;
             }
             broadcasted = rx.recv() => match broadcasted {
-                Ok(committed) => {
-                    let applied = ServerMessage::Applied(committed.applied_for(account));
-                    if send_msg(&mut sink, &applied).await.is_err() {
+                Ok(event) => {
+                    let message = match event {
+                        RoomEvent::Applied(committed) => {
+                            ServerMessage::Applied(committed.applied_for(account))
+                        }
+                        RoomEvent::Lobby(view) => {
+                            room::lobby_message(account, (*view).clone(), false)
+                        }
+                        RoomEvent::Started(live) => live.hello_for(account),
+                    };
+                    if send_msg(&mut sink, &message).await.is_err() {
                         break;
                     }
                 }
@@ -277,8 +310,14 @@ enum Disposition {
 
 /// Apply one inbound frame from a connection signed in as `account`. An
 /// accepted action's commit is broadcast to the whole room (returning `None`
-/// here — the sender receives its `Applied` via its own subscription);
-/// rejections and malformed frames reply to the sender only.
+/// here — the sender receives its `Applied` via its own subscription), and so
+/// is an accepted lobby command's lobby; rejections, lobby refusals and
+/// malformed frames reply to the sender only.
+///
+/// Each lobby command is one arm, mapping it to its [`Lobby`] function through
+/// [`GameRoom::change_lobby`]. An accepted command's lobby is broadcast to the
+/// whole room, the sender's connection included, so nothing is replied; a
+/// refusal goes to the sender only.
 async fn handle_client_message(
     room: &GameRoom,
     account: AccountId,
@@ -287,7 +326,12 @@ async fn handle_client_message(
     match message {
         Message::Text(text) => match serde_json::from_str::<ClientMessage>(text.as_str()) {
             Ok(ClientMessage::Submit { prompt, action }) => {
-                let mut session = room.session.lock().await;
+                let mut game = room.game.lock().await;
+                let RoomGame::Live(session) = &mut *game else {
+                    return Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
+                        Refusal::NotStarted,
+                    ))));
+                };
                 match session.apply(account, prompt, action).await {
                     Ok(committed) => {
                         // Sent under the session lock, which a socket attaching
@@ -296,7 +340,7 @@ async fn handle_client_message(
                         // This task subscribed before its loop and holds that
                         // receiver throughout, so the send cannot fail here, and
                         // `apply` has already persisted the action either way.
-                        let _ = room.tx.send(Arc::new(committed));
+                        let _ = room.tx.send(RoomEvent::Applied(Arc::new(committed)));
                         None
                     }
                     Err(e) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
@@ -305,6 +349,38 @@ async fn handle_client_message(
                 }
             }
             Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
+            Ok(ClientMessage::Take { investigator }) => room
+                .change_lobby(|lobby| lobby.take(account, investigator))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::GiveUp { investigator }) => room
+                .change_lobby(|lobby| lobby.give_up(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::Start) => room.start(account).await.err().map(lobby_refused),
+            Ok(ClientMessage::SetWeakness {
+                investigator,
+                choice,
+            }) => room
+                .change_lobby(|lobby| lobby.set_weakness(account, &investigator, choice))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::MoveInSeating {
+                investigator,
+                direction,
+            }) => room
+                .change_lobby(|lobby| lobby.move_in_seating(account, &investigator, direction))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::SetLead { investigator }) => room
+                .change_lobby(|lobby| lobby.set_lead(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
             )))),
@@ -314,6 +390,11 @@ async fn handle_client_message(
         // protocol; ignore them. They still reset the silence deadline.
         _ => None,
     }
+}
+
+/// The reply refusing a lobby command for `reason`, to its sender alone.
+fn lobby_refused(reason: LobbyRefusal) -> Disposition {
+    Disposition::Reply(Box::new(ServerMessage::LobbyRefused { reason }))
 }
 
 /// The refusal a client is sent for an answer [`GameSession::apply`] didn't

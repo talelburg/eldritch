@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{env, fs, future};
+use std::{env, fs, future, iter};
 
 use axum::body::{self, Body};
 use axum::http::{header, HeaderMap, Request, StatusCode};
@@ -20,7 +20,8 @@ use game_core::event::Event;
 use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
-use protocol::{AccountId, ClientMessage, ServerMessage};
+use protocol::lobby::Start;
+use protocol::{AccountId, Assignment, ClientMessage, GameId, ServerMessage};
 use reqwest::redirect::Policy;
 use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
@@ -84,21 +85,46 @@ pub(crate) fn roster() -> Vec<RosterEntry> {
     }]
 }
 
+/// The assignment in which `account` holds every investigator `roster` seats.
+pub(crate) fn assign_all(account: AccountId, roster: &[RosterEntry]) -> Assignment {
+    Assignment::in_seating_order(iter::repeat_n(account, roster.len()))
+}
+
+/// What Start seats a game of the mock scenario with: [`roster`], led by its one
+/// investigator, whom `account` holds.
+pub(crate) fn solo_start(account: AccountId) -> Start {
+    Start {
+        scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+        roster: roster(),
+        lead: 0,
+        assignment: assign_all(account, &roster()),
+    }
+}
+
 /// Create a game of the mock scenario with [`roster`], led by its one
-/// investigator and created by the [`TEST_ACCOUNT`], and return the live
-/// session at the mulligan prompt.
+/// investigator, created by the [`TEST_ACCOUNT`], who holds it, and return
+/// the live session at the mulligan prompt.
 pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
-    GameSession::create(
-        pool.clone(),
-        REGISTRIES,
-        game_id,
-        test_account(pool).await,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
-        0,
-    )
-    .await
-    .expect("create game")
+    let creator = test_account(pool).await;
+    start_game(pool, REGISTRIES, game_id, creator, solo_start(creator)).await
+}
+
+/// Seat `start` against `registries` as a game `creator` created, store it in
+/// a transaction of its own, and return the live session at the mulligan
+/// prompt: what the lobby's Start does, without a lobby to delete.
+pub(crate) async fn start_game(
+    pool: &SqlitePool,
+    registries: Registries,
+    game_id: &str,
+    creator: AccountId,
+    start: Start,
+) -> GameSession {
+    let new_game = GameSession::set_up(registries, GameId::new(game_id), creator, start)
+        .unwrap_or_else(|error| panic!("set up {game_id}: {error}"));
+    let mut tx = pool.begin().await.expect("begin a transaction");
+    new_game.store(&mut tx).await.expect("store the game");
+    tx.commit().await.expect("commit the game");
+    new_game.into_session(pool.clone())
 }
 
 /// A migrated single-connection in-memory pool.
@@ -224,6 +250,14 @@ async fn serve(app: Router) -> SocketAddr {
 pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     test_account(&pool).await;
     serve_dev_auth(pool, true).await
+}
+
+/// [`spawn_server`], serving `registries` in place of the mock
+/// [`REGISTRIES`]: how a test seats real investigators, or seats them against
+/// a registry the engine refuses them under.
+pub(crate) async fn spawn_server_on(pool: SqlitePool, registries: Registries) -> SocketAddr {
+    test_account(&pool).await;
+    serve(dev_auth_app(pool, registries, true)).await
 }
 
 /// [`spawn_server`], with its [`AppState`] passed through `configure` first:

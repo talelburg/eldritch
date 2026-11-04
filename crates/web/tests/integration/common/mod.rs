@@ -98,7 +98,8 @@ pub(crate) fn every_status() -> Vec<ConnStatus> {
         ConnStatus::Reconnecting,
         ConnStatus::Restarting,
         ConnStatus::Failed,
-        ConnStatus::AwaitingRoster,
+        ConnStatus::Home,
+        ConnStatus::InLobby,
         ConnStatus::VersionMismatch,
         ConnStatus::SignedOut(vec![]),
         ConnStatus::Unresumable,
@@ -112,7 +113,8 @@ pub(crate) fn every_status() -> Vec<ConnStatus> {
             | ConnStatus::Reconnecting
             | ConnStatus::Restarting
             | ConnStatus::Failed
-            | ConnStatus::AwaitingRoster
+            | ConnStatus::Home
+            | ConnStatus::InLobby
             | ConnStatus::VersionMismatch
             | ConnStatus::SignedOut(_)
             | ConnStatus::Unresumable => {}

@@ -343,12 +343,89 @@
 .deck-count { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .deck-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; }
 
-/* Pre-game picker: a full-viewport overlay, not a strip sharing a container with
-   in-game controls. It only renders at `AwaitingRoster`, so it covers nothing. */
-.picker-overlay {
-    position: fixed; inset: 0; z-index: 30;
+/* The pre-game screens: the home page and the lobby. Each is a full-viewport
+   page, not a strip sharing a container with in-game controls: they render only
+   at `Home` and `InLobby`, when there is no board behind them, so they cover
+   nothing. */
+.home, .lobby {
+    position: fixed; inset: 0; z-index: 30; overflow: auto;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 0.75rem; background: #f4f1ea;
+    gap: 1rem; background: #f4f1ea;
+}
+.home-new-game { font-size: 1.2rem; padding: 0.6rem 1.8rem; font-weight: bold; }
+
+/* Lobby header (#1231 variant C): the members, then the invite link and Copy. */
+.lobby { justify-content: flex-start; padding: 1.5rem; }
+.lobby-header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;
+    width: 100%; max-width: 60rem; border-bottom: 1px solid #ccc; padding-bottom: 0.75rem;
+}
+.lobby-members { display: flex; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+.lobby-member { background: #fff; border: 1px solid #ccc; border-radius: 1rem; padding: 0.15rem 0.7rem; }
+.invite { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.invite-link { font-family: monospace; background: #fff; border: 1px solid #ccc; padding: 0.2rem 0.5rem; }
+
+/* Joined banner: shown on the opening that made this account a member. */
+.joined-banner {
+    width: 100%; max-width: 60rem; background: #fff7d6; border: 1px solid #e0b84c;
+    border-radius: 4px; padding: 0.5rem 1rem;
+}
+
+/* Lobby pool: the five default-deck investigators side by side. */
+.lobby-pool { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+.pool-entry {
+    display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+    width: 9rem; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 0.6rem;
+}
+.pool-name { font-weight: bold; text-align: center; }
+.pool-state { font-size: 0.8rem; text-transform: uppercase; opacity: 0.7; }
+/* Your pick's weakness choice, and the choice listed in another member's deck. */
+.pool-weakness { font-size: 0.75rem; }
+/* Another member's pick: its default deck, read-only. */
+.pool-deck {
+    list-style: none; margin: 0; padding: 0; font-size: 0.7rem;
+    max-height: 10rem; overflow-y: auto; align-self: stretch;
+}
+
+/* Lobby seating: four numbered positions in clockwise order, the ★ on the lead. */
+.seating {
+    display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0;
+    width: 100%; max-width: 60rem; justify-content: center;
+}
+.seating-position {
+    display: flex; align-items: center; gap: 0.4rem; min-width: 10rem; min-height: 2rem;
+    background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 0.4rem 0.6rem;
+}
+.position-number { font-weight: bold; opacity: 0.6; }
+.seating-position.lead { border: 1px solid #e0b84c; }
+.lead-star { color: #c9971c; margin-left: auto; }
+
+/* The creator's seating controls: ◀ ▶ and the ★ that makes a pick the lead. */
+.seating-controls { display: flex; gap: 0.2rem; margin-left: auto; }
+.lead-star + .seating-controls { margin-left: 0; }
+.seating-controls button { padding: 0.1rem 0.35rem; }
+.seating-controls .set-lead { color: #c9971c; }
+
+/* Start, at the end of the seating: the creator's button, or everyone else's
+   line naming whom the lobby waits on. */
+.start { font-size: 1.1rem; padding: 0.5rem 1.5rem; font-weight: bold; }
+.waiting { font-style: italic; opacity: 0.7; }
+
+/* Start strip: the roster Start froze, once, above the board. In the board's
+   flow, not over it, so it needs no z-index. */
+.start-strip {
+    display: flex; align-items: center; gap: 0.75rem;
+    background: #fff7d6; border: 1px solid #e0b84c; border-radius: 4px; padding: 0.4rem 1rem;
+}
+.strip-roster { display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
+.start-strip .dismiss { margin-left: auto; }
+
+/* Toast: why a lobby command was refused. Above the lobby (30) and the lock
+   banner (35), below the terminal overlays (38 and up). */
+.toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 36;
+    background: #1a1a2e; color: #fff; border-radius: 6px; padding: 0.6rem 1.2rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 /* Skill-test result modal (#478 panel, made modal by #541): centred over an inert
@@ -403,7 +480,7 @@
 
 /* Version-mismatch overlay (#770): the same scrim-and-card shape as the
    skill-test modal, stacked above every other overlay (including the pre-game
-   picker at 30). The state is terminal — the transport has stopped reconnecting
+   screens at 30). The state is terminal — the transport has stopped reconnecting
    — so anything it covers is already unreachable, and the board stays visible
    beneath the scrim as evidence of what was happening when the skew hit. No
    click handler on the scrim: there is nothing to dismiss back to. */

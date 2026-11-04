@@ -1,19 +1,23 @@
-//! Action-log persistence: thin CRUD over the `games` and `actions`
-//! tables. JSON (de)serialization lives in [`crate::session`]; this
-//! layer only moves strings and integers in and out of `SQLite`.
+//! Action-log persistence: thin CRUD over the `games`, `game_assignments`
+//! and `actions` tables. JSON (de)serialization lives in
+//! [`crate::session`]; this layer only moves strings and integers in and out
+//! of `SQLite`.
 
-use protocol::{AccountId, GameId};
-use sqlx::{Error, SqlitePool};
+use game_core::state::InvestigatorId;
+use protocol::{AccountId, Assignment, GameId};
+use sqlx::{Error, SqliteConnection, SqlitePool};
 
 /// What a `games` row holds to rebuild its game: the creation inputs, in their
 /// column form, the record of what setup decided, and the account that created
-/// it. No serialized engine state (ADR 0022). The row's diagnostic columns, `created_build` and
-/// `created_at`, are written beside it and never read back.
+/// it. No serialized engine state (ADR 0022), and not who holds each
+/// investigator, which is stored beside it (ADR 0024). The row's diagnostic
+/// columns, `created_build` and `created_at`, are written beside it and never
+/// read back.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
-    /// The creating account, which holds every investigator. Every row this
-    /// build stores has one; a row stored before the column existed has none.
+    /// The creating account. Every row this build stores has one; a row stored
+    /// before the column existed has none.
     pub(crate) creator: Option<AccountId>,
     pub(crate) scenario_id: String,
     /// JSON array of the roster entries the game was seated with.
@@ -29,7 +33,7 @@ pub(crate) struct GameRow {
 /// Insert a new game's row, created by build `created_build` at `created_at`
 /// (unix millis).
 pub(crate) async fn insert_game(
-    db: &SqlitePool,
+    db: &mut SqliteConnection,
     game_id: &GameId,
     row: &GameRow,
     created_build: &str,
@@ -54,6 +58,42 @@ pub(crate) async fn insert_game(
     .execute(db)
     .await?;
     Ok(())
+}
+
+/// Insert a game's assignment, one row per investigator. The game's row must
+/// already be inserted.
+pub(crate) async fn insert_assignment(
+    db: &mut SqliteConnection,
+    game_id: &GameId,
+    assignment: &Assignment,
+) -> Result<(), Error> {
+    for (investigator, account) in assignment.iter() {
+        sqlx::query(
+            "INSERT INTO game_assignments (game_id, investigator, account_id) VALUES (?, ?, ?)",
+        )
+        .bind(game_id.as_str())
+        .bind(investigator.0)
+        .bind(account.0)
+        .execute(&mut *db)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Fetch a game's assignment: empty if it has no assignment rows.
+pub(crate) async fn load_assignment(
+    db: &SqlitePool,
+    game_id: &GameId,
+) -> Result<Assignment, Error> {
+    let rows: Vec<(u32, i64)> =
+        sqlx::query_as("SELECT investigator, account_id FROM game_assignments WHERE game_id = ?")
+            .bind(game_id.as_str())
+            .fetch_all(db)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(investigator, account)| (InvestigatorId(investigator), AccountId(account)))
+        .collect())
 }
 
 /// What an `actions` row holds for replay: the logged answer and the RNG

@@ -181,7 +181,7 @@ async fn a_hello_from_this_build_connects_as_before() {
 /// The overlay is reached through the app's **real** composition, and is
 /// declared after the board's in-game modals — the composition half of "above
 /// every other overlay". The stacking itself is CSS (`.vm-backdrop`/
-/// `.version-mismatch` at z-40/41 against the picker's 30 and the modal's
+/// `.version-mismatch` at z-40/41 against the pre-game screens' 30 and the modal's
 /// 28/29) and `style.css` is not loaded in this harness, so what is assertable
 /// here is that the overlay is in the composition at all and that it comes
 /// after the lockout wrapper in document order, outside it. That is the half

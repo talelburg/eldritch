@@ -10,18 +10,21 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
-use game_core::action::{PlayerAction, RosterEntry};
+use cards::decks::WeaknessChoice;
+use game_core::action::PlayerAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::GameState;
+use game_core::state::{CardCode, GameState};
 use serde::{Deserialize, Serialize};
 
 pub mod live;
+pub mod lobby;
 pub mod logged_answer;
 
-use logged_answer::LoggedResponse;
+use crate::lobby::{Direction, LobbyRefusal, LobbyView};
+use crate::logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -57,6 +60,42 @@ pub enum ClientMessage {
     /// is alive. Sent every [`PING_INTERVAL`], and at once when the tab comes
     /// back to the front.
     Ping,
+    /// Take an investigator in the lobby: [`Lobby::take`](lobby::Lobby::take).
+    Take {
+        /// The investigator's card code.
+        investigator: CardCode,
+    },
+    /// Give up one of the sender's picks in the lobby:
+    /// [`Lobby::give_up`](lobby::Lobby::give_up).
+    GiveUp {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+    },
+    /// Set how one of the sender's picks meets its *"1 random basic
+    /// weakness"*: [`Lobby::set_weakness`](lobby::Lobby::set_weakness).
+    SetWeakness {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+        /// The fixed weakness, or a random one.
+        choice: WeaknessChoice,
+    },
+    /// The creator moves an investigator one position along the lobby's
+    /// seating: [`Lobby::move_in_seating`](lobby::Lobby::move_in_seating).
+    MoveInSeating {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+        /// Which way they move.
+        direction: Direction,
+    },
+    /// The creator makes a pick the lead investigator:
+    /// [`Lobby::set_lead`](lobby::Lobby::set_lead).
+    SetLead {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+    },
+    /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
+    /// Every connected member is then sent a `Hello`.
+    Start,
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -94,6 +133,27 @@ pub enum ServerMessage {
         /// reloaded games (the server persists them); empty only for games
         /// created before this was added.
         events: Vec<Event>,
+    },
+    /// The whole lobby: the first message on a socket to a game still in its
+    /// lobby, and sent again to every connection after each change to it.
+    Lobby {
+        /// The server's [`build_id`], read first as `Hello`'s is: the
+        /// `"lobby"` tag and this `"build"` key keep their names in every
+        /// build.
+        build: String,
+        /// The account this connection is signed in as.
+        you: AccountId,
+        /// The lobby as every member sees it.
+        view: LobbyView,
+        /// Whether opening this connection is what made `you` a member. Set
+        /// only on the first `Lobby` sent to that connection.
+        joined: bool,
+    },
+    /// Sent only to the connection whose lobby command was refused, never
+    /// broadcast to the room. The lobby is unchanged.
+    LobbyRefused {
+        /// Why it was refused.
+        reason: LobbyRefusal,
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied(Applied),
@@ -178,6 +238,9 @@ pub enum Refusal {
     Engine(String),
     /// The frame didn't parse as a [`ClientMessage`]: a client bug.
     Malformed,
+    /// It answered a game still in its lobby, which has no prompt to answer:
+    /// a client bug.
+    NotStarted,
     /// The engine accepted the answer but it couldn't be saved, for this
     /// reason: the log can't record it, or the store write failed. Nothing
     /// changed, and the player may try again.
@@ -235,9 +298,9 @@ impl fmt::Display for AccountId {
 /// for them.
 ///
 /// A live game is built with one, and refuses an answer from any account but
-/// the investigator's holder. TODO(#1239): until the lobby stores an
-/// assignment, the creator holds every investigator, so any other account is
-/// a viewer. Serialises as a JSON object from investigator id to account id.
+/// the investigator's holder, so an account holding no investigator is a
+/// viewer. It is stored beside the game, not among its creation inputs
+/// (ADR 0024). Serialises as a JSON object from investigator id to account id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Assignment(BTreeMap<InvestigatorId, AccountId>);
@@ -252,6 +315,31 @@ impl Assignment {
             .into_iter()
             .map(|investigator| (investigator, account))
             .collect()
+    }
+
+    /// Each seated investigator held by the account at its roster position in
+    /// `accounts`. Seating gives the roster's first entry `InvestigatorId(1)`,
+    /// its second `InvestigatorId(2)`, and so on, so `accounts` lists each
+    /// roster entry's holder in roster order.
+    #[must_use]
+    pub fn in_seating_order(accounts: impl IntoIterator<Item = AccountId>) -> Self {
+        (1..)
+            .zip(accounts)
+            .map(|(id, account)| (InvestigatorId(id), account))
+            .collect()
+    }
+
+    /// Each investigator with the account holding it, in investigator order.
+    pub fn iter(&self) -> impl Iterator<Item = (InvestigatorId, AccountId)> + '_ {
+        self.0
+            .iter()
+            .map(|(investigator, account)| (*investigator, *account))
+    }
+
+    /// Whether no investigator has a holder.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// The account holding `investigator`, if any does.
@@ -273,21 +361,12 @@ impl FromIterator<(InvestigatorId, AccountId)> for Assignment {
     }
 }
 
-/// Body of `POST /games`.
+/// Body of `POST /games`: the game is created as a lobby of the scenario,
+/// with nothing seated until Start.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateGameRequest {
     /// The scenario module to set up. Serialises as its bare id string.
     pub scenario_id: ScenarioId,
-    /// The investigators to seat at creation, each paired with the deck the
-    /// player chose. Seated at creation and stored as the game's roster; a
-    /// rejected seating fails creation with no game row.
-    pub roster: Vec<RosterEntry>,
-    /// The lead investigator, as an index into [`roster`](Self::roster):
-    /// Appendix III step 3, *"Choose one of those investigators to be the lead
-    /// investigator for this game."* Required on the wire; a client with no
-    /// choice to offer sends `0`, the first seat. An index past the roster
-    /// fails creation as a rejected seating.
-    pub lead: usize,
 }
 
 /// Response to a successful `POST /games`.
@@ -310,8 +389,8 @@ pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
 /// The close code ending a game's WebSocket when the server has no game with
 /// that id.
 ///
-/// This is the only ending that means a stale id: a client forgets its saved
-/// game id on this code and on no other. Every other close, before or after
+/// This is the only ending that means a dead link: a client leaves the game's
+/// address on this code and on no other. Every other close, before or after
 /// `Hello`, may be a server restarting or a network drop, and is retried.
 pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 
@@ -319,14 +398,16 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// unresumable game: its stored rows can't be rebuilt by this server's build.
 ///
 /// It fails the same way on every attempt until the build changes, so a
-/// client stops retrying and keeps the saved id, which a rollback can resume.
+/// client stops retrying. The game's link still names it, and a rollback can
+/// resume it.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
 /// The close code every open WebSocket gets when the server shuts down for a
 /// restart: 1012, the standard "Service Restart" code.
 ///
-/// The server is expected back, so a client keeps its saved id and retries
-/// with backoff, saying the server is restarting until the next `Hello`.
+/// The server is expected back, so a client stays on the game and retries
+/// with backoff, saying the server is restarting until the next `Hello` or
+/// `Lobby`.
 pub const CLOSE_SERVER_RESTARTING: u16 = 1012;
 
 // Liveness. Any frame proves a connection is alive, in both directions: every
@@ -395,7 +476,7 @@ mod id_tests {
 
 #[cfg(test)]
 mod tests {
-    use game_core::state::{CardCode, GameStateBuilder};
+    use game_core::state::GameStateBuilder;
     use game_core::test_support;
 
     use super::*;
@@ -507,35 +588,53 @@ mod tests {
     }
 
     #[test]
-    fn create_game_request_round_trips_with_a_roster() {
+    fn a_lobby_request_is_the_scenario_alone() {
         let req = CreateGameRequest {
             scenario_id: ScenarioId::new("the-gathering"),
-            roster: vec![RosterEntry {
-                investigator: CardCode::new("01001"),
-                deck: vec![],
-                random_basic_weaknesses: 0,
-            }],
-            lead: 0,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert_eq!(
-            json,
-            r#"{"scenario_id":"the-gathering","roster":[{"investigator":"01001","deck":[],"random_basic_weaknesses":0}],"lead":0}"#,
+            json, r#"{"scenario_id":"the-gathering"}"#,
             "the scenario id is a bare string on the wire"
         );
         let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.roster.len(), 1);
         assert_eq!(back.scenario_id.as_str(), "the-gathering");
-        assert_eq!(back.lead, 0);
     }
 
     #[test]
-    fn create_game_request_without_a_lead_is_refused() {
-        let json = r#"{"scenario_id":"the-gathering","roster":[]}"#;
+    fn a_lobby_round_trips_through_json_under_its_stable_tag() {
+        let view = lobby::Lobby::new(
+            ScenarioId::new("the-gathering"),
+            AccountId(1),
+            vec![lobby::Member {
+                account: AccountId(1),
+                display_name: "Tal".to_string(),
+            }],
+        )
+        .view();
+        let msg = ServerMessage::Lobby {
+            build: "a1b2c3".to_string(),
+            you: AccountId(2),
+            view: view.clone(),
+            joined: true,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
         assert!(
-            serde_json::from_str::<CreateGameRequest>(json).is_err(),
-            "the lead is required on the wire, with no default"
+            json.starts_with(r#"{"lobby":{"build":"a1b2c3""#),
+            "the tag and the build key a client of any build reads: {json}"
         );
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+        let ServerMessage::Lobby {
+            you,
+            view: v,
+            joined,
+            ..
+        } = back
+        else {
+            panic!("expected Lobby, got {back:?}");
+        };
+        assert_eq!((you, v, joined), (AccountId(2), view, true));
     }
 
     #[test]
