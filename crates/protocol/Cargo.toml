@@ -11,6 +11,7 @@ description = "Eldritch client/server contract: the wire messages, and the pure 
 workspace = true
 
 [dependencies]
+cards = { path = "../cards" }
 game-core = { path = "../game-core" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

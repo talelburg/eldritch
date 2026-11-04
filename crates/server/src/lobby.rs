@@ -1,16 +1,16 @@
 //! A game's lobby, its members and its picks, as stored (ADR 0024).
 //!
 //! A lobby is a `lobbies` row, with its lead, and its picks' `lobby_picks`
-//! rows, until Start. Its members are `game_members`
-//! rows, which outlive Start: every account that opens a game's link, lobby
-//! or started game, becomes a member. The lobby's rules are
+//! rows, until Start deletes them in the transaction that stores the game.
+//! Its members are `game_members` rows, which outlive Start: every account
+//! that opens a game's link, lobby or started game, becomes a member. The lobby's rules are
 //! [`protocol::lobby::Lobby`]'s; this module only moves its rows in and out.
 
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use protocol::lobby::{Lobby, LobbyView, Member, Pick};
 use protocol::{AccountId, GameId};
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::{Sqlite, SqliteConnection, SqlitePool};
 
 /// Store a new lobby of `scenario_id` under `game_id`, created by `creator`
 /// at `created_at` (unix millis), with the creator as its first member.
@@ -126,6 +126,25 @@ pub(crate) async fn save_picks(
         .execute(&mut *tx)
         .await?;
     tx.commit().await
+}
+
+/// Delete the lobby `game_id`'s rows, its picks' and its own, on `db`: what
+/// Start does in the transaction that stores the game. Its members' rows
+/// stay, since membership outlives Start.
+///
+/// # Errors
+///
+/// The database failed.
+pub(crate) async fn delete(db: &mut SqliteConnection, game_id: &GameId) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM lobby_picks WHERE game_id = ?")
+        .bind(game_id.as_str())
+        .execute(&mut *db)
+        .await?;
+    sqlx::query("DELETE FROM lobbies WHERE game_id = ?")
+        .bind(game_id.as_str())
+        .execute(&mut *db)
+        .await?;
+    Ok(())
 }
 
 /// Make `account` a member of the game `game_id`, if it isn't one. Returns

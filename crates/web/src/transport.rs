@@ -22,7 +22,6 @@ use protocol::{
 };
 use wasm_bindgen_futures::spawn_local;
 
-use crate::picker::CreateTx;
 use crate::socket_ending::{self, SocketEnding};
 use crate::store::{self, ConnStatus, Received, StoreSignal};
 use crate::url;
@@ -35,11 +34,10 @@ const UNAUTHORIZED: u16 = 401;
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
 
-/// Start the transport: provide an `OutboundTx` and a `CreateTx` into context,
-/// then spawn the connect loop. Call once from `App` (wasm only).
+/// Start the transport: provide an `OutboundTx` into context, then spawn the
+/// connect loop. Call once from `App` (wasm only).
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
-    let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
     // A tab brought back to the front pings at once, rather than waiting on a
     // ping timer the browser may have throttled while the tab was hidden. A
     // dead socket then ends through the silence timeout. The listener lasts as
@@ -51,21 +49,18 @@ pub fn start(store: StoreSignal) {
         }
     });
     provide_context(tx);
-    provide_context::<CreateTx>(create_tx);
-    spawn_local(run(store, rx, create_rx));
+    spawn_local(run(store, rx));
 }
 
-async fn run(
-    store: StoreSignal,
-    mut rx: UnboundedReceiver<ClientMessage>,
-    mut create_rx: UnboundedReceiver<CreateGameRequest>,
-) {
+async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     // Signed out, the sign-in screen is up and a sign-in reloads the page.
     if !check_sign_in(store).await {
         return;
     }
     let Some(game_id) = url::current_game_id() else {
-        home(store, &mut create_rx).await;
+        // The home page; its New game button creates a lobby through
+        // [`new_game`] and goes to it.
+        store.update(|s| s.status = ConnStatus::Home);
         return;
     };
     store.update(|s| s.game_id = Some(game_id.clone()));
@@ -167,23 +162,6 @@ async fn check_sign_in(store: StoreSignal) -> bool {
     }
     store.update(|s| s.status = ConnStatus::Failed);
     false
-}
-
-/// The home page: show it, then create the game the picker sends and go to
-/// it. Its New game button creates a lobby through [`new_game`] instead.
-async fn home(store: StoreSignal, create_rx: &mut UnboundedReceiver<CreateGameRequest>) {
-    store.update(|s| s.status = ConnStatus::Home);
-    if let Some(request) = create_rx.next().await {
-        create_and_open(store, request).await;
-    }
-}
-
-/// Create a game as `request` asks and go to its address. A failure is left
-/// on the status: `Failed`, or the sign-in screen.
-async fn create_and_open(store: StoreSignal, request: CreateGameRequest) {
-    if let Some(game_id) = create_game(store, request).await {
-        go_to(&url::game_path(&game_id), Navigation::Assign);
-    }
 }
 
 /// `POST /games` with `request`; return the new game's id. Returns `None`
@@ -368,8 +346,12 @@ pub fn sign_out() {
 /// Every New game button calls this: the home page's, the status bar's and
 /// the unresumable-game overlay's. A failure is left on `store`'s status.
 pub fn new_game(store: StoreSignal) {
-    spawn_local(create_and_open(
-        store,
-        CreateGameRequest::lobby(ScenarioId::new(SCENARIO_ID)),
-    ));
+    spawn_local(async move {
+        let request = CreateGameRequest {
+            scenario_id: ScenarioId::new(SCENARIO_ID),
+        };
+        if let Some(game_id) = create_game(store, request).await {
+            go_to(&url::game_path(&game_id), Navigation::Assign);
+        }
+    });
 }

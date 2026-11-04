@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use protocol::live::Committed;
+use game_core::engine::Registries;
+use protocol::live::{Committed, LiveGame};
 use protocol::lobby::{Lobby, LobbyRefusal, LobbyView, Member};
 use protocol::{AccountId, GameId, ServerMessage};
 use sqlx::SqlitePool;
@@ -13,7 +14,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use crate::lobby;
-use crate::session::GameSession;
+use crate::session::{GameSession, NewGame, SessionError};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
 /// of a single scenario; a slow client that overruns it gets a
@@ -29,8 +30,10 @@ pub(crate) struct GameRoom {
     /// What the room broadcasts. Each event is sent once, shared: every
     /// connection builds the message for its own account from it.
     pub(crate) tx: Sender<RoomEvent>,
-    /// Where memberships are stored.
+    /// Where memberships, the lobby and the started game are stored.
     db: SqlitePool,
+    /// What Start seats the game against.
+    registries: Registries,
 }
 
 /// The game a room holds.
@@ -48,6 +51,10 @@ pub(crate) enum RoomEvent {
     Lobby(Arc<LobbyView>),
     /// The live game committed an answer.
     Applied(Arc<Committed>),
+    /// The lobby started, and is now this live game: each connection is sent
+    /// the `Hello` for its account built from it, so an answer committed
+    /// after Start reaches it once, as an `Applied`.
+    Started(Arc<LiveGame>),
 }
 
 /// What a connection gets on attaching to a room: its subscription and the
@@ -60,14 +67,21 @@ pub(crate) struct Attached {
 }
 
 impl GameRoom {
-    /// A room for `game` under `game_id`, storing memberships in `db`.
-    pub(crate) fn new(game_id: GameId, game: RoomGame, db: SqlitePool) -> Self {
+    /// A room for `game` under `game_id`, storing in `db`, which starts a
+    /// lobby against `registries`.
+    pub(crate) fn new(
+        game_id: GameId,
+        game: RoomGame,
+        db: SqlitePool,
+        registries: Registries,
+    ) -> Self {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
         Self {
             game_id,
             game: Mutex::new(game),
             tx,
             db,
+            registries,
         }
     }
 
@@ -135,6 +149,60 @@ impl GameRoom {
         // while it subscribes. A send fails only when no connection is
         // subscribed, and the one that sent this command is.
         let _ = self.tx.send(RoomEvent::Lobby(Arc::new(view)));
+        Ok(())
+    }
+
+    /// Start the room's lobby as `account` asks: seat its picks, store the
+    /// game under the lobby's id and delete the lobby, in one transaction,
+    /// then switch the room to the live game in place and broadcast it, so
+    /// every connection is sent its `Hello` (ADR 0024).
+    ///
+    /// A Start refused, by the lobby or by the engine, or that couldn't be
+    /// stored changes nothing: the lobby stays as it was, in the room and in
+    /// the database.
+    ///
+    /// # Errors
+    ///
+    /// [`Lobby::start`]'s refusal; [`LobbyRefusal::Started`] in a live room;
+    /// [`LobbyRefusal::Seating`] if the engine refuses the seating; and
+    /// [`LobbyRefusal::Failed`] if it couldn't be stored.
+    pub(crate) async fn start(&self, account: AccountId) -> Result<(), LobbyRefusal> {
+        let mut game = self.game.lock().await;
+        let RoomGame::Lobby(lobby) = &*game else {
+            return Err(LobbyRefusal::Started);
+        };
+        let start = lobby.start(account)?;
+        let new_game = GameSession::set_up(
+            self.registries,
+            self.game_id.clone(),
+            account,
+            start.scenario_id,
+            start.roster,
+            start.lead,
+            start.assignment,
+        )
+        .map_err(|error| match error {
+            SessionError::Seating(reason) => LobbyRefusal::Seating(reason),
+            error => LobbyRefusal::Failed(error.to_string()),
+        })?;
+        self.store_start(&new_game)
+            .await
+            .map_err(|error| LobbyRefusal::Failed(error.to_string()))?;
+        let session = new_game.into_session(self.db.clone());
+        let live = Arc::new(session.live().clone());
+        *game = RoomGame::Live(Box::new(session));
+        // Sent under the game's lock, as every change is. A send fails only
+        // when no connection is subscribed, and the one that sent Start is.
+        let _ = self.tx.send(RoomEvent::Started(live));
+        Ok(())
+    }
+
+    /// Store `new_game` and delete the lobby it starts, in one transaction.
+    async fn store_start(&self, new_game: &NewGame) -> Result<(), SessionError> {
+        let mut tx = self.db.begin().await?;
+        new_game.store(&mut tx).await?;
+        lobby::delete(&mut tx, &self.game_id).await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -10,11 +10,13 @@
 //! Each command a member sends is one function here, which applies it, or
 //! refuses it with a [`LobbyRefusal`] and changes nothing.
 
+use cards::decks::{WeaknessChoice, DEFAULT_DECKS};
+use game_core::action::RosterEntry;
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use serde::{Deserialize, Serialize};
 
-use crate::AccountId;
+use crate::{AccountId, Assignment};
 
 /// The most investigators a lobby seats. Project scope, not a rule: Appendix
 /// III caps nothing, and the phase-8 doc supports *"1–4 investigators"*.
@@ -131,6 +133,53 @@ impl Lobby {
         Ok(())
     }
 
+    /// `account` starts the game: what it is seated with. The picks, in
+    /// seating order, become the roster, each with its default deck; the lead
+    /// is its pick's seat; and each pick's member holds the investigator
+    /// seated from it. The lobby itself is unchanged: the room replaces it
+    /// with the game once the game is stored.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotCreator`] unless `account` created the game,
+    /// [`LobbyRefusal::NoPicks`] while nobody is picked, and
+    /// [`LobbyRefusal::NotInPool`] for a pick with no default deck.
+    pub fn start(&self, account: AccountId) -> Result<Start, LobbyRefusal> {
+        if account != self.creator {
+            return Err(LobbyRefusal::NotCreator);
+        }
+        if self.picks.is_empty() {
+            return Err(LobbyRefusal::NoPicks);
+        }
+        let roster = self
+            .picks
+            .iter()
+            .map(|pick| {
+                DEFAULT_DECKS
+                    .iter()
+                    .find(|deck| deck.investigator == pick.investigator.as_str())
+                    // Until a pick stores its weakness choice (#1338), every
+                    // pick brings its deck's fixed weakness.
+                    .map(|deck| deck.roster_entry(WeaknessChoice::Fixed))
+                    .ok_or_else(|| LobbyRefusal::NotInPool {
+                        investigator: pick.investigator.clone(),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let lead = self
+            .picks
+            .iter()
+            .position(|pick| Some(&pick.investigator) == self.lead.as_ref())
+            // With a pick, the lead is always one of the picks.
+            .unwrap_or(0);
+        Ok(Start {
+            scenario_id: self.scenario_id.clone(),
+            roster,
+            lead,
+            assignment: Assignment::in_seating_order(self.picks.iter().map(|pick| pick.account)),
+        })
+    }
+
     /// The pick of `investigator`, if anyone has taken them.
     fn pick_of(&self, investigator: &CardCode) -> Option<&Pick> {
         self.picks
@@ -149,6 +198,21 @@ impl Lobby {
             lead: self.lead.clone(),
         }
     }
+}
+
+/// What [`Lobby::start`] seats the game with: the creation inputs the lobby
+/// decides, and who holds each investigator.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Start {
+    /// The scenario the lobby was created for.
+    pub scenario_id: ScenarioId,
+    /// The picks, in seating order, each with its default deck.
+    pub roster: Vec<RosterEntry>,
+    /// The lead investigator, as an index into [`roster`](Self::roster).
+    pub lead: usize,
+    /// Each seated investigator held by the member who picked it: the roster
+    /// index plus one, as seating numbers them.
+    pub assignment: Assignment,
 }
 
 /// Why a lobby command was refused: the body of
@@ -179,6 +243,13 @@ pub enum LobbyRefusal {
     },
     /// The game has started, and its roster is frozen.
     Started,
+    /// Only the creator may do this.
+    NotCreator,
+    /// Start needs at least one pick.
+    NoPicks,
+    /// The engine refused to seat the picks, for this reason: the game was
+    /// not started, and the lobby is unchanged.
+    Seating(String),
     /// The lobby accepted the command but it couldn't be saved, for this
     /// reason. Nothing changed, and the member may try again.
     Failed(String),
@@ -220,6 +291,8 @@ pub struct LobbyView {
 
 #[cfg(test)]
 mod tests {
+    use game_core::state::InvestigatorId;
+
     use super::*;
 
     const ROLAND: &str = "01001";
@@ -399,6 +472,77 @@ mod tests {
             Err(LobbyRefusal::NotYourPick {
                 investigator: code(WENDY)
             })
+        );
+    }
+
+    /// The investigators a Start seats, and the fixed weakness each brings.
+    fn seated(start: &Start) -> Vec<(&str, bool)> {
+        start
+            .roster
+            .iter()
+            .map(|entry| {
+                let deck = DEFAULT_DECKS
+                    .iter()
+                    .find(|deck| deck.investigator == entry.investigator.as_str())
+                    .expect("a default deck's investigator");
+                (
+                    entry.investigator.as_str(),
+                    entry.random_basic_weaknesses == 0 && entry.deck.contains(&code(deck.weakness)),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn start_seats_the_picks_in_seating_order_each_with_its_default_deck() {
+        let start = three_picked().start(AccountId(1)).expect("Tal may start");
+        assert_eq!(start.scenario_id, ScenarioId::new("the-gathering"));
+        assert_eq!(
+            seated(&start),
+            [(DAISY, true), (ROLAND, true), (AGNES, true)],
+            "each pick's default deck, with its fixed weakness"
+        );
+        assert_eq!(
+            start.roster[0].deck.len(),
+            33,
+            "Daisy's 30 cards, her two signatures and her fixed weakness"
+        );
+    }
+
+    #[test]
+    fn start_assigns_each_seat_to_the_member_who_picked_it() {
+        let start = three_picked().start(AccountId(1)).expect("Tal may start");
+        assert_eq!(
+            start.assignment,
+            Assignment::from_iter([
+                (InvestigatorId(1), AccountId(2)),
+                (InvestigatorId(2), AccountId(1)),
+                (InvestigatorId(3), AccountId(1)),
+            ])
+        );
+    }
+
+    #[test]
+    fn start_leads_with_the_lead_pick_by_its_seat() {
+        assert_eq!(three_picked().start(AccountId(1)).map(|s| s.lead), Ok(0));
+        let stored = three_picked().view();
+        let roland_leads = tals_lobby().with_picks(stored.picks, Some(code(ROLAND)));
+        assert_eq!(roland_leads.start(AccountId(1)).map(|s| s.lead), Ok(1));
+    }
+
+    #[test]
+    fn only_the_creator_may_start() {
+        assert_eq!(
+            three_picked().start(AccountId(2)).map(|s| s.lead),
+            Err(LobbyRefusal::NotCreator)
+        );
+    }
+
+    #[test]
+    fn a_lobby_with_no_picks_cannot_start() {
+        assert_eq!(
+            tals_lobby().start(AccountId(1)).map(|s| s.lead),
+            Err(LobbyRefusal::NoPicks)
         );
     }
 

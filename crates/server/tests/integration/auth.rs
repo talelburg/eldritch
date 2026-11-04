@@ -6,7 +6,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
-use game_core::test_support::TEST_INV;
 use protocol::{SignInMethod, SignInRequired, SignedIn};
 use reqwest::Response;
 use server::{auth, AppState};
@@ -162,9 +161,7 @@ async fn creating_a_game_signed_out_is_unauthorized() {
     let addr = common::serve_dev_auth(common::memory_pool().await, true).await;
 
     for body in [
-        format!(
-            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
-        ),
+        format!(r#"{{"scenario_id":"{TEST_SCENARIO_ID}"}}"#),
         "{}".to_string(),
     ] {
         let response = common::http()

@@ -2,8 +2,8 @@
 //!
 //! It is laid out as #1231's variant C. The header holds the members and the
 //! invite link with Copy; below it the banner, on the opening that made this
-//! account a member; then the pool of five investigators, and the seating's
-//! four numbered positions below the pool.
+//! account a member; then the pool of five investigators, the seating's four
+//! numbered positions below the pool, and Start at the end of the seating.
 //!
 //! Each part is a component of its own, reading what it shows from the store's
 //! [`LobbyView`](protocol::lobby::LobbyView).
@@ -274,13 +274,70 @@ fn DeckList(deck: &'static DefaultDeck) -> impl IntoView {
 }
 
 /// The seating, below the pool: [`MAX_PICKS`] numbered positions in clockwise
-/// order, the picks filling them from the first.
+/// order, the picks filling them from the first, and Start at its end.
 #[component]
 fn Seating() -> impl IntoView {
     view! {
         <ol class="seating">
             {(0..MAX_PICKS).map(|position| view! { <Seat position=position/> }).collect_view()}
         </ol>
+        <StartFooter/>
+    }
+}
+
+/// What the end of the seating shows this account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Footer {
+    /// The creator's Start, which seats this many picks.
+    Start {
+        /// How many investigators are picked.
+        picks: usize,
+    },
+    /// Every other member's line, naming the creator.
+    Waiting {
+        /// The creator's display name.
+        creator: String,
+    },
+}
+
+/// The end of the seating: Start for the creator, saying what pressing it
+/// commits to, and unavailable until there is a pick. Every other member sees
+/// whom the lobby waits on in its place.
+#[component]
+fn StartFooter() -> impl IntoView {
+    let store = store::use_store();
+    let footer = Memo::new(move |_| {
+        store.with(|s| {
+            let lobby = s.lobby.as_ref()?;
+            Some(if s.you == Some(lobby.creator) {
+                Footer::Start {
+                    picks: lobby.picks.len(),
+                }
+            } else {
+                Footer::Waiting {
+                    creator: display_name(lobby, lobby.creator),
+                }
+            })
+        })
+    });
+
+    move || {
+        footer.get().map(|footer| match footer {
+            Footer::Start { picks } => view! {
+                <button
+                    class="start"
+                    disabled=picks == 0
+                    on:click=move |_| send(ClientMessage::Start)
+                >
+                    {format!("Starts with {picks} investigators. The roster can't change after.")}
+                </button>
+            }
+            .into_any(),
+            Footer::Waiting { creator } => view! {
+                <p class="waiting">{format!("Waiting for {creator} to start")}</p>
+            }
+            .into_any(),
+        })
     }
 }
 

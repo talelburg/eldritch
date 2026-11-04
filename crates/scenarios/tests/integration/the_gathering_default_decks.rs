@@ -1,7 +1,7 @@
 //! Each of the five investigators, seated with their **default deck** exactly
-//! as the picker sends it, plays The Gathering to a resolution.
+//! as a lobby's Start seats it, plays The Gathering to a resolution.
 //!
-//! Every walk seats [`WeaknessChoice::Fixed`]'s roster entry, the picker's
+//! Every walk seats [`WeaknessChoice::Fixed`]'s roster entry, a new pick's
 //! default, against the production registries (the real corpus and the real
 //! scenario modules): act 1 advances on spent clues, act 2 through its
 //! round-end clue-spend window, whose reverse spawns the real Ghoul Priest

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
-use game_core::action::{PlayerAction, RosterEntry};
+use game_core::action::PlayerAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
@@ -70,6 +70,9 @@ pub enum ClientMessage {
         /// The picked investigator's card code.
         investigator: CardCode,
     },
+    /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
+    /// Every connected member is then sent a `Hello`.
+    Start,
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -335,39 +338,12 @@ impl FromIterator<(InvestigatorId, AccountId)> for Assignment {
     }
 }
 
-/// Body of `POST /games`.
+/// Body of `POST /games`: the game is created as a lobby of the scenario,
+/// with nothing seated until Start.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateGameRequest {
     /// The scenario module to set up. Serialises as its bare id string.
     pub scenario_id: ScenarioId,
-    /// The investigators to seat at creation, each paired with the deck the
-    /// player chose. Seated at creation and stored as the game's roster; a
-    /// rejected seating fails creation with no game row.
-    ///
-    /// Sent with [`lead`](Self::lead) or not at all. Without either, the game
-    /// is created as a lobby, with nothing seated; one without the other is
-    /// refused.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub roster: Option<Vec<RosterEntry>>,
-    /// The lead investigator, as an index into [`roster`](Self::roster):
-    /// Appendix III step 3, *"Choose one of those investigators to be the lead
-    /// investigator for this game."* A client with no choice to offer sends
-    /// `0`, the first seat. An index past the roster fails creation as a
-    /// rejected seating.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead: Option<usize>,
-}
-
-impl CreateGameRequest {
-    /// A request creating a lobby of `scenario_id`, with nothing seated.
-    #[must_use]
-    pub fn lobby(scenario_id: ScenarioId) -> Self {
-        Self {
-            scenario_id,
-            roster: None,
-            lead: None,
-        }
-    }
 }
 
 /// Response to a successful `POST /games`.
@@ -589,35 +565,17 @@ mod tests {
     }
 
     #[test]
-    fn create_game_request_round_trips_with_a_roster() {
+    fn a_lobby_request_is_the_scenario_alone() {
         let req = CreateGameRequest {
             scenario_id: ScenarioId::new("the-gathering"),
-            roster: Some(vec![RosterEntry {
-                investigator: CardCode::new("01001"),
-                deck: vec![],
-                random_basic_weaknesses: 0,
-            }]),
-            lead: Some(0),
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert_eq!(
-            json,
-            r#"{"scenario_id":"the-gathering","roster":[{"investigator":"01001","deck":[],"random_basic_weaknesses":0}],"lead":0}"#,
+            json, r#"{"scenario_id":"the-gathering"}"#,
             "the scenario id is a bare string on the wire"
         );
         let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.roster.map(|roster| roster.len()), Some(1));
         assert_eq!(back.scenario_id.as_str(), "the-gathering");
-        assert_eq!(back.lead, Some(0));
-    }
-
-    #[test]
-    fn a_lobby_request_is_the_scenario_alone() {
-        let req = CreateGameRequest::lobby(ScenarioId::new("the-gathering"));
-        let json = serde_json::to_string(&req).expect("serialize");
-        assert_eq!(json, r#"{"scenario_id":"the-gathering"}"#);
-        let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
-        assert!(back.roster.is_none() && back.lead.is_none());
     }
 
     #[test]

@@ -1,12 +1,9 @@
 //! The home page (wasm-only): what a page whose address names no game shows.
 //!
-//! Its New game button creates a lobby and goes to it. The picker sits beside
-//! it as a quick start, seating one investigator at once, until Start seats a
-//! lobby's picks (#1336).
+//! Its New game button creates a lobby and goes to it.
 
 use leptos::prelude::*;
 
-use crate::picker::PickerView;
 use crate::store::{self, ConnStatus};
 use crate::transport;
 
@@ -23,7 +20,6 @@ pub fn HomeView() -> impl IntoView {
                     <button class="home-new-game" on:click=move |_| transport::new_game(store)>
                         "New game"
                     </button>
-                    <PickerView/>
                 </section>
             }
         })

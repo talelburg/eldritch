@@ -27,7 +27,7 @@ pub enum ConnStatus {
     Restarting,
     Failed,
     /// The page's address names no game: render the home page, with its New
-    /// game button and the picker.
+    /// game button.
     Home,
     /// The game is in its lobby: render the lobby. Set by each `Lobby` frame.
     InLobby,
@@ -136,6 +136,11 @@ pub struct ClientState {
     /// refused. Set by `LobbyRefused`, cleared by `Hello`, and dismissed by
     /// the toast itself after a while.
     pub toast: Option<String>,
+    /// The roster Start froze, for the one-off strip on the board: set by the
+    /// `Hello` that ends the lobby this client was showing, and so absent on a
+    /// connection that opened straight onto a started game. Replaced by every
+    /// `Hello`, so a reconnect clears it, and dismissed by the strip itself.
+    pub start_strip: Option<Vec<StripSeat>>,
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
     /// The log position of the prompt `outcome` holds, which every submit
@@ -284,6 +289,36 @@ impl ClientState {
     }
 }
 
+/// One investigator on the start strip, in seating order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StripSeat {
+    /// The investigator's name.
+    pub investigator: String,
+    /// The display name of the member holding them, from the lobby.
+    pub member: String,
+    /// Whether they are the lead investigator.
+    pub lead: bool,
+}
+
+/// The start strip for `game`, the game a `Hello` seated with `assigned`,
+/// naming each holder from `lobby`, the lobby it started from.
+fn start_strip(lobby: &LobbyView, game: &GameState, assigned: &Assignment) -> Vec<StripSeat> {
+    game.seating
+        .iter()
+        .map(|id| StripSeat {
+            investigator: game
+                .investigators
+                .get(id)
+                .map_or_else(|| format!("Investigator {}", id.0), |inv| inv.name.clone()),
+            member: assigned
+                .holder(*id)
+                .and_then(|account| lobby.members.iter().find(|m| m.account == account))
+                .map_or_else(String::new, |member| member.display_name.clone()),
+            lead: game.lead == Some(*id),
+        })
+        .collect()
+}
+
 /// What [`receive`] made of one server frame, for the transport to act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Received {
@@ -363,9 +398,12 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             outcome,
             events,
         } => {
+            state.start_strip = state
+                .lobby
+                .take()
+                .map(|lobby| start_strip(&lobby, &s, &assigned));
             state.you = Some(you);
             state.assigned = assigned;
-            state.lobby = None;
             state.toast = None;
             state.game = Some(*s);
             state.outcome = Some(outcome);
@@ -523,6 +561,17 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
         }
         LobbyRefusal::TableFull => "The table is full: four investigators are picked.".into(),
         LobbyRefusal::Started => "The game has started, so its roster can't change.".into(),
+        LobbyRefusal::Seating(reason) => format!("The game couldn't start: {reason}"),
+        // The lobby offers Start to the creator alone, and only once there is
+        // a pick.
+        LobbyRefusal::NotCreator => {
+            leptos::logging::error!("this client sent a command only the creator may send");
+            CLIENT_BUG.into()
+        }
+        LobbyRefusal::NoPicks => {
+            leptos::logging::error!("this client started a lobby with no picks");
+            CLIENT_BUG.into()
+        }
         LobbyRefusal::Failed(reason) => {
             leptos::logging::warn!("the server couldn't save a lobby change: {reason}");
             SAVE_ERROR.into()

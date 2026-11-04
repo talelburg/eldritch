@@ -79,7 +79,12 @@ impl Loader for StoredGames {
             }
             Stored::Lobby(game_id, lobby) => (game_id, RoomGame::Lobby(lobby)),
         };
-        Ok(GameRoom::new(game_id, game, self.db.clone()))
+        Ok(GameRoom::new(
+            game_id,
+            game,
+            self.db.clone(),
+            self.registries,
+        ))
     }
 
     /// An unresumable game fails the same way on every load until the build
@@ -260,6 +265,7 @@ async fn handle_socket(
                         RoomEvent::Lobby(view) => {
                             room::lobby_message(account, (*view).clone(), false)
                         }
+                        RoomEvent::Started(live) => live.hello_for(account),
                     };
                     if send_msg(&mut sink, &message).await.is_err() {
                         break;
@@ -349,6 +355,7 @@ async fn handle_client_message(
             Ok(ClientMessage::GiveUp { investigator }) => {
                 change_lobby(room, |lobby| lobby.give_up(account, &investigator)).await
             }
+            Ok(ClientMessage::Start) => room.start(account).await.err().map(lobby_refused),
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
             )))),
@@ -367,10 +374,12 @@ async fn change_lobby(
     room: &GameRoom,
     command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
 ) -> Option<Disposition> {
-    room.change_lobby(command)
-        .await
-        .err()
-        .map(|reason| Disposition::Reply(Box::new(ServerMessage::LobbyRefused { reason })))
+    room.change_lobby(command).await.err().map(lobby_refused)
+}
+
+/// The reply refusing a lobby command for `reason`, to its sender alone.
+fn lobby_refused(reason: LobbyRefusal) -> Disposition {
+    Disposition::Reply(Box::new(ServerMessage::LobbyRefused { reason }))
 }
 
 /// [`Lobby::take`], refused first for an investigator with no default deck:

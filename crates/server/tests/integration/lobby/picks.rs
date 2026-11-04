@@ -15,7 +15,7 @@ const AGNES: &str = "01004";
 const WENDY: &str = "01005";
 
 /// Send a `Take` of `investigator` on `ws`.
-async fn take(ws: &mut Client, investigator: &str) {
+pub(crate) async fn take(ws: &mut Client, investigator: &str) {
     common::send(
         ws,
         &ClientMessage::Take {
@@ -37,7 +37,7 @@ async fn give_up(ws: &mut Client, investigator: &str) {
 }
 
 /// The next frame on `ws`, which must be a `LobbyRefused`: its reason.
-async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
+pub(crate) async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
     match common::recv_within(ws).await {
         ServerMessage::LobbyRefused { reason } => reason,
         other => panic!("expected a LobbyRefused, got {other:?}"),

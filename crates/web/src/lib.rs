@@ -31,13 +31,13 @@ pub mod transport;
 pub mod prompt_banner;
 
 #[cfg(target_arch = "wasm32")]
-pub mod picker;
-
-#[cfg(target_arch = "wasm32")]
 pub mod home;
 
 #[cfg(target_arch = "wasm32")]
 pub mod lobby;
+
+#[cfg(target_arch = "wasm32")]
+pub mod start_strip;
 
 #[cfg(target_arch = "wasm32")]
 pub mod toast;

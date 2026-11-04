@@ -353,11 +353,6 @@
     gap: 1rem; background: #f4f1ea;
 }
 .home-new-game { font-size: 1.2rem; padding: 0.6rem 1.8rem; font-weight: bold; }
-/* The picker, a quick start beside New game until Start seats a lobby. */
-.picker {
-    display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
-    border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem 1.5rem; background: #fff;
-}
 
 /* Lobby header (#1231 variant C): the members, then the invite link and Copy. */
 .lobby { justify-content: flex-start; padding: 1.5rem; }
@@ -402,6 +397,20 @@
 .seat-number { font-weight: bold; opacity: 0.6; }
 .seat.lead { border: 1px solid #e0b84c; }
 .lead-star { color: #c9971c; margin-left: auto; }
+
+/* Start, at the end of the seating: the creator's button, or everyone else's
+   line naming whom the lobby waits on. */
+.start { font-size: 1.1rem; padding: 0.5rem 1.5rem; font-weight: bold; }
+.waiting { font-style: italic; opacity: 0.7; }
+
+/* Start strip: the roster Start froze, once, above the board. In the board's
+   flow, not over it, so it needs no z-index. */
+.start-strip {
+    display: flex; align-items: center; gap: 0.75rem;
+    background: #fff7d6; border: 1px solid #e0b84c; border-radius: 4px; padding: 0.4rem 1rem;
+}
+.strip-roster { display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
+.start-strip .dismiss { margin-left: auto; }
 
 /* Toast: why a lobby command was refused. Above the lobby (30) and the lock
    banner (35), below the terminal overlays (38 and up). */
