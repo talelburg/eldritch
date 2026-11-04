@@ -74,6 +74,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1236 | Accounts, sessions and the dev sign-in, PR #1271; slices #1269, #1270 |
 | #1237 | GitHub and Google sign-in against the allowlist, PR #1277; slices #1275, #1276 |
 | #1238 | Seating refuses a roster naming one investigator twice, PR #1281 |
+| #1239 | The lobby: creating a game makes a lobby at its own link, any account opening it becomes a member, members take and give up picks live, and the creator orders the seating, moves the lead and starts; Start stores the investigator → account assignment beside the game, PR #1339; slices #1333–#1338 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
@@ -108,7 +109,7 @@ landed, before phase 9 is scoped.
   choose-and-keep primitive, specced in #1323 (✅ PR #1326).
 - After the wire break: #153 (✅ PR #1327, also after #573) and #146 (✅ PR #1332).
 
-**4. The lobby: #1236 + #1224 + #1230 → #1239 → #1240 and #1241.** #1241 is
+**4. The lobby: #1236 + #1224 + #1230 → #1239 (✅ PR #1339) → #1240 and #1241.** #1241 is
 rarely used, so it comes late and stays small. #1274, returning to the page a
 sign-in started from, follows #1237 and #1239.
 
