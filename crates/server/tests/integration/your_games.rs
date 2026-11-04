@@ -112,10 +112,10 @@ async fn expect_frame(ws: &mut Client, kind: &str) {
 
 /// The summary of a Live entry.
 fn summary(entry: &GameEntry) -> &LiveSummary {
-    match &entry.state {
-        GameEntryState::Live(summary) => summary,
-        other => panic!("expected a Live entry, got {other:?}"),
-    }
+    let GameEntryState::Live(summary) = &entry.state else {
+        panic!("expected a Live entry, got {:?}", entry.state);
+    };
+    summary
 }
 
 /// The investigators a summary waits on, as `(card code, holder, yours)`.
