@@ -23,7 +23,7 @@ pub mod live;
 pub mod lobby;
 pub mod logged_answer;
 
-use crate::lobby::{Direction, LobbyRefusal, LobbyView};
+use crate::lobby::{Direction, LobbyRefusal, LobbyView, Member};
 use crate::logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
@@ -374,6 +374,97 @@ pub struct CreateGameRequest {
 pub struct CreateGameResponse {
     /// The newly created game's id.
     pub game_id: GameId,
+}
+
+/// One game in the body of `GET /games`, the "Your games" listing: a game
+/// the signed-in account is a member of. It is structured, with no prose:
+/// the client words and groups it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GameEntry {
+    /// The game's id, which its link names.
+    pub game_id: GameId,
+    /// The scenario it plays.
+    pub scenario_id: ScenarioId,
+    /// The account that created it.
+    pub creator: AccountId,
+    /// Its investigators in seating order, each with its holder.
+    pub investigators: Vec<EntryInvestigator>,
+    /// The display name of every account the entry mentions: its creator and
+    /// each investigator's holder, once each.
+    pub names: Vec<Member>,
+    /// When the game last moved, in unix millis.
+    pub last_activity: i64,
+    /// Where the game stands.
+    pub state: GameEntryState,
+}
+
+impl GameEntry {
+    /// The entry for the lobby `view` under `game_id`, created at
+    /// `created_at` (unix millis): its picks are its investigators, and
+    /// nothing has happened in it since it was created.
+    #[must_use]
+    pub fn of_lobby(game_id: GameId, view: &LobbyView, created_at: i64) -> Self {
+        let investigators: Vec<EntryInvestigator> = view
+            .picks
+            .iter()
+            .map(|pick| EntryInvestigator {
+                investigator: pick.investigator.clone(),
+                holder: pick.account,
+                lead: view.lead.as_ref() == Some(&pick.investigator),
+            })
+            .collect();
+        let mut mentioned = vec![view.creator];
+        for investigator in &investigators {
+            if !mentioned.contains(&investigator.holder) {
+                mentioned.push(investigator.holder);
+            }
+        }
+        let names = mentioned
+            .into_iter()
+            .filter_map(|account| {
+                view.member_name(account).map(|name| Member {
+                    account,
+                    display_name: name.to_owned(),
+                })
+            })
+            .collect();
+        Self {
+            game_id,
+            scenario_id: view.scenario_id.clone(),
+            creator: view.creator,
+            investigators,
+            names,
+            last_activity: created_at,
+            state: GameEntryState::Lobby,
+        }
+    }
+
+    /// The display name of `account`, if the entry mentions it.
+    #[must_use]
+    pub fn name(&self, account: AccountId) -> Option<&str> {
+        self.names
+            .iter()
+            .find(|member| member.account == account)
+            .map(|member| member.display_name.as_str())
+    }
+}
+
+/// One investigator of a [`GameEntry`]: in a lobby, a pick.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryInvestigator {
+    /// The investigator's card code.
+    pub investigator: CardCode,
+    /// The account holding it: in a lobby, the member who picked it.
+    pub holder: AccountId,
+    /// Whether it is the lead investigator.
+    pub lead: bool,
+}
+
+/// Where a [`GameEntry`]'s game stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GameEntryState {
+    /// In its lobby, waiting for its creator to press Start.
+    Lobby,
 }
 
 /// The close code ending a game's WebSocket whose upgrade had no valid session.

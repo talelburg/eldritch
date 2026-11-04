@@ -6,6 +6,9 @@
 //! that opens a game's link, lobby or started game, becomes a member. The
 //! lobby's rules are [`protocol::lobby::Lobby`]'s; this module only moves its
 //! rows in and out.
+//!
+//! `lobbies.created_at` is read back as a lobby's last activity by
+//! [`of_member`], whatever migration 0010's comment on the column says.
 
 use cards::decks::WeaknessChoice;
 use game_core::scenario::ScenarioId;
@@ -96,6 +99,35 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
         lead.map(CardCode::new),
     );
     Ok(Some(lobby))
+}
+
+/// Every lobby `account` is a member of, as its id, its view and its
+/// `lobbies.created_at` (unix millis), which is its last activity on the
+/// "Your games" listing.
+///
+/// # Errors
+///
+/// The database failed, or a lobby's row doesn't read back as [`read`] says.
+pub(crate) async fn of_member(
+    db: &SqlitePool,
+    account: AccountId,
+) -> Result<Vec<(GameId, LobbyView, i64)>, sqlx::Error> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT l.game_id, l.created_at FROM game_members m \
+         JOIN lobbies l ON l.game_id = m.game_id WHERE m.account_id = ?",
+    )
+    .bind(account.0)
+    .fetch_all(db)
+    .await?;
+    let mut lobbies = Vec::with_capacity(rows.len());
+    for (game_id, created_at) in rows {
+        let game_id = GameId::new(game_id);
+        // A lobby Start deleted since the query above is a started game now.
+        if let Some(lobby) = read(db, &game_id).await? {
+            lobbies.push((game_id, lobby.view(), created_at));
+        }
+    }
+    Ok(lobbies)
 }
 
 /// Store `view`'s picks, in its seating order, and its lead as the lobby

@@ -1,9 +1,9 @@
-//! Game lifecycle HTTP: create a game.
+//! Game lifecycle HTTP: create a game, and list the signed-in account's games.
 
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-use protocol::{CreateGameRequest, CreateGameResponse};
+use protocol::{CreateGameRequest, CreateGameResponse, GameEntry};
 
 use crate::auth::SignedInAccount;
 use crate::{id, lobby, session, AppState};
@@ -35,4 +35,24 @@ pub(crate) async fn create_game(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::CREATED, Json(CreateGameResponse { game_id })))
+}
+
+/// `GET /games`: the "Your games" listing, one [`GameEntry`] per game the
+/// signed-in account is a member of, in no particular order.
+///
+/// `200 OK` with the entries; `401 Unauthorized` when not signed in; `500` on
+/// a persistence failure.
+pub(crate) async fn list_games(
+    State(state): State<AppState>,
+    account: SignedInAccount,
+) -> Result<Json<Vec<GameEntry>>, StatusCode> {
+    let lobbies = lobby::of_member(&state.db, account.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(
+        lobbies
+            .into_iter()
+            .map(|(game_id, view, created_at)| GameEntry::of_lobby(game_id, &view, created_at))
+            .collect(),
+    ))
 }

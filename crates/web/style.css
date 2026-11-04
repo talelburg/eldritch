@@ -352,7 +352,29 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 1rem; background: #f4f1ea;
 }
-.home-new-game { font-size: 1.2rem; padding: 0.6rem 1.8rem; font-weight: bold; }
+.home-new-game { font-size: 1.1rem; padding: 0.5rem 1.5rem; font-weight: bold; }
+
+/* "Your games": a heading carrying New game, then each group's rows. */
+.home { justify-content: flex-start; padding: 1.5rem; }
+.games-heading, .games-group { width: 100%; max-width: 60rem; }
+.games-heading {
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #ccc; padding-bottom: 0.75rem;
+}
+.games-heading h1 { margin: 0; }
+.games-group-title { font-size: 1rem; text-transform: uppercase; opacity: 0.7; margin: 0.5rem 0; }
+.game-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.game-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 0.6rem 1rem;
+    color: inherit; text-decoration: none;
+}
+.game-row:hover { border-color: #e0b84c; }
+.row-scenario { font-weight: bold; }
+.row-creator, .row-activity { font-size: 0.85rem; opacity: 0.7; }
+.row-investigators { display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
+.row-holder { font-size: 0.8rem; opacity: 0.7; margin-left: 0.3rem; }
+.row-status { font-style: italic; margin-left: auto; }
 
 /* Lobby header (#1231 variant C): the members, then the invite link and Copy. */
 .lobby { justify-content: flex-start; padding: 1.5rem; }
