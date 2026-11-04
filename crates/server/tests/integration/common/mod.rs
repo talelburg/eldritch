@@ -20,6 +20,7 @@ use game_core::event::Event;
 use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
+use protocol::lobby::Start;
 use protocol::{AccountId, Assignment, ClientMessage, ServerMessage};
 use reqwest::redirect::Policy;
 use reqwest::{Client as HttpClient, RequestBuilder, Response};
@@ -89,6 +90,17 @@ pub(crate) fn assign_all(account: AccountId, roster: &[RosterEntry]) -> Assignme
     Assignment::in_seating_order(iter::repeat_n(account, roster.len()))
 }
 
+/// What Start seats a game of the mock scenario with: [`roster`], led by its one
+/// investigator, whom `account` holds.
+pub(crate) fn solo_start(account: AccountId) -> Start {
+    Start {
+        scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+        roster: roster(),
+        lead: 0,
+        assignment: assign_all(account, &roster()),
+    }
+}
+
 /// Create a game of the mock scenario with [`roster`], led by its one
 /// investigator, created by the [`TEST_ACCOUNT`], who holds it, and return
 /// the live session at the mulligan prompt.
@@ -99,10 +111,7 @@ pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession
         REGISTRIES,
         game_id,
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
-        0,
-        assign_all(creator, &roster()),
+        solo_start(creator),
     )
     .await
     .expect("create game")

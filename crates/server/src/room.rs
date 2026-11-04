@@ -172,16 +172,8 @@ impl GameRoom {
             return Err(LobbyRefusal::Started);
         };
         let start = lobby.start(account)?;
-        let new_game = GameSession::set_up(
-            self.registries,
-            self.game_id.clone(),
-            account,
-            start.scenario_id,
-            start.roster,
-            start.lead,
-            start.assignment,
-        )
-        .map_err(|error| match error {
+        let new_game = GameSession::set_up(self.registries, self.game_id.clone(), account, start)
+            .map_err(|error| match error {
             SessionError::Seating(reason) => LobbyRefusal::Seating(reason),
             error => LobbyRefusal::Failed(error.to_string()),
         })?;

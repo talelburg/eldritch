@@ -5,14 +5,13 @@
 //! the `interactive_acknowledge` flag) plus an ordered log of its answers
 //! (ADR 0022), the account that created it, and beside them its assignment:
 //! which account holds each investigator (ADR 0024). No engine state is
-//! stored. The session keeps the live game in
-//! memory and appends each answer it accepts to the log as a [`LoggedAnswer`]
-//! with the RNG checkpoint after it, before committing it; [`GameSession::load`]
-//! re-runs setup from the inputs, checks it against the stored
-//! [`SetupFingerprint`], and replays the log, checking each answer, reproducing
-//! state bit-for-bit. A stored game that fails a check is an **unresumable
-//! game**: the load fails with [`SessionError::Unresumable`] and its rows are
-//! kept.
+//! stored. The session keeps the live game in memory and appends each answer
+//! it accepts to the log as a [`LoggedAnswer`] with the RNG checkpoint after
+//! it, before committing it; [`GameSession::load`] re-runs setup from the
+//! inputs, checks it against the stored [`SetupFingerprint`], and replays the
+//! log, checking each answer, reproducing state bit-for-bit. A stored game that
+//! fails a check is an **unresumable game**: the load fails with
+//! [`SessionError::Unresumable`] and its rows are kept.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,6 +23,7 @@ use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
 use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
+use protocol::lobby::Start;
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
 use protocol::{AccountId, Assignment, GameId, LogPosition};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -292,15 +292,16 @@ fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, Setup
 }
 
 impl GameSession {
-    /// Create a new game for `creator`: seats the roster into the scenario's
-    /// `setup()` state, stores the game's creation inputs, its setup
-    /// fingerprint and its creator, and beside them `assignment`, in one
-    /// transaction, and returns a live session at the mulligan prompt in which
-    /// `assignment` decides who answers for each investigator.
+    /// Create a new game for `creator` in one call: seats `start`'s roster
+    /// into its scenario's `setup()` state, stores the game's creation inputs,
+    /// its setup fingerprint and its creator, and beside them `start`'s
+    /// assignment, in one transaction, and returns a live session at the
+    /// mulligan prompt in which the assignment decides who answers for each
+    /// investigator.
     ///
-    /// It is `set_up`, then `NewGame::store` in a transaction of its own. A
-    /// lobby's Start composes the two itself, to delete the lobby in the same
-    /// transaction.
+    /// It is the tests' one-call entry point. Production seats a game through
+    /// the lobby's Start, which calls `set_up` and stores the [`NewGame`] in a
+    /// transaction of its own, to delete the lobby in the same one.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
@@ -308,46 +309,31 @@ impl GameSession {
     /// # Errors
     ///
     /// - [`SessionError::UnknownScenario`] if no module is registered for
-    ///   `scenario_id`.
+    ///   `start`'s scenario.
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
-    ///   roster, a `lead` index past its end, unknown investigator code,
+    ///   roster, a lead index past its end, unknown investigator code,
     ///   unimplemented deck card, more random basic weaknesses than the
     ///   weakness pool holds, etc.).
-    /// - [`SessionError::AssignmentMismatch`] if `assignment` doesn't give
+    /// - [`SessionError::AssignmentMismatch`] if the assignment doesn't give
     ///   exactly the seated investigators a holder.
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
     ///   fails.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each is a separate part of a new game, named at each call site"
-    )]
     pub async fn create(
         db: SqlitePool,
         registries: Registries,
         game_id: impl Into<GameId>,
         creator: AccountId,
-        scenario_id: ScenarioId,
-        roster: Vec<RosterEntry>,
-        lead: usize,
-        assignment: Assignment,
+        start: Start,
     ) -> Result<Self, SessionError> {
-        let new_game = Self::set_up(
-            registries,
-            game_id.into(),
-            creator,
-            scenario_id,
-            roster,
-            lead,
-            assignment,
-        )?;
+        let new_game = Self::set_up(registries, game_id.into(), creator, start)?;
         let mut tx = db.begin().await?;
         new_game.store(&mut tx).await?;
         tx.commit().await?;
         Ok(new_game.into_session(db))
     }
 
-    /// The I/O-free half of [`GameSession::create`]: seat the roster and
-    /// check the assignment, storing nothing. A caller stores the
+    /// The I/O-free half of [`GameSession::create`]: seat `start`'s roster
+    /// and check its assignment, storing nothing. A caller stores the
     /// [`NewGame`] inside a transaction of its own, so it can write other
     /// rows in the same one, as Start deletes the lobby's.
     ///
@@ -359,11 +345,14 @@ impl GameSession {
         registries: Registries,
         game_id: GameId,
         creator: AccountId,
-        scenario_id: ScenarioId,
-        roster: Vec<RosterEntry>,
-        lead: usize,
-        assignment: Assignment,
+        start: Start,
     ) -> Result<NewGame, SessionError> {
+        let Start {
+            scenario_id,
+            roster,
+            lead,
+            assignment,
+        } = start;
         let inputs = CreationInputs {
             scenario_id,
             roster,
@@ -503,8 +492,8 @@ impl GameSession {
     ///
     /// The checks run in this order, and the first to fail is reported:
     /// format version, the assignment, the stored fingerprint's
-    /// deserialization, setup, the fingerprint comparison, then each logged answer's
-    /// deserialization and replay.
+    /// deserialization, setup, the fingerprint comparison, then each logged
+    /// answer's deserialization and replay.
     ///
     /// # Errors
     ///

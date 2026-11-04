@@ -11,6 +11,7 @@ use axum::http::{Request, StatusCode};
 use cards::decks::{self, WeaknessChoice};
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
+use protocol::lobby::Start;
 use protocol::GameId;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
 use server::session::GameSession;
@@ -77,10 +78,12 @@ async fn every_default_deck_seats_in_both_weakness_modes() {
                 server::REGISTRIES,
                 GameId::new(format!("g-{n}-{choice:?}")),
                 creator,
-                ScenarioId::new(GATHERING_SCENARIO_ID),
-                roster.clone(),
-                0,
-                common::assign_all(creator, &roster),
+                Start {
+                    scenario_id: ScenarioId::new(GATHERING_SCENARIO_ID),
+                    roster: roster.clone(),
+                    lead: 0,
+                    assignment: common::assign_all(creator, &roster),
+                },
             )
             .await;
 

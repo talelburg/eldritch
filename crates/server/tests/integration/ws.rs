@@ -9,7 +9,6 @@ use futures_util::SinkExt as _;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::rng::RngState;
-use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
 use protocol::{
     Applied, ClientMessage, LogPosition, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
@@ -21,7 +20,7 @@ use sqlx::SqlitePool;
 use tokio::time;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::common::{self, OTHER_ACCOUNT, TEST_SCENARIO_ID};
+use crate::common::{self, OTHER_ACCOUNT};
 
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
     let creator = common::test_account(pool).await;
@@ -30,10 +29,7 @@ async fn seed_game(pool: &SqlitePool, game_id: &str) {
         common::REGISTRIES,
         game_id,
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("seed game");

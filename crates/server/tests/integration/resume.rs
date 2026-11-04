@@ -10,13 +10,12 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
-use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
 use protocol::{Applied, ClientMessage, LogPosition, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
-use crate::common::{self, TEST_SCENARIO_ID};
+use crate::common;
 
 async fn seed(pool: &SqlitePool, game_id: &str) {
     let creator = common::test_account(pool).await;
@@ -25,10 +24,7 @@ async fn seed(pool: &SqlitePool, game_id: &str) {
         common::REGISTRIES,
         game_id,
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("seed game");

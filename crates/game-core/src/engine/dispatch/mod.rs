@@ -505,8 +505,8 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 /// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),
 /// without going through a logged `PlayerAction`. The engine entry point
 /// [`crate::engine::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
-/// Used at game creation (server `GameSession::create`); the action log that
-/// follows is `ResolveInput`-only.
+/// Used when a game is created, as the lobby's Start seats its picks; the
+/// action log that follows is `ResolveInput`-only.
 pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -> EngineOutcome {
     let outcome = phases::start_scenario(cx, roster, lead);
     drive(cx, outcome)

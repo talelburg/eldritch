@@ -11,6 +11,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
 use protocol::live::Refused;
+use protocol::lobby::Start;
 use protocol::logged_answer::ReplayFailure;
 use protocol::{Assignment, GameId};
 use server::session::{ApplyError, GameSession, SessionError, UnresumableReason};
@@ -29,10 +30,7 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
         common::REGISTRIES,
         "fresh",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create");
@@ -73,10 +71,7 @@ async fn create_persists_seed_and_exposes_setup_state() {
         common::REGISTRIES,
         "game-1",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create session");
@@ -109,10 +104,12 @@ async fn create_rejects_unknown_scenario() {
         common::REGISTRIES,
         "game-x",
         creator,
-        ScenarioId::new("no-such-scenario"),
-        vec![],
-        0,
-        common::assign_all(creator, &[]),
+        Start {
+            scenario_id: ScenarioId::new("no-such-scenario"),
+            roster: vec![],
+            lead: 0,
+            assignment: common::assign_all(creator, &[]),
+        },
     )
     .await;
 
@@ -132,10 +129,12 @@ async fn create_refuses_an_assignment_that_is_not_the_seated_investigators() {
         common::REGISTRIES,
         "mismatched",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        Assignment::in_seating_order([creator, creator]),
+        Start {
+            scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+            roster: common::roster(),
+            lead: 0,
+            assignment: Assignment::in_seating_order([creator, creator]),
+        },
     )
     .await;
 
@@ -165,10 +164,12 @@ async fn create_rejects_bad_roster() {
         common::REGISTRIES,
         "bad",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        bad_roster,
-        0,
-        assignment,
+        Start {
+            scenario_id: ScenarioId::new(TEST_SCENARIO_ID),
+            roster: bad_roster,
+            lead: 0,
+            assignment: assignment,
+        },
     )
     .await;
 
@@ -195,10 +196,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
         common::REGISTRIES,
         "g2",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .unwrap();
@@ -240,10 +238,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
         common::REGISTRIES,
         "g3",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .unwrap();
@@ -293,10 +288,7 @@ async fn load_replays_log_to_reproduce_live_state() {
         common::REGISTRIES,
         "g4",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .unwrap();
@@ -393,10 +385,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         common::REGISTRIES,
         "g1",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create g1");
@@ -406,10 +395,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         common::REGISTRIES,
         "g2",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create g2");
@@ -429,10 +415,7 @@ async fn create_enables_interactive_acknowledge() {
         common::REGISTRIES,
         "ack",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create");

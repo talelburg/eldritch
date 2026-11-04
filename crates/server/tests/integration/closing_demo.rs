@@ -13,13 +13,12 @@
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::scenario::ScenarioId;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
 use server::session::GameSession;
 
-use crate::common::{self, TEST_SCENARIO_ID};
+use crate::common;
 
 fn submit(prompt: LogPosition, action: PlayerAction) -> ClientMessage {
     ClientMessage::Submit { prompt, action }
@@ -55,10 +54,7 @@ async fn phase_5_closing_demo() {
         common::REGISTRIES,
         "demo",
         creator,
-        ScenarioId::new(TEST_SCENARIO_ID),
-        common::roster(),
-        0,
-        common::assign_all(creator, &common::roster()),
+        common::solo_start(creator),
     )
     .await
     .expect("create the demo game");
