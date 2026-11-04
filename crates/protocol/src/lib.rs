@@ -697,7 +697,7 @@ mod tests {
         let view = lobby::Lobby::new(
             ScenarioId::new("the-gathering"),
             AccountId(1),
-            vec![lobby::Member {
+            vec![Member {
                 account: AccountId(1),
                 display_name: "Tal".to_string(),
             }],

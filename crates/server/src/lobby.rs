@@ -8,7 +8,7 @@
 //! rows in and out.
 //!
 //! `lobbies.created_at` is read back as a lobby's last activity by
-//! [`of_member`], whatever migration 0010's comment on the column says.
+//! `of_member`, whatever migration 0010's comment on the column says.
 
 use cards::decks::WeaknessChoice;
 use game_core::scenario::ScenarioId;
