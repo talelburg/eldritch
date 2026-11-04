@@ -125,7 +125,7 @@ pub enum UnresumableReason {
     #[error("action {seq} no longer replays: {reason}")]
     Replay {
         /// Zero-based position of the offending action in the log.
-        seq: i64,
+        seq: u32,
         /// The check it fails.
         reason: ReplayFailure,
     },
@@ -534,7 +534,15 @@ impl GameSession {
 
         let mut state = opened.state;
         let mut outcome = opened.outcome;
-        let mut seq: i64 = 0;
+        // Positions are counted in `u32`, as "Your games" reports them: a
+        // log too long for one is refused here, so the count never overflows.
+        u32::try_from(actions.len()).map_err(|_| {
+            <serde_json::Error as serde::de::Error>::custom(format!(
+                "a log of {} answers is too long to replay",
+                actions.len()
+            ))
+        })?;
+        let mut seq: u32 = 0;
         for row in actions {
             let answer: LoggedAnswer = serde_json::from_str(&row.answer)?;
             let draws = from_sql_integer(row.draws);
@@ -554,7 +562,7 @@ impl GameSession {
                 state,
                 outcome,
                 opened.events,
-                LogPosition(seq),
+                LogPosition(i64::from(seq)),
                 assignment,
                 registries,
             ),

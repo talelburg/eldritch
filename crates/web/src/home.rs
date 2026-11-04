@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use game_core::card_registry::CardRegistry;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::Phase;
+use js_sys::Date;
 use leptos::prelude::*;
 use protocol::live::LiveSummary;
 use protocol::{
@@ -283,6 +284,6 @@ fn local_time(millis: i64) -> String {
         clippy::cast_precision_loss,
         reason = "millis since the epoch stay well inside f64's exact integers"
     )]
-    let date = js_sys::Date::new(&JsValue::from_f64(millis as f64));
+    let date = Date::new(&JsValue::from_f64(millis as f64));
     date.to_locale_string("default", &JsValue::UNDEFINED).into()
 }

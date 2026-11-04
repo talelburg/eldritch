@@ -5,10 +5,12 @@ use axum::http::StatusCode;
 use axum::Json;
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
+use protocol::lobby::Member;
 use protocol::{
     AccountId, Assignment, CreateGameRequest, CreateGameResponse, EntryInvestigator, GameEntry,
-    UnresumableSummary,
+    ListedGame, UnresumableSummary,
 };
+use serde_json::Value;
 
 use crate::auth::SignedInAccount;
 use crate::room::RoomGame;
@@ -62,17 +64,16 @@ pub(crate) async fn list_games(
     State(state): State<AppState>,
     account: SignedInAccount,
 ) -> Result<Json<Vec<GameEntry>>, StatusCode> {
-    let failed = |_| StatusCode::INTERNAL_SERVER_ERROR;
     let lobbies = lobby::of_member(&state.db, account.id)
         .await
-        .map_err(failed)?;
+        .map_err(internal_error)?;
     let mut entries: Vec<GameEntry> = lobbies
         .into_iter()
         .map(|(game_id, view, created_at)| GameEntry::of_lobby(game_id, &view, created_at))
         .collect();
     for game in store::started_games_of(&state.db, account.id)
         .await
-        .map_err(failed)?
+        .map_err(internal_error)?
     {
         if let Some(entry) = started_entry(&state, account.id, game).await? {
             entries.push(entry);
@@ -110,19 +111,15 @@ async fn started_entry(
     };
     let members = lobby::named_members(&state.db, &game.game_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(internal_error)?;
     let room = connection.room().game.lock().await;
     let RoomGame::Live(session) = &*room else {
         return Ok(None);
     };
     Ok(Some(GameEntry::of_live(
-        game.game_id,
-        ScenarioId::new(game.scenario_id),
-        game.creator,
+        listed(game, members),
         session.live(),
         account,
-        &members,
-        game.last_activity,
     )))
 }
 
@@ -138,28 +135,40 @@ async fn unresumable_entry(
     game: StartedGame,
     reason: &UnresumableReason,
 ) -> Result<GameEntry, StatusCode> {
-    let failed = |_| StatusCode::INTERNAL_SERVER_ERROR;
     let members = lobby::named_members(&state.db, &game.game_id)
         .await
-        .map_err(failed)?;
+        .map_err(internal_error)?;
     let assignment = store::load_assignment(&state.db, &game.game_id)
         .await
-        .map_err(failed)?;
+        .map_err(internal_error)?;
     let investigators = stored_investigators(&game.roster, game.lead, &assignment);
+    let summary = UnresumableSummary {
+        reason: reason.cause(),
+        logged_answers: game.logged_answers,
+        created_build: game.created_build.clone(),
+        server_build: protocol::build_id().to_owned(),
+    };
     Ok(GameEntry::of_unresumable(
-        game.game_id,
-        ScenarioId::new(game.scenario_id),
-        game.creator,
+        listed(game, members),
         investigators,
-        &members,
-        game.last_activity,
-        UnresumableSummary {
-            reason: reason.cause(),
-            logged_answers: game.logged_answers,
-            created_build: game.created_build,
-            server_build: protocol::build_id().to_owned(),
-        },
+        summary,
     ))
+}
+
+/// The started game `game` as its entry lists it, with its `members`.
+fn listed(game: StartedGame, members: Vec<Member>) -> ListedGame {
+    ListedGame {
+        game_id: game.game_id,
+        scenario_id: ScenarioId::new(game.scenario_id),
+        creator: game.creator,
+        members,
+        last_activity: game.last_activity,
+    }
+}
+
+/// The `500` a listing answers a persistence failure with.
+fn internal_error<E>(_: E) -> StatusCode {
+    StatusCode::INTERNAL_SERVER_ERROR
 }
 
 /// The investigators of the stored `roster` JSON, in seating order, the one
@@ -173,7 +182,7 @@ fn stored_investigators(
     lead: i64,
     assignment: &Assignment,
 ) -> Vec<EntryInvestigator> {
-    let Ok(serde_json::Value::Array(entries)) = serde_json::from_str(roster) else {
+    let Ok(Value::Array(entries)) = serde_json::from_str(roster) else {
         return Vec::new();
     };
     let codes: Option<Vec<&str>> = entries

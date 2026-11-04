@@ -145,7 +145,7 @@ pub(crate) struct StartedGame {
     /// The roster index of its lead investigator.
     pub(crate) lead: i64,
     /// How many answers its log holds.
-    pub(crate) logged_answers: i64,
+    pub(crate) logged_answers: u32,
 }
 
 /// The columns [`started_games_of`] selects, in order.
@@ -166,8 +166,7 @@ pub(crate) async fn started_games_of(
     .bind(account.0)
     .fetch_all(db)
     .await?;
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(
             |(
                 game_id,
@@ -178,18 +177,21 @@ pub(crate) async fn started_games_of(
                 roster,
                 lead,
                 logged_answers,
-            )| StartedGame {
-                game_id: GameId::new(game_id),
-                scenario_id,
-                creator: creator.map(AccountId),
-                last_activity,
-                created_build,
-                roster,
-                lead,
-                logged_answers,
+            )| {
+                Ok(StartedGame {
+                    game_id: GameId::new(game_id),
+                    scenario_id,
+                    creator: creator.map(AccountId),
+                    last_activity,
+                    created_build,
+                    roster,
+                    lead,
+                    logged_answers: u32::try_from(logged_answers)
+                        .map_err(|err| Error::Decode(Box::new(err)))?,
+                })
             },
         )
-        .collect())
+        .collect()
 }
 
 /// The columns [`load_game`] selects, in order.

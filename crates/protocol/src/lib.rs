@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use cards::decks::WeaknessChoice;
 use game_core::action::PlayerAction;
+use game_core::engine;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
@@ -25,7 +26,7 @@ pub mod logged_answer;
 
 use crate::live::{LiveGame, LiveSummary};
 use crate::lobby::{Direction, LobbyRefusal, LobbyView, Member};
-use crate::logged_answer::LoggedResponse;
+use crate::logged_answer::{LoggedResponse, ReplayFailure};
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -427,23 +428,13 @@ impl GameEntry {
         }
     }
 
-    /// The entry `account` is shown for the started game `live` under
-    /// `game_id`, a game of `scenario_id` created by `creator`: its seated
-    /// investigators in seating order, and its [`LiveSummary`] for `account`.
-    /// `members` names every account the game has; `last_activity` is when it
-    /// last moved, in unix millis.
+    /// The entry `account` is shown for the started game `listed`, loaded as
+    /// `live`: its seated investigators in seating order, and its
+    /// [`LiveSummary`] for `account`.
     #[must_use]
-    pub fn of_live(
-        game_id: GameId,
-        scenario_id: ScenarioId,
-        creator: Option<AccountId>,
-        live: &LiveGame,
-        account: AccountId,
-        members: &[Member],
-        last_activity: i64,
-    ) -> Self {
+    pub fn of_live(listed: ListedGame, live: &LiveGame, account: AccountId) -> Self {
         let state = live.state();
-        let lead = game_core::engine::the_lead(state).or(state.lead);
+        let lead = engine::the_lead(state).or(state.lead);
         let investigators: Vec<EntryInvestigator> = state
             .seating
             .iter()
@@ -458,41 +449,40 @@ impl GameEntry {
             })
             .collect();
         let summary = live.summary_for(account);
-        let names = mentioned_names(creator, &investigators, &summary.waiting_for(), members);
+        let names = mentioned_names(
+            listed.creator,
+            &investigators,
+            &summary.waiting_for(),
+            &listed.members,
+        );
         Self {
-            game_id,
-            scenario_id,
-            creator,
+            game_id: listed.game_id,
+            scenario_id: listed.scenario_id,
+            creator: listed.creator,
             investigators,
             names,
-            last_activity,
+            last_activity: listed.last_activity,
             state: GameEntryState::Live(summary),
         }
     }
 
-    /// The entry for the started game under `game_id` that this build can't
-    /// replay, a game of `scenario_id` created by `creator`, with its
-    /// `investigators` as its stored rows give them and why it stopped.
-    /// `members` names every account the game has; `last_activity` is when it
-    /// last moved, in unix millis.
+    /// The entry for the started game `listed`, which this build can't
+    /// replay, with its `investigators` as its stored rows give them and why
+    /// it stopped.
     #[must_use]
     pub fn of_unresumable(
-        game_id: GameId,
-        scenario_id: ScenarioId,
-        creator: Option<AccountId>,
+        listed: ListedGame,
         investigators: Vec<EntryInvestigator>,
-        members: &[Member],
-        last_activity: i64,
         summary: UnresumableSummary,
     ) -> Self {
-        let names = mentioned_names(creator, &investigators, &[], members);
+        let names = mentioned_names(listed.creator, &investigators, &[], &listed.members);
         Self {
-            game_id,
-            scenario_id,
-            creator,
+            game_id: listed.game_id,
+            scenario_id: listed.scenario_id,
+            creator: listed.creator,
             investigators,
             names,
-            last_activity,
+            last_activity: listed.last_activity,
             state: GameEntryState::Unresumable(summary),
         }
     }
@@ -505,6 +495,24 @@ impl GameEntry {
             .find(|member| member.account == account)
             .map(|member| member.display_name.as_str())
     }
+}
+
+/// A started game as "Your games" reads it from its stored rows, before
+/// loading it: what its [`GameEntry`] carries whether it loads or is an
+/// unresumable game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedGame {
+    /// The game's id, which its link names.
+    pub game_id: GameId,
+    /// The scenario it plays.
+    pub scenario_id: ScenarioId,
+    /// The account that created it; `None` for a game stored before the
+    /// creator was.
+    pub creator: Option<AccountId>,
+    /// Every account the game has, each with its display name.
+    pub members: Vec<Member>,
+    /// When the game last moved, in unix millis.
+    pub last_activity: i64,
 }
 
 /// One investigator of a [`GameEntry`]: in a lobby, a pick.
@@ -538,7 +546,7 @@ pub struct UnresumableSummary {
     /// Why it no longer loads.
     pub reason: UnresumableCause,
     /// How many answers its log holds.
-    pub logged_answers: i64,
+    pub logged_answers: u32,
     /// The build the game was created on.
     pub created_build: String,
     /// The build the server runs now.
@@ -561,14 +569,14 @@ pub enum UnresumableCause {
     /// A logged answer no longer replays.
     Replay {
         /// Zero-based position of that answer in the log.
-        seq: i64,
+        seq: u32,
         /// The check it fails.
         cause: ReplayCause,
     },
 }
 
 /// Which replay check a logged answer fails: the wire form of a
-/// [`ReplayFailure`](logged_answer::ReplayFailure).
+/// [`ReplayFailure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReplayCause {
     /// The engine now asks a different prompt, or none.
@@ -587,9 +595,8 @@ pub enum ReplayCause {
     Draws,
 }
 
-impl From<&logged_answer::ReplayFailure> for ReplayCause {
-    fn from(failure: &logged_answer::ReplayFailure) -> Self {
-        use logged_answer::ReplayFailure;
+impl From<&ReplayFailure> for ReplayCause {
+    fn from(failure: &ReplayFailure) -> Self {
         match failure {
             ReplayFailure::PromptChanged { .. } => Self::PromptChanged,
             ReplayFailure::OptionNotFound { option, matches } => Self::OptionNotFound {

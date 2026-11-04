@@ -14,7 +14,9 @@ use protocol::{
     AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId, ReplayCause, UnresumableCause,
     UnresumableSummary,
 };
+use wasm_bindgen::JsCast as _;
 use web::store::{ClientState, ConnStatus};
+use web_sys::Element;
 
 use crate::common::{self, BoardHandle};
 
@@ -150,6 +152,42 @@ fn thursday(game_id: &str, at: i64, waiting_on: &[(u32, &str, AccountId)]) -> Ga
     entry
 }
 
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn the_lead_investigator_alone_wears_the_star() {
+    let handle = mount_page(Some(vec![thursday(
+        "g-thursday",
+        1_000,
+        &[(2, ROLAND, TAL)],
+    )]))
+    .await;
+
+    let seats = handle
+        .root
+        .query_selector_all(".game-row .row-investigator")
+        .expect("query");
+    let starred: Vec<(String, bool)> = (0..seats.length())
+        .filter_map(|i| seats.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .map(|seat| {
+            let star = seat.query_selector(".lead-star").expect("query");
+            (seat.text_content().unwrap_or_default(), star.is_some())
+        })
+        .collect();
+    assert_eq!(
+        starred.len(),
+        2,
+        "both investigators are listed: {starred:?}"
+    );
+    assert!(
+        starred[0].0.contains("Daisy Walker") && starred[0].1,
+        "Daisy, who leads, wears the star: {starred:?}"
+    );
+    assert!(
+        starred[1].0.contains("Roland Banks") && !starred[1].1,
+        "Roland, who doesn't, does not: {starred:?}"
+    );
+}
+
 /// Thursday's game, finished at `ending`, its last action at `at`.
 fn finished(game_id: &str, at: i64, ending: ScenarioEnding) -> GameEntry {
     let mut entry = thursday(game_id, at, &[]);
@@ -266,7 +304,7 @@ pub(crate) fn stale(game_id: &str, at: i64, reason: UnresumableCause) -> GameEnt
 
 /// The cause of a game stopped by its answer at zero-based `seq` failing
 /// `cause`.
-fn replay(seq: i64, cause: ReplayCause) -> UnresumableCause {
+fn replay(seq: u32, cause: ReplayCause) -> UnresumableCause {
     UnresumableCause::Replay { seq, cause }
 }
 
