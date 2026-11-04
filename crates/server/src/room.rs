@@ -37,8 +37,8 @@ pub(crate) struct GameRoom {
 pub(crate) enum RoomGame {
     /// Still in its lobby.
     Lobby(Lobby),
-    /// Started.
-    Live(GameSession),
+    /// Started. Boxed: a live game dwarfs a lobby.
+    Live(Box<GameSession>),
 }
 
 /// One change a room broadcasts to its connections.

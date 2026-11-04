@@ -73,7 +73,7 @@ impl Loader for StoredGames {
         let (game_id, game) = match stored {
             Stored::Game(stored) => {
                 let session = GameSession::rebuild(self.db.clone(), self.registries, stored)?;
-                (session.game_id.clone(), RoomGame::Live(session))
+                (session.game_id.clone(), RoomGame::Live(Box::new(session)))
             }
             Stored::Lobby(game_id, lobby) => (game_id, RoomGame::Lobby(lobby)),
         };
