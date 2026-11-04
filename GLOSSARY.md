@@ -265,3 +265,7 @@ _Avoid_: "Seed" for it. The seed is the RNG input; the fingerprint is what setup
 **Unresumable game**:
 A stored game whose load fails: an unknown format version, a setup that no longer runs from its inputs, a different setup fingerprint, or a logged answer that no longer replays. It is kept, not deleted, so rolling the deploy back recovers it.
 _Avoid_: "Corrupt" or "broken". Nothing is wrong with its rows; this build can't replay them. And never report it as a missing game.
+
+**Finished game**:
+A game whose scenario reached an ending and finished resolving it, "No resolution reached" included. Nothing in it waits on anyone, so opening it shows its final board with nothing to answer.
+_Avoid_: "Won" or "lost", which are a standalone-mode reading of the ending, not whether the game is over. Also avoid "ended" for a game still resolving its ending: it has an ending but isn't finished.
