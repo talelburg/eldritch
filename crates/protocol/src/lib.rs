@@ -386,8 +386,9 @@ pub struct GameEntry {
     pub game_id: GameId,
     /// The scenario it plays.
     pub scenario_id: ScenarioId,
-    /// The account that created it.
-    pub creator: AccountId,
+    /// The account that created it; `None` for a game stored before the
+    /// creator was.
+    pub creator: Option<AccountId>,
     /// Its investigators in seating order, each with its holder.
     pub investigators: Vec<EntryInvestigator>,
     /// The display name of every account the entry mentions: its creator and
@@ -410,15 +411,15 @@ impl GameEntry {
             .iter()
             .map(|pick| EntryInvestigator {
                 investigator: pick.investigator.clone(),
-                holder: pick.account,
+                holder: Some(pick.account),
                 lead: view.lead.as_ref() == Some(&pick.investigator),
             })
             .collect();
-        let names = mentioned_names(view.creator, &investigators, &[], &view.members);
+        let names = mentioned_names(Some(view.creator), &investigators, &[], &view.members);
         Self {
             game_id,
             scenario_id: view.scenario_id.clone(),
-            creator: view.creator,
+            creator: Some(view.creator),
             investigators,
             names,
             last_activity: created_at,
@@ -435,7 +436,7 @@ impl GameEntry {
     pub fn of_live(
         game_id: GameId,
         scenario_id: ScenarioId,
-        creator: AccountId,
+        creator: Option<AccountId>,
         live: &LiveGame,
         account: AccountId,
         members: &[Member],
@@ -448,12 +449,10 @@ impl GameEntry {
             .iter()
             .filter_map(|id| {
                 let investigator = state.investigators.get(id)?;
-                // Start gives every seat a holder, so no seat of a started
-                // game is left out here.
-                let holder = live.assignment().holder(*id)?;
                 Some(EntryInvestigator {
                     investigator: investigator.investigator_card.code.clone(),
-                    holder,
+                    // Start gives every seat a holder.
+                    holder: live.assignment().holder(*id),
                     lead: lead == Some(*id),
                 })
             })
@@ -468,6 +467,33 @@ impl GameEntry {
             names,
             last_activity,
             state: GameEntryState::Live(summary),
+        }
+    }
+
+    /// The entry for the started game under `game_id` that this build can't
+    /// replay, a game of `scenario_id` created by `creator`, with its
+    /// `investigators` as its stored rows give them and why it stopped.
+    /// `members` names every account the game has; `last_activity` is when it
+    /// last moved, in unix millis.
+    #[must_use]
+    pub fn of_unresumable(
+        game_id: GameId,
+        scenario_id: ScenarioId,
+        creator: Option<AccountId>,
+        investigators: Vec<EntryInvestigator>,
+        members: &[Member],
+        last_activity: i64,
+        summary: UnresumableSummary,
+    ) -> Self {
+        let names = mentioned_names(creator, &investigators, &[], members);
+        Self {
+            game_id,
+            scenario_id,
+            creator,
+            investigators,
+            names,
+            last_activity,
+            state: GameEntryState::Unresumable(summary),
         }
     }
 
@@ -486,8 +512,9 @@ impl GameEntry {
 pub struct EntryInvestigator {
     /// The investigator's card code.
     pub investigator: CardCode,
-    /// The account holding it: in a lobby, the member who picked it.
-    pub holder: AccountId,
+    /// The account holding it: in a lobby, the member who picked it. `None`
+    /// for an unresumable game stored with no assignment.
+    pub holder: Option<AccountId>,
     /// Whether it is the lead investigator.
     pub lead: bool,
 }
@@ -500,20 +527,99 @@ pub enum GameEntryState {
     /// Started, and loaded by this build: who it waits on, summarised for the
     /// account listing it.
     Live(LiveSummary),
+    /// Started, and this build can't replay it: an unresumable game.
+    Unresumable(UnresumableSummary),
+}
+
+/// Where an unresumable game stopped and why, and the two builds involved: a
+/// rollback to the build it started on resumes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnresumableSummary {
+    /// Why it no longer loads.
+    pub reason: UnresumableCause,
+    /// How many answers its log holds.
+    pub logged_answers: i64,
+    /// The build the game was created on.
+    pub created_build: String,
+    /// The build the server runs now.
+    pub server_build: String,
+}
+
+/// Why an unresumable game no longer loads: one variant for each of the
+/// server's checks, in the order they run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnresumableCause {
+    /// It was stored in a format version this build doesn't load.
+    Version,
+    /// It records no assignment, so nobody holds its investigators.
+    NoAssignment,
+    /// Setup no longer runs from its stored inputs, for this reason.
+    Setup(String),
+    /// Setup runs, but now decides something different from what it decided
+    /// when the game was created.
+    Fingerprint,
+    /// A logged answer no longer replays.
+    Replay {
+        /// Zero-based position of that answer in the log.
+        seq: i64,
+        /// The check it fails.
+        cause: ReplayCause,
+    },
+}
+
+/// Which replay check a logged answer fails: the wire form of a
+/// [`ReplayFailure`](logged_answer::ReplayFailure).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplayCause {
+    /// The engine now asks a different prompt, or none.
+    PromptChanged,
+    /// The logged pick, labelled `label`, matches `matches` of the prompt's
+    /// options where it matched one.
+    OptionNotFound {
+        /// The logged option's label.
+        label: String,
+        /// How many of the prompt's options it matches: none, or several.
+        matches: usize,
+    },
+    /// The engine rejects the answer.
+    Rejected,
+    /// The answer drew from the RNG a different number of times.
+    Draws,
+}
+
+impl From<&logged_answer::ReplayFailure> for ReplayCause {
+    fn from(failure: &logged_answer::ReplayFailure) -> Self {
+        use logged_answer::ReplayFailure;
+        match failure {
+            ReplayFailure::PromptChanged { .. } => Self::PromptChanged,
+            ReplayFailure::OptionNotFound { option, matches } => Self::OptionNotFound {
+                label: option.label.clone(),
+                matches: *matches,
+            },
+            ReplayFailure::Rejected(_) => Self::Rejected,
+            ReplayFailure::Draws { .. } => Self::Draws,
+        }
+    }
 }
 
 /// The display name of every account an entry mentions, each once, from
 /// `members`: its creator, each investigator's holder, then each account
 /// in `also`.
 fn mentioned_names(
-    creator: AccountId,
+    creator: Option<AccountId>,
     investigators: &[EntryInvestigator],
     also: &[AccountId],
     members: &[Member],
 ) -> Vec<Member> {
-    let mut mentioned = vec![creator];
-    let holders = investigators.iter().map(|investigator| investigator.holder);
-    for account in holders.chain(also.iter().copied()) {
+    let mut mentioned = Vec::new();
+    let holders = investigators
+        .iter()
+        .filter_map(|investigator| investigator.holder);
+    for account in creator
+        .into_iter()
+        .chain(holders)
+        .chain(also.iter().copied())
+    {
         if !mentioned.contains(&account) {
             mentioned.push(account);
         }

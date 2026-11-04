@@ -99,9 +99,11 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
             }
             // This server's build can't rebuild the game, and every attempt
             // would fail the same way. Say so and stop: the link still names
-            // the game, and a rollback to an earlier build can resume it.
+            // the game, and a rollback to an earlier build can resume it. The
+            // listing's entry for the game says where it stopped and why.
             ConnectOutcome::Ended(SocketEnding::Unresumable) => {
                 store.update(|s| s.status = ConnStatus::Unresumable);
+                fetch_games(store).await;
                 return;
             }
             // The server has no game at this link (a typo, or a DB reset).

@@ -11,9 +11,10 @@ use sqlx::{Error, SqliteConnection, SqlitePool};
 /// column form, the record of what setup decided, and the account that created
 /// it. No serialized engine state (ADR 0022), and not who holds each
 /// investigator, which is stored beside it (ADR 0024). The row's
-/// `created_build` and `created_at` are written beside it: `created_at` is
-/// read back by [`started_games_of`] as a game's last activity before any
-/// answer is logged, and `created_build` is never read back.
+/// `created_build` and `created_at` are written beside it, and
+/// [`started_games_of`] reads both back: `created_at` as a game's last
+/// activity before any answer is logged, and `created_build` as the build an
+/// unresumable game started on.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
@@ -136,16 +137,30 @@ pub(crate) struct StartedGame {
     /// When the game last moved, in unix millis: its last logged answer's
     /// `at`, or its `created_at` with none logged.
     pub(crate) last_activity: i64,
+    /// The build that created it.
+    pub(crate) created_build: String,
+    /// JSON array of the roster entries it was seated with, as stored: in
+    /// another stored shape for a game of another format version.
+    pub(crate) roster: String,
+    /// The roster index of its lead investigator.
+    pub(crate) lead: i64,
+    /// How many answers its log holds.
+    pub(crate) logged_answers: i64,
 }
+
+/// The columns [`started_games_of`] selects, in order.
+type StartedColumns = (String, String, Option<i64>, i64, String, String, i64, i64);
 
 /// Every started game `account` is a member of: each with a `games` row.
 pub(crate) async fn started_games_of(
     db: &SqlitePool,
     account: AccountId,
 ) -> Result<Vec<StartedGame>, Error> {
-    let rows: Vec<(String, String, Option<i64>, i64)> = sqlx::query_as(
+    let rows: Vec<StartedColumns> = sqlx::query_as(
         "SELECT g.game_id, g.scenario_id, g.creator, \
-         COALESCE((SELECT MAX(a.at) FROM actions a WHERE a.game_id = g.game_id), g.created_at) \
+         COALESCE((SELECT MAX(a.at) FROM actions a WHERE a.game_id = g.game_id), g.created_at), \
+         g.created_build, g.roster, g.lead, \
+         (SELECT COUNT(*) FROM actions a WHERE a.game_id = g.game_id) \
          FROM game_members m JOIN games g ON g.game_id = m.game_id WHERE m.account_id = ?",
     )
     .bind(account.0)
@@ -154,11 +169,24 @@ pub(crate) async fn started_games_of(
     Ok(rows
         .into_iter()
         .map(
-            |(game_id, scenario_id, creator, last_activity)| StartedGame {
+            |(
+                game_id,
+                scenario_id,
+                creator,
+                last_activity,
+                created_build,
+                roster,
+                lead,
+                logged_answers,
+            )| StartedGame {
                 game_id: GameId::new(game_id),
                 scenario_id,
                 creator: creator.map(AccountId),
                 last_activity,
+                created_build,
+                roster,
+                lead,
+                logged_answers,
             },
         )
         .collect())

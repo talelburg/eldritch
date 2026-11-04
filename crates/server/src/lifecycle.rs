@@ -4,11 +4,16 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use game_core::scenario::ScenarioId;
-use protocol::{AccountId, CreateGameRequest, CreateGameResponse, GameEntry};
+use game_core::state::{CardCode, InvestigatorId};
+use protocol::{
+    AccountId, Assignment, CreateGameRequest, CreateGameResponse, EntryInvestigator, GameEntry,
+    UnresumableSummary,
+};
 
 use crate::auth::SignedInAccount;
 use crate::room::RoomGame;
 use crate::rooms::LoadFailure;
+use crate::session::{SessionError, UnresumableReason};
 use crate::store::{self, StartedGame};
 use crate::{id, lobby, session, AppState};
 
@@ -47,7 +52,9 @@ pub(crate) async fn create_game(
 /// A started game is loaded through the room registry, as a socket's attach
 /// loads it, and summarised from the live game: nothing derived from its
 /// state is stored (ADR 0022). A loaded room stays for its usual idle grace.
-/// A started game that fails to load is left out.
+/// A started game this build can't replay is listed as unresumable, from its
+/// stored rows; one that fails to load for another reason, such as a
+/// database error, is left out and logged, and the next listing tries again.
 ///
 /// `200 OK` with the entries; `401 Unauthorized` when not signed in; `500` on
 /// a persistence failure.
@@ -75,26 +82,24 @@ pub(crate) async fn list_games(
 }
 
 /// The entry `account` is shown for the started game `game`, loaded through
-/// the room registry; `None` if it isn't live.
+/// the room registry: live, or unresumable; `None` if it is neither.
 ///
 /// # Errors
 ///
-/// `500` if its members can't be read.
+/// `500` if its members or its assignment can't be read.
 async fn started_entry(
     state: &AppState,
     account: AccountId,
     game: StartedGame,
 ) -> Result<Option<GameEntry>, StatusCode> {
-    // Every row this build stores names its creator; one that doesn't was
-    // stored by an older server.
-    let Some(creator) = game.creator else {
-        return Ok(None);
-    };
     let connection = match state.rooms.get_or_load(&game.game_id).await {
         Ok(connection) => connection,
         // Gone since the query above.
         Err(LoadFailure::NotFound) => return Ok(None),
         Err(LoadFailure::Failed(err)) => {
+            if let SessionError::Unresumable { reason, .. } = &*err {
+                return unresumable_entry(state, game, reason).await.map(Some);
+            }
             tracing::error!(
                 game_id = game.game_id.as_str(),
                 error = %err,
@@ -113,10 +118,75 @@ async fn started_entry(
     Ok(Some(GameEntry::of_live(
         game.game_id,
         ScenarioId::new(game.scenario_id),
-        creator,
+        game.creator,
         session.live(),
         account,
         &members,
         game.last_activity,
     )))
+}
+
+/// The entry for the started game `game`, which this build can't replay for
+/// `reason`. Its investigators come from its stored roster and assignment,
+/// so the row reads like any other.
+///
+/// # Errors
+///
+/// `500` if its members or its assignment can't be read.
+async fn unresumable_entry(
+    state: &AppState,
+    game: StartedGame,
+    reason: &UnresumableReason,
+) -> Result<GameEntry, StatusCode> {
+    let failed = |_| StatusCode::INTERNAL_SERVER_ERROR;
+    let members = lobby::named_members(&state.db, &game.game_id)
+        .await
+        .map_err(failed)?;
+    let assignment = store::load_assignment(&state.db, &game.game_id)
+        .await
+        .map_err(failed)?;
+    let investigators = stored_investigators(&game.roster, game.lead, &assignment);
+    Ok(GameEntry::of_unresumable(
+        game.game_id,
+        ScenarioId::new(game.scenario_id),
+        game.creator,
+        investigators,
+        &members,
+        game.last_activity,
+        UnresumableSummary {
+            reason: reason.cause(),
+            logged_answers: game.logged_answers,
+            created_build: game.created_build,
+            server_build: protocol::build_id().to_owned(),
+        },
+    ))
+}
+
+/// The investigators of the stored `roster` JSON, in seating order, the one
+/// at roster index `lead` leading, each held as `assignment` says.
+///
+/// Read leniently, since an unresumable game may be stored in another shape:
+/// each roster entry's `investigator` field, and no investigators at all if
+/// the roster isn't an array of entries carrying one.
+fn stored_investigators(
+    roster: &str,
+    lead: i64,
+    assignment: &Assignment,
+) -> Vec<EntryInvestigator> {
+    let Ok(serde_json::Value::Array(entries)) = serde_json::from_str(roster) else {
+        return Vec::new();
+    };
+    let codes: Option<Vec<&str>> = entries
+        .iter()
+        .map(|entry| entry.get("investigator")?.as_str())
+        .collect();
+    // Seating gives the entry at roster index `i` `InvestigatorId(i + 1)`.
+    (1..)
+        .zip(codes.unwrap_or_default())
+        .map(|(id, code)| EntryInvestigator {
+            investigator: CardCode::new(code),
+            holder: assignment.holder(InvestigatorId(id)),
+            lead: i64::from(id) - 1 == lead,
+        })
+        .collect()
 }
