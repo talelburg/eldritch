@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
+use cards::decks::WeaknessChoice;
 use game_core::action::PlayerAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -22,8 +23,8 @@ pub mod live;
 pub mod lobby;
 pub mod logged_answer;
 
-use lobby::{LobbyRefusal, LobbyView};
-use logged_answer::LoggedResponse;
+use crate::lobby::{Direction, LobbyRefusal, LobbyView};
+use crate::logged_answer::LoggedResponse;
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -76,15 +77,15 @@ pub enum ClientMessage {
         /// The picked investigator's card code.
         investigator: CardCode,
         /// The fixed weakness, or a random one.
-        choice: cards::decks::WeaknessChoice,
+        choice: WeaknessChoice,
     },
     /// The creator moves an investigator one position along the lobby's
     /// seating: [`Lobby::move_in_seating`](lobby::Lobby::move_in_seating).
-    MoveSeat {
+    MoveInSeating {
         /// The picked investigator's card code.
         investigator: CardCode,
         /// Which way they move.
-        direction: lobby::Direction,
+        direction: Direction,
     },
     /// The creator makes a pick the lead investigator:
     /// [`Lobby::set_lead`](lobby::Lobby::set_lead).

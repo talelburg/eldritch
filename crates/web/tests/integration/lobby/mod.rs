@@ -1,6 +1,7 @@
 //! The lobby view: what a member sees of a game in its lobby, rendered from
 //! the `Lobby` the server sent, folded into the store by the transport's own
-//! decode. One file per part of the view, so each later part gets its own.
+//! decode. One file per part of the view; the helpers and card codes they
+//! share live here.
 #![cfg(target_arch = "wasm32")]
 
 mod banner;
@@ -18,7 +19,7 @@ use game_core::state::CardCode;
 use leptos::task;
 use protocol::lobby::{Lobby, LobbyView, Member};
 use protocol::{AccountId, ClientMessage, GameId, ServerMessage};
-use wasm_bindgen::JsCast;
+use wasm_bindgen::JsCast as _;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
@@ -29,6 +30,22 @@ pub(crate) const GAME_ID: &str = "0b6f3f9e-lobby";
 
 /// The account Sam signs in as, a member beside [`YOU`].
 pub(crate) const SAM: AccountId = AccountId(2);
+
+/// Roland Banks 01001.
+pub(crate) const ROLAND: &str = "01001";
+/// Daisy Walker 01002.
+pub(crate) const DAISY: &str = "01002";
+/// "Skids" O'Toole 01003.
+pub(crate) const SKIDS: &str = "01003";
+/// Agnes Baker 01004.
+pub(crate) const AGNES: &str = "01004";
+/// Wendy Adams 01005.
+pub(crate) const WENDY: &str = "01005";
+
+/// The pool entry of `investigator`, then `sel` within it.
+pub(crate) fn entry(investigator: &str, sel: &str) -> String {
+    format!(r#".pool-entry[data-investigator="{investigator}"] {sel}"#)
+}
 
 /// Tal's lobby of The Gathering, signed in as [`YOU`], which Sam has joined.
 pub(crate) fn tals_lobby_with_sam() -> LobbyView {

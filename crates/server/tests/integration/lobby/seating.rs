@@ -2,54 +2,25 @@
 //! every member sees live, and which a forged command from another member
 //! can't make.
 
-use game_core::state::CardCode;
 use protocol::lobby::{Direction, LobbyRefusal};
-use protocol::ClientMessage;
 
-use super::picks::{lead, recv_refusal, seating, take_seen_by_both, tal_and_sam, Table};
-use super::recv_lobby;
-use crate::common::{self, Client};
+use super::{
+    daisy_roland_agnes, lead, move_in_seating, recv_lobby, recv_refusal, seating, set_lead,
+    tal_and_sam, TwoMembers, AGNES, DAISY, ROLAND,
+};
+use crate::common;
 
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
-const AGNES: &str = "01004";
-
-/// Send a `MoveSeat` of `investigator` on `ws`.
-async fn move_in_seating(ws: &mut Client, investigator: &str, direction: Direction) {
-    common::send(
-        ws,
-        &ClientMessage::MoveSeat {
-            investigator: CardCode::new(investigator),
-            direction,
-        },
-    )
-    .await;
-}
-
-/// Send a `SetLead` of `investigator` on `ws`.
-async fn set_lead(ws: &mut Client, investigator: &str) {
-    common::send(
-        ws,
-        &ClientMessage::SetLead {
-            investigator: CardCode::new(investigator),
-        },
-    )
-    .await;
-}
-
-/// Tal and Sam's lobby with Sam's Daisy, then Tal's Roland and Agnes picked,
-/// every `Lobby` read on both sockets.
-async fn three_picked() -> Table {
-    let mut table = tal_and_sam().await;
-    take_seen_by_both(&mut table.sam_ws, &mut table.tal_ws, DAISY).await;
-    take_seen_by_both(&mut table.tal_ws, &mut table.sam_ws, ROLAND).await;
-    take_seen_by_both(&mut table.tal_ws, &mut table.sam_ws, AGNES).await;
-    table
+/// Tal and Sam's lobby of the mock scenario, with [`daisy_roland_agnes`]
+/// picked.
+async fn three_picked() -> TwoMembers {
+    let mut members = tal_and_sam().await;
+    daisy_roland_agnes(&mut members).await;
+    members
 }
 
 #[tokio::test]
 async fn tals_move_and_set_lead_reach_sams_socket() {
-    let Table {
+    let TwoMembers {
         tal,
         sam,
         mut tal_ws,
@@ -75,7 +46,7 @@ async fn tals_move_and_set_lead_reach_sams_socket() {
 
 #[tokio::test]
 async fn sams_move_and_set_lead_are_refused() {
-    let Table {
+    let TwoMembers {
         tal,
         sam,
         mut tal_ws,
@@ -102,7 +73,7 @@ async fn sams_move_and_set_lead_are_refused() {
 
 #[tokio::test]
 async fn a_restart_keeps_the_seating_and_lead_the_creator_set() {
-    let Table {
+    let TwoMembers {
         tal,
         sam,
         mut tal_ws,

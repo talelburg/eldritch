@@ -6,12 +6,10 @@ use game_core::state::CardCode;
 use protocol::lobby::{LobbyRefusal, LobbyView};
 use protocol::ClientMessage;
 
-use super::picks::{recv_refusal, take, take_seen_by_both, tal_and_sam, Table};
-use super::recv_lobby;
+use super::{
+    recv_lobby, recv_refusal, take, take_seen_by_both, tal_and_sam, TwoMembers, DAISY, ROLAND,
+};
 use crate::common::{self, Client};
-
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
 
 /// Send a `SetWeakness` of `investigator` to `choice` on `ws`.
 async fn set_weakness(ws: &mut Client, investigator: &str, choice: WeaknessChoice) {
@@ -36,7 +34,7 @@ fn weakness_of(view: &LobbyView, investigator: &str) -> WeaknessChoice {
 
 #[tokio::test]
 async fn sams_set_weakness_reaches_tals_socket() {
-    let Table {
+    let TwoMembers {
         mut tal_ws,
         mut sam_ws,
         ..
@@ -56,7 +54,7 @@ async fn sams_set_weakness_reaches_tals_socket() {
 
 #[tokio::test]
 async fn setting_the_weakness_of_another_members_pick_is_refused() {
-    let Table {
+    let TwoMembers {
         mut tal_ws,
         mut sam_ws,
         ..
@@ -84,7 +82,7 @@ async fn setting_the_weakness_of_another_members_pick_is_refused() {
 
 #[tokio::test]
 async fn a_restart_mid_lobby_keeps_each_picks_weakness() {
-    let Table {
+    let TwoMembers {
         mut tal_ws,
         mut sam_ws,
         game_id,

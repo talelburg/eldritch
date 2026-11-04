@@ -10,7 +10,7 @@
 //! Each command a member sends is one function here, which applies it, or
 //! refuses it with a [`LobbyRefusal`] and changes nothing.
 
-use cards::decks::{WeaknessChoice, DEFAULT_DECKS};
+use cards::decks::{self, WeaknessChoice};
 use game_core::action::RosterEntry;
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
@@ -84,14 +84,11 @@ impl Lobby {
     ///
     /// [`LobbyRefusal::Taken`] if the investigator is already picked (Appendix
     /// III step 1: *"Each player chooses a different investigator"*), and
-    /// [`LobbyRefusal::TableFull`] if [`MAX_PICKS`] are. Before either,
+    /// [`LobbyRefusal::LobbyFull`] if [`MAX_PICKS`] are. Before either,
     /// [`LobbyRefusal::NotInPool`] if the investigator has no default deck:
     /// Start seats each pick with its default deck.
     pub fn take(&mut self, account: AccountId, investigator: CardCode) -> Result<(), LobbyRefusal> {
-        if !DEFAULT_DECKS
-            .iter()
-            .any(|deck| deck.investigator == investigator.as_str())
-        {
+        if decks::default_deck(investigator.as_str()).is_none() {
             return Err(LobbyRefusal::NotInPool { investigator });
         }
         if let Some(held) = self.pick_of(&investigator) {
@@ -101,7 +98,7 @@ impl Lobby {
             });
         }
         if self.picks.len() >= MAX_PICKS {
-            return Err(LobbyRefusal::TableFull);
+            return Err(LobbyRefusal::LobbyFull);
         }
         if self.lead.is_none() {
             self.lead = Some(investigator.clone());
@@ -126,15 +123,7 @@ impl Lobby {
         account: AccountId,
         investigator: &CardCode,
     ) -> Result<(), LobbyRefusal> {
-        let Some(position) = self
-            .picks
-            .iter()
-            .position(|pick| pick.investigator == *investigator && pick.account == account)
-        else {
-            return Err(LobbyRefusal::NotYourPick {
-                investigator: investigator.clone(),
-            });
-        };
+        let position = self.own_pick(account, investigator)?;
         self.picks.remove(position);
         if self.lead.as_ref() == Some(investigator) {
             self.lead = self.picks.first().map(|pick| pick.investigator.clone());
@@ -155,17 +144,20 @@ impl Lobby {
         investigator: &CardCode,
         choice: WeaknessChoice,
     ) -> Result<(), LobbyRefusal> {
-        let Some(pick) = self
-            .picks
-            .iter_mut()
-            .find(|pick| pick.investigator == *investigator && pick.account == account)
-        else {
-            return Err(LobbyRefusal::NotYourPick {
-                investigator: investigator.clone(),
-            });
-        };
-        pick.weakness = choice;
+        let position = self.own_pick(account, investigator)?;
+        self.picks[position].weakness = choice;
         Ok(())
+    }
+
+    /// Where `account`'s pick of `investigator` sits in the seating, counting
+    /// from 0.
+    fn own_pick(&self, account: AccountId, investigator: &CardCode) -> Result<usize, LobbyRefusal> {
+        self.picks
+            .iter()
+            .position(|pick| pick.investigator == *investigator && pick.account == account)
+            .ok_or_else(|| LobbyRefusal::NotYourPick {
+                investigator: investigator.clone(),
+            })
     }
 
     /// The creator `account` moves `investigator` one position along the
@@ -238,9 +230,10 @@ impl Lobby {
 
     /// `account` starts the game: what it is seated with. The picks, in
     /// seating order, become the roster, each with its default deck and its
-    /// weakness choice; the lead is its pick's seat; and each pick's member
-    /// holds the investigator seated from it. The lobby itself is unchanged: the room replaces it
-    /// with the game once the game is stored.
+    /// weakness choice; the lead is the lead pick's position in the seating;
+    /// and each pick's member holds the investigator seated from it. The lobby
+    /// itself is unchanged: the room replaces it with the game once the game
+    /// is stored.
     ///
     /// # Errors
     ///
@@ -256,9 +249,7 @@ impl Lobby {
             .picks
             .iter()
             .map(|pick| {
-                DEFAULT_DECKS
-                    .iter()
-                    .find(|deck| deck.investigator == pick.investigator.as_str())
+                decks::default_deck(pick.investigator.as_str())
                     .map(|deck| deck.roster_entry(pick.weakness))
                     .ok_or_else(|| LobbyRefusal::NotInPool {
                         investigator: pick.investigator.clone(),
@@ -329,7 +320,7 @@ pub enum LobbyRefusal {
         by: AccountId,
     },
     /// [`MAX_PICKS`] investigators are already picked.
-    TableFull,
+    LobbyFull,
     /// The investigator has no default deck to play, so isn't in the pool.
     NotInPool {
         /// The investigator asked for.
@@ -382,7 +373,7 @@ pub enum Direction {
 pub struct Member {
     /// The member's account.
     pub account: AccountId,
-    /// The name the host set for it, shown at the table.
+    /// The name the host set for it, shown in the lobby and at the table.
     pub display_name: String,
 }
 
@@ -412,6 +403,17 @@ pub struct LobbyView {
     pub picks: Vec<Pick>,
     /// The lead investigator's card code, once anyone is picked.
     pub lead: Option<CardCode>,
+}
+
+impl LobbyView {
+    /// The display name of the member `account`, if it is one.
+    #[must_use]
+    pub fn member_name(&self, account: AccountId) -> Option<&str> {
+        self.members
+            .iter()
+            .find(|member| member.account == account)
+            .map(|member| member.display_name.as_str())
+    }
 }
 
 #[cfg(test)]
@@ -536,7 +538,7 @@ mod tests {
         let before = lobby.clone();
         assert_eq!(
             lobby.take(AccountId(2), code(WENDY)),
-            Err(LobbyRefusal::TableFull)
+            Err(LobbyRefusal::LobbyFull)
         );
         assert_eq!(lobby, before);
     }
@@ -607,9 +609,7 @@ mod tests {
             .roster
             .iter()
             .map(|entry| {
-                let deck = DEFAULT_DECKS
-                    .iter()
-                    .find(|deck| deck.investigator == entry.investigator.as_str())
+                let deck = decks::default_deck(entry.investigator.as_str())
                     .expect("a default deck's investigator");
                 (
                     entry.investigator.as_str(),
@@ -651,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn start_assigns_each_seat_to_the_member_who_picked_it() {
+    fn start_assigns_each_seated_investigator_to_the_member_who_picked_it() {
         let start = three_picked().start(AccountId(1)).expect("Tal may start");
         assert_eq!(
             start.assignment,
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn start_leads_with_the_lead_pick_by_its_seat() {
+    fn start_leads_with_the_lead_pick_by_its_position_in_the_seating() {
         assert_eq!(three_picked().start(AccountId(1)).map(|s| s.lead), Ok(0));
         let stored = three_picked().view();
         let roland_leads = tals_lobby().with_picks(stored.picks, Some(code(ROLAND)));

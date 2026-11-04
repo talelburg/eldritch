@@ -315,7 +315,9 @@ enum Disposition {
 /// malformed frames reply to the sender only.
 ///
 /// Each lobby command is one arm, mapping it to its [`Lobby`] function through
-/// [`change_lobby`].
+/// [`GameRoom::change_lobby`]. An accepted command's lobby is broadcast to the
+/// whole room, the sender's connection included, so nothing is replied; a
+/// refusal goes to the sender only.
 async fn handle_client_message(
     room: &GameRoom,
     account: AccountId,
@@ -347,34 +349,38 @@ async fn handle_client_message(
                 }
             }
             Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
-            Ok(ClientMessage::Take { investigator }) => {
-                change_lobby(room, |lobby| lobby.take(account, investigator)).await
-            }
-            Ok(ClientMessage::GiveUp { investigator }) => {
-                change_lobby(room, |lobby| lobby.give_up(account, &investigator)).await
-            }
+            Ok(ClientMessage::Take { investigator }) => room
+                .change_lobby(|lobby| lobby.take(account, investigator))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::GiveUp { investigator }) => room
+                .change_lobby(|lobby| lobby.give_up(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
             Ok(ClientMessage::Start) => room.start(account).await.err().map(lobby_refused),
             Ok(ClientMessage::SetWeakness {
                 investigator,
                 choice,
-            }) => {
-                change_lobby(room, |lobby| {
-                    lobby.set_weakness(account, &investigator, choice)
-                })
+            }) => room
+                .change_lobby(|lobby| lobby.set_weakness(account, &investigator, choice))
                 .await
-            }
-            Ok(ClientMessage::MoveSeat {
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::MoveInSeating {
                 investigator,
                 direction,
-            }) => {
-                change_lobby(room, |lobby| {
-                    lobby.move_in_seating(account, &investigator, direction)
-                })
+            }) => room
+                .change_lobby(|lobby| lobby.move_in_seating(account, &investigator, direction))
                 .await
-            }
-            Ok(ClientMessage::SetLead { investigator }) => {
-                change_lobby(room, |lobby| lobby.set_lead(account, &investigator)).await
-            }
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::SetLead { investigator }) => room
+                .change_lobby(|lobby| lobby.set_lead(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
             )))),
@@ -384,16 +390,6 @@ async fn handle_client_message(
         // protocol; ignore them. They still reset the silence deadline.
         _ => None,
     }
-}
-
-/// Apply one lobby command through [`GameRoom::change_lobby`]. An accepted
-/// command's lobby is broadcast to the whole room, the sender's connection
-/// included, so nothing is replied; a refusal goes to the sender only.
-async fn change_lobby(
-    room: &GameRoom,
-    command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
-) -> Option<Disposition> {
-    room.change_lobby(command).await.err().map(lobby_refused)
 }
 
 /// The reply refusing a lobby command for `reason`, to its sender alone.

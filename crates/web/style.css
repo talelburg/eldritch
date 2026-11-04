@@ -392,12 +392,12 @@
     display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0;
     width: 100%; max-width: 60rem; justify-content: center;
 }
-.seat {
+.seating-position {
     display: flex; align-items: center; gap: 0.4rem; min-width: 10rem; min-height: 2rem;
     background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 0.4rem 0.6rem;
 }
-.seat-number { font-weight: bold; opacity: 0.6; }
-.seat.lead { border: 1px solid #e0b84c; }
+.position-number { font-weight: bold; opacity: 0.6; }
+.seating-position.lead { border: 1px solid #e0b84c; }
 .lead-star { color: #c9971c; margin-left: auto; }
 
 /* The creator's seating controls: ◀ ▶ and the ★ that makes a pick the lead. */

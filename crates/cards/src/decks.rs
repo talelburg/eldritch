@@ -135,6 +135,12 @@ impl DefaultDeck {
 /// The five default decks, in the order the lobby's pool shows them.
 pub const DEFAULT_DECKS: &[DefaultDeck] = &[ROLAND, DAISY, SKIDS, AGNES, WENDY];
 
+/// The default deck of the investigator `code`, if it has one.
+#[must_use]
+pub fn default_deck(code: &str) -> Option<&'static DefaultDeck> {
+    DEFAULT_DECKS.iter().find(|deck| deck.investigator == code)
+}
+
 /// Roland Banks 01001's default deck.
 ///
 /// **Source:** inspired by the 2016 Learn to Play's Investigator Starter Decks,

@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::store::{self, StripSeat};
+use crate::store::{self, StripEntry};
 
 /// The store's [`start_strip`](crate::store::ClientState::start_strip), while
 /// it has one, with a button that dismisses it for good.
@@ -14,17 +14,17 @@ use crate::store::{self, StripSeat};
 #[component]
 pub fn StartStrip() -> impl IntoView {
     let store = store::use_store();
-    let seats = Memo::new(move |_| store.with(|s| s.start_strip.clone()));
+    let entries = Memo::new(move |_| store.with(|s| s.start_strip.clone()));
 
     move || {
-        seats.get().map(|seats| {
+        entries.get().map(|entries| {
             view! {
                 <div class="start-strip" role="status">
                     <span class="strip-title">"Started with"</span>
                     <ul class="strip-roster">
-                        {seats
+                        {entries
                             .into_iter()
-                            .map(|seat| view! { <li class="strip-seat">{label(&seat)}</li> })
+                            .map(|entry| view! { <li class="strip-entry">{label(&entry)}</li> })
                             .collect_view()}
                     </ul>
                     <button class="dismiss" on:click=move |_| store.update(|s| s.start_strip = None)>
@@ -36,9 +36,9 @@ pub fn StartStrip() -> impl IntoView {
     }
 }
 
-/// `seat` as the strip names it: the investigator, their member, and the ★ if
+/// `entry` as the strip names it: the investigator, their member, and the ★ if
 /// they lead.
-fn label(seat: &StripSeat) -> String {
-    let star = if seat.lead { " ★" } else { "" };
-    format!("{} ({}){star}", seat.investigator, seat.member)
+fn label(entry: &StripEntry) -> String {
+    let star = if entry.lead { " ★" } else { "" };
+    format!("{} ({}){star}", entry.investigator, entry.member)
 }

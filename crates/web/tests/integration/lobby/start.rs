@@ -7,17 +7,14 @@ use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
-use protocol::{Assignment, ClientMessage, LogPosition, ServerMessage};
-use wasm_bindgen::JsCast;
+use protocol::{AccountId, Assignment, ClientMessage, LogPosition, ServerMessage};
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState, ConnStatus};
 use web_sys::HtmlButtonElement;
 
-use super::{click, mount_lobby, one, sent, tals_lobby_with_picks, texts, SAM};
+use super::{click, mount_lobby, one, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM};
 use crate::common::{self, YOU};
-
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
 
 #[wasm_bindgen_test]
 async fn the_creator_starts_the_game_with_start() {
@@ -33,6 +30,16 @@ async fn the_creator_starts_the_game_with_start() {
     click(&handle, ".lobby button.start");
     task::tick().await;
     assert!(matches!(sent(&mut handle), ClientMessage::Start));
+}
+
+#[wasm_bindgen_test]
+async fn start_with_one_pick_names_one_investigator() {
+    let handle = mount_lobby(tals_lobby_with_picks(&[(ROLAND, YOU)]), YOU, false).await;
+
+    assert_eq!(
+        texts(&handle, ".lobby button.start"),
+        ["Starts with 1 investigator. The roster can't change after."]
+    );
 }
 
 #[wasm_bindgen_test]
@@ -74,7 +81,7 @@ fn daisy_and_roland_seated() -> GameState {
 
 /// The `Hello` frame each connection to the started game is sent, for the
 /// account `you`.
-fn hello_after_start(you: protocol::AccountId) -> String {
+fn hello_after_start(you: AccountId) -> String {
     serde_json::to_string(&ServerMessage::Hello {
         build: protocol::build_id().to_string(),
         you,
@@ -103,7 +110,7 @@ async fn a_member_at_start_sees_the_board_with_the_roster_and_its_lead() {
     );
     assert!(texts(&handle, ".lobby").is_empty(), "the lobby is gone");
     assert_eq!(
-        texts(&handle, ".start-strip .strip-seat"),
+        texts(&handle, ".start-strip .strip-entry"),
         ["Daisy Walker (Sam) ★", "Roland Banks (Tal)"],
         "the roster in seating order, each with its member, and the lead"
     );

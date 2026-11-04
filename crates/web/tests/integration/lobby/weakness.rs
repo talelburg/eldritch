@@ -5,20 +5,14 @@ use cards::decks::WeaknessChoice;
 use leptos::task;
 use protocol::lobby::LobbyView;
 use protocol::ClientMessage;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::HtmlInputElement;
 
-use super::{click, mount_lobby, one, sent, tals_lobby_with_picks, texts, SAM};
-use crate::common::YOU;
-
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
-
-/// The pool entry of `investigator`, then `sel` within it.
-fn entry(investigator: &str, sel: &str) -> String {
-    format!(r#".pool-entry[data-investigator="{investigator}"] {sel}"#)
-}
+use super::{
+    click, entry, mount_lobby, one, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM,
+};
+use crate::common::{BoardHandle, YOU};
 
 /// `view` with `investigator`'s pick set to `choice`.
 fn with_weakness(mut view: LobbyView, investigator: &str, choice: WeaknessChoice) -> LobbyView {
@@ -31,7 +25,7 @@ fn with_weakness(mut view: LobbyView, investigator: &str, choice: WeaknessChoice
 }
 
 /// Whether the weakness checkbox on `investigator`'s entry is checked.
-fn checked(handle: &crate::common::BoardHandle, investigator: &str) -> bool {
+fn checked(handle: &BoardHandle, investigator: &str) -> bool {
     one(handle, &entry(investigator, "input.random-basic-weakness"))
         .dyn_into::<HtmlInputElement>()
         .expect("an input")

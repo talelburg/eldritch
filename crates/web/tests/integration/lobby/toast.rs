@@ -8,11 +8,11 @@ use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::store;
 
-use super::{mount_lobby, tals_lobby_with_picks, texts, SAM};
-use crate::common::YOU;
+use super::{mount_lobby, tals_lobby_with_picks, texts, ROLAND, SAM};
+use crate::common::{BoardHandle, YOU};
 
 /// Feed `handle`'s store the `LobbyRefused` frame for `reason`.
-async fn refused(handle: &crate::common::BoardHandle, reason: LobbyRefusal) {
+async fn refused(handle: &BoardHandle, reason: LobbyRefusal) {
     let frame = serde_json::to_string(&ServerMessage::LobbyRefused { reason })
         .expect("a LobbyRefused serializes");
     handle.store.update(|s| {
@@ -24,7 +24,7 @@ async fn refused(handle: &crate::common::BoardHandle, reason: LobbyRefusal) {
 #[wasm_bindgen_test]
 async fn a_take_beaten_to_it_names_who_took_the_investigator() {
     // Tal took Roland a moment before Sam's Take arrived.
-    let handle = mount_lobby(tals_lobby_with_picks(&[("01001", YOU)]), SAM, false).await;
+    let handle = mount_lobby(tals_lobby_with_picks(&[(ROLAND, YOU)]), SAM, false).await;
     assert!(
         texts(&handle, ".toast").is_empty(),
         "no toast before a refusal"
@@ -33,7 +33,7 @@ async fn a_take_beaten_to_it_names_who_took_the_investigator() {
     refused(
         &handle,
         LobbyRefusal::Taken {
-            investigator: CardCode::new("01001"),
+            investigator: CardCode::new(ROLAND),
             by: YOU,
         },
     )
@@ -46,13 +46,13 @@ async fn a_take_beaten_to_it_names_who_took_the_investigator() {
 }
 
 #[wasm_bindgen_test]
-async fn a_take_at_a_full_table_says_so() {
+async fn a_take_at_a_full_lobby_says_so() {
     let handle = mount_lobby(tals_lobby_with_picks(&[]), SAM, false).await;
 
-    refused(&handle, LobbyRefusal::TableFull).await;
+    refused(&handle, LobbyRefusal::LobbyFull).await;
 
     assert_eq!(
         texts(&handle, ".toast"),
-        ["The table is full: four investigators are picked."]
+        ["The lobby is full: 4 investigators are picked."]
     );
 }

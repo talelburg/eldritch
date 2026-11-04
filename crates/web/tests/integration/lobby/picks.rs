@@ -3,23 +3,15 @@
 
 use leptos::task;
 use protocol::ClientMessage;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::HtmlButtonElement;
 
-use super::{click, mount_lobby, one, sent, tals_lobby_with_picks, texts, SAM};
+use super::{
+    click, entry, mount_lobby, one, sent, tals_lobby_with_picks, texts, AGNES, DAISY, ROLAND, SAM,
+    SKIDS, WENDY,
+};
 use crate::common::YOU;
-
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
-const SKIDS: &str = "01003";
-const AGNES: &str = "01004";
-const WENDY: &str = "01005";
-
-/// The pool entry of `investigator`, then `sel` within it.
-fn entry(investigator: &str, sel: &str) -> String {
-    format!(r#".pool-entry[data-investigator="{investigator}"] {sel}"#)
-}
 
 #[wasm_bindgen_test]
 async fn a_free_investigator_is_taken_with_take() {
@@ -79,11 +71,11 @@ async fn take_is_disabled_once_four_investigators_are_picked() {
     let take = one(&handle, &entry(WENDY, "button.take"))
         .dyn_into::<HtmlButtonElement>()
         .expect("a button");
-    assert!(take.disabled(), "the table is full");
+    assert!(take.disabled(), "the lobby is full");
 }
 
 #[wasm_bindgen_test]
-async fn take_is_enabled_while_the_table_has_room() {
+async fn take_is_enabled_while_the_lobby_has_room() {
     let picks = [(ROLAND, YOU), (DAISY, SAM), (SKIDS, SAM)];
     let handle = mount_lobby(tals_lobby_with_picks(&picks), YOU, false).await;
 

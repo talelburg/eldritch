@@ -2,8 +2,8 @@
 //! signed-in account that opens its link becomes a member. Two accounts over
 //! real HTTP and WebSocket, as the spec's server seam describes.
 //!
-//! The shared helpers live here; each lobby command's tests get a file of
-//! their own.
+//! The helpers, fixtures and card codes the lobby's tests share live here;
+//! each lobby command's tests get a file of their own.
 
 mod picks;
 mod seating;
@@ -13,10 +13,13 @@ mod weakness;
 use std::net::SocketAddr;
 
 use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::Registries;
 use game_core::state::investigator::InvestigatorId;
-use protocol::lobby::LobbyView;
+use game_core::state::CardCode;
+use protocol::lobby::{Direction, LobbyRefusal, LobbyView};
 use protocol::{AccountId, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
 use serde_json::Value;
+use sqlx::SqlitePool;
 
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID};
 
@@ -70,6 +73,126 @@ pub(crate) fn member_names(view: &LobbyView) -> Vec<&str> {
         .iter()
         .map(|member| member.display_name.as_str())
         .collect()
+}
+
+/// Roland Banks 01001.
+const ROLAND: &str = "01001";
+/// Daisy Walker 01002.
+const DAISY: &str = "01002";
+/// "Skids" O'Toole 01003.
+const SKIDS: &str = "01003";
+/// Agnes Baker 01004.
+const AGNES: &str = "01004";
+/// Wendy Adams 01005.
+const WENDY: &str = "01005";
+
+/// Tal's lobby, open on Tal's socket and on Sam's, which joined it. Both
+/// sockets have read every `Lobby` sent so far.
+struct TwoMembers {
+    tal: AccountId,
+    sam: AccountId,
+    tal_ws: Client,
+    sam_ws: Client,
+    game_id: String,
+    pool: SqlitePool,
+}
+
+/// [`TwoMembers`] in a lobby of the mock scenario, served the mock registries.
+async fn tal_and_sam() -> TwoMembers {
+    tal_and_sam_at(common::REGISTRIES, TEST_SCENARIO_ID).await
+}
+
+/// [`TwoMembers`] in a lobby of `scenario_id`, served `registries`.
+async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers {
+    let pool = common::memory_pool().await;
+    let tal = common::test_account(&pool).await;
+    let sam = common::add_account(&pool, OTHER_ACCOUNT).await;
+    let addr = common::spawn_server_on(pool.clone(), registries).await;
+    let game_id = create_lobby_of(addr, TEST_ACCOUNT, scenario_id).await;
+    let mut tal_ws = common::connect(addr, &game_id).await;
+    let _ = recv_lobby(&mut tal_ws).await;
+    let mut sam_ws = common::connect_as(addr, &game_id, OTHER_ACCOUNT).await;
+    let _ = recv_lobby(&mut sam_ws).await;
+    let _ = recv_lobby(&mut tal_ws).await;
+    TwoMembers {
+        tal,
+        sam,
+        tal_ws,
+        sam_ws,
+        game_id,
+        pool,
+    }
+}
+
+/// Sam's Daisy, then Tal's Roland and Agnes, every `Lobby` read on both
+/// sockets: Daisy leads, since she was picked first. Returns the last view.
+async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
+    take_seen_by_both(&mut members.sam_ws, &mut members.tal_ws, DAISY).await;
+    take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, ROLAND).await;
+    take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, AGNES).await
+}
+
+/// Send a `Take` of `investigator` on `ws`.
+async fn take(ws: &mut Client, investigator: &str) {
+    common::send(
+        ws,
+        &ClientMessage::Take {
+            investigator: CardCode::new(investigator),
+        },
+    )
+    .await;
+}
+
+/// Send a `Take` of `investigator` on `ws`, and read the `Lobby` it brings to
+/// both sockets. Returns the view the other socket was sent.
+async fn take_seen_by_both(ws: &mut Client, other: &mut Client, investigator: &str) -> LobbyView {
+    take(ws, investigator).await;
+    let _ = recv_lobby(ws).await;
+    recv_lobby(other).await.1
+}
+
+/// Send a `MoveInSeating` of `investigator` on `ws`.
+async fn move_in_seating(ws: &mut Client, investigator: &str, direction: Direction) {
+    common::send(
+        ws,
+        &ClientMessage::MoveInSeating {
+            investigator: CardCode::new(investigator),
+            direction,
+        },
+    )
+    .await;
+}
+
+/// Send a `SetLead` of `investigator` on `ws`.
+async fn set_lead(ws: &mut Client, investigator: &str) {
+    common::send(
+        ws,
+        &ClientMessage::SetLead {
+            investigator: CardCode::new(investigator),
+        },
+    )
+    .await;
+}
+
+/// The next frame on `ws`, which must be a `LobbyRefused`: its reason.
+async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
+    match common::recv_within(ws).await {
+        ServerMessage::LobbyRefused { reason } => reason,
+        other => panic!("expected a LobbyRefused, got {other:?}"),
+    }
+}
+
+/// A view's picks as `(investigator, account)`, in seating order.
+fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
+    view.picks
+        .iter()
+        .map(|pick| (pick.investigator.as_str(), pick.account))
+        .collect()
+}
+
+/// The lead a view names, by card code.
+fn lead(view: &LobbyView) -> Option<&str> {
+    view.lead.as_ref().map(CardCode::as_str)
 }
 
 #[tokio::test]

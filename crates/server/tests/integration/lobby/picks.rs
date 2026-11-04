@@ -2,28 +2,14 @@
 //! refused command is answered to its sender alone.
 
 use game_core::state::CardCode;
-use protocol::lobby::{LobbyRefusal, LobbyView, Pick};
-use protocol::{AccountId, ClientMessage, ServerMessage};
+use protocol::lobby::LobbyRefusal;
+use protocol::ClientMessage;
 
-use super::{create_lobby, recv_lobby};
-use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
-
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
-const SKIDS: &str = "01003";
-const AGNES: &str = "01004";
-const WENDY: &str = "01005";
-
-/// Send a `Take` of `investigator` on `ws`.
-pub(super) async fn take(ws: &mut Client, investigator: &str) {
-    common::send(
-        ws,
-        &ClientMessage::Take {
-            investigator: CardCode::new(investigator),
-        },
-    )
-    .await;
-}
+use super::{
+    lead, recv_lobby, recv_refusal, seating, take, take_seen_by_both, tal_and_sam, TwoMembers,
+    AGNES, DAISY, ROLAND, SKIDS, WENDY,
+};
+use crate::common::{self, Client};
 
 /// Send a `GiveUp` of `investigator` on `ws`.
 async fn give_up(ws: &mut Client, investigator: &str) {
@@ -36,80 +22,9 @@ async fn give_up(ws: &mut Client, investigator: &str) {
     .await;
 }
 
-/// The next frame on `ws`, which must be a `LobbyRefused`: its reason.
-pub(super) async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
-    match common::recv_within(ws).await {
-        ServerMessage::LobbyRefused { reason } => reason,
-        other => panic!("expected a LobbyRefused, got {other:?}"),
-    }
-}
-
-/// A view's picks as `(investigator, account)`, in seating order.
-pub(super) fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
-    view.picks
-        .iter()
-        .map(
-            |Pick {
-                 investigator,
-                 account,
-                 ..
-             }| (investigator.as_str(), *account),
-        )
-        .collect()
-}
-
-/// The lead a view names, by card code.
-pub(super) fn lead(view: &LobbyView) -> Option<&str> {
-    view.lead.as_ref().map(CardCode::as_str)
-}
-
-/// Tal's lobby, open on Tal's socket and on Sam's, which joined it. Both
-/// sockets have read every `Lobby` sent so far.
-pub(super) struct Table {
-    pub(super) tal: AccountId,
-    pub(super) sam: AccountId,
-    pub(super) tal_ws: Client,
-    pub(super) sam_ws: Client,
-    pub(super) game_id: String,
-    pub(super) pool: sqlx::SqlitePool,
-}
-
-pub(super) async fn tal_and_sam() -> Table {
-    let pool = common::memory_pool().await;
-    let tal = common::test_account(&pool).await;
-    let sam = common::add_account(&pool, OTHER_ACCOUNT).await;
-    let addr = common::spawn_server(pool.clone()).await;
-    let game_id = create_lobby(addr, TEST_ACCOUNT).await;
-    let mut tal_ws = common::connect(addr, &game_id).await;
-    let _ = recv_lobby(&mut tal_ws).await;
-    let mut sam_ws = common::connect_as(addr, &game_id, OTHER_ACCOUNT).await;
-    let _ = recv_lobby(&mut sam_ws).await;
-    let _ = recv_lobby(&mut tal_ws).await;
-    Table {
-        tal,
-        sam,
-        tal_ws,
-        sam_ws,
-        game_id,
-        pool,
-    }
-}
-
-/// Send a `Take` of `investigator` on `ws`. and read the `Lobby` it brings to
-/// both sockets. Returns the view the other socket was sent.
-pub(super) async fn take_seen_by_both(
-    ws: &mut Client,
-    other: &mut Client,
-    investigator: &str,
-) -> LobbyView {
-    take(ws, investigator).await;
-    let _ = recv_lobby(ws).await;
-    recv_lobby(other).await.1
-}
-
 #[tokio::test]
 async fn sams_take_reaches_tals_socket() {
-    let Table {
+    let TwoMembers {
         sam,
         mut tal_ws,
         mut sam_ws,
@@ -128,7 +43,7 @@ async fn sams_take_reaches_tals_socket() {
 
 #[tokio::test]
 async fn a_take_of_an_investigator_already_held_is_refused_to_its_sender_alone() {
-    let Table {
+    let TwoMembers {
         tal,
         sam,
         mut tal_ws,
@@ -159,7 +74,7 @@ async fn a_take_of_an_investigator_already_held_is_refused_to_its_sender_alone()
 
 #[tokio::test]
 async fn a_fifth_take_is_refused() {
-    let Table {
+    let TwoMembers {
         mut tal_ws,
         mut sam_ws,
         ..
@@ -169,14 +84,14 @@ async fn a_fifth_take_is_refused() {
     }
 
     take(&mut sam_ws, WENDY).await;
-    assert_eq!(recv_refusal(&mut sam_ws).await, LobbyRefusal::TableFull);
+    assert_eq!(recv_refusal(&mut sam_ws).await, LobbyRefusal::LobbyFull);
 }
 
 /// The pool is the default decks' investigators: Start seats each pick with
 /// its default deck.
 #[tokio::test]
 async fn a_take_of_an_investigator_with_no_default_deck_is_refused() {
-    let Table { mut sam_ws, .. } = tal_and_sam().await;
+    let TwoMembers { mut sam_ws, .. } = tal_and_sam().await;
 
     // .45 Automatic: a card, but no investigator with a default deck.
     take(&mut sam_ws, "01016").await;
@@ -190,7 +105,7 @@ async fn a_take_of_an_investigator_with_no_default_deck_is_refused() {
 
 #[tokio::test]
 async fn giving_up_the_lead_closes_the_gap_and_passes_the_lead_on() {
-    let Table {
+    let TwoMembers {
         tal,
         mut tal_ws,
         mut sam_ws,
@@ -209,7 +124,7 @@ async fn giving_up_the_lead_closes_the_gap_and_passes_the_lead_on() {
 
 #[tokio::test]
 async fn giving_up_another_members_pick_is_refused() {
-    let Table {
+    let TwoMembers {
         mut tal_ws,
         mut sam_ws,
         ..
@@ -227,7 +142,7 @@ async fn giving_up_another_members_pick_is_refused() {
 
 #[tokio::test]
 async fn a_restart_mid_lobby_keeps_the_picks_their_seating_and_the_lead() {
-    let Table {
+    let TwoMembers {
         tal,
         sam,
         mut tal_ws,

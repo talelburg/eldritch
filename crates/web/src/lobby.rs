@@ -1,9 +1,9 @@
 //! The lobby (wasm-only): what a member sees of a game before Start.
 //!
-//! It is laid out as #1231's variant C. The header holds the members and the
-//! invite link with Copy; below it the banner, on the opening that made this
-//! account a member; then the pool of five investigators, the seating's four
-//! numbered positions below the pool, and Start at the end of the seating.
+//! The header holds the members and the invite link with Copy; below it the
+//! banner, on the opening that made this account a member; then the pool of
+//! five investigators, the seating's four numbered positions below the pool,
+//! and Start at the end of the seating.
 //!
 //! Each part is a component of its own, reading what it shows from the store's
 //! [`LobbyView`](protocol::lobby::LobbyView).
@@ -11,13 +11,13 @@
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use game_core::state::CardCode;
 use leptos::prelude::*;
-use protocol::lobby::{Direction, LobbyView, MAX_PICKS};
-use protocol::{AccountId, ClientMessage};
+use protocol::lobby::{Direction, MAX_PICKS};
+use protocol::ClientMessage;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
 use crate::store::{self, ClientState, ConnStatus};
 use crate::transport::OutboundTx;
-use crate::url;
+use crate::{names, registry, url};
 
 /// The lobby. Renders only at [`ConnStatus::InLobby`], with a lobby in the
 /// store.
@@ -106,11 +106,7 @@ fn JoinedBanner() -> impl IntoView {
     let creator = move || {
         store.with(|s| {
             let lobby = s.lobby.as_ref().filter(|_| s.joined)?;
-            lobby
-                .members
-                .iter()
-                .find(|member| member.account == lobby.creator)
-                .map(|member| member.display_name.clone())
+            lobby.member_name(lobby.creator).map(str::to_string)
         })
     };
 
@@ -143,7 +139,7 @@ fn Pool() -> impl IntoView {
 /// Who holds one investigator of the pool, as this account sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Holding {
-    /// Nobody: free to take, unless the table is full.
+    /// Nobody: free to take, unless [`MAX_PICKS`] investigators are picked.
     Free {
         /// [`MAX_PICKS`] investigators are already picked.
         full: bool,
@@ -154,8 +150,8 @@ enum Holding {
     Held(String, WeaknessChoice),
 }
 
-/// Who holds `investigator` in the store's lobby, as the account it names
-/// `you` sees it.
+/// Who holds `investigator` in the store's lobby, as the store's signed-in
+/// account sees it.
 fn holding(s: &ClientState, investigator: &str) -> Holding {
     let Some(lobby) = &s.lobby else {
         return Holding::Free { full: false };
@@ -172,24 +168,13 @@ fn holding(s: &ClientState, investigator: &str) -> Holding {
     if s.you == Some(pick.account) {
         return Holding::Yours(pick.weakness);
     }
-    Holding::Held(display_name(lobby, pick.account), pick.weakness)
-}
-
-/// The display name of the member `account`, from `lobby`.
-fn display_name(lobby: &LobbyView, account: AccountId) -> String {
-    lobby
-        .members
-        .iter()
-        .find(|member| member.account == account)
-        .map_or_else(String::new, |member| member.display_name.clone())
-}
-
-/// The printed name of the card `code`, which the corpus holds.
-fn card_name(code: &str) -> String {
-    cards::by_code(code)
-        .unwrap_or_else(|| panic!("a default deck's card {code} is in the corpus"))
-        .name
-        .clone()
+    Holding::Held(
+        lobby
+            .member_name(pick.account)
+            .unwrap_or_default()
+            .to_string(),
+        pick.weakness,
+    )
 }
 
 /// Send `message` to the server, if a transport is mounted.
@@ -208,10 +193,11 @@ fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
     let store = store::use_store();
     let holding = Memo::new(move |_| store.with(|s| holding(s, deck.investigator)));
     let investigator = move || CardCode::new(deck.investigator);
+    let name = names::card_name(registry::use_cards(), &investigator());
 
     view! {
         <div class="pool-entry" data-investigator=deck.investigator>
-            <span class="pool-name">{card_name(deck.investigator)}</span>
+            <span class="pool-name">{name}</span>
             {move || match holding.get() {
                 Holding::Free { full } => view! {
                     <span class="pool-state">"Free"</span>
@@ -264,6 +250,8 @@ fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
 /// chooses: the fixed one, or a random one drawn at Start.
 #[component]
 fn DeckList(deck: &'static DefaultDeck, weakness: WeaknessChoice) -> impl IntoView {
+    let cards = registry::use_cards();
+    let card_name = |code: &str| names::card_name(cards, &CardCode::new(code));
     let mut counted: Vec<(&str, usize)> = Vec::new();
     for code in deck.cards.iter().chain(deck.signatures) {
         match counted.iter_mut().find(|(seen, _)| seen == code) {
@@ -297,7 +285,7 @@ fn DeckList(deck: &'static DefaultDeck, weakness: WeaknessChoice) -> impl IntoVi
 fn Seating() -> impl IntoView {
     view! {
         <ol class="seating">
-            {(0..MAX_PICKS).map(|position| view! { <Seat position=position/> }).collect_view()}
+            {(0..MAX_PICKS).map(|position| view! { <SeatingPosition position=position/> }).collect_view()}
         </ol>
         <StartFooter/>
     }
@@ -333,7 +321,10 @@ fn StartFooter() -> impl IntoView {
                 }
             } else {
                 Footer::Waiting {
-                    creator: display_name(lobby, lobby.creator),
+                    creator: lobby
+                        .member_name(lobby.creator)
+                        .unwrap_or_default()
+                        .to_string(),
                 }
             })
         })
@@ -347,7 +338,7 @@ fn StartFooter() -> impl IntoView {
                     disabled=picks == 0
                     on:click=move |_| send(ClientMessage::Start)
                 >
-                    {format!("Starts with {picks} investigators. The roster can't change after.")}
+                    {start_label(picks)}
                 </button>
             }
             .into_any(),
@@ -359,20 +350,32 @@ fn StartFooter() -> impl IntoView {
     }
 }
 
+/// What the creator's Start says it commits to, with `picks` investigators
+/// picked.
+fn start_label(picks: usize) -> String {
+    let investigators = if picks == 1 {
+        "investigator"
+    } else {
+        "investigators"
+    };
+    format!("Starts with {picks} {investigators}. The roster can't change after.")
+}
+
 /// One position of the seating, from 0: the pick sitting there, named with
 /// its member, and the ★ if it leads. Empty while nobody sits there. The
 /// creator also gets the [`SeatingControls`].
 #[component]
-fn Seat(position: usize) -> impl IntoView {
+fn SeatingPosition(position: usize) -> impl IntoView {
     let store = store::use_store();
+    let cards = registry::use_cards();
     let seated = Memo::new(move |_| {
         store.with(|s| {
             let lobby = s.lobby.as_ref()?;
             let pick = lobby.picks.get(position)?;
             let text = format!(
                 "{} ({})",
-                card_name(pick.investigator.as_str()),
-                display_name(lobby, pick.account)
+                names::card_name(cards, &pick.investigator),
+                lobby.member_name(pick.account).unwrap_or_default()
             );
             Some((text, lobby.lead.as_ref() == Some(&pick.investigator)))
         })
@@ -380,9 +383,9 @@ fn Seat(position: usize) -> impl IntoView {
     let leads = move || seated.with(|seated| seated.as_ref().is_some_and(|(_, lead)| *lead));
 
     view! {
-        <li class="seat" class:lead=leads>
-            <span class="seat-number">{position + 1}</span>
-            <span class="seat-pick">
+        <li class="seating-position" class:lead=leads>
+            <span class="position-number">{position + 1}</span>
+            <span class="position-pick">
                 {move || seated.get().map(|(text, _)| text).unwrap_or_default()}
             </span>
             {move || leads().then(|| view! { <span class="lead-star">"★"</span> })}
@@ -431,7 +434,7 @@ fn SeatingControls(position: usize) -> impl IntoView {
             let moved = |direction: Direction| {
                 let investigator = controls.investigator.clone();
                 move |_| {
-                    send(ClientMessage::MoveSeat {
+                    send(ClientMessage::MoveInSeating {
                         investigator: investigator.clone(),
                         direction,
                     });

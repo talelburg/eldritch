@@ -4,15 +4,16 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
-use game_core::state::{CardCode, ChaosToken, Continuation, GameState, TokenResolution};
+use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
-use protocol::lobby::{LobbyRefusal, LobbyView};
+use protocol::lobby::{LobbyRefusal, LobbyView, MAX_PICKS};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
     AccountId, Applied, Assignment, GameId, LogPosition, Refusal, ServerMessage, SignInMethod,
     SignedIn,
 };
 
+use crate::names;
 use crate::socket_ending::SocketEnding;
 
 /// Connection lifecycle, set by the transport (not by `reduce`).
@@ -140,7 +141,7 @@ pub struct ClientState {
     /// `Hello` that ends the lobby this client was showing, and so absent on a
     /// connection that opened straight onto a started game. Replaced by every
     /// `Hello`, so a reconnect clears it, and dismissed by the strip itself.
-    pub start_strip: Option<Vec<StripSeat>>,
+    pub start_strip: Option<Vec<StripEntry>>,
     pub game: Option<GameState>,
     pub outcome: Option<EngineOutcome>,
     /// The log position of the prompt `outcome` holds, which every submit
@@ -291,7 +292,7 @@ impl ClientState {
 
 /// One investigator on the start strip, in seating order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StripSeat {
+pub struct StripEntry {
     /// The investigator's name.
     pub investigator: String,
     /// The display name of the member holding them, from the lobby.
@@ -302,18 +303,19 @@ pub struct StripSeat {
 
 /// The start strip for `game`, the game a `Hello` seated with `assigned`,
 /// naming each holder from `lobby`, the lobby it started from.
-fn start_strip(lobby: &LobbyView, game: &GameState, assigned: &Assignment) -> Vec<StripSeat> {
+fn start_strip(lobby: &LobbyView, game: &GameState, assigned: &Assignment) -> Vec<StripEntry> {
     game.seating
         .iter()
-        .map(|id| StripSeat {
+        .map(|id| StripEntry {
             investigator: game
                 .investigators
                 .get(id)
                 .map_or_else(|| format!("Investigator {}", id.0), |inv| inv.name.clone()),
             member: assigned
                 .holder(*id)
-                .and_then(|account| lobby.members.iter().find(|m| m.account == account))
-                .map_or_else(String::new, |member| member.display_name.clone()),
+                .and_then(|account| lobby.member_name(account))
+                .unwrap_or_default()
+                .to_string(),
             lead: game.lead == Some(*id),
         })
         .collect()
@@ -552,22 +554,27 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
     match reason {
         LobbyRefusal::Taken { investigator, by } => {
             let holder = lobby
-                .and_then(|lobby| lobby.members.iter().find(|member| member.account == by))
-                .map_or("another member", |member| member.display_name.as_str());
+                .and_then(|lobby| lobby.member_name(by))
+                .unwrap_or("another member");
             format!(
                 "{} was just taken by {holder}.",
-                investigator_name(&investigator)
+                names::card_name(&cards::REGISTRY, &investigator)
             )
         }
-        LobbyRefusal::TableFull => "The table is full: four investigators are picked.".into(),
+        LobbyRefusal::LobbyFull => {
+            format!("The lobby is full: {MAX_PICKS} investigators are picked.")
+        }
         LobbyRefusal::Started => "The game has started, so its roster can't change.".into(),
         // A move or ★ that crossed a member's give-up, or another move.
         LobbyRefusal::NotPicked { investigator } => {
-            format!("{} is no longer picked.", investigator_name(&investigator))
+            format!(
+                "{} is no longer picked.",
+                names::card_name(&cards::REGISTRY, &investigator)
+            )
         }
         LobbyRefusal::NoNeighbour { investigator } => format!(
             "{} is already at that end of the seating.",
-            investigator_name(&investigator)
+            names::card_name(&cards::REGISTRY, &investigator)
         ),
         LobbyRefusal::Seating(reason) => format!("The game couldn't start: {reason}"),
         // The lobby offers the seating controls and Start to the creator
@@ -597,12 +604,6 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
             CLIENT_BUG.into()
         }
     }
-}
-
-/// The investigator `code`'s printed name, or the code if the corpus has no
-/// such card.
-fn investigator_name(code: &CardCode) -> String {
-    cards::by_code(code.as_str()).map_or_else(|| code.to_string(), |card| card.name.clone())
 }
 
 /// What a multi-pick answer did, which its wire form doesn't say: a mulligan, a

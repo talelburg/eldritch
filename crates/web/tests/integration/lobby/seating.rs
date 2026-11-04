@@ -3,17 +3,20 @@
 
 use wasm_bindgen_test::*;
 
-use super::{mount_lobby, tals_lobby_with_picks, texts, SAM};
+use super::{mount_lobby, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM};
 use crate::common::YOU;
 
 #[wasm_bindgen_test]
 async fn the_seating_numbers_four_positions_and_fills_them_in_order() {
-    let picks = [("01002", SAM), ("01001", YOU)];
+    let picks = [(DAISY, SAM), (ROLAND, YOU)];
     let handle = mount_lobby(tals_lobby_with_picks(&picks), YOU, false).await;
 
-    assert_eq!(texts(&handle, ".seat .seat-number"), ["1", "2", "3", "4"]);
     assert_eq!(
-        texts(&handle, ".seat .seat-pick"),
+        texts(&handle, ".seating-position .position-number"),
+        ["1", "2", "3", "4"]
+    );
+    assert_eq!(
+        texts(&handle, ".seating-position .position-pick"),
         ["Daisy Walker (Sam)", "Roland Banks (Tal)", "", ""],
         "the picks in seating order, the rest empty"
     );
@@ -22,20 +25,23 @@ async fn the_seating_numbers_four_positions_and_fills_them_in_order() {
 #[wasm_bindgen_test]
 async fn the_lead_wears_the_star() {
     // Sam's Daisy was picked first, so she leads.
-    let picks = [("01002", SAM), ("01001", YOU)];
+    let picks = [(DAISY, SAM), (ROLAND, YOU)];
     let handle = mount_lobby(tals_lobby_with_picks(&picks), YOU, false).await;
 
     assert_eq!(
-        texts(&handle, ".seat.lead .seat-pick"),
+        texts(&handle, ".seating-position.lead .position-pick"),
         ["Daisy Walker (Sam)"]
     );
-    assert_eq!(texts(&handle, ".seat .lead-star"), ["★"]);
+    assert_eq!(texts(&handle, ".seating-position .lead-star"), ["★"]);
 }
 
 #[wasm_bindgen_test]
 async fn an_empty_seating_has_no_lead() {
     let handle = mount_lobby(tals_lobby_with_picks(&[]), YOU, false).await;
 
-    assert_eq!(texts(&handle, ".seat .seat-pick"), ["", "", "", ""]);
-    assert!(texts(&handle, ".seat .lead-star").is_empty());
+    assert_eq!(
+        texts(&handle, ".seating-position .position-pick"),
+        ["", "", "", ""]
+    );
+    assert!(texts(&handle, ".seating-position .lead-star").is_empty());
 }
