@@ -3,9 +3,9 @@
 //!
 //! A **stored game** is its creation inputs (scenario, roster, lead, RNG seed,
 //! the `interactive_acknowledge` flag) plus an ordered log of its answers
-//! (ADR 0022), and the account that created it, which holds every
-//! investigator (TODO(#1239): until the lobby stores an assignment). No
-//! engine state is stored. The session keeps the live game in
+//! (ADR 0022), the account that created it, and beside them its assignment:
+//! which account holds each investigator (ADR 0024). No engine state is
+//! stored. The session keeps the live game in
 //! memory and appends each answer it accepts to the log as a [`LoggedAnswer`]
 //! with the RNG checkpoint after it, before committing it; [`GameSession::load`]
 //! re-runs setup from the inputs, checks it against the stored
@@ -22,6 +22,7 @@ use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
+use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
 use protocol::{AccountId, Assignment, GameId, LogPosition};
@@ -55,6 +56,17 @@ pub enum SessionError {
     /// an already-started seed).
     #[error("seating rejected: {0}")]
     Seating(String),
+    /// The assignment a game was to be created with doesn't hold exactly the
+    /// investigators seating seated: one would have no holder, so nobody could
+    /// answer its prompts, or a holder would hold an investigator not in the
+    /// game.
+    #[error("the assignment covers {assigned:?}, but seating seated {seated:?}")]
+    AssignmentMismatch {
+        /// The investigators seating seated, in id order.
+        seated: Vec<InvestigatorId>,
+        /// The investigators the assignment gives a holder, in id order.
+        assigned: Vec<InvestigatorId>,
+    },
     /// A stored game exists but this build can't rebuild it as it was played.
     ///
     /// Failing is deliberate: a partially or differently reconstructed session
@@ -96,11 +108,11 @@ pub enum UnresumableReason {
         /// The version the game was stored in.
         found: i64,
     },
-    /// The game records no creator, so nobody holds its investigators. A row
-    /// stored before games recorded one has none, but the format version
-    /// refuses those first, so only a row edited by hand reaches this.
-    #[error("the game records no creator")]
-    NoCreator,
+    /// The game records no assignment, so nobody holds its investigators.
+    /// Every game stored before the assignment was stored beside it has none,
+    /// and nothing falls back to the creator holding everyone (ADR 0024).
+    #[error("the game records no assignment")]
+    NoAssignment,
     /// Setup no longer runs from the stored inputs: the scenario is no longer
     /// registered, or the engine now rejects the roster.
     #[error("setup no longer runs from the stored inputs: {0}")]
@@ -138,10 +150,12 @@ struct Opened {
 }
 
 /// A stored game's rows as [`GameSession::read`] fetched them, before any
-/// check: its `games` row and its action rows in `seq` order.
+/// check: its `games` row, its assignment rows and its action rows in `seq`
+/// order.
 pub(crate) struct StoredGame {
     game_id: GameId,
     row: GameRow,
+    assignment: Assignment,
     actions: Vec<ActionRow>,
 }
 
@@ -208,13 +222,6 @@ impl CreationInputs {
     }
 }
 
-/// The interim assignment: `creator` holds every investigator seated in
-/// `state`. TODO(#1239): the lobby replaces where an assignment comes from,
-/// not its shape.
-fn creator_holds_everyone(creator: AccountId, state: &GameState) -> Assignment {
-    Assignment::all_to(creator, state.investigators.keys().copied())
-}
-
 /// Run scenario setup from a game's creation inputs. `create` and `load` both
 /// set a game up through here, so a reload re-runs exactly what creation ran.
 fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, SetupFailure> {
@@ -240,8 +247,9 @@ fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, Setup
 impl GameSession {
     /// Create a new game for `creator`: seats the roster into the scenario's
     /// `setup()` state, stores the game's creation inputs, its setup
-    /// fingerprint and its creator, and returns a live session at the
-    /// mulligan prompt in which the creator holds every investigator.
+    /// fingerprint and its creator, and beside them `assignment`, in one
+    /// transaction, and returns a live session at the mulligan prompt in which
+    /// `assignment` decides who answers for each investigator.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
@@ -253,6 +261,8 @@ impl GameSession {
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
     ///   roster, a `lead` index past its end, unknown investigator code, unimplemented deck card, more
     ///   random basic weaknesses than the weakness pool holds, etc.).
+    /// - [`SessionError::AssignmentMismatch`] if `assignment` doesn't give
+    ///   exactly the seated investigators a holder.
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
     ///   fails.
     pub async fn create(
@@ -263,6 +273,7 @@ impl GameSession {
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
         lead: usize,
+        assignment: Assignment,
     ) -> Result<Self, SessionError> {
         let inputs = CreationInputs {
             scenario_id,
@@ -278,11 +289,21 @@ impl GameSession {
             SetupFailure::UnknownScenario(id) => SessionError::UnknownScenario(id),
             SetupFailure::Seating(reason) => SessionError::Seating(reason),
         })?;
+        let seated: Vec<InvestigatorId> = opened.state.investigators.keys().copied().collect();
+        let assigned: Vec<InvestigatorId> = assignment
+            .iter()
+            .map(|(investigator, _)| investigator)
+            .collect();
+        if assigned != seated {
+            return Err(SessionError::AssignmentMismatch { seated, assigned });
+        }
         let row = inputs.to_row(creator, &SetupFingerprint::of(&opened.state))?;
         let game_id = game_id.into();
-        store::insert_game(&db, &game_id, &row, protocol::build_id(), unix_millis()).await?;
+        let mut tx = db.begin().await?;
+        store::insert_game(&mut tx, &game_id, &row, protocol::build_id(), unix_millis()).await?;
+        store::insert_assignment(&mut tx, &game_id, &assignment).await?;
+        tx.commit().await?;
 
-        let assignment = creator_holds_everyone(creator, &opened.state);
         Ok(Self {
             game_id,
             live: LiveGame::new(
@@ -356,9 +377,9 @@ impl GameSession {
     ///
     /// - [`SessionError::Unresumable`] if the game exists but can't be
     ///   rebuilt as it was played: it was stored in another format version,
-    ///   setup no longer runs from its inputs or decides differently, or a
-    ///   logged answer fails a replay check ([`ReplayFailure`]). Its rows are
-    ///   left untouched.
+    ///   it records no assignment, setup no longer runs from its inputs or
+    ///   decides differently, or a logged answer fails a replay check
+    ///   ([`ReplayFailure`]). Its rows are left untouched.
     /// - [`SessionError::Db`] if a query fails, or [`SessionError::Serde`] if
     ///   a stored column or a logged answer fails to deserialize.
     pub async fn load(
@@ -372,10 +393,10 @@ impl GameSession {
         Self::rebuild(db, registries, stored).map(Some)
     }
 
-    /// The I/O half of [`GameSession::load`]: fetch a stored game's row and
-    /// its action rows, unparsed. Returns `None` if no game with `game_id`
-    /// exists. Runs no check, so every failure but a query's is
-    /// [`GameSession::rebuild`]'s to report.
+    /// The I/O half of [`GameSession::load`]: fetch a stored game's row, its
+    /// assignment rows and its action rows, unparsed. Returns `None` if no
+    /// game with `game_id` exists. Runs no check, so every failure but a
+    /// query's is [`GameSession::rebuild`]'s to report.
     ///
     /// # Errors
     ///
@@ -387,10 +408,12 @@ impl GameSession {
         let Some(row) = store::load_game(db, game_id).await? else {
             return Ok(None);
         };
+        let assignment = store::load_assignment(db, game_id).await?;
         let actions = store::load_actions(db, game_id).await?;
         Ok(Some(StoredGame {
             game_id: game_id.clone(),
             row,
+            assignment,
             actions,
         }))
     }
@@ -401,8 +424,8 @@ impl GameSession {
     /// session's later writes.
     ///
     /// The checks run in this order, and the first to fail is reported:
-    /// format version, the creator, the stored fingerprint's deserialization,
-    /// setup, the fingerprint comparison, then each logged answer's
+    /// format version, the assignment, the stored fingerprint's
+    /// deserialization, setup, the fingerprint comparison, then each logged answer's
     /// deserialization and replay.
     ///
     /// # Errors
@@ -417,6 +440,7 @@ impl GameSession {
         let StoredGame {
             game_id,
             row,
+            assignment,
             actions,
         } = stored;
         let unresumable = |reason| SessionError::Unresumable {
@@ -428,9 +452,9 @@ impl GameSession {
                 found: row.format_version,
             }));
         }
-        let Some(creator) = row.creator else {
-            return Err(unresumable(UnresumableReason::NoCreator));
-        };
+        if assignment.is_empty() {
+            return Err(unresumable(UnresumableReason::NoAssignment));
+        }
         let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
         let inputs = CreationInputs::from_row(row)?;
         let opened = open(registries, &inputs).map_err(|failure| {
@@ -447,7 +471,6 @@ impl GameSession {
             return Err(unresumable(UnresumableReason::Fingerprint(mismatch)));
         }
 
-        let assignment = creator_holds_everyone(creator, &opened.state);
         let mut state = opened.state;
         let mut outcome = opened.outcome;
         let mut seq: i64 = 0;

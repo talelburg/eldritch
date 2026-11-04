@@ -235,9 +235,9 @@ impl fmt::Display for AccountId {
 /// for them.
 ///
 /// A live game is built with one, and refuses an answer from any account but
-/// the investigator's holder. TODO(#1239): until the lobby stores an
-/// assignment, the creator holds every investigator, so any other account is
-/// a viewer. Serialises as a JSON object from investigator id to account id.
+/// the investigator's holder, so an account holding no investigator is a
+/// viewer. It is stored beside the game, not among its creation inputs
+/// (ADR 0024). Serialises as a JSON object from investigator id to account id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Assignment(BTreeMap<InvestigatorId, AccountId>);
@@ -252,6 +252,31 @@ impl Assignment {
             .into_iter()
             .map(|investigator| (investigator, account))
             .collect()
+    }
+
+    /// Each seated investigator held by the account at its roster position in
+    /// `accounts`. Seating gives the roster's first entry `InvestigatorId(1)`,
+    /// its second `InvestigatorId(2)`, and so on, so `accounts` lists each
+    /// roster entry's holder in roster order.
+    #[must_use]
+    pub fn in_seating_order(accounts: impl IntoIterator<Item = AccountId>) -> Self {
+        (1..)
+            .zip(accounts)
+            .map(|(id, account)| (InvestigatorId(id), account))
+            .collect()
+    }
+
+    /// Each investigator with the account holding it, in investigator order.
+    pub fn iter(&self) -> impl Iterator<Item = (InvestigatorId, AccountId)> + '_ {
+        self.0
+            .iter()
+            .map(|(investigator, account)| (*investigator, *account))
+    }
+
+    /// Whether no investigator has a holder.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// The account holding `investigator`, if any does.

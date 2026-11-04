@@ -29,6 +29,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
         0,
+        common::assign_all(creator, &common::roster()),
     )
     .await
     .expect("seed game");

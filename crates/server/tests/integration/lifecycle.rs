@@ -5,8 +5,9 @@
 use axum::body;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use game_core::state::InvestigatorId;
 use game_core::test_support::TEST_INV;
-use protocol::GameId;
+use protocol::{Assignment, GameId};
 use serde_json::Value;
 use server::session::GameSession;
 use tower::ServiceExt as _;
@@ -46,8 +47,11 @@ async fn post_games_creates_game_and_returns_id() {
     );
 }
 
+/// The assignment is stored beside the game, so a fresh load over the same
+/// database, as after a restart, gets back the one `POST /games` created the
+/// game with: the signed-in creator holds every investigator.
 #[tokio::test]
-async fn a_created_game_records_its_creator_who_holds_every_investigator() {
+async fn a_game_created_through_post_reloads_with_the_assignment_it_was_created_with() {
     let pool = common::memory_pool().await;
     let (app, cookie) = common::signed_in_app(pool.clone(), common::REGISTRIES).await;
     let creator = common::test_account(&pool).await;
@@ -69,20 +73,15 @@ async fn a_created_game_records_its_creator_who_holds_every_investigator() {
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     let game_id = json["game_id"].as_str().expect("game_id is a string");
 
-    // Loaded back from its stored rows, so the creator came from the store.
     let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new(game_id))
         .await
         .unwrap()
         .expect("the created game loads");
-    let live = loaded.live();
-    assert!(!live.state().investigators.is_empty());
-    for investigator in live.state().investigators.keys() {
-        assert_eq!(
-            live.assignment().holder(*investigator),
-            Some(creator),
-            "the signed-in creator holds {investigator:?}"
-        );
-    }
+
+    assert_eq!(
+        loaded.live().assignment(),
+        &Assignment::from_iter([(InvestigatorId(1), creator)])
+    );
 }
 
 #[tokio::test]

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{env, fs, future};
+use std::{env, fs, future, iter};
 
 use axum::body::{self, Body};
 use axum::http::{header, HeaderMap, Request, StatusCode};
@@ -20,7 +20,7 @@ use game_core::event::Event;
 use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
-use protocol::{AccountId, ClientMessage, ServerMessage};
+use protocol::{AccountId, Assignment, ClientMessage, ServerMessage};
 use reqwest::redirect::Policy;
 use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
@@ -84,18 +84,25 @@ pub(crate) fn roster() -> Vec<RosterEntry> {
     }]
 }
 
+/// The assignment in which `account` holds every investigator `roster` seats.
+pub(crate) fn assign_all(account: AccountId, roster: &[RosterEntry]) -> Assignment {
+    Assignment::in_seating_order(iter::repeat_n(account, roster.len()))
+}
+
 /// Create a game of the mock scenario with [`roster`], led by its one
-/// investigator and created by the [`TEST_ACCOUNT`], and return the live
-/// session at the mulligan prompt.
+/// investigator, created by the [`TEST_ACCOUNT`], who holds it, and return
+/// the live session at the mulligan prompt.
 pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
+    let creator = test_account(pool).await;
     GameSession::create(
         pool.clone(),
         REGISTRIES,
         game_id,
-        test_account(pool).await,
+        creator,
         ScenarioId::new(TEST_SCENARIO_ID),
         roster(),
         0,
+        assign_all(creator, &roster()),
     )
     .await
     .expect("create game")
