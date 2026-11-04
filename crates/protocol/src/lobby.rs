@@ -84,8 +84,16 @@ impl Lobby {
     ///
     /// [`LobbyRefusal::Taken`] if the investigator is already picked (Appendix
     /// III step 1: *"Each player chooses a different investigator"*), and
-    /// [`LobbyRefusal::TableFull`] if [`MAX_PICKS`] are.
+    /// [`LobbyRefusal::TableFull`] if [`MAX_PICKS`] are. Before either,
+    /// [`LobbyRefusal::NotInPool`] if the investigator has no default deck:
+    /// Start seats each pick with its default deck.
     pub fn take(&mut self, account: AccountId, investigator: CardCode) -> Result<(), LobbyRefusal> {
+        if !DEFAULT_DECKS
+            .iter()
+            .any(|deck| deck.investigator == investigator.as_str())
+        {
+            return Err(LobbyRefusal::NotInPool { investigator });
+        }
         if let Some(held) = self.pick_of(&investigator) {
             return Err(LobbyRefusal::Taken {
                 investigator,
@@ -101,6 +109,7 @@ impl Lobby {
         self.picks.push(Pick {
             investigator,
             account,
+            weakness: WeaknessChoice::default(),
         });
         Ok(())
     }
@@ -133,10 +142,36 @@ impl Lobby {
         Ok(())
     }
 
+    /// `account` sets how its pick of `investigator` meets the card back's
+    /// *"1 random basic weakness"*: the default deck's fixed weakness, or a
+    /// random one drawn at Start.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotYourPick`] unless `account` holds the investigator.
+    pub fn set_weakness(
+        &mut self,
+        account: AccountId,
+        investigator: &CardCode,
+        choice: WeaknessChoice,
+    ) -> Result<(), LobbyRefusal> {
+        let Some(pick) = self
+            .picks
+            .iter_mut()
+            .find(|pick| pick.investigator == *investigator && pick.account == account)
+        else {
+            return Err(LobbyRefusal::NotYourPick {
+                investigator: investigator.clone(),
+            });
+        };
+        pick.weakness = choice;
+        Ok(())
+    }
+
     /// `account` starts the game: what it is seated with. The picks, in
-    /// seating order, become the roster, each with its default deck; the lead
-    /// is its pick's seat; and each pick's member holds the investigator
-    /// seated from it. The lobby itself is unchanged: the room replaces it
+    /// seating order, become the roster, each with its default deck and its
+    /// weakness choice; the lead is its pick's seat; and each pick's member
+    /// holds the investigator seated from it. The lobby itself is unchanged: the room replaces it
     /// with the game once the game is stored.
     ///
     /// # Errors
@@ -158,9 +193,7 @@ impl Lobby {
                 DEFAULT_DECKS
                     .iter()
                     .find(|deck| deck.investigator == pick.investigator.as_str())
-                    // Until a pick stores its weakness choice (#1338), every
-                    // pick brings its deck's fixed weakness.
-                    .map(|deck| deck.roster_entry(WeaknessChoice::Fixed))
+                    .map(|deck| deck.roster_entry(pick.weakness))
                     .ok_or_else(|| LobbyRefusal::NotInPool {
                         investigator: pick.investigator.clone(),
                     })
@@ -271,6 +304,9 @@ pub struct Pick {
     pub investigator: CardCode,
     /// The member who picked them, and will hold them once the game starts.
     pub account: AccountId,
+    /// How the pick's default deck meets its *"1 random basic weakness"*:
+    /// [`WeaknessChoice::Fixed`] until its member sets it.
+    pub weakness: WeaknessChoice,
 }
 
 /// The body of [`ServerMessage::Lobby`](crate::ServerMessage::Lobby): the
@@ -316,6 +352,7 @@ mod tests {
         Pick {
             investigator: code(investigator),
             account: AccountId(account),
+            weakness: WeaknessChoice::Fixed,
         }
     }
 
@@ -510,6 +547,21 @@ mod tests {
     }
 
     #[test]
+    fn start_seats_a_random_weakness_for_a_pick_that_chose_one() {
+        let mut lobby = three_picked();
+        lobby
+            .set_weakness(AccountId(1), &code(ROLAND), WeaknessChoice::Random)
+            .expect("Tal holds Roland");
+        let start = lobby.start(AccountId(1)).expect("Tal may start");
+        assert_eq!(
+            seated(&start),
+            [(DAISY, true), (ROLAND, false), (AGNES, true)],
+            "Roland's fixed weakness is gone"
+        );
+        assert_eq!(start.roster[1].random_basic_weaknesses, 1);
+    }
+
+    #[test]
     fn start_assigns_each_seat_to_the_member_who_picked_it() {
         let start = three_picked().start(AccountId(1)).expect("Tal may start");
         assert_eq!(
@@ -553,5 +605,62 @@ mod tests {
             .with_picks(stored.picks.clone(), stored.lead.clone())
             .view();
         assert_eq!((restored.picks, restored.lead), (stored.picks, stored.lead));
+    }
+
+    #[test]
+    fn taking_an_investigator_with_no_default_deck_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.take(AccountId(2), code("01016")),
+            Err(LobbyRefusal::NotInPool {
+                investigator: code("01016")
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn a_member_sets_their_picks_weakness_to_random() {
+        let mut lobby = three_picked();
+        lobby
+            .set_weakness(AccountId(2), &code(DAISY), WeaknessChoice::Random)
+            .expect("Sam holds Daisy");
+        let view = lobby.view();
+        assert_eq!(
+            view.picks,
+            [
+                Pick {
+                    weakness: WeaknessChoice::Random,
+                    ..pick(DAISY, 2)
+                },
+                pick(ROLAND, 1),
+                pick(AGNES, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn setting_another_members_picks_weakness_is_refused() {
+        let mut lobby = three_picked();
+        let before = lobby.clone();
+        assert_eq!(
+            lobby.set_weakness(AccountId(1), &code(DAISY), WeaknessChoice::Random),
+            Err(LobbyRefusal::NotYourPick {
+                investigator: code(DAISY)
+            })
+        );
+        assert_eq!(lobby, before);
+    }
+
+    #[test]
+    fn setting_the_weakness_of_an_investigator_nobody_picked_is_refused() {
+        let mut lobby = three_picked();
+        assert_eq!(
+            lobby.set_weakness(AccountId(1), &code(WENDY), WeaknessChoice::Random),
+            Err(LobbyRefusal::NotYourPick {
+                investigator: code(WENDY)
+            })
+        );
     }
 }

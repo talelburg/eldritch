@@ -10,6 +10,7 @@ mod pool;
 mod seating;
 mod start;
 mod toast;
+mod weakness;
 
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;

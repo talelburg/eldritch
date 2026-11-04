@@ -7,6 +7,7 @@
 
 mod picks;
 mod start;
+mod weakness;
 
 use std::net::SocketAddr;
 

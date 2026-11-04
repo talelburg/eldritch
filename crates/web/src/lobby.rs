@@ -8,7 +8,7 @@
 //! Each part is a component of its own, reading what it shows from the store's
 //! [`LobbyView`](protocol::lobby::LobbyView).
 
-use cards::decks::{self, DefaultDeck};
+use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::lobby::{LobbyView, MAX_PICKS};
@@ -148,10 +148,10 @@ enum Holding {
         /// [`MAX_PICKS`] investigators are already picked.
         full: bool,
     },
-    /// This account.
-    Yours,
-    /// Another member, by display name.
-    Held(String),
+    /// This account, with the pick's weakness choice.
+    Yours(WeaknessChoice),
+    /// Another member, by display name, with the pick's weakness choice.
+    Held(String, WeaknessChoice),
 }
 
 /// Who holds `investigator` in the store's lobby, as the account it names
@@ -170,9 +170,9 @@ fn holding(s: &ClientState, investigator: &str) -> Holding {
         };
     };
     if s.you == Some(pick.account) {
-        return Holding::Yours;
+        return Holding::Yours(pick.weakness);
     }
-    Holding::Held(display_name(lobby, pick.account))
+    Holding::Held(display_name(lobby, pick.account), pick.weakness)
 }
 
 /// The display name of the member `account`, from `lobby`.
@@ -200,8 +200,9 @@ fn send(message: ClientMessage) {
 }
 
 /// One investigator of the pool, named, and marked with who holds them: free
-/// (Take), yours (Give up), or another member's (their name, and the default
-/// deck the pick plays, read-only).
+/// (Take), yours (the weakness choice, and Give up), or another member's
+/// (their name, and the default deck the pick plays with its weakness choice,
+/// read-only).
 #[component]
 fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
     let store = store::use_store();
@@ -223,8 +224,23 @@ fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
                     </button>
                 }
                 .into_any(),
-                Holding::Yours => view! {
+                Holding::Yours(weakness) => view! {
                     <span class="pool-state">"Yours"</span>
+                    <label class="pool-weakness">
+                        <input
+                            type="checkbox"
+                            class="random-basic-weakness"
+                            prop:checked=weakness == WeaknessChoice::Random
+                            on:change=move |_| {
+                                let choice = match weakness {
+                                    WeaknessChoice::Fixed => WeaknessChoice::Random,
+                                    WeaknessChoice::Random => WeaknessChoice::Fixed,
+                                };
+                                send(ClientMessage::SetWeakness { investigator: investigator(), choice });
+                            }
+                        />
+                        " Random basic weakness"
+                    </label>
                     <button
                         class="give-up"
                         on:click=move |_| send(ClientMessage::GiveUp { investigator: investigator() })
@@ -233,9 +249,9 @@ fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
                     </button>
                 }
                 .into_any(),
-                Holding::Held(member) => view! {
+                Holding::Held(member, weakness) => view! {
                     <span class="pool-state">{member}</span>
-                    <DeckList deck=deck/>
+                    <DeckList deck=deck weakness=weakness/>
                 }
                 .into_any(),
             }}
@@ -243,17 +259,13 @@ fn PoolEntry(deck: &'static DefaultDeck) -> impl IntoView {
     }
 }
 
-/// `deck`'s cards, read-only: the counted cards, then the signatures, then the
-/// fixed weakness, a repeated card shown once with its count.
+/// `deck`'s cards, read-only: the counted cards, then the signatures, a
+/// repeated card shown once with its count, then the basic weakness `weakness`
+/// chooses: the fixed one, or a random one drawn at Start.
 #[component]
-fn DeckList(deck: &'static DefaultDeck) -> impl IntoView {
+fn DeckList(deck: &'static DefaultDeck, weakness: WeaknessChoice) -> impl IntoView {
     let mut counted: Vec<(&str, usize)> = Vec::new();
-    for code in deck
-        .cards
-        .iter()
-        .chain(deck.signatures)
-        .chain([&deck.weakness])
-    {
+    for code in deck.cards.iter().chain(deck.signatures) {
         match counted.iter_mut().find(|(seen, _)| seen == code) {
             Some((_, count)) => *count += 1,
             None => counted.push((code, 1)),
@@ -269,6 +281,12 @@ fn DeckList(deck: &'static DefaultDeck) -> impl IntoView {
                     view! { <li>{line}</li> }
                 })
                 .collect_view()}
+            <li class="pool-weakness">
+                {match weakness {
+                    WeaknessChoice::Fixed => card_name(deck.weakness),
+                    WeaknessChoice::Random => "Random basic weakness".to_string(),
+                }}
+            </li>
         </ul>
     }
 }

@@ -70,6 +70,14 @@ pub enum ClientMessage {
         /// The picked investigator's card code.
         investigator: CardCode,
     },
+    /// Set how one of the sender's picks meets its *"1 random basic
+    /// weakness"*: [`Lobby::set_weakness`](lobby::Lobby::set_weakness).
+    SetWeakness {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+        /// The fixed weakness, or a random one.
+        choice: cards::decks::WeaknessChoice,
+    },
     /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
     /// Every connected member is then sent a `Hello`.
     Start,
@@ -453,7 +461,7 @@ mod id_tests {
 
 #[cfg(test)]
 mod tests {
-    use game_core::state::{CardCode, GameStateBuilder};
+    use game_core::state::GameStateBuilder;
     use game_core::test_support;
 
     use super::*;

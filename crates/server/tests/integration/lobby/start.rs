@@ -4,6 +4,7 @@
 //! These lobbies are of The Gathering, served the production registries, so
 //! Start seats real investigators with their default decks.
 
+use cards::decks::WeaknessChoice;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::Registries;
@@ -15,7 +16,7 @@ use scenarios::the_gathering::ID as GATHERING;
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
-use super::picks::{recv_refusal, take};
+use super::picks::{recv_refusal, take, take_seen_by_both};
 use super::{create_lobby_of, recv_lobby};
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
 
@@ -23,21 +24,16 @@ const ROLAND: &str = "01001";
 const DAISY: &str = "01002";
 const AGNES: &str = "01004";
 
-/// Silver Twilight Acolyte 01102: Roland's default deck's fixed weakness.
-const ROLANDS_FIXED_WEAKNESS: &str = "01102";
-
-/// The production card registry, but with Roland's fixed weakness
-/// unimplemented, so the engine refuses to seat Roland's default deck.
-const ROLANDS_WEAKNESS_UNIMPLEMENTED: CardRegistry = CardRegistry {
-    is_playable: |code| {
-        code.as_str() != ROLANDS_FIXED_WEAKNESS && (cards::REGISTRY.is_playable)(code)
-    },
+/// The production card registry, but with an empty weakness pool, so the
+/// engine refuses to seat any pick whose weakness is random.
+const NO_WEAKNESS_POOL: CardRegistry = CardRegistry {
+    weakness_pool: || &[],
     ..cards::REGISTRY
 };
 
-/// The production registries, but with [`ROLANDS_WEAKNESS_UNIMPLEMENTED`].
-const ROLAND_UNSEATABLE: Registries = Registries {
-    cards: &ROLANDS_WEAKNESS_UNIMPLEMENTED,
+/// The production registries, but with [`NO_WEAKNESS_POOL`].
+const NO_RANDOM_WEAKNESS: Registries = Registries {
+    cards: &NO_WEAKNESS_POOL,
     ..server::REGISTRIES
 };
 
@@ -72,14 +68,6 @@ async fn tal_and_sam_at_the_gathering(registries: Registries) -> Table {
         game_id,
         pool,
     }
-}
-
-/// `ws` takes `investigator`, and both sockets read the `Lobby` it brings.
-/// Returns the view.
-async fn take_seen_by_both(ws: &mut Client, other: &mut Client, investigator: &str) -> LobbyView {
-    take(ws, investigator).await;
-    let _ = recv_lobby(ws).await;
-    recv_lobby(other).await.1
 }
 
 /// Sam's Daisy, then Tal's Roland and Agnes: Daisy leads, since she was
@@ -193,21 +181,31 @@ async fn after_start_sam_answers_for_daisy_and_is_refused_for_roland() {
 
 #[tokio::test]
 async fn a_start_the_engine_rejects_is_refused_and_the_lobby_is_unchanged() {
-    let mut table = tal_and_sam_at_the_gathering(ROLAND_UNSEATABLE).await;
-    let before = daisy_roland_agnes(&mut table).await;
+    let mut table = tal_and_sam_at_the_gathering(NO_RANDOM_WEAKNESS).await;
+    daisy_roland_agnes(&mut table).await;
+    common::send(
+        &mut table.tal_ws,
+        &ClientMessage::SetWeakness {
+            investigator: CardCode::new(ROLAND),
+            choice: WeaknessChoice::Random,
+        },
+    )
+    .await;
+    let _ = recv_lobby(&mut table.tal_ws).await;
+    let (_, before, _) = recv_lobby(&mut table.sam_ws).await;
 
     common::send(&mut table.tal_ws, &ClientMessage::Start).await;
 
     match recv_refusal(&mut table.tal_ws).await {
         LobbyRefusal::Seating(reason) => {
-            assert!(reason.contains(ROLANDS_FIXED_WEAKNESS), "{reason}");
+            assert!(reason.contains("weakness pool"), "{reason}");
         }
         other => panic!("expected a Seating refusal, got {other:?}"),
     }
     assert!(
         GameSession::load(
             table.pool.clone(),
-            ROLAND_UNSEATABLE,
+            NO_RANDOM_WEAKNESS,
             &GameId::new(&table.game_id)
         )
         .await
