@@ -10,11 +10,9 @@ use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpg
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse as _, Response};
 use axum_extra::extract::cookie::CookieJar;
-use cards::decks::DEFAULT_DECKS;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
-use game_core::state::CardCode;
 use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
     AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
@@ -344,10 +342,19 @@ async fn handle_client_message(
             }
             Ok(ClientMessage::Ping) => Some(Disposition::Reply(Box::new(ServerMessage::Pong))),
             Ok(ClientMessage::Take { investigator }) => {
-                change_lobby(room, |lobby| take(lobby, account, investigator)).await
+                change_lobby(room, |lobby| lobby.take(account, investigator)).await
             }
             Ok(ClientMessage::GiveUp { investigator }) => {
                 change_lobby(room, |lobby| lobby.give_up(account, &investigator)).await
+            }
+            Ok(ClientMessage::SetWeakness {
+                investigator,
+                choice,
+            }) => {
+                change_lobby(room, |lobby| {
+                    lobby.set_weakness(account, &investigator, choice)
+                })
+                .await
             }
             Err(_) => Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                 Refusal::Malformed,
@@ -371,19 +378,6 @@ async fn change_lobby(
         .await
         .err()
         .map(|reason| Disposition::Reply(Box::new(ServerMessage::LobbyRefused { reason })))
-}
-
-/// [`Lobby::take`], refused first for an investigator with no default deck:
-/// the pool is the default decks' investigators, since Start seats each pick
-/// with its default deck.
-fn take(lobby: &mut Lobby, account: AccountId, investigator: CardCode) -> Result<(), LobbyRefusal> {
-    if !DEFAULT_DECKS
-        .iter()
-        .any(|deck| deck.investigator == investigator.as_str())
-    {
-        return Err(LobbyRefusal::NotInPool { investigator });
-    }
-    lobby.take(account, investigator)
 }
 
 /// The refusal a client is sent for an answer [`GameSession::apply`] didn't

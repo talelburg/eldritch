@@ -384,6 +384,8 @@
 }
 .pool-name { font-weight: bold; text-align: center; }
 .pool-state { font-size: 0.8rem; text-transform: uppercase; opacity: 0.7; }
+/* Your pick's weakness choice, and the choice listed in another member's deck. */
+.pool-weakness { font-size: 0.75rem; }
 /* Another member's pick: its default deck, read-only. */
 .pool-deck {
     list-style: none; margin: 0; padding: 0; font-size: 0.7rem;

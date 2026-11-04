@@ -6,6 +6,7 @@
 //! their own.
 
 mod picks;
+mod weakness;
 
 use std::net::SocketAddr;
 

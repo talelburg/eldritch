@@ -15,7 +15,7 @@ const AGNES: &str = "01004";
 const WENDY: &str = "01005";
 
 /// Send a `Take` of `investigator` on `ws`.
-async fn take(ws: &mut Client, investigator: &str) {
+pub(super) async fn take(ws: &mut Client, investigator: &str) {
     common::send(
         ws,
         &ClientMessage::Take {
@@ -37,7 +37,7 @@ async fn give_up(ws: &mut Client, investigator: &str) {
 }
 
 /// The next frame on `ws`, which must be a `LobbyRefused`: its reason.
-async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
+pub(super) async fn recv_refusal(ws: &mut Client) -> LobbyRefusal {
     match common::recv_within(ws).await {
         ServerMessage::LobbyRefused { reason } => reason,
         other => panic!("expected a LobbyRefused, got {other:?}"),
@@ -52,6 +52,7 @@ fn seating(view: &LobbyView) -> Vec<(&str, AccountId)> {
             |Pick {
                  investigator,
                  account,
+                 ..
              }| (investigator.as_str(), *account),
         )
         .collect()
@@ -64,16 +65,16 @@ fn lead(view: &LobbyView) -> Option<&str> {
 
 /// Tal's lobby, open on Tal's socket and on Sam's, which joined it. Both
 /// sockets have read every `Lobby` sent so far.
-struct Table {
-    tal: AccountId,
-    sam: AccountId,
-    tal_ws: Client,
-    sam_ws: Client,
-    game_id: String,
-    pool: sqlx::SqlitePool,
+pub(super) struct Table {
+    pub(super) tal: AccountId,
+    pub(super) sam: AccountId,
+    pub(super) tal_ws: Client,
+    pub(super) sam_ws: Client,
+    pub(super) game_id: String,
+    pub(super) pool: sqlx::SqlitePool,
 }
 
-async fn tal_and_sam() -> Table {
+pub(super) async fn tal_and_sam() -> Table {
     let pool = common::memory_pool().await;
     let tal = common::test_account(&pool).await;
     let sam = common::add_account(&pool, OTHER_ACCOUNT).await;
@@ -96,7 +97,11 @@ async fn tal_and_sam() -> Table {
 
 /// Send a `Take` of `investigator` on `ws`. and read the `Lobby` it brings to
 /// both sockets. Returns the view the other socket was sent.
-async fn take_seen_by_both(ws: &mut Client, other: &mut Client, investigator: &str) -> LobbyView {
+pub(super) async fn take_seen_by_both(
+    ws: &mut Client,
+    other: &mut Client,
+    investigator: &str,
+) -> LobbyView {
     take(ws, investigator).await;
     let _ = recv_lobby(ws).await;
     recv_lobby(other).await.1

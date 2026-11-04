@@ -70,6 +70,14 @@ pub enum ClientMessage {
         /// The picked investigator's card code.
         investigator: CardCode,
     },
+    /// Set how one of the sender's picks meets its *"1 random basic
+    /// weakness"*: [`Lobby::set_weakness`](lobby::Lobby::set_weakness).
+    SetWeakness {
+        /// The picked investigator's card code.
+        investigator: CardCode,
+        /// The fixed weakness, or a random one.
+        choice: cards::decks::WeaknessChoice,
+    },
 }
 
 /// A message sent from the server to a client. Externally tagged for

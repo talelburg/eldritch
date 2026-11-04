@@ -6,6 +6,7 @@
 //! or started game, becomes a member. The lobby's rules are
 //! [`protocol::lobby::Lobby`]'s; this module only moves its rows in and out.
 
+use cards::decks::WeaknessChoice;
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use protocol::lobby::{Lobby, LobbyView, Member, Pick};
@@ -44,7 +45,7 @@ pub(crate) async fn create(
 ///
 /// # Errors
 ///
-/// The database failed.
+/// The database failed, or a pick's stored weakness choice is neither one.
 pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lobby>, sqlx::Error> {
     let row: Option<(String, i64, Option<String>)> =
         sqlx::query_as("SELECT scenario_id, creator, lead FROM lobbies WHERE game_id = ?")
@@ -62,8 +63,9 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
     .bind(game_id.as_str())
     .fetch_all(db)
     .await?;
-    let picks: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT investigator, account_id FROM lobby_picks WHERE game_id = ? ORDER BY position",
+    let picks: Vec<(String, i64, String)> = sqlx::query_as(
+        "SELECT investigator, account_id, weakness FROM lobby_picks \
+         WHERE game_id = ? ORDER BY position",
     )
     .bind(game_id.as_str())
     .fetch_all(db)
@@ -82,11 +84,14 @@ pub(crate) async fn read(db: &SqlitePool, game_id: &GameId) -> Result<Option<Lob
     .with_picks(
         picks
             .into_iter()
-            .map(|(investigator, account)| Pick {
-                investigator: CardCode::new(investigator),
-                account: AccountId(account),
+            .map(|(investigator, account, weakness)| {
+                Ok(Pick {
+                    investigator: CardCode::new(investigator),
+                    account: AccountId(account),
+                    weakness: weakness_from_column(&weakness)?,
+                })
             })
-            .collect(),
+            .collect::<Result<_, sqlx::Error>>()?,
         lead.map(CardCode::new),
     );
     Ok(Some(lobby))
@@ -110,12 +115,13 @@ pub(crate) async fn save_picks(
         .await?;
     for (position, pick) in (0_i64..).zip(&view.picks) {
         sqlx::query(
-            "INSERT INTO lobby_picks (game_id, investigator, account_id, position) \
-             VALUES (?, ?, ?, ?)",
+            "INSERT INTO lobby_picks (game_id, investigator, account_id, weakness, position) \
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(game_id.as_str())
         .bind(pick.investigator.as_str())
         .bind(pick.account.0)
+        .bind(weakness_column(pick.weakness))
         .bind(position)
         .execute(&mut *tx)
         .await?;
@@ -126,6 +132,29 @@ pub(crate) async fn save_picks(
         .execute(&mut *tx)
         .await?;
     tx.commit().await
+}
+
+/// A pick's weakness choice as its `lobby_picks.weakness` column holds it.
+fn weakness_column(choice: WeaknessChoice) -> &'static str {
+    match choice {
+        WeaknessChoice::Fixed => "fixed",
+        WeaknessChoice::Random => "random",
+    }
+}
+
+/// The weakness choice a `lobby_picks.weakness` column holds.
+///
+/// # Errors
+///
+/// The column holds neither value [`weakness_column`] writes.
+fn weakness_from_column(column: &str) -> Result<WeaknessChoice, sqlx::Error> {
+    match column {
+        "fixed" => Ok(WeaknessChoice::Fixed),
+        "random" => Ok(WeaknessChoice::Random),
+        other => Err(sqlx::Error::Decode(
+            format!("lobby_picks.weakness holds {other:?}").into(),
+        )),
+    }
 }
 
 /// Make `account` a member of the game `game_id`, if it isn't one. Returns

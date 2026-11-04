@@ -9,6 +9,7 @@ mod picks;
 mod pool;
 mod seating;
 mod toast;
+mod weakness;
 
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;

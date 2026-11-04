@@ -528,13 +528,15 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
             SAVE_ERROR.into()
         }
         // The lobby offers only the pool's investigators, and only your own
-        // picks to give up.
+        // picks to give up or set the weakness of.
         LobbyRefusal::NotInPool { investigator } => {
             leptos::logging::error!("this client took {investigator}, which isn't in the pool");
             CLIENT_BUG.into()
         }
         LobbyRefusal::NotYourPick { investigator } => {
-            leptos::logging::error!("this client gave up {investigator}, which it doesn't hold");
+            leptos::logging::error!(
+                "this client changed the pick of {investigator}, which it doesn't hold"
+            );
             CLIENT_BUG.into()
         }
     }

@@ -18,6 +18,7 @@ use std::{iter, sync::OnceLock};
 use card_dsl::card_data::{CardKind, CardMetadata, WeaknessKind};
 use game_core::action::RosterEntry;
 use game_core::state::CardCode;
+use serde::{Deserialize, Serialize};
 
 /// The pack whose basic weaknesses make up the pool.
 const POOL_PACK: &str = "core";
@@ -93,11 +94,14 @@ pub struct DefaultDeck {
     pub weakness: &'static str,
 }
 
-/// How a default deck meets its card back's *"1 random basic weakness"*.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a default deck meets its card back's *"1 random basic weakness"*. A
+/// lobby pick carries one, which its member sets, and Start seats it with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WeaknessChoice {
     /// The deck's [fixed weakness](DefaultDeck::weakness), seated as an
-    /// ordinary deck card.
+    /// ordinary deck card. A new pick's choice.
+    #[default]
     Fixed,
     /// A **random basic weakness**, drawn from the [`weakness_pool`] at
     /// seating, in place of the fixed one.
