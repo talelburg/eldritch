@@ -265,6 +265,10 @@ impl GameSession {
     ///   exactly the seated investigators a holder.
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
     ///   fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each is a separate part of a new game, named at each call site"
+    )]
     pub async fn create(
         db: SqlitePool,
         registries: Registries,
