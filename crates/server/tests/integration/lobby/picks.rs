@@ -149,6 +149,7 @@ async fn a_restart_mid_lobby_keeps_the_picks_their_seating_and_the_lead() {
         mut sam_ws,
         game_id,
         pool,
+        ..
     } = tal_and_sam().await;
     take_seen_by_both(&mut sam_ws, &mut tal_ws, DAISY).await;
     take_seen_by_both(&mut tal_ws, &mut sam_ws, ROLAND).await;

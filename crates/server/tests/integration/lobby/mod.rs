@@ -76,34 +76,36 @@ pub(crate) fn member_names(view: &LobbyView) -> Vec<&str> {
 }
 
 /// Roland Banks 01001.
-const ROLAND: &str = "01001";
+pub(crate) const ROLAND: &str = "01001";
 /// Daisy Walker 01002.
-const DAISY: &str = "01002";
+pub(crate) const DAISY: &str = "01002";
 /// "Skids" O'Toole 01003.
 const SKIDS: &str = "01003";
 /// Agnes Baker 01004.
-const AGNES: &str = "01004";
+pub(crate) const AGNES: &str = "01004";
 /// Wendy Adams 01005.
 const WENDY: &str = "01005";
 
 /// Tal's lobby, open on Tal's socket and on Sam's, which joined it. Both
 /// sockets have read every `Lobby` sent so far.
-struct TwoMembers {
-    tal: AccountId,
-    sam: AccountId,
-    tal_ws: Client,
-    sam_ws: Client,
-    game_id: String,
-    pool: SqlitePool,
+pub(crate) struct TwoMembers {
+    pub(crate) tal: AccountId,
+    pub(crate) sam: AccountId,
+    pub(crate) tal_ws: Client,
+    pub(crate) sam_ws: Client,
+    pub(crate) game_id: String,
+    pub(crate) pool: SqlitePool,
+    /// The server's address.
+    pub(crate) addr: SocketAddr,
 }
 
 /// [`TwoMembers`] in a lobby of the mock scenario, served the mock registries.
-async fn tal_and_sam() -> TwoMembers {
+pub(crate) async fn tal_and_sam() -> TwoMembers {
     tal_and_sam_at(common::REGISTRIES, TEST_SCENARIO_ID).await
 }
 
 /// [`TwoMembers`] in a lobby of `scenario_id`, served `registries`.
-async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers {
+pub(crate) async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers {
     let pool = common::memory_pool().await;
     let tal = common::test_account(&pool).await;
     let sam = common::add_account(&pool, OTHER_ACCOUNT).await;
@@ -121,12 +123,13 @@ async fn tal_and_sam_at(registries: Registries, scenario_id: &str) -> TwoMembers
         sam_ws,
         game_id,
         pool,
+        addr,
     }
 }
 
 /// Sam's Daisy, then Tal's Roland and Agnes, every `Lobby` read on both
 /// sockets: Daisy leads, since she was picked first. Returns the last view.
-async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
+pub(crate) async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
     take_seen_by_both(&mut members.sam_ws, &mut members.tal_ws, DAISY).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, ROLAND).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, AGNES).await
@@ -145,7 +148,11 @@ async fn take(ws: &mut Client, investigator: &str) {
 
 /// Send a `Take` of `investigator` on `ws`, and read the `Lobby` it brings to
 /// both sockets. Returns the view the other socket was sent.
-async fn take_seen_by_both(ws: &mut Client, other: &mut Client, investigator: &str) -> LobbyView {
+pub(crate) async fn take_seen_by_both(
+    ws: &mut Client,
+    other: &mut Client,
+    investigator: &str,
+) -> LobbyView {
     take(ws, investigator).await;
     let _ = recv_lobby(ws).await;
     recv_lobby(other).await.1

@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use cards::decks::WeaknessChoice;
 use game_core::action::PlayerAction;
+use game_core::engine;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
@@ -23,8 +24,9 @@ pub mod live;
 pub mod lobby;
 pub mod logged_answer;
 
-use crate::lobby::{Direction, LobbyRefusal, LobbyView};
-use crate::logged_answer::LoggedResponse;
+use crate::live::{LiveGame, LiveSummary};
+use crate::lobby::{Direction, LobbyRefusal, LobbyView, Member};
+use crate::logged_answer::{LoggedResponse, ReplayFailure};
 
 /// The id of the build this crate was compiled into: the `ELDRITCH_BUILD`
 /// environment variable at compile time, or `"dev"` when it was unset.
@@ -376,6 +378,266 @@ pub struct CreateGameResponse {
     pub game_id: GameId,
 }
 
+/// One game in the body of `GET /games`, the "Your games" listing: a game
+/// the signed-in account is a member of. It is structured, with no prose:
+/// the client words and groups it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GameEntry {
+    /// The game's id, which its link names.
+    pub game_id: GameId,
+    /// The scenario it plays.
+    pub scenario_id: ScenarioId,
+    /// The account that created it; `None` for a game stored before the
+    /// creator was.
+    pub creator: Option<AccountId>,
+    /// Its investigators in seating order, each with its holder.
+    pub investigators: Vec<EntryInvestigator>,
+    /// The display name of every account the entry mentions: its creator and
+    /// each investigator's holder, once each.
+    pub names: Vec<Member>,
+    /// When the game last moved, in unix millis.
+    pub last_activity: i64,
+    /// Where the game stands.
+    pub state: GameEntryState,
+}
+
+impl GameEntry {
+    /// The entry for the lobby `view` under `game_id`, created at
+    /// `created_at` (unix millis): its picks are its investigators, and
+    /// nothing has happened in it since it was created.
+    #[must_use]
+    pub fn of_lobby(game_id: GameId, view: &LobbyView, created_at: i64) -> Self {
+        let investigators: Vec<EntryInvestigator> = view
+            .picks
+            .iter()
+            .map(|pick| EntryInvestigator {
+                investigator: pick.investigator.clone(),
+                holder: Some(pick.account),
+                lead: view.lead.as_ref() == Some(&pick.investigator),
+            })
+            .collect();
+        let names = mentioned_names(Some(view.creator), &investigators, &[], &view.members);
+        Self {
+            game_id,
+            scenario_id: view.scenario_id.clone(),
+            creator: Some(view.creator),
+            investigators,
+            names,
+            last_activity: created_at,
+            state: GameEntryState::Lobby,
+        }
+    }
+
+    /// The entry `account` is shown for the started game `listed`, loaded as
+    /// `live`: its seated investigators in seating order, and its
+    /// [`LiveSummary`] for `account`.
+    #[must_use]
+    pub fn of_live(listed: ListedGame, live: &LiveGame, account: AccountId) -> Self {
+        let state = live.state();
+        let lead = engine::the_lead(state).or(state.lead);
+        let investigators: Vec<EntryInvestigator> = state
+            .seating
+            .iter()
+            .filter_map(|id| {
+                let investigator = state.investigators.get(id)?;
+                Some(EntryInvestigator {
+                    investigator: investigator.investigator_card.code.clone(),
+                    // Start gives every seat a holder.
+                    holder: live.assignment().holder(*id),
+                    lead: lead == Some(*id),
+                })
+            })
+            .collect();
+        let summary = live.summary_for(account);
+        let names = mentioned_names(
+            listed.creator,
+            &investigators,
+            &summary.waiting_for(),
+            &listed.members,
+        );
+        Self {
+            game_id: listed.game_id,
+            scenario_id: listed.scenario_id,
+            creator: listed.creator,
+            investigators,
+            names,
+            last_activity: listed.last_activity,
+            state: GameEntryState::Live(summary),
+        }
+    }
+
+    /// The entry for the started game `listed`, which this build can't
+    /// replay, with its `investigators` as its stored rows give them and why
+    /// it stopped.
+    #[must_use]
+    pub fn of_unresumable(
+        listed: ListedGame,
+        investigators: Vec<EntryInvestigator>,
+        summary: UnresumableSummary,
+    ) -> Self {
+        let names = mentioned_names(listed.creator, &investigators, &[], &listed.members);
+        Self {
+            game_id: listed.game_id,
+            scenario_id: listed.scenario_id,
+            creator: listed.creator,
+            investigators,
+            names,
+            last_activity: listed.last_activity,
+            state: GameEntryState::Unresumable(summary),
+        }
+    }
+
+    /// The display name of `account`, if the entry mentions it.
+    #[must_use]
+    pub fn name(&self, account: AccountId) -> Option<&str> {
+        self.names
+            .iter()
+            .find(|member| member.account == account)
+            .map(|member| member.display_name.as_str())
+    }
+}
+
+/// A started game as "Your games" reads it from its stored rows, before
+/// loading it: what its [`GameEntry`] carries whether it loads or is an
+/// unresumable game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedGame {
+    /// The game's id, which its link names.
+    pub game_id: GameId,
+    /// The scenario it plays.
+    pub scenario_id: ScenarioId,
+    /// The account that created it; `None` for a game stored before the
+    /// creator was.
+    pub creator: Option<AccountId>,
+    /// Every account the game has, each with its display name.
+    pub members: Vec<Member>,
+    /// When the game last moved, in unix millis.
+    pub last_activity: i64,
+}
+
+/// One investigator of a [`GameEntry`]: in a lobby, a pick.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryInvestigator {
+    /// The investigator's card code.
+    pub investigator: CardCode,
+    /// The account holding it: in a lobby, the member who picked it. `None`
+    /// for an unresumable game stored with no assignment.
+    pub holder: Option<AccountId>,
+    /// Whether it is the lead investigator.
+    pub lead: bool,
+}
+
+/// Where a [`GameEntry`]'s game stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GameEntryState {
+    /// In its lobby, waiting for its creator to press Start.
+    Lobby,
+    /// Started, and loaded by this build: who it waits on, summarised for the
+    /// account listing it.
+    Live(LiveSummary),
+    /// Started, and this build can't replay it: an unresumable game.
+    Unresumable(UnresumableSummary),
+}
+
+/// Where an unresumable game stopped and why, and the two builds involved: a
+/// rollback to the build it started on resumes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnresumableSummary {
+    /// Why it no longer loads.
+    pub reason: UnresumableCause,
+    /// How many answers its log holds.
+    pub logged_answers: u32,
+    /// The build the game was created on.
+    pub created_build: String,
+    /// The build the server runs now.
+    pub server_build: String,
+}
+
+/// Why an unresumable game no longer loads: one variant for each of the
+/// server's checks, in the order they run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnresumableCause {
+    /// It was stored in a format version this build doesn't load.
+    Version,
+    /// It records no assignment, so nobody holds its investigators.
+    NoAssignment,
+    /// Setup no longer runs from its stored inputs, for this reason.
+    Setup(String),
+    /// Setup runs, but now decides something different from what it decided
+    /// when the game was created.
+    Fingerprint,
+    /// A logged answer no longer replays.
+    Replay {
+        /// Zero-based position of that answer in the log.
+        seq: u32,
+        /// The check it fails.
+        cause: ReplayCause,
+    },
+}
+
+/// Which replay check a logged answer fails: the wire form of a
+/// [`ReplayFailure`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplayCause {
+    /// The engine now asks a different prompt, or none.
+    PromptChanged,
+    /// The logged pick, labelled `label`, matches `matches` of the prompt's
+    /// options where it matched one.
+    OptionNotFound {
+        /// The logged option's label.
+        label: String,
+        /// How many of the prompt's options it matches: none, or several.
+        matches: usize,
+    },
+    /// The engine rejects the answer.
+    Rejected,
+    /// The answer drew from the RNG a different number of times.
+    Draws,
+}
+
+impl From<&ReplayFailure> for ReplayCause {
+    fn from(failure: &ReplayFailure) -> Self {
+        match failure {
+            ReplayFailure::PromptChanged { .. } => Self::PromptChanged,
+            ReplayFailure::OptionNotFound { option, matches } => Self::OptionNotFound {
+                label: option.label.clone(),
+                matches: *matches,
+            },
+            ReplayFailure::Rejected(_) => Self::Rejected,
+            ReplayFailure::Draws { .. } => Self::Draws,
+        }
+    }
+}
+
+/// The display name of every account an entry mentions, each once, from
+/// `members`: its creator, each investigator's holder, then each account
+/// in `also`.
+fn mentioned_names(
+    creator: Option<AccountId>,
+    investigators: &[EntryInvestigator],
+    also: &[AccountId],
+    members: &[Member],
+) -> Vec<Member> {
+    let mut mentioned = Vec::new();
+    let holders = investigators
+        .iter()
+        .filter_map(|investigator| investigator.holder);
+    for account in creator
+        .into_iter()
+        .chain(holders)
+        .chain(also.iter().copied())
+    {
+        if !mentioned.contains(&account) {
+            mentioned.push(account);
+        }
+    }
+    mentioned
+        .into_iter()
+        .filter_map(|account| members.iter().find(|member| member.account == account))
+        .cloned()
+        .collect()
+}
+
 /// The close code ending a game's WebSocket whose upgrade had no valid session.
 ///
 /// It is from the private range: RFC 6455 §7.4.2, *"Status codes in the
@@ -606,7 +868,7 @@ mod tests {
         let view = lobby::Lobby::new(
             ScenarioId::new("the-gathering"),
             AccountId(1),
-            vec![lobby::Member {
+            vec![Member {
                 account: AccountId(1),
                 display_name: "Tal".to_string(),
             }],

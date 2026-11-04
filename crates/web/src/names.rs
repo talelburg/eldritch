@@ -4,12 +4,23 @@
 //! UI display only — never used for engine input.
 
 use game_core::card_registry::CardRegistry;
+use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 
 /// Printed card name for `code` in `cards`, or the raw code when `cards` has
 /// no metadata for it (an unimplemented-stub card).
 pub fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
     (cards.metadata_for)(code).map_or_else(|| code.to_string(), |m| m.name.clone())
+}
+
+/// The display name of the scenario `id`, or the raw id for a scenario this
+/// client has no name for.
+#[must_use]
+pub fn scenario_name(id: &ScenarioId) -> &str {
+    match id.as_str() {
+        "the-gathering" => "The Gathering",
+        other => other,
+    }
 }
 
 #[cfg(test)]

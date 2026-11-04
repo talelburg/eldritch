@@ -9,8 +9,8 @@ use leptos::prelude::*;
 use protocol::lobby::{LobbyRefusal, LobbyView, MAX_PICKS};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
-    AccountId, Applied, Assignment, GameId, LogPosition, Refusal, ServerMessage, SignInMethod,
-    SignedIn,
+    AccountId, Applied, Assignment, GameEntry, GameId, LogPosition, Refusal, ServerMessage,
+    SignInMethod, SignedIn,
 };
 
 use crate::names;
@@ -27,8 +27,8 @@ pub enum ConnStatus {
     /// attempts that follow, however they fail, until the next `Hello`.
     Restarting,
     Failed,
-    /// The page's address names no game: render the home page, with its New
-    /// game button.
+    /// The page's address names no game: render the home page, "Your
+    /// games", with its New game button.
     Home,
     /// The game is in its lobby: render the lobby. Set by each `Lobby` frame.
     InLobby,
@@ -126,6 +126,9 @@ pub struct ClientState {
     /// The game the page's address names, which its invite link sends. Set by
     /// the transport, not by `reduce`.
     pub game_id: Option<GameId>,
+    /// The "Your games" listing `GET /games` returned, once the home page
+    /// fetched it. Set by the transport, not by `reduce`.
+    pub games: Option<Vec<GameEntry>>,
     /// The game's lobby, from the last `Lobby`, while it is in one. Cleared
     /// by `Hello`.
     pub lobby: Option<LobbyView>,

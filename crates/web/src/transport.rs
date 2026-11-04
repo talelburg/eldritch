@@ -3,7 +3,7 @@
 //! It checks sign-in, reads the game from the page's address, connects its
 //! WebSocket, folds inbound frames into the store, forwards outbound actions,
 //! and reconnects on close with backoff. A page whose address names no game is
-//! the home page, which creates one and goes to it.
+//! the "Your games" page, whose listing it fetches once.
 
 use std::time::Duration;
 
@@ -18,7 +18,8 @@ use gloo_net::websocket::{Message, WebSocketError};
 use gloo_timers::future::{IntervalStream, TimeoutFuture};
 use leptos::prelude::*;
 use protocol::{
-    ClientMessage, CreateGameRequest, CreateGameResponse, GameId, SignInRequired, SignedIn,
+    ClientMessage, CreateGameRequest, CreateGameResponse, GameEntry, GameId, SignInRequired,
+    SignedIn,
 };
 use wasm_bindgen_futures::spawn_local;
 
@@ -58,9 +59,11 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
         return;
     }
     let Some(game_id) = url::current_game_id() else {
-        // The home page; its New game button creates a lobby through
-        // [`new_game`] and goes to it.
+        // The "Your games" page, listing what [`fetch_games`] returns once;
+        // its New game button creates a lobby through [`new_game`] and goes
+        // to it.
         store.update(|s| s.status = ConnStatus::Home);
+        fetch_games(store).await;
         return;
     };
     store.update(|s| s.game_id = Some(game_id.clone()));
@@ -96,9 +99,11 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
             }
             // This server's build can't rebuild the game, and every attempt
             // would fail the same way. Say so and stop: the link still names
-            // the game, and a rollback to an earlier build can resume it.
+            // the game, and a rollback to an earlier build can resume it. The
+            // listing's entry for the game says where it stopped and why.
             ConnectOutcome::Ended(SocketEnding::Unresumable) => {
                 store.update(|s| s.status = ConnStatus::Unresumable);
+                fetch_games(store).await;
                 return;
             }
             // The server has no game at this link (a typo, or a DB reset).
@@ -162,6 +167,27 @@ async fn check_sign_in(store: StoreSignal) -> bool {
     }
     store.update(|s| s.status = ConnStatus::Failed);
     false
+}
+
+/// `GET /games`, the "Your games" listing, into the store. Signed out since
+/// boot, show the sign-in screen instead. Any other failure leaves the
+/// listing absent and says why on the console.
+async fn fetch_games(store: StoreSignal) {
+    let resp = match Request::get("/games").send().await {
+        Ok(resp) => resp,
+        Err(error) => {
+            leptos::logging::warn!("GET /games failed: {error}");
+            return;
+        }
+    };
+    if resp.status() == UNAUTHORIZED {
+        check_sign_in(store).await;
+        return;
+    }
+    match resp.json::<Vec<GameEntry>>().await {
+        Ok(games) => store.update(|s| s.games = Some(games)),
+        Err(error) => leptos::logging::warn!("GET /games answered {}: {error}", resp.status()),
+    }
 }
 
 /// `POST /games` with `request`; return the new game's id. Returns `None`

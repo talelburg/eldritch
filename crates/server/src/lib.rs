@@ -170,7 +170,10 @@ pub fn app(state: AppState) -> Router {
 
     Router::new()
         .route("/health", routing::get(health))
-        .route("/games", routing::post(lifecycle::create_game))
+        .route(
+            "/games",
+            routing::post(lifecycle::create_game).get(lifecycle::list_games),
+        )
         .nest("/auth", auth::router(&state))
         .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)

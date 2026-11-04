@@ -80,6 +80,7 @@ async fn a_restart_keeps_the_seating_and_lead_the_creator_set() {
         mut sam_ws,
         game_id,
         pool,
+        ..
     } = three_picked().await;
     move_in_seating(&mut tal_ws, DAISY, Direction::Later).await;
     let _ = recv_lobby(&mut tal_ws).await;

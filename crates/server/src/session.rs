@@ -25,7 +25,7 @@ use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
 use protocol::lobby::Start;
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{AccountId, Assignment, GameId, LogPosition};
+use protocol::{AccountId, Assignment, GameId, LogPosition, UnresumableCause};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -125,10 +125,27 @@ pub enum UnresumableReason {
     #[error("action {seq} no longer replays: {reason}")]
     Replay {
         /// Zero-based position of the offending action in the log.
-        seq: i64,
+        seq: u32,
         /// The check it fails.
         reason: ReplayFailure,
     },
+}
+
+impl UnresumableReason {
+    /// The reason as "Your games" lists it.
+    #[must_use]
+    pub fn cause(&self) -> UnresumableCause {
+        match self {
+            Self::Version { .. } => UnresumableCause::Version,
+            Self::NoAssignment => UnresumableCause::NoAssignment,
+            Self::Setup(message) => UnresumableCause::Setup(message.clone()),
+            Self::Fingerprint(_) => UnresumableCause::Fingerprint,
+            Self::Replay { seq, reason } => UnresumableCause::Replay {
+                seq: *seq,
+                cause: reason.into(),
+            },
+        }
+    }
 }
 
 /// A loaded game: its live game and its connection to the action log.
@@ -517,7 +534,15 @@ impl GameSession {
 
         let mut state = opened.state;
         let mut outcome = opened.outcome;
-        let mut seq: i64 = 0;
+        // Positions are counted in `u32`, as "Your games" reports them: a
+        // log too long for one is refused here, so the count never overflows.
+        u32::try_from(actions.len()).map_err(|_| {
+            <serde_json::Error as serde::de::Error>::custom(format!(
+                "a log of {} answers is too long to replay",
+                actions.len()
+            ))
+        })?;
+        let mut seq: u32 = 0;
         for row in actions {
             let answer: LoggedAnswer = serde_json::from_str(&row.answer)?;
             let draws = from_sql_integer(row.draws);
@@ -537,7 +562,7 @@ impl GameSession {
                 state,
                 outcome,
                 opened.events,
-                LogPosition(seq),
+                LogPosition(i64::from(seq)),
                 assignment,
                 registries,
             ),

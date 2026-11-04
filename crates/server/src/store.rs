@@ -10,9 +10,11 @@ use sqlx::{Error, SqliteConnection, SqlitePool};
 /// What a `games` row holds to rebuild its game: the creation inputs, in their
 /// column form, the record of what setup decided, and the account that created
 /// it. No serialized engine state (ADR 0022), and not who holds each
-/// investigator, which is stored beside it (ADR 0024). The row's diagnostic
-/// columns, `created_build` and `created_at`, are written beside it and never
-/// read back.
+/// investigator, which is stored beside it (ADR 0024). The row's
+/// `created_build` and `created_at` are written beside it, and
+/// [`started_games_of`] reads both back: `created_at` as a game's last
+/// activity before any answer is logged, and `created_build` as the build an
+/// unresumable game started on.
 pub(crate) struct GameRow {
     /// The stored shape's version; only the current one loads.
     pub(crate) format_version: i64,
@@ -123,6 +125,73 @@ pub(crate) async fn insert_action(
         .execute(db)
         .await?;
     Ok(())
+}
+
+/// A started game an account is a member of, as "Your games" lists it.
+pub(crate) struct StartedGame {
+    pub(crate) game_id: GameId,
+    pub(crate) scenario_id: String,
+    /// The creating account; `None` for a row stored before the column
+    /// existed.
+    pub(crate) creator: Option<AccountId>,
+    /// When the game last moved, in unix millis: its last logged answer's
+    /// `at`, or its `created_at` with none logged.
+    pub(crate) last_activity: i64,
+    /// The build that created it.
+    pub(crate) created_build: String,
+    /// JSON array of the roster entries it was seated with, as stored: in
+    /// another stored shape for a game of another format version.
+    pub(crate) roster: String,
+    /// The roster index of its lead investigator.
+    pub(crate) lead: i64,
+    /// How many answers its log holds.
+    pub(crate) logged_answers: u32,
+}
+
+/// The columns [`started_games_of`] selects, in order.
+type StartedColumns = (String, String, Option<i64>, i64, String, String, i64, i64);
+
+/// Every started game `account` is a member of: each with a `games` row.
+pub(crate) async fn started_games_of(
+    db: &SqlitePool,
+    account: AccountId,
+) -> Result<Vec<StartedGame>, Error> {
+    let rows: Vec<StartedColumns> = sqlx::query_as(
+        "SELECT g.game_id, g.scenario_id, g.creator, \
+         COALESCE((SELECT MAX(a.at) FROM actions a WHERE a.game_id = g.game_id), g.created_at), \
+         g.created_build, g.roster, g.lead, \
+         (SELECT COUNT(*) FROM actions a WHERE a.game_id = g.game_id) \
+         FROM game_members m JOIN games g ON g.game_id = m.game_id WHERE m.account_id = ?",
+    )
+    .bind(account.0)
+    .fetch_all(db)
+    .await?;
+    rows.into_iter()
+        .map(
+            |(
+                game_id,
+                scenario_id,
+                creator,
+                last_activity,
+                created_build,
+                roster,
+                lead,
+                logged_answers,
+            )| {
+                Ok(StartedGame {
+                    game_id: GameId::new(game_id),
+                    scenario_id,
+                    creator: creator.map(AccountId),
+                    last_activity,
+                    created_build,
+                    roster,
+                    lead,
+                    logged_answers: u32::try_from(logged_answers)
+                        .map_err(|err| Error::Decode(Box::new(err)))?,
+                })
+            },
+        )
+        .collect()
 }
 
 /// The columns [`load_game`] selects, in order.
