@@ -298,9 +298,9 @@ impl GameSession {
     /// transaction, and returns a live session at the mulligan prompt in which
     /// `assignment` decides who answers for each investigator.
     ///
-    /// It is [`set_up`](Self::set_up), then [`NewGame::store`] in a
-    /// transaction of its own. A lobby's Start composes the two itself, to
-    /// delete the lobby in the same transaction.
+    /// It is `set_up`, then `NewGame::store` in a transaction of its own. A
+    /// lobby's Start composes the two itself, to delete the lobby in the same
+    /// transaction.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
