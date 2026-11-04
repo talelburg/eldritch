@@ -9,7 +9,6 @@
 
 use game_core::event::Event;
 use protocol::ServerMessage;
-use server::session::GameSession;
 
 use crate::common;
 
@@ -19,16 +18,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
     // Create + persist a game (as `POST /games` does), then spin a server that
     // serves it purely from the DB — proving the events come from the reload,
     // not a retained in-memory session.
-    let creator = common::test_account(&pool).await;
-    GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "g-setup-events",
-        creator,
-        common::solo_start(creator),
-    )
-    .await
-    .expect("seed game");
+    common::create_game(&pool, "g-setup-events").await;
     let addr = common::spawn_server(pool).await;
 
     let mut c = common::connect(addr, "g-setup-events").await;

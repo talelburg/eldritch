@@ -12,28 +12,13 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::state::investigator::InvestigatorId;
 use protocol::{Applied, ClientMessage, LogPosition, Refusal, ServerMessage};
-use server::session::GameSession;
-use sqlx::SqlitePool;
 
 use crate::common;
-
-async fn seed(pool: &SqlitePool, game_id: &str) {
-    let creator = common::test_account(pool).await;
-    GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        game_id,
-        creator,
-        common::solo_start(creator),
-    )
-    .await
-    .expect("seed game");
-}
 
 #[tokio::test]
 async fn reconnect_delivers_in_flight_awaiting_input() {
     let pool = common::memory_pool().await;
-    seed(&pool, "g-resume").await;
+    common::create_game(&pool, "g-resume").await;
     let addr = common::spawn_server(pool).await;
 
     // Connection A's first Hello is already AwaitingInput (the mulligan).
@@ -64,7 +49,7 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
 #[tokio::test]
 async fn restart_restores_awaiting_input_by_rerunning_setup() {
     let pool = common::memory_pool().await;
-    seed(&pool, "g-restart").await;
+    common::create_game(&pool, "g-restart").await;
 
     // "Restart": a fresh server with empty rooms over the same database.
     // The game has zero logged actions; AwaitingInput is setup's own
@@ -85,7 +70,7 @@ async fn restart_restores_awaiting_input_by_rerunning_setup() {
 #[tokio::test]
 async fn resolve_input_resumes_and_completes() {
     let pool = common::memory_pool().await;
-    seed(&pool, "g-do-resolve").await;
+    common::create_game(&pool, "g-do-resolve").await;
     let addr = common::spawn_server(pool).await;
 
     let mut a = common::connect(addr, "g-do-resolve").await;
@@ -120,7 +105,7 @@ async fn resolve_input_resumes_and_completes() {
 #[tokio::test]
 async fn invalid_mulligan_response_is_rejected() {
     let pool = common::memory_pool().await;
-    seed(&pool, "g-busy").await;
+    common::create_game(&pool, "g-busy").await;
     let addr = common::spawn_server(pool).await;
 
     let mut a = common::connect(addr, "g-busy").await;

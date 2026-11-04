@@ -21,7 +21,7 @@ use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRe
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 use game_core::test_support;
 use protocol::lobby::Start;
-use protocol::{AccountId, Assignment, ClientMessage, ServerMessage};
+use protocol::{AccountId, Assignment, ClientMessage, GameId, ServerMessage};
 use reqwest::redirect::Policy;
 use reqwest::{Client as HttpClient, RequestBuilder, Response};
 use serde::Serialize;
@@ -106,15 +106,25 @@ pub(crate) fn solo_start(account: AccountId) -> Start {
 /// the live session at the mulligan prompt.
 pub(crate) async fn create_game(pool: &SqlitePool, game_id: &str) -> GameSession {
     let creator = test_account(pool).await;
-    GameSession::create(
-        pool.clone(),
-        REGISTRIES,
-        game_id,
-        creator,
-        solo_start(creator),
-    )
-    .await
-    .expect("create game")
+    start_game(pool, REGISTRIES, game_id, creator, solo_start(creator)).await
+}
+
+/// Seat `start` against `registries` as a game `creator` created, store it in
+/// a transaction of its own, and return the live session at the mulligan
+/// prompt: what the lobby's Start does, without a lobby to delete.
+pub(crate) async fn start_game(
+    pool: &SqlitePool,
+    registries: Registries,
+    game_id: &str,
+    creator: AccountId,
+    start: Start,
+) -> GameSession {
+    let new_game = GameSession::set_up(registries, GameId::new(game_id), creator, start)
+        .unwrap_or_else(|error| panic!("set up {game_id}: {error}"));
+    let mut tx = pool.begin().await.expect("begin a transaction");
+    new_game.store(&mut tx).await.expect("store the game");
+    tx.commit().await.expect("commit the game");
+    new_game.into_session(pool.clone())
 }
 
 /// A migrated single-connection in-memory pool.

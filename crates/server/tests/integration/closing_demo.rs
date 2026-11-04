@@ -16,7 +16,6 @@ use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
 use protocol::{Applied, ClientMessage, LogPosition, ServerMessage};
-use server::session::GameSession;
 
 use crate::common;
 
@@ -48,16 +47,7 @@ fn applied_events(msg: ServerMessage) -> Vec<Event> {
 #[tokio::test]
 async fn phase_5_closing_demo() {
     let pool = common::memory_pool().await;
-    let creator = common::test_account(&pool).await;
-    GameSession::create(
-        pool.clone(),
-        common::REGISTRIES,
-        "demo",
-        creator,
-        common::solo_start(creator),
-    )
-    .await
-    .expect("create the demo game");
+    common::create_game(&pool, "demo").await;
     let addr = common::spawn_server(pool.clone()).await;
 
     // (1) Two clients connect and see the same initial state (seated,

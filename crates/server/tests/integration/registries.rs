@@ -3,7 +3,7 @@
 //! `POST /games` for The Gathering succeeds and real card codes
 //! resolve. This module hands the server the *production* pairing,
 //! `server::REGISTRIES`, where the other test modules pass the mock pairing
-//! from `common`. It also creates a game from every pick a lobby can seat:
+//! from `common`. It also sets a game up from every pick a lobby can seat:
 //! each default deck, with its fixed weakness and with a random one.
 
 use axum::body::Body;
@@ -73,8 +73,7 @@ async fn every_default_deck_seats_in_both_weakness_modes() {
     for (n, deck) in decks::DEFAULT_DECKS.iter().enumerate() {
         for choice in [WeaknessChoice::Fixed, WeaknessChoice::Random] {
             let roster = vec![deck.roster_entry(choice)];
-            let created = GameSession::create(
-                pool.clone(),
+            let created = GameSession::set_up(
                 server::REGISTRIES,
                 GameId::new(format!("g-{n}-{choice:?}")),
                 creator,
@@ -84,8 +83,7 @@ async fn every_default_deck_seats_in_both_weakness_modes() {
                     lead: 0,
                     assignment: common::assign_all(creator, &roster),
                 },
-            )
-            .await;
+            );
 
             assert!(
                 created.is_ok(),

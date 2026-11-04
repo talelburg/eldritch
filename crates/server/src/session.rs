@@ -149,8 +149,9 @@ struct Opened {
     events: Vec<Event>,
 }
 
-/// A new game [`GameSession::set_up`] seated and checked, not yet stored.
-pub(crate) struct NewGame {
+/// A new game [`GameSession::set_up`] seated and checked, not yet stored:
+/// [store](Self::store) it, then [open its session](Self::into_session).
+pub struct NewGame {
     game_id: GameId,
     row: GameRow,
     opened: Opened,
@@ -165,7 +166,7 @@ impl NewGame {
     /// # Errors
     ///
     /// [`SessionError::Db`] if a write fails.
-    pub(crate) async fn store(&self, db: &mut SqliteConnection) -> Result<(), SessionError> {
+    pub async fn store(&self, db: &mut SqliteConnection) -> Result<(), SessionError> {
         store::insert_game(
             db,
             &self.game_id,
@@ -180,7 +181,8 @@ impl NewGame {
 
     /// The live session of the game, at the mulligan prompt, once it is
     /// [stored](Self::store), writing its later answers to `db`.
-    pub(crate) fn into_session(self, db: SqlitePool) -> GameSession {
+    #[must_use]
+    pub fn into_session(self, db: SqlitePool) -> GameSession {
         GameSession {
             game_id: self.game_id,
             live: LiveGame::new(
@@ -269,7 +271,7 @@ impl CreationInputs {
     }
 }
 
-/// Run scenario setup from a game's creation inputs. `create` and `load` both
+/// Run scenario setup from a game's creation inputs. `set_up` and `load` both
 /// set a game up through here, so a reload re-runs exactly what creation ran.
 fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, SetupFailure> {
     let module = (registries.scenarios.module_for)(&inputs.scenario_id)
@@ -292,16 +294,14 @@ fn open(registries: Registries, inputs: &CreationInputs) -> Result<Opened, Setup
 }
 
 impl GameSession {
-    /// Create a new game for `creator` in one call: seats `start`'s roster
-    /// into its scenario's `setup()` state, stores the game's creation inputs,
-    /// its setup fingerprint and its creator, and beside them `start`'s
-    /// assignment, in one transaction, and returns a live session at the
-    /// mulligan prompt in which the assignment decides who answers for each
-    /// investigator.
-    ///
-    /// It is the tests' one-call entry point. Production seats a game through
-    /// the lobby's Start, which calls `set_up` and stores the new game in a
-    /// transaction of its own, to delete the lobby in the same one.
+    /// Set up a new game for `creator`: seat `start`'s roster into its
+    /// scenario's `setup()` state and check that `start`'s assignment holds
+    /// exactly the seated investigators, storing nothing. The returned
+    /// [`NewGame`] carries the game's creation inputs, its setup fingerprint,
+    /// its creator and the assignment. The caller [stores](NewGame::store) it
+    /// inside a transaction of its own, so it can write other rows in the same
+    /// one, as the lobby's Start deletes the lobby's; then
+    /// [`NewGame::into_session`] gives the live session at the mulligan prompt.
     ///
     /// Looks the scenario module up in `registries`, and seats and later
     /// applies against them.
@@ -316,32 +316,9 @@ impl GameSession {
     ///   weakness pool holds, etc.).
     /// - [`SessionError::AssignmentMismatch`] if the assignment doesn't give
     ///   exactly the seated investigators a holder.
-    /// - [`SessionError::Serde`] / [`SessionError::Db`] if storing the game
-    ///   fails.
-    pub async fn create(
-        db: SqlitePool,
-        registries: Registries,
-        game_id: impl Into<GameId>,
-        creator: AccountId,
-        start: Start,
-    ) -> Result<Self, SessionError> {
-        let new_game = Self::set_up(registries, game_id.into(), creator, start)?;
-        let mut tx = db.begin().await?;
-        new_game.store(&mut tx).await?;
-        tx.commit().await?;
-        Ok(new_game.into_session(db))
-    }
-
-    /// The I/O-free half of [`GameSession::create`]: seat `start`'s roster
-    /// and check its assignment, storing nothing. A caller stores the
-    /// [`NewGame`] inside a transaction of its own, so it can write other
-    /// rows in the same one, as Start deletes the lobby's.
-    ///
-    /// # Errors
-    ///
-    /// As [`GameSession::create`], except [`SessionError::Db`], which only
-    /// storing reports.
-    pub(crate) fn set_up(
+    /// - [`SessionError::Serde`] if the creation inputs or the setup
+    ///   fingerprint fail to serialize.
+    pub fn set_up(
         registries: Registries,
         game_id: GameId,
         creator: AccountId,
