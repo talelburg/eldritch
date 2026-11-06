@@ -1,10 +1,11 @@
-//! Headless tests for `PromptBanner`.
+//! Headless tests for `PromptBanner`, the prompt bar.
 //!
-//! The banner is the **floor**: it names
-//! any live prompt and homes whatever has no board surface — un-anchored options,
-//! a `PickMultiple` commit's Confirm, a skippable window's Pass, and a fallback
-//! Confirm. Its one silence is the open-turn menu, recognised by its
-//! `TurnControl` anchor rather than by its text.
+//! The bar is the **floor**: one strip per investigator of yours the live
+//! prompt asks, each headed with their name, names the prompt and homes
+//! whatever has no board surface — un-anchored options, a `PickMultiple`
+//! commit's Confirm, a skippable window's Pass, and a fallback Confirm. Its one
+//! silence is the open-turn menu, recognised by its `TurnControl` anchor rather
+//! than by its text.
 #![cfg(target_arch = "wasm32")]
 
 use std::collections::BTreeSet;
@@ -558,29 +559,104 @@ fn pass_buttons() -> Vec<HtmlElement> {
         .collect()
 }
 
+/// The `.prompt-strip`s the last banner renders, in order.
+fn strips() -> Vec<Element> {
+    let nodes = last_banner()
+        .query_selector_all(".prompt-strip")
+        .expect("query");
+    (0..nodes.length())
+        .filter_map(|i| nodes.item(i))
+        .filter_map(|n| n.dyn_into::<Element>().ok())
+        .collect()
+}
+
+/// The text of each element `sel` matches inside `within`, in order.
+fn texts_in(within: &Element, sel: &str) -> Vec<String> {
+    let nodes = within.query_selector_all(sel).expect("query");
+    (0..nodes.length())
+        .filter_map(|i| nodes.item(i))
+        .map(|n| n.text_content().unwrap_or_default())
+        .collect()
+}
+
 /// In a window several answer, each investigator holding an option passes
-/// separately (ADR 0019): one Pass each, labelled by name, and each passes
-/// for its investigator.
+/// separately (ADR 0019): each gets a strip headed with their name, with the
+/// prompt, their own option and a plain Pass that passes for them.
 #[wasm_bindgen_test]
-async fn a_window_two_answer_shows_a_labelled_pass_for_each() {
+async fn a_window_two_answer_shows_a_strip_with_a_plain_pass_for_each() {
     let game = two_and_three_seated();
-    let names = [
+    let names = vec![
         game.name_of(InvestigatorId(2)),
         game.name_of(InvestigatorId(3)),
     ];
     let mut rx = mount_with(Some(game), offered_to_two_and_three(), &[], None).await;
-    let passes = pass_buttons();
-    let labels: Vec<String> = passes
+    let strips = strips();
+    let headings: Vec<String> = strips
         .iter()
-        .map(|b| b.text_content().unwrap_or_default())
+        .flat_map(|strip| texts_in(strip, ".strip-name"))
         .collect();
-    assert_eq!(labels.len(), 2, "{labels:?}");
-    for (label, name) in labels.iter().zip(&names) {
-        assert!(label.contains(name.as_str()), "{label} names {name}");
+    assert_eq!(headings, names);
+    assert_eq!(texts_in(&strips[0], ".banner-option"), ["Two's reaction"]);
+    assert_eq!(texts_in(&strips[1], ".banner-option"), ["Three's reaction"]);
+    for strip in &strips {
+        assert_eq!(texts_in(strip, ".prompt"), ["You may trigger"]);
+        assert_eq!(texts_in(strip, ".pass"), ["Pass"]);
     }
-    passes[1].click();
+    strips[1]
+        .query_selector(".pass")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("investigator 3's Pass")
+        .click();
     task::tick().await;
     assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+}
+
+/// An option naming no investigator goes on the strip of the first of this
+/// account's investigators holding an option, the one the store answers it as.
+#[wasm_bindgen_test]
+async fn an_option_naming_no_investigator_goes_on_the_first_strip() {
+    let outcome = test_support::awaiting_request(
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![
+                ChoiceOption::new(OptionId(0), "Two's reaction").offered_to(InvestigatorId(2)),
+                ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3)),
+                ChoiceOption::new(OptionId(2), "No one's option"),
+            ],
+        )
+        .skippable()
+        .answered_by(Responder::Several),
+    );
+    let _rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
+    let strips = strips();
+    assert_eq!(
+        texts_in(&strips[0], ".banner-option"),
+        ["Two's reaction", "No one's option"]
+    );
+    assert_eq!(texts_in(&strips[1], ".banner-option"), ["Three's reaction"]);
+}
+
+/// A strip is headed with the name of the investigator it answers for, so a
+/// player holding two knows whose hand Agnes Baker's hand-size discard comes
+/// from.
+#[wasm_bindgen_test]
+async fn a_strip_is_headed_with_its_investigators_name() {
+    let agnes = InvestigatorId(1);
+    let game = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(seat(agnes.0).as_card("01004"))
+        .build();
+    let discard = test_support::awaiting_request(
+        InputRequest::pick_multiple(
+            "Choose 1 card to discard",
+            vec![ChoiceOption::new(OptionId(0), "Flashlight")],
+            PickCount::exactly(1),
+        )
+        .answered_by(Responder::Investigator(agnes)),
+    );
+    let _rx = mount_with(Some(game), discard, &[], None).await;
+    assert_eq!(texts_in(&last_banner(), ".strip-name"), ["Agnes Baker"]);
 }
 
 /// When only one investigator in a window several answer still holds an

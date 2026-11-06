@@ -1,6 +1,6 @@
-//! The waiting side of the prompt's layout on the board: the spinner on the
-//! heading of an investigator another account answers for, the waiting strip
-//! above the board, and the line waiting for the lead.
+//! The prompt's layout on the board: the spinner on the heading of an
+//! investigator another account answers for, the waiting strip above the
+//! board, and the lead's strip or the line waiting for the lead.
 //!
 //! Each game is [`reassign`](crate::reassign)'s: Sam holds Wendy Adams, whose
 //! mulligan the game awaits, and Tal, [`YOU`], holds Roland Banks.
@@ -71,14 +71,43 @@ async fn sam_answering_sees_neither_spinner_nor_waiting_strip() {
     assert!(texts(&handle, ".waiting-strip").is_empty());
 }
 
+/// Swarm of Rats can move two ways, and the lead, Roland, chooses.
+fn swarm_moves() -> EngineOutcome {
+    test_support::awaiting_request(
+        InputRequest::pick_single(
+            "The lead investigator chooses where Swarm of Rats moves.",
+            vec![],
+        )
+        .answered_by(Responder::Lead(ROLAND)),
+    )
+}
+
+#[wasm_bindgen_test]
+async fn tal_decides_for_the_table_in_the_lead_strip_above_the_board() {
+    let handle = mount_as(YOU, Some(swarm_moves())).await;
+
+    assert_eq!(
+        texts(&handle, ".board-lock .lead-strip .strip-name"),
+        vec!["★ As lead investigator".to_string()]
+    );
+    assert_eq!(
+        texts(&handle, ".lead-strip .prompt"),
+        vec![prompt_text(&handle)]
+    );
+    assert!(
+        texts(&handle, ".prompt-banner").is_empty(),
+        "the lead's decision is in no bottom-bar strip"
+    );
+    assert!(
+        spinning(&handle).is_empty(),
+        "a lead decision marks no panel"
+    );
+    assert!(texts(&handle, ".lead-waiting").is_empty());
+}
+
 #[wasm_bindgen_test]
 async fn sam_waits_for_the_lead_by_name_and_account() {
-    let swarm_moves = InputRequest::pick_single(
-        "The lead investigator chooses where Swarm of Rats moves.",
-        vec![],
-    )
-    .answered_by(Responder::Lead(ROLAND));
-    let handle = mount_as(SAM, Some(test_support::awaiting_request(swarm_moves))).await;
+    let handle = mount_as(SAM, Some(swarm_moves())).await;
 
     assert_eq!(
         texts(&handle, ".lead-waiting"),

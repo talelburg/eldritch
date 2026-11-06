@@ -80,6 +80,8 @@ pub fn WaitingLine() -> impl IntoView {
         Some(AboveBoard::LeadWaiting(text)) => {
             Some(view! { <div class="lead-waiting" role="status">{text}</div> })
         }
+        // The lead's strip has controls, so the prompt banner's `LeadStrip`
+        // renders it.
         Some(AboveBoard::LeadStrip(_)) | None => None,
     }
 }
