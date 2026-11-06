@@ -25,31 +25,57 @@ use leptos::prelude::*;
 const OFFSET: i32 = 14;
 
 /// One host's hover state: where the pointer is while it is over the host,
-/// `None` while it isn't.
+/// `None` while it isn't, and the host's context menu, if it opens one.
 #[derive(Debug, Clone, Copy)]
-pub struct Hover(RwSignal<Option<(i32, i32)>>);
+pub struct Hover {
+    pointer: RwSignal<Option<(i32, i32)>>,
+    menu: Option<RwSignal<Option<(i32, i32)>>>,
+}
 
 impl Hover {
     /// A host the pointer isn't over.
     #[must_use]
     pub fn new() -> Self {
-        Self(RwSignal::new(None))
+        Self {
+            pointer: RwSignal::new(None),
+            menu: None,
+        }
     }
 
-    /// Whether the pointer is over the host, so its popover is open. Reactive.
+    /// A host that also opens a context menu, open while `menu` is `Some`
+    /// (the signal [`menu_layer`](crate::interaction::menu_layer) opens). Its
+    /// popover stays closed while the menu is open: the popover stacks above
+    /// every menu, so it would cover the menu it was opened beside, and the
+    /// menu's backdrop lies inside the host, so the pointer never leaves it.
+    #[must_use]
+    pub fn beside_menu(menu: RwSignal<Option<(i32, i32)>>) -> Self {
+        Self {
+            menu: Some(menu),
+            ..Self::new()
+        }
+    }
+
+    /// Where the popover opens: the pointer, while it is over the host and
+    /// no menu of the host's is open. Reactive.
+    fn at(self) -> Option<(i32, i32)> {
+        let menu_open = self.menu.is_some_and(|menu| menu.with(Option::is_some));
+        self.pointer.get().filter(|_| !menu_open)
+    }
+
+    /// Whether the host's popover is open. Reactive.
     #[must_use]
     pub fn is_open(self) -> bool {
-        self.0.with(Option::is_some)
+        self.at().is_some()
     }
 
     /// The pointer entered or moved over the host: open the popover beside it.
     pub fn track(self, ev: &MouseEvent) {
-        self.0.set(Some((ev.client_x(), ev.client_y())));
+        self.pointer.set(Some((ev.client_x(), ev.client_y())));
     }
 
     /// The pointer left the host: close the popover.
     pub fn clear(self) {
-        self.0.set(None);
+        self.pointer.set(None);
     }
 
     /// The host's pointer handlers, spread onto it as `{..hover.handlers()}`:
@@ -76,7 +102,7 @@ impl Default for Hover {
 #[component]
 pub fn Popover(hover: Hover, children: ChildrenFn) -> impl IntoView {
     move || {
-        hover.0.get().map(|(x, y)| {
+        hover.at().map(|(x, y)| {
             let style = format!("left:{}px;top:{}px;", x + OFFSET, y + OFFSET);
             view! { <div class="popover" role="tooltip" style=style>{children()}</div> }
         })

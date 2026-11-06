@@ -344,6 +344,54 @@ fn node_class(root: &Element, loc_name: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Clicking the Cellar opened "Move to Cellar" underneath the Cellar's own
+/// popover, which sits above every menu. The popover closes while the menu is
+/// open, stays closed while the pointer moves about with it open, and comes
+/// back once the menu is dismissed.
+#[wasm_bindgen_test]
+async fn a_locations_popover_closes_while_its_menu_is_open() {
+    let outcome = test_support::awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(OptionId(0), "Investigate")
+            .at(OptionTarget::Location(LocationId(10)))],
+    );
+    let root = mount_interactive(study_game(), outcome).await.root;
+    let node = map_in(&root)
+        .query_selector(".map-location[data-loc=\"Study\"]")
+        .expect("query")
+        .expect("the Study node");
+    let find = |sel: &str| -> HtmlElement {
+        node.query_selector(sel)
+            .expect("query")
+            .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+            .unwrap_or_else(|| panic!("a {sel} in the Study node"))
+    };
+    common::hover(&node).await;
+    assert!(common::popover_text(&node).is_some(), "hovering opens it");
+
+    find(".menu-hit").click();
+    task::tick().await;
+    assert!(
+        node.query_selector(".context-menu").expect("query").is_some(),
+        "the click opens the menu"
+    );
+    assert_eq!(common::popover_text(&node), None, "the popover closes");
+    common::hover(&node).await;
+    assert_eq!(
+        common::popover_text(&node),
+        None,
+        "and stays closed while the menu is open"
+    );
+
+    find(".menu-backdrop").click();
+    task::tick().await;
+    common::hover(&node).await;
+    assert!(
+        common::popover_text(&node).is_some(),
+        "with the menu dismissed, hovering opens it again"
+    );
+}
+
 #[wasm_bindgen_test]
 async fn actionable_location_glows_opens_menu_and_submits() {
     let outcome = test_support::awaiting_pick_single_with(

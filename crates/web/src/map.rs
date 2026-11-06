@@ -410,7 +410,6 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             );
             let menu_opts = interaction::options_for(&pending, &OptionTarget::Location(loc.id));
             let actionable = !menu_opts.is_empty();
-            #[cfg(target_arch = "wasm32")]
             let open = RwSignal::new(None::<(i32, i32)>);
             let base = if loc.revealed {
                 "map-location"
@@ -440,8 +439,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let revealed = loc.revealed;
             // The pointer enters the *node*, not the card: when the location is
             // actionable its `.menu-hit` lies over the card and takes the
-            // events.
-            let hover = Hover::new();
+            // events. The popover closes while the node's menu is open.
+            let hover = Hover::beside_menu(open);
             view! {
                 <div
                     class=node_class
