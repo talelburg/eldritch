@@ -1,9 +1,9 @@
 //! The lobby (wasm-only): what a member sees of a game before Start.
 //!
-//! The header holds the members and the invite link with Copy; below it the
-//! banner, on the opening that made this account a member; then the pool of
-//! five investigators, the seating's four numbered positions below the pool,
-//! and Start at the end of the seating.
+//! The header holds the members, the invite link with Copy and the ⋯ menu;
+//! below it the banner, on the opening that made this account a member; then
+//! the pool of five investigators, the seating's four numbered positions below
+//! the pool, and Start at the end of the seating.
 //!
 //! Each part is a component of its own, reading what it shows from the store's
 //! [`LobbyView`](protocol::lobby::LobbyView).
@@ -15,6 +15,7 @@ use protocol::lobby::{Direction, MAX_PICKS};
 use protocol::ClientMessage;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
+use crate::more_menu::{MenuEntry, MoreMenu};
 use crate::store::{self, ClientState, ConnStatus};
 use crate::transport::OutboundTx;
 use crate::{names, registry, url};
@@ -42,7 +43,7 @@ pub fn LobbyScreen() -> impl IntoView {
 }
 
 /// The header row: the members by display name, then the game's invite link
-/// with a button that copies it.
+/// with a button that copies it, and the ⋯ menu.
 #[component]
 fn LobbyHeader() -> impl IntoView {
     let store = store::use_store();
@@ -64,6 +65,7 @@ fn LobbyHeader() -> impl IntoView {
         })
     });
     let copied = RwSignal::new(false);
+    let entries = Signal::derive(move || store.with(menu_entries));
 
     view! {
         <header class="lobby-header">
@@ -81,8 +83,41 @@ fn LobbyHeader() -> impl IntoView {
                     {move || if copied.get() { "Copied" } else { "Copy" }}
                 </button>
             </div>
+            <MoreMenu entries=entries/>
         </header>
     }
+}
+
+/// The header's ⋯ entries for the store's signed-in account: Remove
+/// `<member>` for each other member if it created the lobby, and Leave if it
+/// didn't. The creator stays, so the lobby always has someone to order the
+/// seating and press Start.
+fn menu_entries(s: &ClientState) -> Vec<MenuEntry> {
+    let (Some(lobby), Some(you)) = (&s.lobby, s.you) else {
+        return Vec::new();
+    };
+    if you != lobby.creator {
+        return vec![MenuEntry {
+            label: "Leave".to_string(),
+            on_select: Callback::new(|()| send(ClientMessage::Leave)),
+            children: Vec::new(),
+        }];
+    }
+    lobby
+        .members
+        .iter()
+        .filter(|member| member.account != you)
+        .map(|member| {
+            let account = member.account;
+            MenuEntry {
+                label: format!("Remove {}", member.display_name),
+                on_select: Callback::new(move |()| {
+                    send(ClientMessage::Remove { member: account });
+                }),
+                children: Vec::new(),
+            }
+        })
+        .collect()
 }
 
 /// Put `link` on the clipboard, and mark `copied` once it is there.

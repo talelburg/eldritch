@@ -26,7 +26,7 @@ async fn get_games(addr: SocketAddr, cookie: Option<&str>) -> reqwest::Response 
 }
 
 /// The listing `GET /games` returns to the account named `name`.
-async fn listing_for(addr: SocketAddr, name: &str) -> Vec<GameEntry> {
+pub(crate) async fn listing_for(addr: SocketAddr, name: &str) -> Vec<GameEntry> {
     let cookie = common::sign_in_over_http(addr, name).await;
     let response = get_games(addr, Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::OK);

@@ -38,11 +38,16 @@ fn entries(state: &ClientState, tx: Option<&OutboundTx>) -> Vec<MenuEntry> {
                 .map(|member| {
                     let to = member.account;
                     let tx = tx.cloned();
-                    MenuEntry::new(member.display_name.clone(), move || {
-                        if let Some(tx) = &tx {
-                            let _ = tx.unbounded_send(ClientMessage::Reassign { investigator, to });
-                        }
-                    })
+                    MenuEntry {
+                        label: member.display_name.clone(),
+                        on_select: Callback::new(move |()| {
+                            if let Some(tx) = &tx {
+                                let _ =
+                                    tx.unbounded_send(ClientMessage::Reassign { investigator, to });
+                            }
+                        }),
+                        children: Vec::new(),
+                    }
                 })
                 .collect();
             MenuEntry::submenu(

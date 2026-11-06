@@ -15,7 +15,9 @@ use protocol::{
     UnresumableSummary,
 };
 use wasm_bindgen::JsCast as _;
+use web::socket_ending::{NextStep, SocketEnding};
 use web::store::{ClientState, ConnStatus};
+use web::url;
 use web_sys::Element;
 
 use crate::common::{self, BoardHandle};
@@ -378,6 +380,31 @@ async fn each_reason_a_game_cannot_resume_reads_in_plain_words() {
             "Stored by an older version of the server",
         ]
     );
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn home_after_a_no_longer_a_member_close_says_why_in_a_toast() {
+    // The address the close sends the client to, read back as the transport
+    // reads it on arriving at the home page.
+    let NextStep::GoHome(ended) = SocketEnding::NoLongerMember.next_step() else {
+        panic!("the close goes home");
+    };
+    let address = url::home_path(ended);
+    let query = &address[address.find('?').expect("the address names the ending")..];
+    let client = ClientState {
+        status: ConnStatus::Home,
+        games: Some(vec![]),
+        toast: url::ended_from_query(query).map(|ended| ended.toast().to_string()),
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+    task::tick().await;
+
+    assert_eq!(
+        texts(&handle, ".toast"),
+        ["You're no longer a member of this game"]
+    );
+    assert_eq!(texts(&handle, ".home .games-heading").len(), 1, "on Home");
 }
 
 #[wasm_bindgen_test::wasm_bindgen_test]

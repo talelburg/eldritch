@@ -140,20 +140,20 @@ pub(crate) async fn of_member(
 }
 
 /// Store `view`'s picks, in its seating order, and its lead as the lobby
-/// `game_id`'s, in place of those stored.
+/// `game_id`'s, in place of those stored, on `db`: a transaction the caller
+/// commits, so a change of membership can be stored with them.
 ///
 /// # Errors
 ///
 /// The database failed, or the view picks one investigator twice.
 pub(crate) async fn save_picks(
-    db: &SqlitePool,
+    db: &mut SqliteConnection,
     game_id: &GameId,
     view: &LobbyView,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = db.begin().await?;
     sqlx::query("DELETE FROM lobby_picks WHERE game_id = ?")
         .bind(game_id.as_str())
-        .execute(&mut *tx)
+        .execute(&mut *db)
         .await?;
     for (position, pick) in (0_i64..).zip(&view.picks) {
         sqlx::query(
@@ -165,15 +165,34 @@ pub(crate) async fn save_picks(
         .bind(pick.account.0)
         .bind(weakness_column(pick.weakness))
         .bind(position)
-        .execute(&mut *tx)
+        .execute(&mut *db)
         .await?;
     }
     sqlx::query("UPDATE lobbies SET lead = ? WHERE game_id = ?")
         .bind(view.lead.as_ref().map(CardCode::as_str))
         .bind(game_id.as_str())
-        .execute(&mut *tx)
+        .execute(&mut *db)
         .await?;
-    tx.commit().await
+    Ok(())
+}
+
+/// Make `account` no longer a member of the game `game_id`, on `db`. Opening
+/// the game's link again makes it one again, through [`add_member`].
+///
+/// # Errors
+///
+/// The database failed.
+pub(crate) async fn remove_member(
+    db: &mut SqliteConnection,
+    game_id: &GameId,
+    account: AccountId,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM game_members WHERE game_id = ? AND account_id = ?")
+        .bind(game_id.as_str())
+        .bind(account.0)
+        .execute(&mut *db)
+        .await?;
+    Ok(())
 }
 
 /// Delete the lobby `game_id`'s rows, its picks' and its own, on `db`: what

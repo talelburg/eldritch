@@ -1,18 +1,15 @@
-//! The ⋯ menu: a button that opens a list of entries, each an action, or a
-//! heading over a submenu of them.
-//!
-//! The board, the lobby header and a "Your games" row each build their own
-//! entries; the menu only renders them and runs the one picked.
+//! The ⋯ menu: a button that opens a list of entries, each a label and what
+//! choosing it does, or a heading over a submenu of them.
 
 use leptos::prelude::*;
 
 /// One entry of a [`MoreMenu`].
 #[derive(Clone)]
 pub struct MenuEntry {
-    /// What the entry says.
+    /// What the entry says, e.g. "Leave".
     pub label: String,
-    /// What picking it does. An entry with [`children`](Self::children) is a
-    /// heading, and picking one of them runs theirs instead.
+    /// What choosing it does. The menu closes first. An entry with
+    /// [`children`](Self::children) is a heading, which isn't chosen itself.
     pub on_select: Callback<()>,
     /// The submenu under this entry, in order: empty for an entry that is an
     /// action itself.
@@ -20,15 +17,6 @@ pub struct MenuEntry {
 }
 
 impl MenuEntry {
-    /// An entry saying `label` that runs `on_select` when picked.
-    pub fn new(label: impl Into<String>, on_select: impl Fn() + Send + Sync + 'static) -> Self {
-        Self {
-            label: label.into(),
-            on_select: Callback::new(move |()| on_select()),
-            children: Vec::new(),
-        }
-    }
-
     /// A heading saying `label` over the submenu `children`.
     pub fn submenu(label: impl Into<String>, children: Vec<MenuEntry>) -> Self {
         Self {
@@ -39,33 +27,50 @@ impl MenuEntry {
     }
 }
 
-/// The ⋯ button and, once it is clicked, its entries. With no entries there
-/// is nothing to offer, so nothing renders. Picking an entry runs it and
-/// closes the menu, and so does a click anywhere outside it.
+/// A ⋯ button opening `entries` below it, and a full-screen transparent
+/// backdrop that closes them on a click outside. Choosing an entry closes the
+/// menu and runs it. With no entries, the button doesn't render.
 #[component]
 pub fn MoreMenu(entries: Signal<Vec<MenuEntry>>) -> impl IntoView {
     let open = RwSignal::new(false);
+
     move || {
         let entries = entries.get();
         if entries.is_empty() {
             return ().into_any();
         }
-        let list = open.get().then(|| {
-            let items: Vec<_> = entries
-                .into_iter()
-                .map(|entry| entry_view(entry, open))
-                .collect();
-            view! {
-                <div class="menu-backdrop" on:click=move |_| open.set(false)></div>
-                <div class="more-menu-entries">{items}</div>
-            }
-        });
+        let items = move || {
+            open.get().then(|| {
+                let buttons = entries
+                    .iter()
+                    .cloned()
+                    .map(|entry| entry_view(entry, open))
+                    .collect_view();
+                view! {
+                    <div
+                        class="menu-backdrop"
+                        on:click=move |ev| {
+                            ev.stop_propagation();
+                            open.set(false);
+                        }
+                    ></div>
+                    <div class="more-menu-items">{buttons}</div>
+                }
+            })
+        };
         view! {
             <div class="more-menu">
-                <button class="more-menu-toggle" title="More" on:click=move |_| open.update(|o| *o = !*o)>
+                <button
+                    class="more-menu-toggle"
+                    aria-label="More"
+                    on:click=move |ev| {
+                        ev.stop_propagation();
+                        open.update(|open| *open = !*open);
+                    }
+                >
                     "⋯"
                 </button>
-                {list}
+                {items}
             </div>
         }
         .into_any()
@@ -83,7 +88,8 @@ fn entry_view(entry: MenuEntry, open: RwSignal<bool>) -> AnyView {
         return view! {
             <button
                 class="menu-item"
-                on:click=move |_| {
+                on:click=move |ev| {
+                    ev.stop_propagation();
                     open.set(false);
                     on_select.run(());
                 }
@@ -93,10 +99,10 @@ fn entry_view(entry: MenuEntry, open: RwSignal<bool>) -> AnyView {
         }
         .into_any();
     }
-    let items: Vec<_> = children
+    let items = children
         .into_iter()
         .map(|child| entry_view(child, open))
-        .collect();
+        .collect_view();
     view! {
         <div class="menu-group">
             <div class="menu-heading">{label}</div>

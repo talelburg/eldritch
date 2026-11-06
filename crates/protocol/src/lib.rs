@@ -98,6 +98,18 @@ pub enum ClientMessage {
     /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
     /// Every connected member is then sent a `Hello`.
     Start,
+    /// Leave the lobby: [`Lobby::leave`](lobby::Lobby::leave). Every socket
+    /// of the sender's to the game is then closed with
+    /// [`CLOSE_NO_LONGER_A_MEMBER`].
+    Leave,
+    /// The creator removes a member from the lobby:
+    /// [`Lobby::remove`](lobby::Lobby::remove). Every socket of the removed
+    /// account's to the game is then closed with
+    /// [`CLOSE_NO_LONGER_A_MEMBER`].
+    Remove {
+        /// The member removed.
+        member: AccountId,
+    },
     /// Reassign an investigator in a started game:
     /// [`LiveGame::reassign`](live::LiveGame::reassign). Every connection is
     /// then sent [`ServerMessage::Assigned`].
@@ -720,6 +732,14 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// client stops retrying. The game's link still names it, and a rollback can
 /// resume it.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
+
+/// The close code ending every WebSocket an account has open to a game it is no
+/// longer a member of: it left the lobby, or the creator removed it.
+///
+/// It is not retried: a reconnect would make the account a member again,
+/// since opening a game's link is what makes one. A client goes to "Your
+/// games" instead, saying why.
+pub const CLOSE_NO_LONGER_A_MEMBER: u16 = 4403;
 
 /// The close code every open WebSocket gets when the server shuts down for a
 /// restart: 1012, the standard "Service Restart" code.
