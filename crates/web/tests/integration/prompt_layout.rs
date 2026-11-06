@@ -1,13 +1,13 @@
 //! The prompt's layout on the board: the spinner on the heading of an
 //! investigator another account answers for, the waiting strip above the
-//! board, and the lead's strip or the line waiting for the lead.
+//! board, and the lead's strip or the lead-waiting line.
 //!
-//! Each game is [`reassign`](crate::reassign)'s: Sam holds Wendy Adams, whose
-//! mulligan the game awaits, and Tal, [`YOU`], holds Roland Banks.
+//! Each game is [`reassign`]'s: Sam holds Wendy Adams, whose mulligan the game
+//! awaits, and Tal, [`YOU`], holds Roland Banks.
 #![cfg(target_arch = "wasm32")]
 
 use game_core::engine::{EngineOutcome, InputRequest, Responder};
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use game_core::test_support;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast as _;
@@ -15,10 +15,10 @@ use wasm_bindgen_test::*;
 use web_sys::Element;
 
 use crate::common::{BoardHandle, YOU};
-use crate::lobby::{texts, SAM};
-use crate::reassign::mount_as;
+use crate::lobby::{self, SAM};
+use crate::reassign;
 
-/// Roland Banks, Tal's, in [`mount_as`]'s game.
+/// Roland Banks, Tal's, in [`reassign::mount_as`]'s game.
 const ROLAND: InvestigatorId = InvestigatorId(2);
 
 /// The name in each investigator panel's heading whose heading carries a
@@ -43,32 +43,32 @@ fn prompt_text(handle: &BoardHandle) -> String {
 
 #[wasm_bindgen_test]
 async fn tal_sees_a_spinner_on_wendy_and_a_waiting_strip_with_no_controls() {
-    let handle = mount_as(YOU, None).await;
+    let handle = reassign::mount_as(YOU, None).await;
 
     assert_eq!(spinning(&handle), vec!["Wendy Adams".to_string()]);
     assert_eq!(
-        texts(&handle, ".waiting-strip"),
+        lobby::texts(&handle, ".waiting-strip"),
         vec![format!(
             "Waiting for Sam: Wendy Adams: {}",
             prompt_text(&handle)
         )]
     );
     assert!(
-        texts(&handle, ".waiting-strip button").is_empty(),
+        lobby::texts(&handle, ".waiting-strip button").is_empty(),
         "the waiting strip offers no controls"
     );
     assert!(
-        texts(&handle, ".prompt-banner").is_empty(),
+        lobby::texts(&handle, ".prompt-banner").is_empty(),
         "nothing on Tal's prompt bar"
     );
 }
 
 #[wasm_bindgen_test]
 async fn sam_answering_sees_neither_spinner_nor_waiting_strip() {
-    let handle = mount_as(SAM, None).await;
+    let handle = reassign::mount_as(SAM, None).await;
 
     assert!(spinning(&handle).is_empty());
-    assert!(texts(&handle, ".waiting-strip").is_empty());
+    assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
 }
 
 /// Swarm of Rats can move two ways, and the lead, Roland, chooses.
@@ -84,38 +84,38 @@ fn swarm_moves() -> EngineOutcome {
 
 #[wasm_bindgen_test]
 async fn tal_decides_for_the_table_in_the_lead_strip_above_the_board() {
-    let handle = mount_as(YOU, Some(swarm_moves())).await;
+    let handle = reassign::mount_as(YOU, Some(swarm_moves())).await;
 
     assert_eq!(
-        texts(&handle, ".board-lock .lead-strip .strip-name"),
+        lobby::texts(&handle, ".board-lock .lead-strip .strip-name"),
         vec!["★ As lead investigator".to_string()]
     );
     assert_eq!(
-        texts(&handle, ".lead-strip .prompt"),
+        lobby::texts(&handle, ".lead-strip .prompt"),
         vec![prompt_text(&handle)]
     );
     assert!(
-        texts(&handle, ".prompt-banner").is_empty(),
+        lobby::texts(&handle, ".prompt-banner").is_empty(),
         "the lead's decision is in no bottom-bar strip"
     );
     assert!(
         spinning(&handle).is_empty(),
         "a lead decision marks no panel"
     );
-    assert!(texts(&handle, ".lead-waiting").is_empty());
+    assert!(lobby::texts(&handle, ".lead-waiting").is_empty());
 }
 
 #[wasm_bindgen_test]
 async fn sam_waits_for_the_lead_by_name_and_account() {
-    let handle = mount_as(SAM, Some(swarm_moves())).await;
+    let handle = reassign::mount_as(SAM, Some(swarm_moves())).await;
 
     assert_eq!(
-        texts(&handle, ".lead-waiting"),
+        lobby::texts(&handle, ".lead-waiting"),
         vec!["Waiting for the lead investigator, Roland Banks (Tal)".to_string()]
     );
     assert!(
         spinning(&handle).is_empty(),
         "a lead decision marks no panel"
     );
-    assert!(texts(&handle, ".waiting-strip").is_empty());
+    assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
 }

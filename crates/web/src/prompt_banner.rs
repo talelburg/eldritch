@@ -1,7 +1,7 @@
 //! The prompt's **strips**: where this account answers a live prompt for one
 //! of its investigators.
 //!
-//! Which strips exist is [`layout`]'s to say. The bottom-fixed prompt bar
+//! Which strips exist is [`prompt_layout::layout`]'s to say. The bottom-fixed prompt bar
 //! renders one strip per investigator of yours the prompt asks, each headed
 //! with their name, and the lead strip renders above the board, labelled
 //! "★ As lead investigator", when you hold the lead and the lead decides for
@@ -29,13 +29,13 @@ use game_core::action::InputResponse;
 use game_core::engine::{
     ChoiceOption, InputKind, InputRequest, OptionId, OptionTarget, PickCount, Responder,
 };
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::prompt_layout::{layout, AboveBoard};
+use crate::prompt_layout::AboveBoard;
 use crate::store::ClientState;
-use crate::{controls, decision, interaction, skill_test_result, store};
+use crate::{controls, decision, prompt_layout, skill_test_result, store};
 
 /// The bottom-fixed prompt bar: one strip per investigator of yours the live
 /// prompt asks, in the order it asks them. With no strip that has anything to
@@ -46,8 +46,11 @@ pub fn PromptBanner() -> impl IntoView {
     let ms = use_context::<MultiSelect>();
     move || {
         let state = store.get();
+        // `layout` decides which strips exist; `answerable_request` only
+        // supplies what goes in them. The two agree, because a strip means
+        // this account holds the investigator, so it can answer the prompt.
         let request = state.answerable_request()?;
-        let investigators = layout(&state).strips();
+        let investigators = prompt_layout::layout(&state).strips();
         let strips: Vec<_> = investigators
             .iter()
             .enumerate()
@@ -81,9 +84,12 @@ pub fn LeadStrip() -> impl IntoView {
     let ms = use_context::<MultiSelect>();
     move || {
         let state = store.get();
-        let Some(AboveBoard::LeadStrip(_)) = layout(&state).above_board else {
+        let Some(AboveBoard::LeadStrip(_)) = prompt_layout::layout(&state).above_board else {
             return None;
         };
+        // `layout` decided the lead strip exists; `answerable_request` only
+        // supplies its contents. The two agree, because a lead strip means
+        // this account holds the lead, so it can answer the prompt.
         let request = state.answerable_request()?;
         let controls = strip_contents(&state, &request, ms.clone(), Share::All)?;
         Some(view! {
@@ -154,11 +160,10 @@ fn strip_contents(
     // Investigate with no current location, EndTurn off-frame — has no board
     // home, and suppressing the whole strip would make it unreachable rather
     // than merely misplaced.
-    let suppress_text = decision_is_live
-        || matches!(
-            interaction::prompt_anchor(state),
-            Some(OptionTarget::TurnControl(_))
-        );
+    //
+    // `suppresses_text` is the one definition of both cases, which the waiting
+    // strip reads too.
+    let suppress_text = prompt_layout::suppresses_text(state, request);
     let prompt = (!suppress_text).then(|| request.prompt.clone());
     // A prompt inside a skill test's verdict, before the verdict is logged —
     // Lucky! 01080's `when` cell — says how the test stands, since the result

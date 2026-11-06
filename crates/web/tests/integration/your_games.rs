@@ -91,11 +91,7 @@ async fn mount_page_as(account: AccountId, listing: Vec<GameEntry>) -> BoardHand
 
 /// The text of every `sel` under `handle`'s root, in document order.
 fn texts(handle: &BoardHandle, sel: &str) -> Vec<String> {
-    let nodes = handle.root.query_selector_all(sel).expect("query");
-    (0..nodes.length())
-        .filter_map(|i| nodes.item(i))
-        .map(|node| node.text_content().unwrap_or_default())
-        .collect()
+    common::texts_in(&handle.root, sel)
 }
 
 #[wasm_bindgen_test::wasm_bindgen_test]

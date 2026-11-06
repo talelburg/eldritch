@@ -8,7 +8,8 @@
 
 use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::investigator::InvestigatorId;
+use game_core::state::GameState;
 use leptos::prelude::*;
 
 use crate::card::{HandCardView, InPlayCardView};

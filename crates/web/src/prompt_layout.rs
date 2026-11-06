@@ -6,12 +6,12 @@
 //! [`ClientState`], so a reassignment moves the placement on the next read.
 
 use game_core::engine::{EngineOutcome, InputRequest, OptionTarget, Responder};
-use game_core::state::InvestigatorId;
+use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 use protocol::AccountId;
 
 use crate::decision;
-use crate::store::{self, ClientState, SOMEONE};
+use crate::store::{self, ClientState};
 
 /// Every placement the live prompt gets on this client.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -37,12 +37,14 @@ pub enum AboveBoard {
     /// The lead investigator's strip, for the account holding them, when the
     /// lead decides for the table.
     LeadStrip(InvestigatorId),
-    /// Who leads and which account holds them, for everyone else while the
-    /// lead decides: "Waiting for the lead investigator, Roland Banks (Tal)".
-    LeadWaiting(String),
-    /// Who the game waits on, and on what, when the prompt asks none of your
-    /// investigators: "Waiting for Sam: Daisy Walker: …". It has no controls.
-    Waiting(String),
+    /// The lead-waiting line: who leads and which account holds them, for
+    /// everyone else while the lead decides: "Waiting for the lead
+    /// investigator, Roland Banks (Tal)".
+    LeadWaitingLine(String),
+    /// The waiting strip: who the game waits on, and on what, when the prompt
+    /// asks none of your investigators: "Waiting for Sam: Daisy Walker: …". It
+    /// has no controls.
+    WaitingStrip(String),
 }
 
 impl PromptLayout {
@@ -70,14 +72,14 @@ impl PromptLayout {
 /// What the live prompt puts above the board, as text with no controls: the
 /// waiting strip, or the lead-waiting line.
 #[component]
-pub fn WaitingLine() -> impl IntoView {
+pub fn WaitingAboveBoard() -> impl IntoView {
     let store = store::use_store();
     let above_board = Memo::new(move |_| store.with(layout).above_board);
     move || match above_board.get() {
-        Some(AboveBoard::Waiting(text)) => {
+        Some(AboveBoard::WaitingStrip(text)) => {
             Some(view! { <div class="waiting-strip" role="status">{text}</div> })
         }
-        Some(AboveBoard::LeadWaiting(text)) => {
+        Some(AboveBoard::LeadWaitingLine(text)) => {
             Some(view! { <div class="lead-waiting" role="status">{text}</div> })
         }
         // The lead's strip has controls, so the prompt banner's `LeadStrip`
@@ -90,7 +92,7 @@ pub fn WaitingLine() -> impl IntoView {
 ///
 /// An investigator the prompt asks gets a [`Strip`](Placement::Strip) if this account holds them
 /// and a [`Spinner`](Placement::Spinner) if not, and above the board goes the
-/// lead's strip, the line waiting for the lead, or the waiting strip, which
+/// lead's strip, the lead-waiting line, or the waiting strip, which
 /// shows only when the prompt asks none of your investigators.
 #[must_use]
 pub fn layout(state: &ClientState) -> PromptLayout {
@@ -121,7 +123,7 @@ pub fn layout(state: &ClientState) -> PromptLayout {
         .iter()
         .all(|(_, placement)| *placement == Placement::Spinner);
     let above_board = (none_yours && !investigators.is_empty())
-        .then(|| AboveBoard::Waiting(waiting_text(state, request, &investigators)));
+        .then(|| AboveBoard::WaitingStrip(waiting_text(state, request, &investigators)));
     PromptLayout {
         investigators,
         above_board,
@@ -129,16 +131,16 @@ pub fn layout(state: &ClientState) -> PromptLayout {
 }
 
 /// The placement of a prompt the lead answers, for `lead`, the investigator
-/// leading now: their strip for the account holding them, and who to wait for
-/// for everyone else.
+/// leading now: their strip for the account holding them, and the lead-waiting
+/// line for everyone else.
 fn lead_layout(state: &ClientState, lead: InvestigatorId) -> PromptLayout {
     let above_board = if state.holds(lead) {
         AboveBoard::LeadStrip(lead)
     } else {
-        AboveBoard::LeadWaiting(format!(
+        AboveBoard::LeadWaitingLine(format!(
             "Waiting for the lead investigator, {} ({})",
             state.investigator_name(lead),
-            account_name(state, state.assigned.holder(lead)),
+            state.holder_name(state.assigned.holder(lead)),
         ))
     };
     PromptLayout {
@@ -168,7 +170,7 @@ fn waiting_text(
     }
     let clauses: Vec<String> = clauses
         .into_iter()
-        .map(|(holder, names)| format!("{}: {}", account_name(state, holder), names.join(", ")))
+        .map(|(holder, names)| format!("{}: {}", state.holder_name(holder), names.join(", ")))
         .collect();
     let mut text = format!("Waiting for {}", clauses.join(" · "));
     if !suppresses_text(state, request) {
@@ -189,16 +191,10 @@ fn seat_rank(state: &ClientState, id: InvestigatorId) -> (usize, InvestigatorId)
     (place, id)
 }
 
-/// The display name of `holder`, or "someone" for an investigator no account
-/// this client knows holds.
-fn account_name(state: &ClientState, holder: Option<AccountId>) -> &str {
-    holder.map_or(SOMEONE, |account| state.member_name(account))
-}
-
 /// Whether the prompt's text stays off a strip: on the open turn, which the
 /// turn control on the board already offers (ADR 0011), and while a decision
 /// modal is up, which shows the text itself.
-fn suppresses_text(state: &ClientState, request: &InputRequest) -> bool {
+pub(crate) fn suppresses_text(state: &ClientState, request: &InputRequest) -> bool {
     matches!(request.target, Some(OptionTarget::TurnControl(_))) || decision::modal_is_live(state)
 }
 
@@ -285,7 +281,7 @@ mod tests {
         assert_eq!(placed.spinners(), vec![DAISY]);
         assert_eq!(
             placed.above_board,
-            Some(AboveBoard::Waiting(
+            Some(AboveBoard::WaitingStrip(
                 "Waiting for Sam: Daisy Walker: Assign the horror".to_owned()
             ))
         );
@@ -308,7 +304,7 @@ mod tests {
         assert_eq!(alone.spinners(), vec![DAISY]);
         assert_eq!(
             alone.above_board,
-            Some(AboveBoard::Waiting(
+            Some(AboveBoard::WaitingStrip(
                 "Waiting for Sam: Daisy Walker: Assign the horror".to_owned()
             ))
         );
@@ -336,7 +332,7 @@ mod tests {
 
     #[test]
     fn everyone_else_waits_for_the_lead_by_name_and_account() {
-        let waiting = Some(AboveBoard::LeadWaiting(
+        let waiting = Some(AboveBoard::LeadWaitingLine(
             "Waiting for the lead investigator, Roland Banks (Tal)".to_owned(),
         ));
         for you in [SAM, ALEX] {
@@ -376,7 +372,7 @@ mod tests {
     /// The waiting strip text `you` sees for `request`.
     fn waiting_for(you: AccountId, request: InputRequest) -> String {
         match layout(&seen_by(you, request)).above_board {
-            Some(AboveBoard::Waiting(text)) => text,
+            Some(AboveBoard::WaitingStrip(text)) => text,
             other => panic!("expected a waiting strip, got {other:?}"),
         }
     }
@@ -423,7 +419,7 @@ mod tests {
         assert_eq!(placed.spinners(), vec![DAISY]);
         assert_eq!(
             placed.above_board,
-            Some(AboveBoard::Waiting(
+            Some(AboveBoard::WaitingStrip(
                 "Waiting for someone: Daisy Walker: Assign the horror".to_owned()
             ))
         );
@@ -437,7 +433,7 @@ mod tests {
         }
         assert_eq!(
             layout(&state).above_board,
-            Some(AboveBoard::Waiting(
+            Some(AboveBoard::WaitingStrip(
                 "Waiting for Jo: Wendy Adams · Sam: Daisy Walker: You may trigger".to_owned()
             ))
         );
@@ -480,7 +476,7 @@ mod tests {
         assert_eq!(tal.spinners(), vec![AGNES]);
         assert_eq!(
             tal.above_board,
-            Some(AboveBoard::Waiting(
+            Some(AboveBoard::WaitingStrip(
                 "Waiting for Sam: Agnes Baker: Choose a card to discard".to_owned()
             ))
         );

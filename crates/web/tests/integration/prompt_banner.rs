@@ -570,15 +570,6 @@ fn strips() -> Vec<Element> {
         .collect()
 }
 
-/// The text of each element `sel` matches inside `within`, in order.
-fn texts_in(within: &Element, sel: &str) -> Vec<String> {
-    let nodes = within.query_selector_all(sel).expect("query");
-    (0..nodes.length())
-        .filter_map(|i| nodes.item(i))
-        .map(|n| n.text_content().unwrap_or_default())
-        .collect()
-}
-
 /// In a window several answer, each investigator holding an option passes
 /// separately (ADR 0019): each gets a strip headed with their name, with the
 /// prompt, their own option and a plain Pass that passes for them.
@@ -593,14 +584,20 @@ async fn a_window_two_answer_shows_a_strip_with_a_plain_pass_for_each() {
     let strips = strips();
     let headings: Vec<String> = strips
         .iter()
-        .flat_map(|strip| texts_in(strip, ".strip-name"))
+        .flat_map(|strip| common::texts_in(strip, ".strip-name"))
         .collect();
     assert_eq!(headings, names);
-    assert_eq!(texts_in(&strips[0], ".banner-option"), ["Two's reaction"]);
-    assert_eq!(texts_in(&strips[1], ".banner-option"), ["Three's reaction"]);
+    assert_eq!(
+        common::texts_in(&strips[0], ".banner-option"),
+        ["Two's reaction"]
+    );
+    assert_eq!(
+        common::texts_in(&strips[1], ".banner-option"),
+        ["Three's reaction"]
+    );
     for strip in &strips {
-        assert_eq!(texts_in(strip, ".prompt"), ["You may trigger"]);
-        assert_eq!(texts_in(strip, ".pass"), ["Pass"]);
+        assert_eq!(common::texts_in(strip, ".prompt"), ["You may trigger"]);
+        assert_eq!(common::texts_in(strip, ".pass"), ["Pass"]);
     }
     strips[1]
         .query_selector(".pass")
@@ -631,10 +628,13 @@ async fn an_option_naming_no_investigator_goes_on_the_first_strip() {
     let _rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
     let strips = strips();
     assert_eq!(
-        texts_in(&strips[0], ".banner-option"),
+        common::texts_in(&strips[0], ".banner-option"),
         ["Two's reaction", "No one's option"]
     );
-    assert_eq!(texts_in(&strips[1], ".banner-option"), ["Three's reaction"]);
+    assert_eq!(
+        common::texts_in(&strips[1], ".banner-option"),
+        ["Three's reaction"]
+    );
 }
 
 /// A strip is headed with the name of the investigator it answers for, so a
@@ -656,7 +656,10 @@ async fn a_strip_is_headed_with_its_investigators_name() {
         .answered_by(Responder::Investigator(agnes)),
     );
     let _rx = mount_with(Some(game), discard, &[], None).await;
-    assert_eq!(texts_in(&last_banner(), ".strip-name"), ["Agnes Baker"]);
+    assert_eq!(
+        common::texts_in(&last_banner(), ".strip-name"),
+        ["Agnes Baker"]
+    );
 }
 
 /// When only one investigator in a window several answer still holds an

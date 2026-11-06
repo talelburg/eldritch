@@ -270,11 +270,19 @@ impl ClientState {
 
     /// The display name of the member `account`, or [`SOMEONE`] for an
     /// account this client doesn't know as one.
-    pub(crate) fn member_name(&self, account: AccountId) -> &str {
+    fn member_name(&self, account: AccountId) -> &str {
         self.members
             .iter()
             .find(|member| member.account == account)
             .map_or(SOMEONE, |member| member.display_name.as_str())
+    }
+
+    /// The display name of `holder`, the account holding an investigator, or
+    /// "someone" when no account holds them or this client doesn't know the
+    /// one that does.
+    #[must_use]
+    pub fn holder_name(&self, holder: Option<AccountId>) -> &str {
+        holder.map_or(SOMEONE, |account| self.member_name(account))
     }
 
     /// Whether this client's account is `creator`, the account that created
@@ -358,8 +366,8 @@ pub enum DeleteAnswer {
     Failed,
 }
 
-/// What a toast calls an account this client doesn't know as a member.
-pub(crate) const SOMEONE: &str = "someone";
+/// What the client calls an account it doesn't know as a member.
+const SOMEONE: &str = "someone";
 
 #[cfg(test)]
 impl ClientState {
@@ -646,7 +654,7 @@ fn reduce_assigned(
         "{} gave {} to {}",
         state.member_name(by),
         state.investigator_name(investigator),
-        holder.map_or(SOMEONE, |holder| state.member_name(holder)),
+        state.holder_name(holder),
     ));
 }
 
