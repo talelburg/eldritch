@@ -25,7 +25,9 @@ use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
 use protocol::lobby::{Member, Start};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{AccountId, Assignment, GameId, LogPosition, UnresumableCause};
+use protocol::{
+    AccountId, Assignment, GameId, LogPosition, ReassignRefusal, ServerMessage, UnresumableCause,
+};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
@@ -90,6 +92,21 @@ pub enum ApplyError {
     /// The live game refused it. Nothing was stored.
     #[error(transparent)]
     Refused(#[from] Refused),
+    /// The live game accepted it, but storing it failed. Nothing was
+    /// committed.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+}
+
+/// Why [`GameSession::reassign`] didn't reassign an investigator. A host
+/// sends the account that asked the wire [`Refusal`](protocol::Refusal) it
+/// maps to.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReassignError {
+    /// The live game refused it. Nothing was stored.
+    #[error(transparent)]
+    Refused(#[from] ReassignRefusal),
     /// The live game accepted it, but storing it failed. Nothing was
     /// committed.
     #[error(transparent)]
@@ -434,6 +451,36 @@ impl GameSession {
         .await
         .map_err(SessionError::from)?;
         Ok(self.live.commit(accepted))
+    }
+
+    /// **Reassign** `investigator` to the member `to`, as `by` asks: the live
+    /// game decides it, the new holder is stored, then the live game commits
+    /// it. Returns the [`ServerMessage::Assigned`] every connection is sent.
+    ///
+    /// A refused reassignment stores nothing and leaves the game unchanged,
+    /// and so does a failed write. Nothing reaches the action log.
+    ///
+    /// # Errors
+    ///
+    /// [`ReassignError::Refused`] if the live game refuses it, or
+    /// [`ReassignError::Session`] wrapping [`SessionError::Db`] if storing the
+    /// new holder fails.
+    pub async fn reassign(
+        &mut self,
+        by: AccountId,
+        investigator: InvestigatorId,
+        to: AccountId,
+    ) -> Result<ServerMessage, ReassignError> {
+        let reassigned = self.live.reassign(by, investigator, to)?;
+        store::update_holder(
+            &self.db,
+            &self.game_id,
+            reassigned.investigator(),
+            reassigned.to(),
+        )
+        .await
+        .map_err(SessionError::from)?;
+        Ok(self.live.commit_reassignment(reassigned))
     }
 
     /// Rebuild a stored game against `registries`: re-run setup from its

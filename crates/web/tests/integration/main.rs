@@ -35,6 +35,7 @@ mod map_node_layout;
 mod panel_controls;
 mod prompt_banner;
 mod provisional_verdict;
+mod reassign;
 mod registry_smoke;
 mod sign_in;
 mod skill_test_result;

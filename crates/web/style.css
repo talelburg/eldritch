@@ -270,6 +270,18 @@
 }
 .context-menu .menu-item { display: block; width: 100%; text-align: left; cursor: pointer; }
 
+/* The ⋯ menu: its entries drop below the button, over a backdrop that closes it. */
+.more-menu { position: relative; display: inline-block; }
+.more-menu-entries {
+    position: absolute; z-index: 20; right: 0; min-width: 12em;
+    display: flex; flex-direction: column; gap: 2px;
+    background: #1b1b1b; border: 1px solid #666; padding: 4px;
+}
+.more-menu-entries .menu-item { display: block; width: 100%; text-align: left; cursor: pointer; }
+.more-menu-entries .menu-heading { color: #aaa; font-size: 0.9em; padding: 2px 4px; }
+.more-menu-entries .menu-group .menu-item { padding-left: 1.5em; }
+.board-menu { display: flex; justify-content: flex-end; }
+
 /* Interactivity S3 (#538): hand-card wrapper — glow (Play) / ring (select). */
 .hand-slot { position: relative; }
 .hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }

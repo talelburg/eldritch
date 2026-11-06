@@ -137,8 +137,9 @@ pub struct ClientState {
     /// and kept through the `Lobby`s after it, which don't.
     pub joined: bool,
     /// What the toast says: why the last lobby command this client sent was
-    /// refused. Set by `LobbyRefused`, cleared by `Hello`, and dismissed by
-    /// the toast itself after a while.
+    /// refused, or who reassigned an investigator to whom. Set by
+    /// `LobbyRefused` and `Assigned`, cleared by `Hello`, and dismissed by the
+    /// toast itself after a while.
     pub toast: Option<String>,
     /// The roster Start froze, for the one-off strip on the board: set by the
     /// `Hello` that ends the lobby this client was showing, and so absent on a
@@ -168,6 +169,10 @@ pub struct ClientState {
     /// Every member of the started game, in the order they joined: from
     /// `Hello`, then replaced by each `Members`.
     pub members: Vec<Member>,
+    /// The investigator the last answer this client sent answered for. Set by
+    /// the submit itself, and cleared by `Hello`. A `NotYours` for it once a
+    /// reassignment took them from this account lost a race, not a bug.
+    pub last_submit: Option<InvestigatorId>,
     pub last_rejection: Option<String>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
@@ -257,6 +262,41 @@ impl ClientState {
         own.options
             .retain(|option| self.answer(InputResponse::PickSingle(option.id)).is_some());
         Some(own)
+    }
+
+    /// The display name of the member `account`, or "someone" for an account
+    /// this client doesn't know as one.
+    fn member_name(&self, account: Option<AccountId>) -> &str {
+        account
+            .and_then(|account| self.members.iter().find(|member| member.account == account))
+            .map_or("someone", |member| member.display_name.as_str())
+    }
+
+    /// Each investigator this account may **reassign**, with the members they
+    /// may go to: every investigator for the creator, and their own for a
+    /// holder, each offered to every member but its current holder. Nothing
+    /// while the game has no prompt waiting, as a finished game hasn't, since
+    /// the server refuses a reassignment then.
+    #[must_use]
+    pub fn reassignments(&self) -> Vec<(InvestigatorId, Vec<&Member>)> {
+        let Some(you) = self.you else {
+            return Vec::new();
+        };
+        if !matches!(self.outcome, Some(EngineOutcome::AwaitingInput { .. })) {
+            return Vec::new();
+        }
+        self.assigned
+            .iter()
+            .filter(|(_, holder)| self.creator == Some(you) || *holder == you)
+            .map(|(investigator, holder)| {
+                let to = self
+                    .members
+                    .iter()
+                    .filter(|member| member.account != holder)
+                    .collect();
+                (investigator, to)
+            })
+            .collect()
     }
 
     /// An investigator's name, or their seat's id if no game holding them is
@@ -419,6 +459,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.creator = Some(creator);
             state.members = members;
             state.assigned = assigned;
+            state.last_submit = None;
             state.toast = None;
             state.game = Some(*s);
             state.outcome = Some(outcome);
@@ -529,6 +570,20 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.log.push(LogBatch { header, events });
         }
         ServerMessage::Members(members) => state.members = members,
+        ServerMessage::Assigned {
+            by,
+            investigator,
+            assigned,
+        } => {
+            let holder = assigned.holder(investigator);
+            state.assigned = assigned;
+            state.toast = Some(format!(
+                "{} gave {} to {}",
+                state.member_name(Some(by)),
+                state.investigator_name(investigator),
+                state.member_name(holder),
+            ));
+        }
         ServerMessage::Rejected(refusal) => reduce_refusal(state, refusal),
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
@@ -553,10 +608,21 @@ fn reduce_refusal(state: &mut ClientState, refusal: Refusal) {
             leptos::logging::error!("this client answered a game still in its lobby");
             state.last_rejection = Some(CLIENT_BUG.into());
         }
+        // A reassignment took the investigator this answer was for: its
+        // `Assigned` arrived first, so the prompt has already moved on.
+        Refusal::NotYours
+            if state
+                .last_submit
+                .is_some_and(|investigator| !state.holds(investigator)) => {}
         Refusal::NotYours => {
             leptos::logging::error!(
                 "this client answered for an investigator its account doesn't hold"
             );
+            state.last_rejection = Some(CLIENT_BUG.into());
+        }
+        // The board offers only the reassignments this account may make.
+        Refusal::Reassign(reason) => {
+            leptos::logging::error!("this client sent a reassignment the server refused: {reason}");
             state.last_rejection = Some(CLIENT_BUG.into());
         }
     }

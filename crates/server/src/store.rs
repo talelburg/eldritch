@@ -82,6 +82,29 @@ pub(crate) async fn insert_assignment(
     Ok(())
 }
 
+/// Store `account` as the holder of `investigator` in the game `game_id`,
+/// whose assignment row for them must already be inserted.
+pub(crate) async fn update_holder(
+    db: &SqlitePool,
+    game_id: &GameId,
+    investigator: InvestigatorId,
+    account: AccountId,
+) -> Result<(), Error> {
+    let updated = sqlx::query(
+        "UPDATE game_assignments SET account_id = ? WHERE game_id = ? AND investigator = ?",
+    )
+    .bind(account.0)
+    .bind(game_id.as_str())
+    .bind(investigator.0)
+    .execute(db)
+    .await?;
+    if updated.rows_affected() == 1 {
+        Ok(())
+    } else {
+        Err(Error::RowNotFound)
+    }
+}
+
 /// Fetch a game's assignment: empty if it has no assignment rows.
 pub(crate) async fn load_assignment(
     db: &SqlitePool,

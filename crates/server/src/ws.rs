@@ -3,6 +3,7 @@
 //! connection keeps the account it signed in as: it submits as that account,
 //! and is sent the `Hello`, `Lobby` and `Applied` built for it.
 
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +20,8 @@ use protocol::{
     CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::Receiver;
 use tokio::time::{self, Instant};
 
 use crate::auth::SignedInAccount;
@@ -256,7 +258,7 @@ async fn handle_socket(
             }
             broadcasted = rx.recv() => match broadcasted {
                 Ok(event) => {
-                    if send_msg(&mut sink, &message_for(account, event)).await.is_err() {
+                    if forward(&mut sink, account, event).await.is_break() {
                         break;
                     }
                 }
@@ -269,6 +271,11 @@ async fn handle_socket(
                 if let Some(direct) = handle_client_message(room, account, message).await {
                     let ends = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
+                        // A refusal never overtakes a broadcast: everything the
+                        // room sent before the reply was built goes first.
+                        if forward_waiting(&mut rx, &mut sink, account).await.is_break() {
+                            break;
+                        }
                         if send_msg(&mut sink, &msg).await.is_err() {
                             break;
                         }
@@ -289,14 +296,59 @@ async fn handle_socket(
     }
 }
 
-/// The message a connection signed in as `account` is sent for `event`, which
-/// its room broadcast.
-fn message_for(account: AccountId, event: RoomEvent) -> ServerMessage {
-    match event {
+/// What a connection does with one event its room broadcast.
+enum Outbound {
+    /// Send it this message.
+    Send(ServerMessage),
+}
+
+/// What a connection signed in as `account` does with `event`, which its room
+/// broadcast.
+fn outbound_for(account: AccountId, event: RoomEvent) -> Outbound {
+    Outbound::Send(match event {
         RoomEvent::Applied(committed) => ServerMessage::Applied(committed.applied_for(account)),
         RoomEvent::Lobby(view) => room::lobby_message(account, (*view).clone(), false),
         RoomEvent::Started(live) => live.hello_for(account),
         RoomEvent::Members(members) => ServerMessage::Members((*members).clone()),
+        RoomEvent::Assigned(assigned) => (*assigned).clone(),
+    })
+}
+
+/// Do with `event` what [`outbound_for`] says a connection signed in as
+/// `account` does. Breaks once the socket is done.
+async fn forward(
+    sink: &mut SplitSink<WebSocket, Message>,
+    account: AccountId,
+    event: RoomEvent,
+) -> ControlFlow<()> {
+    match outbound_for(account, event) {
+        Outbound::Send(msg) => match send_msg(sink, &msg).await {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(SendFailed) => ControlFlow::Break(()),
+        },
+    }
+}
+
+/// [`forward`] every event already waiting on `rx`, before a direct reply.
+///
+/// The room broadcasts under its lock, and a reply is built under it too, so
+/// every event broadcast before the reply was built is already queued here.
+/// Forwarding them first means a refusal never reaches the client ahead of
+/// the broadcast that caused it: a `NotYours` arrives after the `Assigned`
+/// that moved the investigator, and a `StalePrompt` after the `Applied` that
+/// moved the prompt on. Breaks once the socket is done.
+async fn forward_waiting(
+    rx: &mut Receiver<RoomEvent>,
+    sink: &mut SplitSink<WebSocket, Message>,
+    account: AccountId,
+) -> ControlFlow<()> {
+    loop {
+        match rx.try_recv() {
+            Ok(event) => forward(sink, account, event).await?,
+            Err(TryRecvError::Lagged(_)) => {}
+            Err(TryRecvError::Empty) => return ControlFlow::Continue(()),
+            Err(TryRecvError::Closed) => return ControlFlow::Break(()),
+        }
     }
 }
 
@@ -362,6 +414,11 @@ async fn handle_client_message(
                 .err()
                 .map(lobby_refused),
             Ok(ClientMessage::Start) => room.start(account).await.err().map(lobby_refused),
+            Ok(ClientMessage::Reassign { investigator, to }) => room
+                .reassign(account, investigator, to)
+                .await
+                .err()
+                .map(|refusal| Disposition::Reply(Box::new(ServerMessage::Rejected(refusal)))),
             Ok(ClientMessage::SetWeakness {
                 investigator,
                 choice,

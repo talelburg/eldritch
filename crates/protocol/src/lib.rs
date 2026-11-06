@@ -98,6 +98,15 @@ pub enum ClientMessage {
     /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
     /// Every connected member is then sent a `Hello`.
     Start,
+    /// Reassign an investigator in a started game:
+    /// [`LiveGame::reassign`](live::LiveGame::reassign). Every connection is
+    /// then sent [`ServerMessage::Assigned`].
+    Reassign {
+        /// The investigator who changes hands.
+        investigator: InvestigatorId,
+        /// The member who holds them from now on.
+        to: AccountId,
+    },
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -168,7 +177,19 @@ pub enum ServerMessage {
     /// its link for the first time: every member, in the order they joined,
     /// the newcomer last. It replaces the members the `Hello` named.
     Members(Vec<Member>),
-    /// Sent only to the submitting client when its submit is refused.
+    /// Broadcast to every connection of a started game after a reassignment:
+    /// who did it, which investigator changed hands, and the whole assignment
+    /// it left, which replaces the one the client had.
+    Assigned {
+        /// The account that reassigned the investigator.
+        by: AccountId,
+        /// The investigator who changed hands.
+        investigator: InvestigatorId,
+        /// Which account holds each investigator now.
+        assigned: Assignment,
+    },
+    /// Sent only to the submitting client when its submit, or its
+    /// reassignment, is refused.
     Rejected(Refusal),
     /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
     /// broadcast to the room.
@@ -256,6 +277,33 @@ pub enum Refusal {
     /// reason: the log can't record it, or the store write failed. Nothing
     /// changed, and the player may try again.
     Failed(String),
+    /// A [`ClientMessage::Reassign`] was refused, for this reason. A client
+    /// offers only the reassignments its account may make, so this is a
+    /// client bug.
+    Reassign(ReassignRefusal),
+}
+
+/// Why [`LiveGame::reassign`](live::LiveGame::reassign) refused a
+/// reassignment: the body of a [`Refusal::Reassign`]. The assignment is
+/// unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[serde(rename_all = "snake_case")]
+pub enum ReassignRefusal {
+    /// The game has no prompt waiting, as a finished game hasn't.
+    #[error("the game has no prompt waiting")]
+    NoPrompt,
+    /// No investigator with that id is seated.
+    #[error("no such investigator is seated")]
+    UnknownInvestigator,
+    /// The account is neither the creator nor the investigator's holder.
+    #[error("only the creator or the investigator's holder may reassign them")]
+    NotHolder,
+    /// The account it would go to isn't a member of the game.
+    #[error("that account isn't a member of this game")]
+    NotAMember,
+    /// The account it would go to holds the investigator already.
+    #[error("that account holds the investigator already")]
+    AlreadyHolds,
 }
 
 /// Stable identifier for a persisted game.

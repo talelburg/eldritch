@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::lobby::Member;
 use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
-use crate::{AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage};
+use crate::{AccountId, Applied, Assignment, LogPosition, ReassignRefusal, Refusal, ServerMessage};
 
 /// A game as it is being played: its current state, its place in the log, who
 /// answers for each investigator, and the registries it applies against.
@@ -81,6 +81,32 @@ impl Accepted {
     #[must_use]
     pub fn draws(&self) -> u64 {
         self.draws
+    }
+}
+
+/// A **reassignment** [`LiveGame::reassign`] accepted: what a host stores,
+/// and what [`LiveGame::commit_reassignment`] installs.
+#[derive(Debug)]
+#[must_use = "an accepted reassignment changes nothing until it is committed"]
+pub struct Reassigned {
+    by: AccountId,
+    investigator: InvestigatorId,
+    to: AccountId,
+    /// The whole assignment it leaves.
+    assignment: Assignment,
+}
+
+impl Reassigned {
+    /// The investigator who changes hands.
+    #[must_use]
+    pub fn investigator(&self) -> InvestigatorId {
+        self.investigator
+    }
+
+    /// The account who holds them from now on.
+    #[must_use]
+    pub fn to(&self) -> AccountId {
+        self.to
     }
 }
 
@@ -323,6 +349,68 @@ impl LiveGame {
             events: accepted.events,
             outcome: accepted.outcome,
         })
+    }
+
+    /// Decide `by`'s **reassignment** of `investigator` to the member `to`:
+    /// the creator may reassign any investigator, and a holder only their
+    /// own. Changes nothing; it takes effect only through
+    /// [`commit_reassignment`](Self::commit_reassignment), and then at once,
+    /// so the new holder answers the prompt already waiting. The log position
+    /// doesn't move, and the engine never sees it.
+    ///
+    /// # Errors
+    ///
+    /// In the order they are checked: [`ReassignRefusal::NoPrompt`] if the
+    /// game has no prompt waiting, as a finished game hasn't;
+    /// [`ReassignRefusal::UnknownInvestigator`] if `investigator` isn't
+    /// seated; [`ReassignRefusal::NotHolder`] if `by` is neither the creator
+    /// nor `investigator`'s holder; [`ReassignRefusal::NotAMember`] if `to`
+    /// isn't a member; and [`ReassignRefusal::AlreadyHolds`] if `to` holds
+    /// `investigator` already.
+    pub fn reassign(
+        &self,
+        by: AccountId,
+        investigator: InvestigatorId,
+        to: AccountId,
+    ) -> Result<Reassigned, ReassignRefusal> {
+        if !matches!(self.outcome, EngineOutcome::AwaitingInput { .. }) {
+            return Err(ReassignRefusal::NoPrompt);
+        }
+        let Some(holder) = self.assignment.holder(investigator) else {
+            return Err(ReassignRefusal::UnknownInvestigator);
+        };
+        if by != self.creator && by != holder {
+            return Err(ReassignRefusal::NotHolder);
+        }
+        if !self.members.iter().any(|member| member.account == to) {
+            return Err(ReassignRefusal::NotAMember);
+        }
+        if to == holder {
+            return Err(ReassignRefusal::AlreadyHolds);
+        }
+        let assignment = self
+            .assignment
+            .iter()
+            .map(|(seated, account)| (seated, if seated == investigator { to } else { account }))
+            .collect();
+        Ok(Reassigned {
+            by,
+            investigator,
+            to,
+            assignment,
+        })
+    }
+
+    /// Install a reassignment [`reassign`](Self::reassign) accepted, and hand
+    /// back the [`ServerMessage::Assigned`] every connection is sent. A host
+    /// that stores the assignment commits only once it is stored.
+    pub fn commit_reassignment(&mut self, reassigned: Reassigned) -> ServerMessage {
+        self.assignment = reassigned.assignment.clone();
+        ServerMessage::Assigned {
+            by: reassigned.by,
+            investigator: reassigned.investigator,
+            assigned: reassigned.assignment,
+        }
     }
 
     /// Log `action` as the answer to the prompt the game awaits.

@@ -6,15 +6,16 @@
 use std::sync::Arc;
 
 use game_core::engine::Registries;
+use game_core::state::investigator::InvestigatorId;
 use protocol::live::{Committed, LiveGame};
 use protocol::lobby::{Lobby, LobbyRefusal, LobbyView, Member};
-use protocol::{AccountId, GameId, ServerMessage};
+use protocol::{AccountId, GameId, Refusal, ServerMessage};
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use crate::lobby;
-use crate::session::{GameSession, NewGame, SessionError};
+use crate::session::{GameSession, NewGame, ReassignError, SessionError};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
 /// of a single scenario; a slow client that overruns it gets a
@@ -58,6 +59,9 @@ pub(crate) enum RoomEvent {
     /// An account opened the started game's link for the first time, and the
     /// members now read like this.
     Members(Arc<Vec<Member>>),
+    /// An investigator was reassigned: the [`ServerMessage::Assigned`] every
+    /// connection is sent, the same for each account.
+    Assigned(Arc<ServerMessage>),
 }
 
 /// What a connection gets on attaching to a room: its subscription and the
@@ -197,6 +201,40 @@ impl GameRoom {
         // Sent under the game's lock, as every change is. A send fails only
         // when no connection is subscribed, and the one that sent Start is.
         let _ = self.tx.send(RoomEvent::Started(live));
+        Ok(())
+    }
+
+    /// **Reassign** `investigator` to the member `to` in the room's live game,
+    /// as `by` asks: store the new holder, then broadcast the `Assigned` to
+    /// every connection. A refused reassignment, or one that couldn't be
+    /// stored, changes nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`Refusal::Reassign`] with the live game's reason;
+    /// [`Refusal::NotStarted`] in a lobby; [`Refusal::Failed`] if it couldn't
+    /// be stored.
+    pub(crate) async fn reassign(
+        &self,
+        by: AccountId,
+        investigator: InvestigatorId,
+        to: AccountId,
+    ) -> Result<(), Refusal> {
+        let mut game = self.game.lock().await;
+        let RoomGame::Live(session) = &mut *game else {
+            return Err(Refusal::NotStarted);
+        };
+        let assigned =
+            session
+                .reassign(by, investigator, to)
+                .await
+                .map_err(|error| match error {
+                    ReassignError::Refused(reason) => Refusal::Reassign(reason),
+                    ReassignError::Session(error) => Refusal::Failed(error.to_string()),
+                })?;
+        // Sent under the game's lock, as every change is. A send fails only
+        // when no connection is subscribed, and the one that asked is.
+        let _ = self.tx.send(RoomEvent::Assigned(Arc::new(assigned)));
         Ok(())
     }
 

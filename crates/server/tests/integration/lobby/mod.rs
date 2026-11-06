@@ -6,6 +6,7 @@
 //! each lobby command's tests get a file of their own.
 
 mod picks;
+mod reassign;
 mod seating;
 mod start;
 mod weakness;

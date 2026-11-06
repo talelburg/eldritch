@@ -27,6 +27,7 @@ pub fn BoardView() -> impl IntoView {
         None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
         Some(game) => view! {
             <div class="game">
+                {board_menu()}
                 {resolution_banner(&game)}
                 {act_agenda::act_agenda_view(&game)}
                 <div class="board-main">
@@ -42,6 +43,18 @@ pub fn BoardView() -> impl IntoView {
         <section class="board">
             {board}
         </section>
+    }
+}
+
+/// The board's ⋯ menu, on wasm, where it can send.
+fn board_menu() -> impl IntoView {
+    #[cfg(target_arch = "wasm32")]
+    {
+        view! { <crate::board_menu::BoardMenu/> }.into_any()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        ().into_any()
     }
 }
 

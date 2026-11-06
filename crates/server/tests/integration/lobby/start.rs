@@ -56,7 +56,7 @@ async fn stored_inputs(pool: &SqlitePool, game_id: &str) -> (Vec<RosterEntry>, i
 }
 
 /// The next frame on `ws`, which must be a `Hello`: its `you` and assignment.
-async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
+pub(super) async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
     match common::recv_within(ws).await {
         ServerMessage::Hello { you, assigned, .. } => (you, assigned),
         other => panic!("expected a Hello, got {other:?}"),
@@ -65,7 +65,7 @@ async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
 
 /// Keep the opening hand of `investigator`, answering the mulligan prompt at
 /// the start of the log.
-fn keep_opening_hand(investigator: u32) -> ClientMessage {
+pub(super) fn keep_opening_hand(investigator: u32) -> ClientMessage {
     ClientMessage::Submit {
         prompt: LogPosition(0),
         action: PlayerAction::ResolveInput {
@@ -251,11 +251,11 @@ async fn a_start_the_engine_rejects_is_refused_and_the_lobby_is_unchanged() {
 }
 
 /// A third account, which opens the game's link only after Start.
-const JO: &str = "Jo";
+pub(super) const JO: &str = "Jo";
 
 /// Tal and Sam's game of The Gathering, started from Sam's Daisy and Tal's
 /// Roland and Agnes, with each socket's `Hello` read.
-async fn started_by_tal_and_sam() -> TwoMembers {
+pub(super) async fn started_by_tal_and_sam() -> TwoMembers {
     let mut members = tal_and_sam_at_the_gathering(server::REGISTRIES).await;
     daisy_roland_agnes(&mut members).await;
     common::send(&mut members.tal_ws, &ClientMessage::Start).await;
