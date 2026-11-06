@@ -1,17 +1,14 @@
 //! The app status bar, rendered inline with the page heading.
 //!
-//! It shows the connection status, the last rejection, who the game is
-//! waiting on, the New-game button, and the signed-in account with its
-//! sign-out control. It reads the store; the buttons act only on wasm, where
-//! the transport is.
+//! It shows the connection status, the last rejection, the New-game button,
+//! and the signed-in account with its sign-out control. Whom the game waits
+//! on is shown on the board instead, by
+//! [`prompt_layout`](crate::prompt_layout). It reads the store; the buttons
+//! act only on wasm, where the transport is.
 
-use std::collections::BTreeSet;
-
-use game_core::engine::{EngineOutcome, Responder};
-use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
-use crate::store::{self, ClientState, ConnStatus};
+use crate::store::{self, ConnStatus};
 #[cfg(target_arch = "wasm32")]
 use crate::transport;
 
@@ -33,12 +30,6 @@ pub fn StatusBarView() -> impl IntoView {
         ConnStatus::Unresumable => "unresumable game",
     };
     let rejection = move || store.get().last_rejection.unwrap_or_default();
-    let waiting = move || {
-        store.with(waiting_on).map(|names| {
-            view! { <span class="waiting-on">"Waiting on: " {names}</span> }
-        })
-    };
-
     let account = move || {
         store.get().account.map(|account| {
             view! {
@@ -54,7 +45,6 @@ pub fn StatusBarView() -> impl IntoView {
         <div class="status-bar">
             <span class="status">"status: " {status}</span>
             <span class="rejection">"rejection: " {rejection}</span>
-            {waiting}
             {
                 #[cfg(target_arch = "wasm32")]
                 {
@@ -83,33 +73,4 @@ pub fn StatusBarView() -> impl IntoView {
 fn sign_out() {
     #[cfg(target_arch = "wasm32")]
     transport::sign_out();
-}
-
-/// Who the live prompt waits on, by investigator name, read off its
-/// [`Responder`]: one investigator, the lead (marked as such), or each
-/// investigator a window several answer offers an option to. `None` with no
-/// prompt live, or no game to name anyone from.
-fn waiting_on(state: &ClientState) -> Option<String> {
-    let (Some(EngineOutcome::AwaitingInput { request, .. }), Some(_)) =
-        (&state.outcome, &state.game)
-    else {
-        return None;
-    };
-    let name = |id| state.investigator_name(id);
-    match request.responder {
-        Responder::Investigator(id) => Some(name(id)),
-        Responder::Lead(id) => Some(format!("{} (lead)", name(id))),
-        Responder::Several => {
-            let offered: BTreeSet<InvestigatorId> = request
-                .options
-                .iter()
-                .filter_map(|option| option.investigator)
-                .collect();
-            (!offered.is_empty())
-                .then(|| offered.into_iter().map(name).collect::<Vec<_>>().join(", "))
-        }
-        // `Responder` is non-exhaustive; a kind this client does not know
-        // names nobody it can show.
-        _ => None,
-    }
 }

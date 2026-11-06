@@ -31,6 +31,15 @@ pub(crate) fn last_mounted(sel: &str) -> Element {
         .unwrap_or_else(|| panic!("at least one {sel}"))
 }
 
+/// The text of every element `sel` matches inside `within`, in document order.
+pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
+    let nodes = within.query_selector_all(sel).expect("query");
+    (0..nodes.length())
+        .filter_map(|i| nodes.item(i))
+        .map(|node| node.text_content().unwrap_or_default())
+        .collect()
+}
+
 /// Mount `view` into a container of its own over a fresh store; return the
 /// store and the container. The DOM accumulates across tests in one browser
 /// session, so every assertion is scoped to this container.

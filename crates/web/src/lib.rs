@@ -17,6 +17,7 @@ pub mod interaction;
 pub mod map;
 pub mod more_menu;
 pub mod names;
+pub mod prompt_layout;
 pub mod registry;
 pub mod sign_in;
 pub mod skill_test_result;

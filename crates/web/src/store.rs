@@ -277,6 +277,14 @@ impl ClientState {
             .map_or(SOMEONE, |member| member.display_name.as_str())
     }
 
+    /// The display name of `holder`, the account holding an investigator, or
+    /// "someone" when no account holds them or this client doesn't know the
+    /// one that does.
+    #[must_use]
+    pub fn holder_name(&self, holder: Option<AccountId>) -> &str {
+        holder.map_or(SOMEONE, |account| self.member_name(account))
+    }
+
     /// Whether this client's account is `creator`, the account that created
     /// a game: the account it answers as on a game's page, or the one it is
     /// signed in as on any other. `false` for no creator.
@@ -358,7 +366,7 @@ pub enum DeleteAnswer {
     Failed,
 }
 
-/// What a toast calls an account this client doesn't know as a member.
+/// What the client calls an account it doesn't know as a member.
 const SOMEONE: &str = "someone";
 
 #[cfg(test)]
@@ -646,7 +654,7 @@ fn reduce_assigned(
         "{} gave {} to {}",
         state.member_name(by),
         state.investigator_name(investigator),
-        holder.map_or(SOMEONE, |holder| state.member_name(holder)),
+        state.holder_name(holder),
     ));
 }
 
