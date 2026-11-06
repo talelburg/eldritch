@@ -3345,6 +3345,7 @@ dependencies = [
  "axum-extra",
  "cards",
  "clap",
+ "form_urlencoded",
  "futures-util",
  "game-core",
  "getrandom 0.4.2",

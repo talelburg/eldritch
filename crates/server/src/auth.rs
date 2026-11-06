@@ -28,14 +28,14 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::{routing, Form, Json, Router};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use protocol::{AccountId, SignInMethod, SignInRequired, SignedIn};
+use protocol::{AccountId, SignInMethod, SignInRequired, SignedIn, RETURN_TO_PARAM};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use time::Duration;
 
 use crate::accounts::{self, Account};
 use crate::auth::oauth::ConfiguredProvider;
-use crate::auth::return_to::{ReturnTo, RETURN_TO};
+use crate::auth::return_to::ReturnTo;
 use crate::AppState;
 
 /// The name of the cookie that carries the session id.
@@ -355,7 +355,7 @@ fn picker_page(enabled: &[Account], return_to: &ReturnTo) -> String {
     page(
         "Dev sign-in",
         &format!(
-            r#"<form method="post" action="{DEV_PICKER}"><input type="hidden" name="{RETURN_TO}" value="{}">{buttons}</form>"#,
+            r#"<form method="post" action="{DEV_PICKER}"><input type="hidden" name="{RETURN_TO_PARAM}" value="{}">{buttons}</form>"#,
             escape(return_to.as_str())
         ),
     )

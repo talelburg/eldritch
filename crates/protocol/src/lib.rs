@@ -771,6 +771,11 @@ pub const CLIENT_SILENCE_TIMEOUT: Duration = Duration::from_secs(20);
 /// socket with 1001 (Going Away): three missed [`PING_INTERVAL`]s.
 pub const SERVER_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The query parameter on a [`SignInMethod`]'s link naming the page, path
+/// and query, to go to once the sign-in succeeds. The server lands on `/`
+/// for anything that isn't a path on its own site.
+pub const RETURN_TO_PARAM: &str = "return_to";
+
 /// Body of `GET /auth/me`'s `200`: the account the request's session signs
 /// in as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

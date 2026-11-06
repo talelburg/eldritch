@@ -208,8 +208,6 @@ async fn callback(
             Err(refusal) => return (in_flight_jar, refusal).into_response(),
         };
     match auth::create_session(&state.db, account).await {
-        // Relative, as the dev picker's is, so a sign-in through `trunk
-        // serve`'s proxy lands back on :3000.
         Ok(session_id) => (
             in_flight_jar,
             sessions.add(auth::session_cookie(session_id)),

@@ -6,7 +6,8 @@
 //! sign-in method's link names the page to return to. The WebSocket URL is
 //! same-origin (D3): never a hardcoded port.
 
-use protocol::GameId;
+use form_urlencoded::Serializer;
+use protocol::{GameId, RETURN_TO_PARAM};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 #[cfg(target_arch = "wasm32")]
@@ -96,10 +97,6 @@ pub fn ended_from_query(query: &str) -> Option<Ended> {
         .find(|ended| ended.query_value() == value)
 }
 
-/// The query key naming the page a sign-in returns to. The server reads it,
-/// and lands on `/` for anything that isn't a path on this site.
-const RETURN_TO_KEY: &str = "return_to";
-
 /// The link to a sign-in method at `method_url` that returns to `page` (the
 /// page's path and query) once it succeeds. From `/`, where a sign-in lands
 /// anyway, it is `method_url` unchanged.
@@ -108,8 +105,8 @@ pub fn sign_in_link(method_url: &str, page: &str) -> String {
     if page == "/" {
         return method_url.to_string();
     }
-    let query = form_urlencoded::Serializer::new(String::new())
-        .append_pair(RETURN_TO_KEY, page)
+    let query = Serializer::new(String::new())
+        .append_pair(RETURN_TO_PARAM, page)
         .finish();
     format!("{method_url}?{query}")
 }

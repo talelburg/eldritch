@@ -5,11 +5,9 @@
 //! becomes `/`, so the parameter can't send a signed-in browser elsewhere.
 
 use axum::response::Redirect;
+use protocol::RETURN_TO_PARAM;
 use serde::{Deserialize, Serialize};
-use url::{form_urlencoded, Url};
-
-/// The query parameter, and the dev picker's form field, naming the page.
-pub(crate) const RETURN_TO: &str = "return_to";
+use url::Url;
 
 /// The base a raw value is resolved against. Its host is never sent
 /// anywhere: it only tells a same-site path from one that leaves the site.
@@ -41,11 +39,11 @@ impl ReturnTo {
     }
 
     /// The page a raw request query (`RawQuery`, no `?`) names in its first
-    /// `return_to` parameter.
+    /// [`RETURN_TO_PARAM`].
     pub(crate) fn from_query(query: Option<&str>) -> Self {
         let raw = query.and_then(|query| {
             form_urlencoded::parse(query.as_bytes())
-                .find(|(name, _)| name == RETURN_TO)
+                .find(|(name, _)| name == RETURN_TO_PARAM)
                 .map(|(_, value)| value.into_owned())
         });
         Self::new(raw.as_deref())
