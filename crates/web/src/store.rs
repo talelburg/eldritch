@@ -574,20 +574,29 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             by,
             investigator,
             assigned,
-        } => {
-            let holder = assigned.holder(investigator);
-            state.assigned = assigned;
-            state.toast = Some(format!(
-                "{} gave {} to {}",
-                state.member_name(Some(by)),
-                state.investigator_name(investigator),
-                state.member_name(holder),
-            ));
-        }
+        } => reduce_assigned(state, by, investigator, assigned),
         ServerMessage::Rejected(refusal) => reduce_refusal(state, refusal),
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
     }
+}
+
+/// Fold an `Assigned` into the client state: `by` reassigned `investigator`,
+/// leaving `assigned`, which replaces the assignment, and the toast says so.
+fn reduce_assigned(
+    state: &mut ClientState,
+    by: AccountId,
+    investigator: InvestigatorId,
+    assigned: Assignment,
+) {
+    let holder = assigned.holder(investigator);
+    state.assigned = assigned;
+    state.toast = Some(format!(
+        "{} gave {} to {}",
+        state.member_name(Some(by)),
+        state.investigator_name(investigator),
+        state.member_name(holder),
+    ));
 }
 
 /// Fold a `Rejected` into the client state: what the status bar says of it.
