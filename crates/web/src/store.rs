@@ -129,6 +129,10 @@ pub struct ClientState {
     /// The "Your games" listing `GET /games` returned, once the home page
     /// fetched it. Set by the transport, not by `reduce`.
     pub games: Option<Vec<GameEntry>>,
+    /// The game a Delete entry asked to delete, while its confirmation is
+    /// open. Set by the entry and cleared by the confirmation, not by
+    /// `reduce`.
+    pub delete_asked: Option<GameId>,
     /// The game's lobby, from the last `Lobby`, while it is in one. Cleared
     /// by `Hello`.
     pub lobby: Option<LobbyView>,

@@ -22,6 +22,7 @@ mod card_at_location;
 #[cfg(target_arch = "wasm32")]
 mod common;
 mod context_menu;
+mod delete_game;
 mod encounter_deck;
 mod enemy_card;
 mod entity_names;

@@ -12,7 +12,9 @@ use game_core::test_support::{self, seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::lobby::Member;
-use protocol::{AccountId, Assignment, ClientMessage, LogPosition, Refusal, ServerMessage};
+use protocol::{
+    AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage,
+};
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
 
@@ -42,9 +44,12 @@ fn sam_wendy_tal_roland() -> Assignment {
     Assignment::from_iter([(WENDY, SAM), (ROLAND, YOU)])
 }
 
+/// The id of Tal's game.
+pub(crate) const GAME_ID: &str = "g-tals";
+
 /// The board as `you` sees it after the `Hello` of Tal's game at Wendy's
 /// mulligan, or with `outcome` in its place when it is `Some`.
-async fn mount_as(you: AccountId, outcome: Option<EngineOutcome>) -> BoardHandle {
+pub(crate) async fn mount_as(you: AccountId, outcome: Option<EngineOutcome>) -> BoardHandle {
     let state = GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
         .with_seat(seat(1).as_card("01005"))
@@ -56,7 +61,10 @@ async fn mount_as(you: AccountId, outcome: Option<EngineOutcome>) -> BoardHandle
     let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES);
     let outcome =
         outcome.unwrap_or_else(|| test_support::awaiting_request(seeded.prompt().clone()));
-    let mut client = ClientState::default();
+    let mut client = ClientState {
+        game_id: Some(GameId::new(GAME_ID)),
+        ..ClientState::default()
+    };
     let frame = serde_json::to_string(&ServerMessage::Hello {
         build: protocol::build_id().to_string(),
         you,
@@ -74,7 +82,7 @@ async fn mount_as(you: AccountId, outcome: Option<EngineOutcome>) -> BoardHandle
 }
 
 /// Open the board's ⋯ menu.
-async fn open_menu(handle: &BoardHandle) {
+pub(crate) async fn open_menu(handle: &BoardHandle) {
     click(handle, ".board-menu .more-menu-toggle");
     task::tick().await;
 }
@@ -168,10 +176,9 @@ async fn a_viewer_is_offered_no_reassignment() {
 async fn a_finished_game_offers_no_reassignment() {
     let handle = mount_as(YOU, Some(EngineOutcome::Done)).await;
 
-    assert!(
-        texts(&handle, ".board-menu .more-menu-toggle").is_empty(),
-        "a finished game's ⋯ menu has nothing in it"
-    );
+    open_menu(&handle).await;
+
+    assert!(menu(&handle).is_empty(), "no Reassign submenu");
 }
 
 #[wasm_bindgen_test]

@@ -20,8 +20,9 @@ use protocol::{
 };
 use wasm_bindgen::JsValue;
 
+use crate::more_menu::MoreMenu;
 use crate::store::{self, ConnStatus};
-use crate::{names, registry, transport, url};
+use crate::{delete_game, names, registry, transport, url};
 
 /// The "Your games" page. Renders only at [`ConnStatus::Home`].
 #[component]
@@ -125,9 +126,27 @@ fn GameGroup(group: Group, entries: Vec<GameEntry>) -> impl IntoView {
     }
 }
 
-/// One game's row, which opens the game's link.
+/// One game's row, which opens the game's link, and beside it, for the game's
+/// creator, the ⋯ menu with Delete. The menu sits outside the link, so
+/// opening it doesn't follow the link.
 #[component]
 fn GameRow(entry: GameEntry) -> impl IntoView {
+    let store = store::use_store();
+    let game_id = entry.game_id.clone();
+    let creator = entry.creator;
+    let entries = Signal::derive(move || {
+        store.with(|s| {
+            let yours = s
+                .account
+                .as_ref()
+                .is_some_and(|account| Some(account.account_id) == creator);
+            if yours {
+                vec![delete_game::delete_entry(store, game_id.clone())]
+            } else {
+                Vec::new()
+            }
+        })
+    });
     let cards = registry::use_cards();
     let name = |account: AccountId| entry.name(account).unwrap_or("Unknown").to_owned();
     let investigators = entry
@@ -146,6 +165,7 @@ fn GameRow(entry: GameEntry) -> impl IntoView {
         })
         .collect_view();
     view! {
+        <div class="game-row-item" data-game=entry.game_id.as_str().to_owned()>
         <a class="game-row" href=url::game_path(&entry.game_id)>
             <span class="row-scenario">{names::scenario_name(&entry.scenario_id).to_owned()}</span>
             {entry.creator.map(|creator| {
@@ -156,6 +176,8 @@ fn GameRow(entry: GameEntry) -> impl IntoView {
             <span class="row-status">{status_line(&entry)}</span>
             <span class="row-activity">{local_time(entry.last_activity)}</span>
         </a>
+        <MoreMenu entries=entries/>
+        </div>
     }
 }
 

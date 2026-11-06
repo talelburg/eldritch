@@ -6,7 +6,7 @@
 
 mod banner;
 mod header;
-mod more_menu;
+pub(crate) mod more_menu;
 mod picks;
 mod pool;
 mod seating;

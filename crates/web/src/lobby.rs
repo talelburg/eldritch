@@ -16,9 +16,9 @@ use protocol::ClientMessage;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
 use crate::more_menu::{MenuEntry, MoreMenu};
-use crate::store::{self, ClientState, ConnStatus};
+use crate::store::{self, ClientState, ConnStatus, StoreSignal};
 use crate::transport::OutboundTx;
-use crate::{names, registry, url};
+use crate::{delete_game, names, registry, url};
 
 /// The lobby. Renders only at [`ConnStatus::InLobby`], with a lobby in the
 /// store.
@@ -65,7 +65,7 @@ fn LobbyHeader() -> impl IntoView {
         })
     });
     let copied = RwSignal::new(false);
-    let entries = Signal::derive(move || store.with(menu_entries));
+    let entries = Signal::derive(move || store.with(|s| menu_entries(store, s)));
 
     view! {
         <header class="lobby-header">
@@ -89,10 +89,10 @@ fn LobbyHeader() -> impl IntoView {
 }
 
 /// The header's ⋯ entries for the store's signed-in account: Remove
-/// `<member>` for each other member if it created the lobby, and Leave if it
-/// didn't. The creator stays, so the lobby always has someone to order the
-/// seating and press Start.
-fn menu_entries(s: &ClientState) -> Vec<MenuEntry> {
+/// `<member>` for each other member then Delete if it created the lobby, and
+/// Leave if it didn't. The creator stays, so the lobby always has someone to
+/// order the seating and press Start.
+fn menu_entries(store: StoreSignal, s: &ClientState) -> Vec<MenuEntry> {
     let (Some(lobby), Some(you)) = (&s.lobby, s.you) else {
         return Vec::new();
     };
@@ -103,7 +103,7 @@ fn menu_entries(s: &ClientState) -> Vec<MenuEntry> {
             children: Vec::new(),
         }];
     }
-    lobby
+    let removes = lobby
         .members
         .iter()
         .filter(|member| member.account != you)
@@ -116,7 +116,13 @@ fn menu_entries(s: &ClientState) -> Vec<MenuEntry> {
                 }),
                 children: Vec::new(),
             }
-        })
+        });
+    removes
+        .chain(
+            s.game_id
+                .clone()
+                .map(|game_id| delete_game::delete_entry(store, game_id)),
+        )
         .collect()
 }
 

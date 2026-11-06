@@ -30,6 +30,10 @@ pub enum SocketEnding {
     /// account left the lobby or was removed from it. Go to the home page,
     /// saying so. A reconnect would make it a member again.
     NoLongerMember,
+    /// The server closed it with
+    /// [`CLOSE_GAME_DELETED`](protocol::CLOSE_GAME_DELETED): the creator
+    /// deleted the game. Go to the home page, saying so.
+    Deleted,
     /// Any other ending: a network drop, or a server down or going down
     /// without saying why. Reconnect.
     Disconnected,
@@ -59,6 +63,7 @@ impl SocketEnding {
             SocketEnding::Unresumable => NextStep::Unresumable,
             SocketEnding::StaleId => NextStep::GoHome(None),
             SocketEnding::NoLongerMember => NextStep::GoHome(Some(Ended::NotMember)),
+            SocketEnding::Deleted => NextStep::GoHome(Some(Ended::Deleted)),
         }
     }
 }
@@ -78,6 +83,7 @@ pub fn sort(close_code: Option<u16>) -> SocketEnding {
         Some(protocol::CLOSE_UNRESUMABLE) => SocketEnding::Unresumable,
         Some(protocol::CLOSE_GAME_NOT_FOUND) => SocketEnding::StaleId,
         Some(protocol::CLOSE_NO_LONGER_A_MEMBER) => SocketEnding::NoLongerMember,
+        Some(protocol::CLOSE_GAME_DELETED) => SocketEnding::Deleted,
         _ => SocketEnding::Disconnected,
     }
 }
@@ -97,8 +103,8 @@ pub fn backoff(attempt: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use protocol::{
-        CLOSE_GAME_NOT_FOUND, CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING,
-        CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+        CLOSE_GAME_DELETED, CLOSE_GAME_NOT_FOUND, CLOSE_NO_LONGER_A_MEMBER,
+        CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
     };
 
     use super::*;
@@ -146,6 +152,19 @@ mod tests {
     }
 
     #[test]
+    fn deleted_is_sorted_by_its_code() {
+        assert_eq!(sort(Some(CLOSE_GAME_DELETED)), SocketEnding::Deleted);
+    }
+
+    #[test]
+    fn deleted_goes_home_saying_why_and_never_reconnects() {
+        assert_eq!(
+            SocketEnding::Deleted.next_step(),
+            NextStep::GoHome(Some(Ended::Deleted))
+        );
+    }
+
+    #[test]
     fn a_stale_id_goes_home_saying_nothing() {
         assert_eq!(SocketEnding::StaleId.next_step(), NextStep::GoHome(None));
     }
@@ -158,6 +177,7 @@ mod tests {
             SocketEnding::Unresumable,
             SocketEnding::StaleId,
             SocketEnding::NoLongerMember,
+            SocketEnding::Deleted,
             SocketEnding::Disconnected,
         ]
         .into_iter()

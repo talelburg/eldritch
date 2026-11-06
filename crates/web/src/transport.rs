@@ -23,6 +23,7 @@ use protocol::{
 };
 use wasm_bindgen_futures::spawn_local;
 
+use crate::delete_game::DeleteGame;
 use crate::socket_ending::{self, NextStep, SocketEnding};
 use crate::store::{self, ConnStatus, Received, StoreSignal};
 use crate::url;
@@ -31,12 +32,15 @@ use crate::url;
 const SCENARIO_ID: &str = "the-gathering";
 /// HTTP 401, which the server answers when the request isn't signed in.
 const UNAUTHORIZED: u16 = 401;
+/// HTTP 204, which the server answers a delete it carried out with.
+const NO_CONTENT: u16 = 204;
 
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
 
-/// Start the transport: provide an `OutboundTx` into context, then spawn the
-/// connect loop. Call once from `App` (wasm only).
+/// Start the transport: provide an `OutboundTx` and the HTTP [`DeleteGame`]
+/// into context, then spawn the connect loop. Call once from `App` (wasm
+/// only).
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     // A tab brought back to the front pings at once, rather than waiting on a
@@ -50,6 +54,9 @@ pub fn start(store: StoreSignal) {
         }
     });
     provide_context(tx);
+    provide_context(DeleteGame(Callback::new(move |game_id| {
+        spawn_local(delete_game(store, game_id));
+    })));
     spawn_local(run(store, rx));
 }
 
@@ -107,8 +114,8 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
                 fetch_games(store).await;
                 return;
             }
-            // The server has no game at this link (a typo, or a DB reset), or
-            // this account is no longer a member of it. Go to the home page,
+            // The server has no game at this link (a typo, or a DB reset), this
+            // account is no longer a member of it, or its creator deleted it. Go to the home page,
             // which offers a new one, in place of it, naming the ending for
             // its toast.
             NextStep::GoHome(ended) => {
@@ -211,6 +218,29 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
     } else {
         store.update(|s| s.status = ConnStatus::Failed);
         None
+    }
+}
+
+/// `DELETE /games/{id}` of `game_id`, which the creator confirmed. Deleted,
+/// its row leaves the "Your games" listing; a lobby or board this page shows
+/// leaves when the server closes the socket as deleted. Signed out since boot,
+/// show the sign-in screen instead. Any other answer says so in a toast.
+async fn delete_game(store: StoreSignal, game_id: GameId) {
+    let path = format!("/games/{}", game_id.as_str());
+    let status = Request::delete(&path)
+        .send()
+        .await
+        .map(|resp| resp.status());
+    match status {
+        Ok(NO_CONTENT) => store.update(|s| {
+            if let Some(games) = &mut s.games {
+                games.retain(|entry| entry.game_id != game_id);
+            }
+        }),
+        Ok(UNAUTHORIZED) => {
+            check_sign_in(store).await;
+        }
+        _ => store.update(|s| s.toast = Some("Couldn't delete the game, try again.".to_owned())),
     }
 }
 

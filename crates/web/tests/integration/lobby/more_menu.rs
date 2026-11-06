@@ -9,7 +9,7 @@ use super::{click, mount_lobby, sent, tals_lobby_with_sam, texts, SAM};
 use crate::common::{BoardHandle, YOU};
 
 /// Open the header's ⋯ menu; return its entries' labels.
-async fn open_menu(handle: &BoardHandle) -> Vec<String> {
+pub(crate) async fn open_menu(handle: &BoardHandle) -> Vec<String> {
     assert!(
         texts(handle, ".lobby-header .more-menu .menu-item").is_empty(),
         "the menu starts closed"
@@ -20,7 +20,7 @@ async fn open_menu(handle: &BoardHandle) -> Vec<String> {
 }
 
 /// Choose the entry labelled `label` from the open menu.
-async fn choose(handle: &BoardHandle, label: &str) {
+pub(crate) async fn choose(handle: &BoardHandle, label: &str) {
     let nodes = handle
         .root
         .query_selector_all(".lobby-header .more-menu .menu-item")
@@ -42,9 +42,9 @@ async fn choose(handle: &BoardHandle, label: &str) {
 }
 
 #[wasm_bindgen_test]
-async fn the_creators_menu_removes_each_other_member_and_has_no_leave() {
+async fn the_creators_menu_removes_each_other_member_and_deletes_and_has_no_leave() {
     let handle = mount_lobby(tals_lobby_with_sam(), YOU, false).await;
-    assert_eq!(open_menu(&handle).await, ["Remove Sam"]);
+    assert_eq!(open_menu(&handle).await, ["Remove Sam", "Delete"]);
 }
 
 #[wasm_bindgen_test]

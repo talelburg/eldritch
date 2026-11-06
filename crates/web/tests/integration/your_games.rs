@@ -11,8 +11,8 @@ use leptos::task;
 use protocol::live::{LiveSummary, WaitedOn};
 use protocol::lobby::Member;
 use protocol::{
-    AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId, ReplayCause, UnresumableCause,
-    UnresumableSummary,
+    AccountId, EntryInvestigator, GameEntry, GameEntryState, GameId, ReplayCause, SignedIn,
+    UnresumableCause, UnresumableSummary,
 };
 use wasm_bindgen::JsCast as _;
 use web::socket_ending::{NextStep, SocketEnding};
@@ -63,6 +63,22 @@ async fn mount_page(listing: Option<Vec<GameEntry>>) -> BoardHandle {
     let client = ClientState {
         status: ConnStatus::Home,
         games: listing,
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+    task::tick().await;
+    handle
+}
+
+/// [`mount_page`], signed in as `account`.
+async fn mount_page_as(account: AccountId, listing: Vec<GameEntry>) -> BoardHandle {
+    let client = ClientState {
+        status: ConnStatus::Home,
+        games: Some(listing),
+        account: Some(SignedIn {
+            account_id: account,
+            display_name: "Tal".to_string(),
+        }),
         ..ClientState::default()
     };
     let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
@@ -423,4 +439,103 @@ async fn an_unresumable_game_with_no_creator_or_holders_still_lists_its_investig
     let text = texts(&handle, ".game-row").concat();
     assert!(text.contains("Daisy Walker"), "{text}");
     assert!(!text.contains("Created by"), "no creator is named: {text}");
+}
+
+/// One game of every kind Tal created, and a lobby Alex did.
+fn tals_games_and_alexs_lobby() -> Vec<GameEntry> {
+    vec![
+        lobby("g-lobby", TAL, "Tal", 5_000),
+        lobby("g-alex", AccountId(3), "Alex", 4_000),
+        thursday("g-live", 3_000, &[(1, DAISY, SAM)]),
+        finished("g-done", 2_000, ScenarioEnding::NoResolution),
+        stale("g-stale", 1_000, UnresumableCause::Version),
+    ]
+}
+
+/// The games whose row has a ⋯ menu, in document order.
+fn rows_with_a_menu(handle: &BoardHandle) -> Vec<String> {
+    let nodes = handle
+        .root
+        .query_selector_all(".game-row-item")
+        .expect("query");
+    (0..nodes.length())
+        .filter_map(|i| nodes.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .filter(|item| {
+            item.query_selector(".more-menu-toggle")
+                .expect("query")
+                .is_some()
+        })
+        .filter_map(|item| item.get_attribute("data-game"))
+        .collect()
+}
+
+/// Click the one `sel` under `handle`'s root, and let the page react.
+async fn click(handle: &BoardHandle, sel: &str) {
+    handle
+        .root
+        .query_selector(sel)
+        .expect("query")
+        .unwrap_or_else(|| panic!("the page renders {sel}"))
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("an HTML element")
+        .click();
+    task::tick().await;
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn delete_is_on_every_kind_of_row_the_account_created_and_no_other() {
+    let handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
+
+    let mut with_a_menu = rows_with_a_menu(&handle);
+    with_a_menu.sort();
+    assert_eq!(with_a_menu, ["g-done", "g-live", "g-lobby", "g-stale"]);
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_member_who_created_none_of_the_games_has_no_delete() {
+    let handle = mount_page_as(SAM, tals_games_and_alexs_lobby()).await;
+
+    assert!(rows_with_a_menu(&handle).is_empty());
+}
+
+/// The only way to delete an unresumable game, which never opens a room.
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_rows_delete_asks_first_then_deletes_that_game() {
+    let mut handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
+    let row = r#".game-row-item[data-game="g-stale"]"#;
+
+    click(&handle, &format!("{row} .more-menu-toggle")).await;
+    assert_eq!(texts(&handle, &format!("{row} .menu-item")), ["Delete"]);
+    click(&handle, &format!("{row} .menu-item")).await;
+
+    assert_eq!(
+        texts(&handle, ".confirm-dialog .confirm-question"),
+        ["Delete for everyone? This can't be undone."]
+    );
+    assert!(handle.deleted.try_recv().is_err(), "nothing is deleted yet");
+
+    click(&handle, ".confirm-dialog .confirm-delete").await;
+
+    assert_eq!(handle.deleted.try_recv().ok(), Some(GameId::new("g-stale")));
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn home_after_a_deleted_close_says_why_in_a_toast() {
+    let NextStep::GoHome(ended) = SocketEnding::Deleted.next_step() else {
+        panic!("the close goes home");
+    };
+    let address = url::home_path(ended);
+    let query = &address[address.find('?').expect("the address names the ending")..];
+    let client = ClientState {
+        status: ConnStatus::Home,
+        games: Some(vec![]),
+        toast: url::ended_from_query(query).map(|ended| ended.toast().to_string()),
+        ..ClientState::default()
+    };
+    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+    task::tick().await;
+
+    assert_eq!(texts(&handle, ".toast"), ["This game was deleted"]);
+    assert_eq!(texts(&handle, ".home .games-heading").len(), 1, "on Home");
 }

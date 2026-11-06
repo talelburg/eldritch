@@ -10,9 +10,10 @@ use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::lobby::Member;
-use protocol::{AccountId, Assignment, ClientMessage, LogPosition, ServerMessage};
+use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use web::app::{self, MainColumn};
+use web::delete_game::DeleteGame;
 use web::registry;
 use web::store::{self, ClientState, ConnStatus};
 use web::transport::OutboundTx;
@@ -66,6 +67,10 @@ pub(crate) struct BoardHandle {
     pub(crate) store: RwSignal<ClientState>,
     /// Every frame the board submitted, in order.
     pub(crate) rx: UnboundedReceiver<ClientMessage>,
+    /// Every game a confirmed Delete deleted, in order: the recorder this
+    /// mount provides as the [`DeleteGame`] context, in place of the wasm
+    /// build's `DELETE /games/{id}`.
+    pub(crate) deleted: UnboundedReceiver<GameId>,
 }
 
 impl BoardHandle {
@@ -137,12 +142,17 @@ pub(crate) async fn mount_board(
 ) -> BoardHandle {
     let store = RwSignal::new(client);
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
+    let (delete_tx, deleted) = mpsc::unbounded::<GameId>();
     let root = NodeRef::<Div>::new();
     mount_to_body(move || {
         registry::provide_cards(registry);
         provide_context(store);
         app::provide_board_contexts(store);
         provide_context::<OutboundTx>(tx.clone());
+        let delete_tx = delete_tx.clone();
+        provide_context(DeleteGame(Callback::new(move |game_id| {
+            let _ = delete_tx.unbounded_send(game_id);
+        })));
         view! { <div class="board-root" node_ref=root><MainColumn/></div> }
     });
     task::tick().await;
@@ -150,6 +160,7 @@ pub(crate) async fn mount_board(
         root: root.get_untracked().expect("the board root mounted").into(),
         store,
         rx,
+        deleted,
     }
 }
 

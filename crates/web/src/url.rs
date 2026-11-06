@@ -38,6 +38,8 @@ const ENDED_KEY: &str = "ended";
 pub enum Ended {
     /// The account left the lobby, or the creator removed it.
     NotMember,
+    /// The creator deleted the game.
+    Deleted,
 }
 
 impl Ended {
@@ -45,6 +47,7 @@ impl Ended {
     fn query_value(self) -> &'static str {
         match self {
             Ended::NotMember => "not-member",
+            Ended::Deleted => "deleted",
         }
     }
 
@@ -53,6 +56,7 @@ impl Ended {
     pub fn toast(self) -> &'static str {
         match self {
             Ended::NotMember => "You're no longer a member of this game",
+            Ended::Deleted => "This game was deleted",
         }
     }
 }
@@ -75,7 +79,7 @@ pub fn ended_from_query(query: &str) -> Option<Ended> {
         .unwrap_or(query)
         .split('&')
         .find_map(|pair| pair.strip_prefix(ENDED_KEY)?.strip_prefix('='))?;
-    [Ended::NotMember]
+    [Ended::NotMember, Ended::Deleted]
         .into_iter()
         .find(|ended| ended.query_value() == value)
 }
@@ -180,6 +184,7 @@ mod tests {
     #[test]
     fn home_after_an_ending_names_it_in_the_query() {
         assert_eq!(home_path(Some(Ended::NotMember)), "/?ended=not-member");
+        assert_eq!(home_path(Some(Ended::Deleted)), "/?ended=deleted");
         assert_eq!(home_path(None), "/");
     }
 
@@ -193,6 +198,7 @@ mod tests {
             ended_from_query("?x=1&ended=not-member"),
             Some(Ended::NotMember)
         );
+        assert_eq!(ended_from_query("?ended=deleted"), Some(Ended::Deleted));
         for query in ["", "?", "?ended=", "?ended=bogus", "?not-member", "?x=1"] {
             assert_eq!(ended_from_query(query), None, "{query}");
         }
@@ -204,6 +210,11 @@ mod tests {
             Ended::NotMember.toast(),
             "You're no longer a member of this game"
         );
+    }
+
+    #[test]
+    fn deleted_says_so() {
+        assert_eq!(Ended::Deleted.toast(), "This game was deleted");
     }
 
     #[test]

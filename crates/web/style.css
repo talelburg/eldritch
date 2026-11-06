@@ -405,6 +405,18 @@
 .more-menu-items .menu-group .menu-item { padding-left: 1.5em; }
 /* The board's ⋯ menu sits at the top right of the board. */
 .board-menu { display: flex; justify-content: flex-end; }
+/* A "Your games" row's ⋯ menu sits beside its link, outside it. */
+.game-row-item { display: flex; align-items: center; gap: 0.5rem; }
+.game-row-item > .game-row { flex: 1; }
+
+/* The confirmation a Delete opens, over everything but the terminal overlays. */
+.dialog-backdrop { position: fixed; inset: 0; z-index: 36; background: rgba(0, 0, 0, 0.4); }
+.confirm-dialog {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 37;
+    background: #fff; border: 1px solid #666; border-radius: 6px; padding: 1rem 1.5rem;
+    display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; max-width: 24rem;
+}
+.confirm-question { flex-basis: 100%; margin: 0 0 0.5rem; }
 
 /* Joined banner: shown on the opening that made this account a member. */
 .joined-banner {
