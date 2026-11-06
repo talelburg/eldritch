@@ -4,8 +4,7 @@
 //! A native `title` won't do. It appears only after the browser's delay, and it
 //! is plain text, so a card's ability text would lose its icons. The popover
 //! renders whatever its host gives it, card text included (through
-//! [`card::render_segments`](crate::card::render_segments)), the moment the
-//! pointer enters the host.
+//! `card::render_segments`), the moment the pointer enters the host.
 //!
 //! The host owns the hover: it creates a [`Hover`], wires its own
 //! `mouseenter` / `mousemove` / `mouseleave` to [`Hover::track`] and

@@ -2,8 +2,8 @@
 //!
 //! A pure render of `GameState` (mirrors `map::location_map`): the current act
 //! and agenda render as header-only cards — the name from the corpus by `code`,
-//! thresholds from the `Act`/`Agenda` structs — and a hover
-//! [`Popover`](crate::popover::Popover) shows the face's printed text. The act has no running clue
+//! thresholds from the `Act`/`Agenda` structs — and a hover [`Popover`] shows
+//! the face's printed text. The act has no running clue
 //! counter (clues sit on locations/investigators), so it shows `clues to
 //! advance: N` rather than a fake `0/N` ([`clue_line`]). Both cards glow + open a context menu
 //! when the live prompt anchors an option to them
