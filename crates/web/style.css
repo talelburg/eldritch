@@ -54,15 +54,19 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
     padding: 0 0.3em; font-size: 0.8em; font-weight: 600;
 }
 /* The open tab's investigator, in two rows under their prompt strip: the
-   investigator, in play and the threat area on top, the hand below. The rows
-   share the panel's height, so neither ever pushes the other out of view. */
+   investigator, in play and the threat area on top, the hand below. The hand
+   row is one row of tiles tall, and the top row takes the rest of the panel,
+   scrolling its zones when they overflow, so neither ever pushes the other out
+   of view. */
 .investigator {
     flex: 1 1 auto; min-height: 0; box-sizing: border-box; overflow: hidden;
     display: flex; flex-direction: column; gap: 0.35em; padding: 0.4em;
     border: 1px solid #ccc; border-radius: 0 4px 4px 4px; background: #fff;
 }
 .investigator > .prompt-strip { flex: none; }
-.inv-zones-top, .inv-zones-bottom { flex: 1 1 0; min-height: 0; display: flex; gap: 0.5em; }
+.inv-zones-top, .inv-zones-bottom { min-height: 0; display: flex; gap: 0.5em; }
+.inv-zones-top { flex: 1 1 0; }
+.inv-zones-bottom { flex: none; }
 .investigator-block { flex: none; display: flex; gap: 0.5em; align-items: flex-start; }
 .investigator-card .tile { width: auto; }
 .inv-meta { display: flex; flex-direction: column; gap: 0.05em; font-size: 0.8em; }
@@ -131,8 +135,11 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 /* Spatial board map (#497). The map fills its box, which it divides into
    `--cols` x `--rows` equal cells (set inline by `map.rs`), and each node's
    card is centred on its cell's centre, `--x` / `--y` (set inline too). So a
-   bigger box spreads the nodes rather than leaving dead space, and the nodes
-   themselves grow with the window's text. The SVG line layer sits behind them.
+   bigger box spreads the nodes rather than leaving dead space. The nodes grow
+   with the box too: the box is a size container, and the map's font size, which
+   every node, its text and its badges are sized in, is a share of the box's
+   width and height per cell (`cqw`, `cqh`), never below a `rem` floor. The SVG
+   line layer sits behind them.
    The node is the card plus the token rail beside it, so it is shifted left by
    half of what lies right of the card's centre, and the line layer with it:
    the lines are drawn between cell centres and land on the cards. */
@@ -140,13 +147,27 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
    would misplace the fixed context menu and popover inside it. Below its
    minimum size, room for every node in its cell, the map overflows the box,
    whose grid stretches it to fill otherwise. */
-.map-box { flex: 1 1 auto; min-height: 0; align-self: stretch; display: grid; overflow: auto; }
+.map-box {
+    flex: 1 1 auto; min-height: 0; align-self: stretch; display: grid; overflow: auto;
+    container-type: size;
+}
 .map {
     --card-w: 11em; --card-h: 2.6em; --rail-w: 8em; --node-gap: 0.4em;
     --node-w: calc(var(--card-w) + var(--node-gap) + var(--rail-w));
-    position: relative; font-size: 0.85rem;
+    position: relative;
+    /* 4/5 of the largest size at which the minimum below still fits the box
+       (20.9em is a node and its margin), so the nodes fill their cells with
+       room for the lines between them. */
+    font-size: max(
+        0.85rem,
+        0.8 * min(100cqw / (var(--cols) * 20.9), 100cqh / (var(--rows) * 6.5))
+    );
     min-width: calc(var(--cols) * (var(--node-w) + 1.5em));
     min-height: calc(var(--rows) * 6.5em);
+    /* A box far wider than its nodes need gathers its columns in the middle
+       rather than spreading them to its edges, so the space between two nodes
+       is never most of the map. */
+    width: 100%; max-width: calc(var(--cols) * (var(--node-w) + 6em)); justify-self: center;
 }
 .map-lines {
     position: absolute; top: 0; left: calc((var(--card-w) - var(--node-w)) / 2);
@@ -167,8 +188,8 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
    unrevealed node is barely a header tall) reaching its own anchor. */
 .loc-card {
     flex: none; width: var(--card-w); min-height: var(--card-h); box-sizing: border-box;
-    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem;
-    display: flex; flex-direction: column; gap: 0.2rem;
+    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.4em;
+    display: flex; flex-direction: column; gap: 0.25em;
 }
 /* Unrevealed locations read as dimmed/face-down WITHOUT element opacity —
    opacity would let the connection lines behind the node bleed through. A muted
@@ -180,15 +201,15 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
    by a label. The card is only this header; its printed text is in the
    popover. */
 .loc-head {
-    display: grid; grid-template-columns: 1.35rem 1fr 1.35rem;
-    align-items: center; gap: 0.3rem; margin-bottom: 0.15rem;
+    display: grid; grid-template-columns: 1.6em 1fr 1.6em;
+    align-items: center; gap: 0.35em; margin-bottom: 0.18em;
 }
 /* The name yields when the header is tight; its full text is its title. */
 .loc-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge {
-    width: 1.35rem; height: 1.35rem; box-sizing: border-box;
+    width: 1.8em; height: 1.8em; box-sizing: border-box;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    font-size: 0.88em; font-weight: 700; font-variant-numeric: tabular-nums;
     border-radius: 3px; border: 1px solid transparent;
 }
 /* Shroud — dark slate, hexagonal (the shape of the printed icon). Always left. */
@@ -203,7 +224,7 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 /* Unrevealed: the side with no shroud/clue value at all — a dashed placeholder,
    never a numeral. */
 .badge--unknown { background: #fff; color: #aaa; border: 1px dashed #bbb; border-radius: 3px; }
-.victory-pip { color: #b8860b; font-size: 0.72rem; font-weight: 700; margin-left: 0.25rem; }
+.victory-pip { color: #b8860b; font-size: 0.85em; font-weight: 700; margin-left: 0.35em; }
 
 /* The satellite rail beside the card. Each occupant is its own bordered box, so
    each can carry its own glow and its own context menu. */

@@ -531,6 +531,10 @@ fn card_tile(code: &CardCode, in_play: Option<&CardInPlay>, skills: Option<Skill
     let class = match (&face, &meta.kind) {
         (Some(face), _) => face.class_css,
         (None, CardKind::Investigator { class, .. }) => class_css(*class),
+        // A treachery's metadata carries no class: a weakness is a neutral
+        // player card, and any other is an encounter card, a Mythos one.
+        (None, CardKind::Treachery { .. }) if meta.is_weakness() => class_css(Class::Neutral),
+        (None, CardKind::Treachery { .. }) => class_css(Class::Mythos),
         (None, _) => "card--generic",
     };
     let is_investigator = matches!(meta.kind, CardKind::Investigator { .. });

@@ -157,7 +157,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         .with_registries(cards::TEST_REGISTRIES)
         .with_seat(
             roland(1)
-                .harm(2, 1) // hp 2/9, san 1/5
+                .harm(2, 1) // health 7/9, sanity 4/5
                 .clues(3)
                 .resources(4)
                 .actions(2)
@@ -183,8 +183,8 @@ async fn investigators_panel_renders_stats_and_hand() {
     );
     // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2.
     assert_eq!(common::text_of(&inv_el, ".inv-skills"), "W3I3C4A2");
-    assert_eq!(common::text_of(&inv_el, ".inv-hp"), "hp 2/9");
-    assert_eq!(common::text_of(&inv_el, ".inv-san"), "san 1/5");
+    assert_eq!(common::text_of(&inv_el, ".inv-hp"), "health 7/9");
+    assert_eq!(common::text_of(&inv_el, ".inv-san"), "sanity 4/5");
     // Meta cluster: actions as pips.
     assert_eq!(
         count_in(&inv_el, ".inv-meta .inv-actions .pip"),
@@ -381,18 +381,18 @@ async fn threat_area_treachery_renders_as_a_tile() {
     let html = root.inner_html();
 
     let game = common::one(&root, ".game");
-    // A treachery has no bespoke face — `card_face` returns `None` for it, so
-    // its tile takes the generic class. Asserting `card--generic` rather than
-    // the bare `.tile` is what distinguishes it from `card--unknown`, which
-    // also matches `.tile` and would let it pass silently.
+    // Cover Up is a weakness, so its tile takes the neutral class colour.
+    // Asserting `card--neutral` rather than the bare `.tile` is what
+    // distinguishes it from `card--unknown`, which also matches `.tile` and
+    // would let it pass silently.
     let card = game
-        .query_selector(".threat .card-row .card--generic")
+        .query_selector(".threat .card-row .tile.card--neutral")
         .expect("query_selector");
     assert!(
         card.is_some(),
         "threat-area treachery should render as a tile: {html}"
     );
-    let treachery = common::text_of(&game, ".threat .card-row .card--generic");
+    let treachery = common::text_of(&game, ".threat .card-row .tile.card--neutral");
     assert!(
         treachery.contains("Cover Up"),
         "treachery name missing: {html}"

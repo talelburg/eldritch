@@ -221,6 +221,16 @@ fn investigator_panel(
     let pips: Vec<_> = (0..engine::actions_available(game, cards, inv_id))
         .map(|_| view! { <span class="pip">"●"</span> })
         .collect();
+    // Health and sanity read as what remains of the printed maximum.
+    let (max_health, max_sanity) = (inv.max_health(cards), inv.max_sanity(cards));
+    let health = format!(
+        "health {}/{max_health}",
+        max_health.saturating_sub(inv.damage())
+    );
+    let sanity = format!(
+        "sanity {}/{max_sanity}",
+        max_sanity.saturating_sub(inv.horror())
+    );
     view! {
         <article class="investigator">
             {strip}
@@ -233,8 +243,8 @@ fn investigator_panel(
                         />
                     </div>
                     <div class="inv-meta">
-                        <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health(cards)}</span>
-                        <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
+                        <span class="inv-hp">{health}</span>
+                        <span class="inv-san">{sanity}</span>
                         <span class="inv-resources">
                             "resources " {inv.resources}
                             // The Gain-resource affordance sits with the

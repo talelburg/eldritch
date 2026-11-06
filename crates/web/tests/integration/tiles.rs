@@ -7,7 +7,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{GameStateBuilder, UseKind};
-use game_core::test_support::{clues, seat, uses};
+use game_core::test_support::{clues, horror, seat, uses};
 use leptos::prelude::*;
 use leptos::task;
 use wasm_bindgen::JsCast as _;
@@ -23,6 +23,8 @@ const FLASHLIGHT: &str = "01087";
 /// Cover Up: Roland's signature weakness, a treachery that enters his threat
 /// area "with 3 clues on it".
 const COVER_UP: &str = "01007";
+/// Beat Cop: Guardian ally, health 2, sanity 2.
+const BEAT_COP: &str = "01018";
 
 /// Roland Banks holding Machete, with a Flashlight down to 2 supplies in play
 /// and Cover Up in his threat area; the board's root.
@@ -95,6 +97,29 @@ async fn an_in_play_card_is_a_tile_showing_its_uses() {
         "{popover}"
     );
     common::unhover(&slot).await;
+}
+
+/// An ally's tile shows the damage and horror on it, out of its printed health
+/// and sanity.
+#[wasm_bindgen_test]
+async fn an_in_play_tile_shows_the_damage_and_horror_on_it() {
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(seat(1).as_card("01001").in_play([(BEAT_COP, horror(1))]))
+        .build();
+    let root = common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &cards::TEST_REGISTRY,
+    )
+    .await
+    .root;
+    let tile = common::one(&root, ".dock .in-play .card-slot .tile");
+
+    assert_eq!(common::text_of(&tile, ".tile-name"), "Beat Cop");
+    assert_eq!(
+        common::texts_in(&tile, ".chip--live"),
+        vec!["dmg 0/2", "hor 1/2"]
+    );
 }
 
 /// A popover opens away from the window's nearer edges, so it stays on screen
