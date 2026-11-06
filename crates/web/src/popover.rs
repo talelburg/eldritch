@@ -87,7 +87,7 @@ impl Hover {
     }
 
     /// A host that also opens a context menu, open while `menu` is `Some`
-    /// (the signal [`menu_layer`](crate::interaction::menu_layer) opens). Its
+    /// (the signal the wasm-only `interaction::menu_layer` opens). Its
     /// popover stays closed while the menu is open: the popover stacks above
     /// every menu, so it would cover the menu it was opened beside, and the
     /// menu's backdrop lies inside the host, so the pointer never leaves it.
