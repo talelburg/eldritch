@@ -14,6 +14,7 @@ pub mod enemy_card;
 pub mod event_log;
 pub mod interaction;
 pub mod map;
+pub mod more_menu;
 pub mod names;
 pub mod registry;
 pub mod sign_in;

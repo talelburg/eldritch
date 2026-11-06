@@ -5,6 +5,7 @@
 //! The helpers, fixtures and card codes the lobby's tests share live here;
 //! each lobby command's tests get a file of their own.
 
+mod leave;
 mod picks;
 mod seating;
 mod start;

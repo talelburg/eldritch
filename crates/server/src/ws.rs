@@ -16,7 +16,7 @@ use game_core::engine::Registries;
 use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
     AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
-    CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+    CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::RecvError;
@@ -255,11 +255,17 @@ async fn handle_socket(
                 break;
             }
             broadcasted = rx.recv() => match broadcasted {
-                Ok(event) => {
-                    if send_msg(&mut sink, &message_for(account, event)).await.is_err() {
+                Ok(event) => match outbound(event, account) {
+                    Outbound::Send(message) => {
+                        if send_msg(&mut sink, &message).await.is_err() {
+                            break;
+                        }
+                    }
+                    Outbound::Close { code, reason } => {
+                        close(&mut sink, Some(&mut stream), code, reason).await;
                         break;
                     }
-                }
+                },
                 Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => break,
             },
@@ -289,15 +295,40 @@ async fn handle_socket(
     }
 }
 
-/// The message a connection signed in as `account` is sent for `event`, which
-/// its room broadcast.
-fn message_for(account: AccountId, event: RoomEvent) -> ServerMessage {
-    match event {
+/// What one room event makes a connection signed in as some account do.
+enum Outbound {
+    /// Send it this message. Boxed for the reason [`Disposition::Reply`] is.
+    Send(Box<ServerMessage>),
+    /// Close it with `code`, sending nothing more.
+    Close {
+        /// The close code.
+        code: u16,
+        /// The close frame's reason.
+        reason: &'static str,
+    },
+}
+
+/// What `event` makes a connection signed in as `account` do: the message
+/// built for its account, or its close.
+fn outbound(event: RoomEvent, account: AccountId) -> Outbound {
+    let message = match event {
         RoomEvent::Applied(committed) => ServerMessage::Applied(committed.applied_for(account)),
-        RoomEvent::Lobby(view) => room::lobby_message(account, (*view).clone(), false),
         RoomEvent::Started(live) => live.hello_for(account),
         RoomEvent::Members(members) => ServerMessage::Members((*members).clone()),
-    }
+        RoomEvent::Departed {
+            account: departing, ..
+        } if departing == account => {
+            return Outbound::Close {
+                code: CLOSE_NO_LONGER_A_MEMBER,
+                reason: "no longer a member",
+            }
+        }
+        // Every other connection is sent the lobby without the departed.
+        RoomEvent::Lobby(view) | RoomEvent::Departed { view, .. } => {
+            room::lobby_message(account, (*view).clone(), false)
+        }
+    };
+    Outbound::Send(Box::new(message))
 }
 
 /// What to do with `sink` after handling one inbound frame.
@@ -380,6 +411,18 @@ async fn handle_client_message(
                 .map(lobby_refused),
             Ok(ClientMessage::SetLead { investigator }) => room
                 .change_lobby(|lobby| lobby.set_lead(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
+            // Accepted, the departing account's own connections close, this
+            // one among them, through the room's `Departed`.
+            Ok(ClientMessage::Leave) => room
+                .depart(account, |lobby| lobby.leave(account))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::Remove { member }) => room
+                .depart(member, |lobby| lobby.remove(account, member))
                 .await
                 .err()
                 .map(lobby_refused),

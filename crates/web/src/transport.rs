@@ -23,7 +23,7 @@ use protocol::{
 };
 use wasm_bindgen_futures::spawn_local;
 
-use crate::socket_ending::{self, SocketEnding};
+use crate::socket_ending::{self, NextStep, SocketEnding};
 use crate::store::{self, ConnStatus, Received, StoreSignal};
 use crate::url;
 
@@ -61,8 +61,12 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     let Some(game_id) = url::current_game_id() else {
         // The "Your games" page, listing what [`fetch_games`] returns once;
         // its New game button creates a lobby through [`new_game`] and goes
-        // to it.
-        store.update(|s| s.status = ConnStatus::Home);
+        // to it. A game that sent this client here says why, in a toast.
+        let ended = url::take_current_ended();
+        store.update(|s| {
+            s.status = ConnStatus::Home;
+            s.toast = ended.map(|ended| ended.toast().to_string());
+        });
         fetch_games(store).await;
         return;
     };
@@ -74,20 +78,17 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     let mut attempt: u32 = 0;
     loop {
         let outcome = connect_once(&store, &game_id, &mut rx, &mut attempt).await;
-        // A socket that never opened ended the way a refused connect does. A
-        // version mismatch stops the loop below, so its ending is never used.
+        // A socket that never opened ended the way a refused connect does.
         let ending = match outcome {
             ConnectOutcome::Ended(ending) => ending,
-            ConnectOutcome::Unreachable | ConnectOutcome::VersionMismatch => {
-                SocketEnding::Disconnected
-            }
-        };
-        match outcome {
+            ConnectOutcome::Unreachable => SocketEnding::Disconnected,
             // A wire-format skew: the status is already set to VersionMismatch.
             // Stop the loop entirely — retrying just hits the same stale server.
             ConnectOutcome::VersionMismatch => return,
+        };
+        match ending.next_step() {
             // The session is gone. Show the sign-in screen and stop.
-            ConnectOutcome::Ended(SocketEnding::Unauthenticated) => {
+            NextStep::SignIn => {
                 // If `/auth/me` still signs us in, the server refused the
                 // socket a session it accepts over HTTP, which only a server
                 // bug does. Nothing is live, so say so rather than leave the
@@ -101,23 +102,24 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
             // would fail the same way. Say so and stop: the link still names
             // the game, and a rollback to an earlier build can resume it. The
             // listing's entry for the game says where it stopped and why.
-            ConnectOutcome::Ended(SocketEnding::Unresumable) => {
+            NextStep::Unresumable => {
                 store.update(|s| s.status = ConnStatus::Unresumable);
                 fetch_games(store).await;
                 return;
             }
-            // The server has no game at this link (a typo, or a DB reset).
-            // Go to the home page, which offers a new one, in place of it.
-            ConnectOutcome::Ended(SocketEnding::StaleId) => {
-                go_to("/", Navigation::Replace);
+            // The server has no game at this link (a typo, or a DB reset), or
+            // this account is no longer a member of it. Go to the home page,
+            // which offers a new one, in place of it, naming the ending for
+            // its toast.
+            NextStep::GoHome(ended) => {
+                go_to(&url::home_path(ended), Navigation::Replace);
                 return;
             }
             // Couldn't reach the server, a disconnect, or a server shutting
             // down for a restart — keep the SAME game and just retry. A
             // restart says so until the next `Hello` or `Lobby`, through
             // however many refused connects it takes.
-            ConnectOutcome::Unreachable
-            | ConnectOutcome::Ended(SocketEnding::Disconnected | SocketEnding::Restarting) => {}
+            NextStep::Reconnect => {}
         }
 
         store.update(|s| s.status = s.status.retrying_after(ending));

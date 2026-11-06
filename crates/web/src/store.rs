@@ -597,6 +597,14 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
             leptos::logging::error!("this client sent a command only the creator may send");
             CLIENT_BUG.into()
         }
+        // The lobby offers Leave to every member but the creator, and Remove
+        // to the creator alone, for each other member.
+        LobbyRefusal::CreatorStays => {
+            leptos::logging::error!("this client sent the creator's own Leave or Remove");
+            CLIENT_BUG.into()
+        }
+        // A Remove that crossed the member's own Leave.
+        LobbyRefusal::NotAMember => "That member has already left.".into(),
         LobbyRefusal::NoPicks => {
             leptos::logging::error!("this client started a lobby with no picks");
             CLIENT_BUG.into()

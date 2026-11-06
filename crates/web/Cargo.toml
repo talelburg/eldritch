@@ -30,7 +30,7 @@ js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 # `Navigator` and `Clipboard`: the lobby's Copy button.
-web-sys = { version = "0.3", features = ["Location", "Window", "Navigator", "Clipboard", "Document", "Element", "HtmlElement", "HtmlDivElement", "MouseEvent", "EventTarget", "PointerEvent"] }
+web-sys = { version = "0.3", features = ["History", "Location", "Window", "Navigator", "Clipboard", "Document", "Element", "HtmlElement", "HtmlDivElement", "MouseEvent", "EventTarget", "PointerEvent"] }
 
 [dev-dependencies]
 # `TEST_REGISTRY` / `TEST_REGISTRIES`: the real corpus with game-core's
