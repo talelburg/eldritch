@@ -136,11 +136,7 @@ fn GameRow(entry: GameEntry) -> impl IntoView {
     let creator = entry.creator;
     let entries = Signal::derive(move || {
         store.with(|s| {
-            let yours = s
-                .account
-                .as_ref()
-                .is_some_and(|account| Some(account.account_id) == creator);
-            if yours {
+            if s.is_creator(creator) {
                 vec![delete_game::delete_entry(store, game_id.clone())]
             } else {
                 Vec::new()

@@ -1,7 +1,15 @@
-//! The client's addresses: a game's link, read from and written to the page's
-//! path, and its same-origin WebSocket URL (D3): never a hardcoded port.
+//! The client's addresses: a game's link, the home page's, and a game's
+//! WebSocket URL.
+//!
+//! A game's link is read from and written to the page's path. The home
+//! page's `?ended=` query names the [`Ended`] that sent a client there. The
+//! WebSocket URL is same-origin (D3): never a hardcoded port.
 
 use protocol::GameId;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
+use web_sys::Location;
 
 /// The path every game's address starts with: a game's link is
 /// `/games/{id}`.
@@ -37,16 +45,19 @@ const ENDED_KEY: &str = "ended";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ended {
     /// The account left the lobby, or the creator removed it.
-    NotMember,
+    NoLongerMember,
     /// The creator deleted the game.
     Deleted,
 }
 
 impl Ended {
+    /// Every ending.
+    const ALL: [Ended; 2] = [Ended::NoLongerMember, Ended::Deleted];
+
     /// The query value naming this ending.
     fn query_value(self) -> &'static str {
         match self {
-            Ended::NotMember => "not-member",
+            Ended::NoLongerMember => "not-member",
             Ended::Deleted => "deleted",
         }
     }
@@ -55,7 +66,7 @@ impl Ended {
     #[must_use]
     pub fn toast(self) -> &'static str {
         match self {
-            Ended::NotMember => "You're no longer a member of this game",
+            Ended::NoLongerMember => "You're no longer a member of this game",
             Ended::Deleted => "This game was deleted",
         }
     }
@@ -79,7 +90,7 @@ pub fn ended_from_query(query: &str) -> Option<Ended> {
         .unwrap_or(query)
         .split('&')
         .find_map(|pair| pair.strip_prefix(ENDED_KEY)?.strip_prefix('='))?;
-    [Ended::NotMember, Ended::Deleted]
+    Ended::ALL
         .into_iter()
         .find(|ended| ended.query_value() == value)
 }
@@ -103,7 +114,7 @@ pub fn ws_url(location_protocol: &str, host: &str, game_id: &str) -> String {
 /// Panics if there is no browser `window` (e.g. called outside a DOM context) —
 /// always present in the wasm client this targets.
 #[cfg(target_arch = "wasm32")]
-fn location() -> web_sys::Location {
+fn location() -> Location {
     web_sys::window().expect("a browser window").location()
 }
 
@@ -133,7 +144,7 @@ pub fn take_current_ended() -> Option<Ended> {
     let ended = ended_from_query(&location().search().ok()?)?;
     let path = location().pathname().ok()?;
     if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
-        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&path));
+        let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&path));
     }
     Some(ended)
 }
@@ -183,7 +194,7 @@ mod tests {
 
     #[test]
     fn home_after_an_ending_names_it_in_the_query() {
-        assert_eq!(home_path(Some(Ended::NotMember)), "/?ended=not-member");
+        assert_eq!(home_path(Some(Ended::NoLongerMember)), "/?ended=not-member");
         assert_eq!(home_path(Some(Ended::Deleted)), "/?ended=deleted");
         assert_eq!(home_path(None), "/");
     }
@@ -192,11 +203,11 @@ mod tests {
     fn the_query_names_the_ending_home_was_reached_after() {
         assert_eq!(
             ended_from_query("?ended=not-member"),
-            Some(Ended::NotMember)
+            Some(Ended::NoLongerMember)
         );
         assert_eq!(
             ended_from_query("?x=1&ended=not-member"),
-            Some(Ended::NotMember)
+            Some(Ended::NoLongerMember)
         );
         assert_eq!(ended_from_query("?ended=deleted"), Some(Ended::Deleted));
         for query in ["", "?", "?ended=", "?ended=bogus", "?not-member", "?x=1"] {
@@ -207,7 +218,7 @@ mod tests {
     #[test]
     fn not_a_member_says_so() {
         assert_eq!(
-            Ended::NotMember.toast(),
+            Ended::NoLongerMember.toast(),
             "You're no longer a member of this game"
         );
     }

@@ -20,14 +20,10 @@ pub struct DeleteGame(pub Callback<GameId>);
 
 /// The ⋯ entry that asks to delete `game_id`, opening the confirmation.
 pub fn delete_entry(store: StoreSignal, game_id: GameId) -> MenuEntry {
-    MenuEntry {
-        label: "Delete".to_string(),
-        on_select: Callback::new(move |()| {
-            let game_id = game_id.clone();
-            store.update(|s| s.delete_asked = Some(game_id));
-        }),
-        children: Vec::new(),
-    }
+    MenuEntry::action("Delete", move || {
+        let game_id = game_id.clone();
+        store.update(|s| s.delete_asked = Some(game_id));
+    })
 }
 
 /// The confirmation a Delete entry opens, while the store's

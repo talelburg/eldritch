@@ -96,12 +96,8 @@ fn menu_entries(store: StoreSignal, s: &ClientState) -> Vec<MenuEntry> {
     let (Some(lobby), Some(you)) = (&s.lobby, s.you) else {
         return Vec::new();
     };
-    if you != lobby.creator {
-        return vec![MenuEntry {
-            label: "Leave".to_string(),
-            on_select: Callback::new(|()| send(ClientMessage::Leave)),
-            children: Vec::new(),
-        }];
+    if !s.is_creator(Some(lobby.creator)) {
+        return vec![MenuEntry::action("Leave", || send(ClientMessage::Leave))];
     }
     let removes = lobby
         .members
@@ -109,13 +105,9 @@ fn menu_entries(store: StoreSignal, s: &ClientState) -> Vec<MenuEntry> {
         .filter(|member| member.account != you)
         .map(|member| {
             let account = member.account;
-            MenuEntry {
-                label: format!("Remove {}", member.display_name),
-                on_select: Callback::new(move |()| {
-                    send(ClientMessage::Remove { member: account });
-                }),
-                children: Vec::new(),
-            }
+            MenuEntry::action(format!("Remove {}", member.display_name), move || {
+                send(ClientMessage::Remove { member: account });
+            })
         });
     removes
         .chain(

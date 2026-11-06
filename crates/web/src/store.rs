@@ -268,12 +268,43 @@ impl ClientState {
         Some(own)
     }
 
-    /// The display name of the member `account`, or "someone" for an account
-    /// this client doesn't know as one.
-    fn member_name(&self, account: Option<AccountId>) -> &str {
-        account
-            .and_then(|account| self.members.iter().find(|member| member.account == account))
-            .map_or("someone", |member| member.display_name.as_str())
+    /// The display name of the member `account`, or [`SOMEONE`] for an
+    /// account this client doesn't know as one.
+    fn member_name(&self, account: AccountId) -> &str {
+        self.members
+            .iter()
+            .find(|member| member.account == account)
+            .map_or(SOMEONE, |member| member.display_name.as_str())
+    }
+
+    /// Whether this client's account is `creator`, the account that created
+    /// a game: the account it answers as on a game's page, or the one it is
+    /// signed in as on any other. `false` for no creator.
+    #[must_use]
+    pub fn is_creator(&self, creator: Option<AccountId>) -> bool {
+        let yours = self
+            .you
+            .or_else(|| self.account.as_ref().map(|account| account.account_id));
+        creator.is_some() && yours == creator
+    }
+
+    /// Fold the server's `answer` to this client's delete of `game_id` into
+    /// the state: a game deleted, or already gone, leaves the "Your games"
+    /// listing, and a toast says why a delete didn't go through.
+    pub fn delete_answered(&mut self, game_id: &GameId, answer: DeleteAnswer) {
+        let toast = match answer {
+            DeleteAnswer::Deleted => None,
+            DeleteAnswer::NotFound => Some("This game was already deleted"),
+            DeleteAnswer::Failed => Some("Couldn't delete the game, try again."),
+        };
+        if answer != DeleteAnswer::Failed {
+            if let Some(games) = &mut self.games {
+                games.retain(|entry| entry.game_id != *game_id);
+            }
+        }
+        if let Some(toast) = toast {
+            self.toast = Some(toast.to_owned());
+        }
     }
 
     /// Each investigator this account may **reassign**, with the members they
@@ -313,6 +344,22 @@ impl ClientState {
             .map_or_else(|| format!("Investigator {}", id.0), |inv| inv.name.clone())
     }
 }
+
+/// What the server answered a delete of a game with, as
+/// [`ClientState::delete_answered`] folds it in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteAnswer {
+    /// The game was deleted.
+    Deleted,
+    /// The server has no such game: it was deleted already, from another tab
+    /// or by another device.
+    NotFound,
+    /// Anything else: refused, or the server failed.
+    Failed,
+}
+
+/// What a toast calls an account this client doesn't know as a member.
+const SOMEONE: &str = "someone";
 
 #[cfg(test)]
 impl ClientState {
@@ -597,9 +644,9 @@ fn reduce_assigned(
     state.assigned = assigned;
     state.toast = Some(format!(
         "{} gave {} to {}",
-        state.member_name(Some(by)),
+        state.member_name(by),
         state.investigator_name(investigator),
-        state.member_name(holder),
+        holder.map_or(SOMEONE, |holder| state.member_name(holder)),
     ));
 }
 

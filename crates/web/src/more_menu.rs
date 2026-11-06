@@ -5,23 +5,36 @@ use leptos::prelude::*;
 
 /// One entry of a [`MoreMenu`].
 #[derive(Clone)]
-pub struct MenuEntry {
-    /// What the entry says, e.g. "Leave".
-    pub label: String,
-    /// What choosing it does. The menu closes first. An entry with
-    /// [`children`](Self::children) is a heading, which isn't chosen itself.
-    pub on_select: Callback<()>,
-    /// The submenu under this entry, in order: empty for an entry that is an
-    /// action itself.
-    pub children: Vec<MenuEntry>,
+pub enum MenuEntry {
+    /// An entry chosen for what it does.
+    Action {
+        /// What the entry says, e.g. "Leave".
+        label: String,
+        /// What choosing it does. The menu closes first.
+        on_select: Callback<()>,
+    },
+    /// A heading over a submenu, which isn't chosen itself.
+    Submenu {
+        /// What the heading says.
+        label: String,
+        /// The submenu's entries, in order.
+        children: Vec<MenuEntry>,
+    },
 }
 
 impl MenuEntry {
+    /// An entry saying `label` that runs `on_select` when chosen.
+    pub fn action(label: impl Into<String>, on_select: impl Fn() + Send + Sync + 'static) -> Self {
+        Self::Action {
+            label: label.into(),
+            on_select: Callback::new(move |()| on_select()),
+        }
+    }
+
     /// A heading saying `label` over the submenu `children`.
     pub fn submenu(label: impl Into<String>, children: Vec<MenuEntry>) -> Self {
-        Self {
+        Self::Submenu {
             label: label.into(),
-            on_select: Callback::new(|()| {}),
             children,
         }
     }
@@ -79,13 +92,8 @@ pub fn MoreMenu(entries: Signal<Vec<MenuEntry>>) -> impl IntoView {
 
 /// One entry of an open menu: a button, or a heading over its submenu's.
 fn entry_view(entry: MenuEntry, open: RwSignal<bool>) -> AnyView {
-    let MenuEntry {
-        label,
-        on_select,
-        children,
-    } = entry;
-    if children.is_empty() {
-        return view! {
+    match entry {
+        MenuEntry::Action { label, on_select } => view! {
             <button
                 class="menu-item"
                 on:click=move |ev| {
@@ -97,17 +105,19 @@ fn entry_view(entry: MenuEntry, open: RwSignal<bool>) -> AnyView {
                 {label}
             </button>
         }
-        .into_any();
+        .into_any(),
+        MenuEntry::Submenu { label, children } => {
+            let items = children
+                .into_iter()
+                .map(|child| entry_view(child, open))
+                .collect_view();
+            view! {
+                <div class="menu-group">
+                    <div class="menu-heading">{label}</div>
+                    {items}
+                </div>
+            }
+            .into_any()
+        }
     }
-    let items = children
-        .into_iter()
-        .map(|child| entry_view(child, open))
-        .collect_view();
-    view! {
-        <div class="menu-group">
-            <div class="menu-heading">{label}</div>
-            {items}
-        </div>
-    }
-    .into_any()
 }

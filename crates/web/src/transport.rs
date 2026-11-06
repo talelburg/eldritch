@@ -25,7 +25,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::delete_game::DeleteGame;
 use crate::socket_ending::{self, NextStep, SocketEnding};
-use crate::store::{self, ConnStatus, Received, StoreSignal};
+use crate::store::{self, ConnStatus, DeleteAnswer, Received, StoreSignal};
 use crate::url;
 
 /// The scenario every new game plays: The Gathering is the only one.
@@ -34,6 +34,8 @@ const SCENARIO_ID: &str = "the-gathering";
 const UNAUTHORIZED: u16 = 401;
 /// HTTP 204, which the server answers a delete it carried out with.
 const NO_CONTENT: u16 = 204;
+/// HTTP 404, which the server answers a delete of a game it has no row of with.
+const NOT_FOUND: u16 = 404;
 
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
@@ -114,10 +116,10 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
                 fetch_games(store).await;
                 return;
             }
-            // The server has no game at this link (a typo, or a DB reset), this
-            // account is no longer a member of it, or its creator deleted it. Go to the home page,
-            // which offers a new one, in place of it, naming the ending for
-            // its toast.
+            // The server has no game at this link (a typo, or a DB reset),
+            // this account is no longer a member of it, or its creator
+            // deleted it. Go to the home page, which offers a new one, in
+            // place of it, naming the ending for its toast.
             NextStep::GoHome(ended) => {
                 go_to(&url::home_path(ended), Navigation::Replace);
                 return;
@@ -222,26 +224,28 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 }
 
 /// `DELETE /games/{id}` of `game_id`, which the creator confirmed. Deleted,
-/// its row leaves the "Your games" listing; a lobby or board this page shows
-/// leaves when the server closes the socket as deleted. Signed out since boot,
-/// show the sign-in screen instead. Any other answer says so in a toast.
+/// or already gone, its row leaves the "Your games" listing; a lobby or board
+/// this page shows leaves when the server closes the socket as deleted.
+/// Signed out since boot, show the sign-in screen instead. Every answer but a
+/// delete says so in a toast ([`ClientState::delete_answered`]).
+///
+/// [`ClientState::delete_answered`]: crate::store::ClientState::delete_answered
 async fn delete_game(store: StoreSignal, game_id: GameId) {
     let path = format!("/games/{}", game_id.as_str());
     let status = Request::delete(&path)
         .send()
         .await
         .map(|resp| resp.status());
-    match status {
-        Ok(NO_CONTENT) => store.update(|s| {
-            if let Some(games) = &mut s.games {
-                games.retain(|entry| entry.game_id != game_id);
-            }
-        }),
+    let answer = match status {
         Ok(UNAUTHORIZED) => {
             check_sign_in(store).await;
+            return;
         }
-        _ => store.update(|s| s.toast = Some("Couldn't delete the game, try again.".to_owned())),
-    }
+        Ok(NO_CONTENT) => DeleteAnswer::Deleted,
+        Ok(NOT_FOUND) => DeleteAnswer::NotFound,
+        _ => DeleteAnswer::Failed,
+    };
+    store.update(|s| s.delete_answered(&game_id, answer));
 }
 
 /// One socket lifetime: open, pump inbound->reduce and outbound->sink,

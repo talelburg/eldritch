@@ -34,7 +34,7 @@ fn entries(store: StoreSignal, state: &ClientState, tx: Option<&OutboundTx>) -> 
     let delete = state
         .game_id
         .clone()
-        .filter(|_| state.you.is_some() && state.you == state.creator)
+        .filter(|_| state.is_creator(state.creator))
         .map(|game_id| delete_game::delete_entry(store, game_id));
     state
         .reassignments()
@@ -45,16 +45,11 @@ fn entries(store: StoreSignal, state: &ClientState, tx: Option<&OutboundTx>) -> 
                 .map(|member| {
                     let to = member.account;
                     let tx = tx.cloned();
-                    MenuEntry {
-                        label: member.display_name.clone(),
-                        on_select: Callback::new(move |()| {
-                            if let Some(tx) = &tx {
-                                let _ =
-                                    tx.unbounded_send(ClientMessage::Reassign { investigator, to });
-                            }
-                        }),
-                        children: Vec::new(),
-                    }
+                    MenuEntry::action(member.display_name.clone(), move || {
+                        if let Some(tx) = &tx {
+                            let _ = tx.unbounded_send(ClientMessage::Reassign { investigator, to });
+                        }
+                    })
                 })
                 .collect();
             MenuEntry::submenu(

@@ -1,5 +1,6 @@
-//! How a game's WebSocket ended, sorted from what the client saw of it, and
-//! how long to wait before the next attempt.
+//! How a game's WebSocket ended, sorted from what the client saw of it, the
+//! [`NextStep`] the transport takes after each ending, and how long to wait
+//! before the next attempt.
 
 use std::time::Duration;
 
@@ -62,7 +63,7 @@ impl SocketEnding {
             SocketEnding::Unauthenticated => NextStep::SignIn,
             SocketEnding::Unresumable => NextStep::Unresumable,
             SocketEnding::StaleId => NextStep::GoHome(None),
-            SocketEnding::NoLongerMember => NextStep::GoHome(Some(Ended::NotMember)),
+            SocketEnding::NoLongerMember => NextStep::GoHome(Some(Ended::NoLongerMember)),
             SocketEnding::Deleted => NextStep::GoHome(Some(Ended::Deleted)),
         }
     }
@@ -147,7 +148,7 @@ mod tests {
     fn no_longer_a_member_goes_home_saying_why_and_never_reconnects() {
         assert_eq!(
             SocketEnding::NoLongerMember.next_step(),
-            NextStep::GoHome(Some(Ended::NotMember))
+            NextStep::GoHome(Some(Ended::NoLongerMember))
         );
     }
 
