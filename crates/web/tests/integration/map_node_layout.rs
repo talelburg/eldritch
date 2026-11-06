@@ -4,9 +4,9 @@
 //! A fixed-size node with `overflow: hidden` clipped them on the Parlor 01115,
 //! the longest printed text of any Core location, and hid Lita Chantler once an
 //! investigator stood there. The card is a header only, with its printed text
-//! in a hover popover, so in a 100px row it is the token rail that sets a
-//! node's height, and the Parlor, with Lita always in its rail, is the densest
-//! node.
+//! in a hover popover, so in a row of the map at its smallest it is the token
+//! rail that sets a node's height, and the Parlor, with Lita always in its
+//! rail, is the densest node.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the
