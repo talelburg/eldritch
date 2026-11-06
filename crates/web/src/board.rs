@@ -36,7 +36,10 @@ pub fn BoardView() -> impl IntoView {
                     {resolution_banner(&game)}
                     {act_agenda::act_agenda_view(&game)}
                     <div class="board-main">
-                        {map::location_map(&game)}
+                        // The map pans by scrolling inside this box, never by
+                        // scaling: a `transform` would misplace the fixed
+                        // context menu and popover inside it.
+                        <div class="map-box">{map::location_map(&game)}</div>
                         {dock(&game, &placed)}
                     </div>
                 </div>

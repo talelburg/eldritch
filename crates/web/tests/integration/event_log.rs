@@ -50,8 +50,7 @@ async fn renders_batches_with_headers_and_event_debug() {
 }
 
 #[wasm_bindgen_test]
-async fn log_collapses_and_expands() {
-    // Mount EventLogView (use the file's existing mount helper / store setup).
+async fn log_drawer_starts_closed_and_opens_from_its_toggle() {
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
         provide_context(store);
@@ -72,11 +71,10 @@ async fn log_collapses_and_expands() {
         .query_selector(".log-scroll")
         .expect("query ok")
         .expect(".log-scroll present");
-    assert!(
-        !scroll.class_name().contains("hidden"),
-        "log body should start visible: {}",
-        scroll.class_name()
-    );
+    let open = |el: &Element| el.class_list().contains("open");
+    let hidden = |el: &Element| el.class_list().contains("hidden");
+    assert!(!open(&panel), "the drawer starts closed");
+    assert!(hidden(&scroll), "a closed drawer hides its body");
 
     let toggle = panel
         .query_selector(".log-toggle")
@@ -86,17 +84,13 @@ async fn log_collapses_and_expands() {
         .expect("HtmlElement");
     toggle.click();
     task::tick().await;
-    assert!(
-        scroll.class_name().contains("hidden"),
-        "log body should be hidden after collapse: {}",
-        scroll.class_name()
-    );
-    // The panel itself collapses to a thin strip (frees the left side).
-    assert!(
-        panel.class_name().contains("collapsed"),
-        "panel should carry the collapsed class: {}",
-        panel.class_name()
-    );
+    assert!(open(&panel), "the toggle opens the drawer");
+    assert!(!hidden(&scroll), "an open drawer shows its body");
+
+    toggle.click();
+    task::tick().await;
+    assert!(!open(&panel), "the toggle closes it again");
+    assert!(hidden(&scroll), "and hides its body");
 }
 
 /// The event log's text after a socket hands the store a `Hello` from

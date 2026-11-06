@@ -1,18 +1,21 @@
-//! Event-log panel: a read-only, accumulating view of the game's events,
-//! left of the board, newest at the bottom, grouped per submitted action.
+//! The event log: a read-only, accumulating view of the game's events, newest
+//! at the bottom, grouped per submitted action, in a drawer that starts closed.
 
 use leptos::html::Div;
 use leptos::prelude::*;
 
 use crate::store;
 
-/// Read-only event log, left of the board. Renders every accumulated `LogBatch`
-/// oldest-first (newest at the bottom); a header line per batch then one Debug
-/// line per event. On wasm, auto-scrolls to the bottom as the log grows.
+/// Read-only event log in a drawer. Closed, it is only its toggle, so the board
+/// keeps the whole screen; open, it lies over the board's left side. Renders
+/// every accumulated `LogBatch` oldest-first (newest at the bottom); a header
+/// line per batch then one Debug line per event. The body stays rendered while
+/// closed, only hidden, so opening the drawer shows the log as it already is.
+/// On wasm, auto-scrolls to the bottom as the log grows.
 #[component]
 pub fn EventLogView() -> impl IntoView {
     let store = store::use_store();
-    let collapsed = RwSignal::new(false);
+    let open = RwSignal::new(false);
     let scroll_ref = NodeRef::<Div>::new();
 
     // Keep the panel pinned to the newest line. Re-runs whenever a batch is
@@ -23,7 +26,7 @@ pub fn EventLogView() -> impl IntoView {
     {
         Effect::new(move |_| {
             let _ = store.with(|s| s.log.len());
-            let _ = collapsed.get();
+            let _ = open.get();
             request_animation_frame(move || {
                 if let Some(el) = scroll_ref.get() {
                     el.set_scroll_top(el.scroll_height());
@@ -54,19 +57,19 @@ pub fn EventLogView() -> impl IntoView {
     };
 
     view! {
-        <aside class="event-log" class:collapsed=move || collapsed.get()>
+        <aside class="event-log" class:open=move || open.get()>
             <div class="event-log-head">
                 <h2>"Event log"</h2>
                 <button
                     class="log-toggle"
-                    on:click=move |_| collapsed.update(|c| *c = !*c)
+                    on:click=move |_| open.update(|o| *o = !*o)
                 >
-                    {move || if collapsed.get() { "▸ log" } else { "◂ hide" }}
+                    {move || if open.get() { "◂ hide" } else { "▸ log" }}
                 </button>
             </div>
             <div
                 class="log-scroll"
-                class:hidden=move || collapsed.get()
+                class:hidden=move || !open.get()
                 node_ref=scroll_ref
             >
                 {batches}

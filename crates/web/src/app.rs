@@ -50,17 +50,20 @@ pub fn App() -> impl IntoView {
         transport::start(store);
     }
 
+    // One screen, which never scrolls: the header and the main column on the
+    // left, the round band down the whole right edge. The event log is a
+    // drawer, so it takes no column: closed, it is a toggle in the header.
     view! {
-        <main>
-            <header class="app-header">
-                <h1>"Eldritch"</h1>
-                <StatusBarView/>
-            </header>
-            <div class="layout">
-                <EventLogView/>
+        <main class="app-shell">
+            <div class="app-column">
+                <header class="app-header">
+                    <h1>"Eldritch"</h1>
+                    <EventLogView/>
+                    <StatusBarView/>
+                </header>
                 <MainColumn/>
-                <TurnTrackerView/>
             </div>
+            <TurnTrackerView/>
         </main>
     }
 }

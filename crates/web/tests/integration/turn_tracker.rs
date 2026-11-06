@@ -55,20 +55,72 @@ fn last_tracker() -> Element {
         .expect("a .turn-tracker")
 }
 
+/// The text of each `.tracker-step` and `.tracker-window` in the band, in
+/// order.
+fn band_entries(tracker: &Element) -> Vec<String> {
+    common::texts_in(tracker, ".tracker-step, .tracker-window")
+}
+
 #[wasm_bindgen_test]
 async fn lists_all_phases_substeps_and_round() {
     mount_at(Phase::Investigation, 2).await;
-    let t = last_tracker().text_content().unwrap_or_default();
-    assert!(t.contains("Round 2"), "round missing: {t}");
-    assert!(t.contains("Mythos"), "Mythos missing: {t}");
-    assert!(t.contains("Investigation"), "Investigation missing: {t}");
-    assert!(t.contains("Enemy"), "Enemy missing: {t}");
-    assert!(t.contains("Upkeep"), "Upkeep missing: {t}");
-    assert!(
-        t.contains("Place 1 doom on the current agenda."),
-        "a Mythos sub-step missing: {t}"
+    let tracker = last_tracker();
+    let round = tracker
+        .query_selector(".tracker-round")
+        .expect("query ok")
+        .expect("a .tracker-round")
+        .text_content()
+        .unwrap_or_default();
+    assert_eq!(round, "R2", "the round, compactly");
+    assert_eq!(
+        band_entries(&tracker),
+        [
+            "1.1", "1.2", "1.3", "1.4", "◇", "1.5", //
+            "2.1", "◇", "2.2", "◇", "2.2.1", "2.2.2", "2.3", //
+            "3.1", "3.2", "◇", "3.3", "◇", "3.4", //
+            "4.1", "◇", "4.2", "4.3", "4.4", "4.5", "4.6",
+        ],
+        "every step by number, ◇ for each player window"
     );
-    assert!(t.contains("player window"), "player windows missing: {t}");
+    let t = tracker.text_content().unwrap_or_default();
+    assert!(
+        !t.contains("Place 1 doom on the current agenda."),
+        "a step's text waits for the hover: {t}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn hovering_a_step_shows_its_text() {
+    mount_at(Phase::Mythos, 1).await;
+    let tracker = last_tracker();
+    let steps = tracker
+        .query_selector_all(".tracker-step")
+        .expect("query ok");
+    let doom = (0..steps.length())
+        .filter_map(|i| steps.item(i)?.dyn_into::<Element>().ok())
+        .find(|el| el.text_content().unwrap_or_default() == "1.2")
+        .expect("step 1.2");
+    assert_eq!(common::popover_text(&doom), None, "closed before the hover");
+    common::hover(&doom).await;
+    let text = common::popover_text(&doom).expect("the step's popover");
+    assert!(
+        text.contains("Place 1 doom on the current agenda."),
+        "the step's full text: {text}"
+    );
+    common::unhover(&doom).await;
+    assert_eq!(common::popover_text(&doom), None, "closed after the hover");
+}
+
+#[wasm_bindgen_test]
+async fn hovering_a_player_window_names_it() {
+    mount_at(Phase::Mythos, 1).await;
+    let window = last_tracker()
+        .query_selector(".tracker-window")
+        .expect("query ok")
+        .expect("a .tracker-window");
+    common::hover(&window).await;
+    let text = common::popover_text(&window).expect("the window's popover");
+    assert!(text.contains("Player window"), "names the window: {text}");
 }
 
 #[wasm_bindgen_test]
@@ -87,11 +139,11 @@ async fn current_phase_is_highlighted() {
         .text_content()
         .unwrap_or_default();
     assert!(
-        current.contains("Enemy"),
-        "current phase should be Enemy: {current}"
+        current.contains("3.1") && current.contains("3.4"),
+        "current phase should be Enemy's steps: {current}"
     );
     assert!(
-        !current.contains("Mythos"),
+        !current.contains("1.1") && !current.contains("2.1"),
         "only the Enemy block is current: {current}"
     );
 }
