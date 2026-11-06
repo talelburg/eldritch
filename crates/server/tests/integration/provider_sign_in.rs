@@ -31,7 +31,12 @@ async fn pool_with_user1() -> SqlitePool {
 /// Start a sign-in on `app` as the browser does: the `state` the provider is
 /// sent, and the in-flight cookie as a `Cookie` header value.
 async fn start(app: &Router) -> (String, String) {
-    let (status, headers, _) = common::get(app, "/auth/fake/login", None).await;
+    start_at(app, "/auth/fake/login").await
+}
+
+/// [`start`], from the login URL `login`, which may carry a `return_to`.
+async fn start_at(app: &Router, login: &str) -> (String, String) {
+    let (status, headers, _) = common::get(app, login, None).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let location = Url::parse(location(&headers)).expect("an absolute provider URL");
     let state = location
@@ -61,7 +66,12 @@ fn assert_in_flight_cleared(headers: &HeaderMap) {
 
 /// Start a sign-in on `app` and come back from the provider with `code`.
 async fn sign_in(app: &Router, code: &str) -> (StatusCode, HeaderMap, String) {
-    let (state, cookie) = start(app).await;
+    sign_in_from(app, "/auth/fake/login", code).await
+}
+
+/// [`sign_in`], starting at the login URL `login`.
+async fn sign_in_from(app: &Router, login: &str, code: &str) -> (StatusCode, HeaderMap, String) {
+    let (state, cookie) = start_at(app, login).await;
     common::get(
         app,
         &format!("/auth/fake/callback?code={code}&state={state}"),
@@ -395,4 +405,103 @@ async fn an_exchange_that_fails_at_the_provider_gets_the_try_again_page() {
     assert!(page.contains("Try again"), "{page}");
     assert_in_flight_cleared(&headers);
     assert_eq!(common::session_count(&pool).await, 0);
+}
+
+#[tokio::test]
+async fn a_sign_in_returns_to_the_page_it_started_from() {
+    let app = common::provider_app(
+        pool_with_user1().await,
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
+        false,
+    );
+
+    let (status, headers, _) =
+        sign_in_from(&app, "/auth/fake/login?return_to=%2Fgames%2Fabc", "a-code").await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location(&headers), "/games/abc");
+}
+
+#[tokio::test]
+async fn a_return_path_keeps_its_query() {
+    let app = common::provider_app(
+        pool_with_user1().await,
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
+        false,
+    );
+
+    let (_, headers, _) = sign_in_from(
+        &app,
+        "/auth/fake/login?return_to=%2Fgames%2Fabc%3Fx%3D1",
+        "a-code",
+    )
+    .await;
+
+    assert_eq!(location(&headers), "/games/abc?x=1");
+}
+
+/// Each is off this site, or not a path, once the browser has read it: a
+/// scheme-relative host, a backslash the browser reads as a slash, an
+/// absolute URL, a relative path, a tab the browser strips to leave
+/// `//evil.com`, and a dot segment that normalizes to a path starting `//`,
+/// which a browser would read back as a host. Each names a path on the other
+/// site, so keeping just the path wouldn't pass for refusing it. None refuses
+/// the sign-in.
+#[tokio::test]
+async fn a_return_path_that_is_not_one_of_this_site_s_own_lands_home() {
+    let app = common::provider_app(
+        pool_with_user1().await,
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
+        false,
+    );
+
+    for query in [
+        "?return_to=%2F%2Fevil.com%2Fgames%2Fabc",
+        "?return_to=%2F%5Cevil.com%2Fgames%2Fabc",
+        "?return_to=https%3A%2F%2Fevil.com%2Fgames%2Fabc",
+        "?return_to=games%2Fabc",
+        "?return_to=%2F%09%2Fevil.com%2Fgames%2Fabc",
+        "?return_to=%2F.%2F%2Fevil.com%2Fgames%2Fabc",
+        "?return_to=",
+        "",
+    ] {
+        let (status, headers, _) =
+            sign_in_from(&app, &format!("/auth/fake/login{query}"), "a-code").await;
+
+        assert_eq!(status, StatusCode::SEE_OTHER, "{query}");
+        assert_eq!(location(&headers), "/", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn a_cancelled_sign_in_tries_again_from_the_page_it_started_from() {
+    let app = common::provider_app(
+        pool_with_user1().await,
+        FakeProvider::reporting(&[("user1@gmail.com", true)]),
+        false,
+    );
+    let (state, cookie) = start_at(&app, "/auth/fake/login?return_to=%2Fgames%2Fabc").await;
+
+    let (status, _, page) = common::get(
+        &app,
+        &format!("/auth/fake/callback?error=access_denied&state={state}"),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(page.contains(r#"href="/games/abc""#), "{page}");
+}
+
+#[tokio::test]
+async fn a_login_the_provider_cannot_start_tries_again_from_the_page_it_started_from() {
+    let app = common::provider_app(
+        common::memory_pool().await,
+        FakeProvider::unreachable(),
+        false,
+    );
+
+    let (_, _, page) = common::get(&app, "/auth/fake/login?return_to=%2Fgames%2Fabc", None).await;
+
+    assert!(page.contains(r#"href="/games/abc""#), "{page}");
 }

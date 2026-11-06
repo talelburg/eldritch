@@ -75,8 +75,11 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1237 | GitHub and Google sign-in against the allowlist, PR #1277; slices #1275, #1276 |
 | #1238 | Seating refuses a roster naming one investigator twice, PR #1281 |
 | #1239 | The lobby: creating a game makes a lobby at its own link, any account opening it becomes a member, members take and give up picks live, and the creator orders the seating, moves the lead and starts; Start stores the investigator → account assignment beside the game, PR #1339; slices #1333–#1338 |
+| #1240 | "Your games" lists the account's lobbies, the started games under "Needs you" and "In progress", the unresumable and the finished, each finished one opening on its final board, PR #1344; slices #1340–#1343 |
+| #1241 | A member leaves a lobby or the creator removes one; the creator deletes a game, and reassigns an investigator mid-game; the board knows the creator and the members, PR #1349; slices #1345–#1348 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
+| #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
 
@@ -116,9 +119,9 @@ landed, before phase 9 is scoped.
   (✅ PR #1332).
 
 **4. The lobby: #1236 (✅ PR #1271) + #1224 (✅ PR #1264) + #1230 (✅ PR #1297) →
-#1239 (✅ PR #1339) → #1240 and #1241.** #1241 is rarely used, so it comes late
-and stays small. #1274, returning to the page a sign-in started from, follows
-#1237 (✅ PR #1277) and #1239 (✅ PR #1339).
+#1239 (✅ PR #1339) → #1240 (✅ PR #1344) and #1241 (✅ PR #1349).** #1274
+(✅ PR #1350), returning to the page a sign-in started from, follows #1237
+(✅ PR #1277) and #1239 (✅ PR #1339).
 
 **5. The table: #1230 (✅ PR #1297) → #1242 → #863 → #534 and #1101. #1242 →
 #1243 and #1322.** #1322, the board surface for committed cards, also follows
@@ -126,7 +129,7 @@ and stays small. #1274, returning to the page a sign-in started from, follows
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
-and #1241.
+and #1241 (✅ PR #1349).
 
 **7. Hardening.** #584 after #1225 (✅ PR #1261), #585 after #1236 (✅ PR #1271),
 #586 after #583 (✅ PR #1297), and #588 after #458 (✅ PR #1297).

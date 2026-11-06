@@ -288,3 +288,64 @@ async fn expire_every_session_in(pool: &SqlitePool, from_now: Duration) {
         .await
         .expect("expire the sessions");
 }
+
+/// `POST /auth/dev` on `app` from a loopback `Host`, with the form `body`:
+/// the response's status and `Location`.
+async fn pick_on_dev_picker(app: &axum::Router, body: String) -> (StatusCode, String) {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/auth/dev")
+        .header(header::HOST, "localhost")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from(body))
+        .expect("build the request");
+    let response = app.clone().oneshot(request).await.expect("a response");
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .map(|location| location.to_str().expect("an ASCII Location").to_string())
+        .unwrap_or_default();
+    (response.status(), location)
+}
+
+#[tokio::test]
+async fn the_dev_picker_carries_the_page_it_was_opened_from() {
+    let app = common::dev_auth_app(common::memory_pool().await, common::REGISTRIES, true);
+
+    let (_, _, page) = common::get(&app, "/auth/dev?return_to=%2Fgames%2Fabc", None).await;
+
+    assert!(
+        page.contains(r#"<input type="hidden" name="return_to" value="/games/abc">"#),
+        "{page}"
+    );
+}
+
+#[tokio::test]
+async fn a_dev_sign_in_returns_to_the_page_it_started_from() {
+    let pool = common::memory_pool().await;
+    let id = common::test_account(&pool).await;
+    let app = common::dev_auth_app(pool, common::REGISTRIES, true);
+
+    let (status, location) =
+        pick_on_dev_picker(&app, format!("account_id={id}&return_to=%2Fgames%2Fabc")).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location, "/games/abc");
+}
+
+/// A scheme-relative host, and a dot segment that normalizes to a path
+/// starting `//`, which a browser would read back as a host.
+#[tokio::test]
+async fn a_dev_sign_in_to_a_path_off_this_site_lands_home() {
+    let pool = common::memory_pool().await;
+    let id = common::test_account(&pool).await;
+    let app = common::dev_auth_app(pool, common::REGISTRIES, true);
+
+    for return_to in ["%2F%2Fevil.com", "%2F.%2F%2Fevil.com%2Fgames%2Fabc"] {
+        let (status, location) =
+            pick_on_dev_picker(&app, format!("account_id={id}&return_to={return_to}")).await;
+
+        assert_eq!(status, StatusCode::SEE_OTHER, "{return_to}");
+        assert_eq!(location, "/", "{return_to}");
+    }
+}

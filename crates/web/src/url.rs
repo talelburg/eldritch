@@ -1,11 +1,13 @@
-//! The client's addresses: a game's link, the home page's, and a game's
-//! WebSocket URL.
+//! The client's addresses: a game's link, the home page's, a sign-in
+//! method's, and a game's WebSocket URL.
 //!
 //! A game's link is read from and written to the page's path. The home
-//! page's `?ended=` query names the [`Ended`] that sent a client there. The
-//! WebSocket URL is same-origin (D3): never a hardcoded port.
+//! page's `?ended=` query names the [`Ended`] that sent a client there. A
+//! sign-in method's link names the page to return to. The WebSocket URL is
+//! same-origin (D3): never a hardcoded port.
 
-use protocol::GameId;
+use form_urlencoded::Serializer;
+use protocol::{GameId, RETURN_TO_PARAM};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 #[cfg(target_arch = "wasm32")]
@@ -95,6 +97,20 @@ pub fn ended_from_query(query: &str) -> Option<Ended> {
         .find(|ended| ended.query_value() == value)
 }
 
+/// The link to a sign-in method at `method_url` that returns to `page` (the
+/// page's path and query) once it succeeds. From `/`, where a sign-in lands
+/// anyway, it is `method_url` unchanged.
+#[must_use]
+pub fn sign_in_link(method_url: &str, page: &str) -> String {
+    if page == "/" {
+        return method_url.to_string();
+    }
+    let query = Serializer::new(String::new())
+        .append_pair(RETURN_TO_PARAM, page)
+        .finish();
+    format!("{method_url}?{query}")
+}
+
 /// Build the same-origin WebSocket URL for a game. `location_protocol`
 /// is `window.location.protocol` (`"http:"` / `"https:"`); `host`
 /// includes the port. Upgrades to `wss` under TLS; otherwise `ws`.
@@ -147,6 +163,19 @@ pub fn take_current_ended() -> Option<Ended> {
         let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&path));
     }
     Some(ended)
+}
+
+/// The link to a sign-in method at `method_url` that returns to this page.
+#[cfg(target_arch = "wasm32")]
+#[must_use]
+pub fn current_sign_in_link(method_url: &str) -> String {
+    let location = location();
+    let page = format!(
+        "{}{}",
+        location.pathname().unwrap_or_else(|_| "/".to_string()),
+        location.search().unwrap_or_default()
+    );
+    sign_in_link(method_url, &page)
 }
 
 /// This page's link to `game_id`, under the page's own origin.
@@ -226,6 +255,26 @@ mod tests {
     #[test]
     fn deleted_says_so() {
         assert_eq!(Ended::Deleted.toast(), "This game was deleted");
+    }
+
+    #[test]
+    fn a_sign_in_link_names_the_page_it_started_from() {
+        assert_eq!(
+            sign_in_link("/auth/github/login", "/games/abc"),
+            "/auth/github/login?return_to=%2Fgames%2Fabc"
+        );
+        assert_eq!(
+            sign_in_link("/auth/dev", "/games/abc?x=1"),
+            "/auth/dev?return_to=%2Fgames%2Fabc%3Fx%3D1"
+        );
+    }
+
+    #[test]
+    fn a_sign_in_link_from_home_is_the_method_s_own() {
+        assert_eq!(
+            sign_in_link("/auth/github/login", "/"),
+            "/auth/github/login"
+        );
     }
 
     #[test]

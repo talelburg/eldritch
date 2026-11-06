@@ -17,23 +17,25 @@ pub mod github;
 pub mod google;
 pub(crate) mod oauth;
 pub mod provider;
+pub(crate) mod return_to;
 
 use std::fmt::{Display, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::{FromRequestParts, State};
+use axum::extract::{FromRequestParts, RawQuery, State};
 use axum::http::request::Parts;
 use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::{routing, Form, Json, Router};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use protocol::{AccountId, SignInMethod, SignInRequired, SignedIn};
+use protocol::{AccountId, SignInMethod, SignInRequired, SignedIn, RETURN_TO_PARAM};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use time::Duration;
 
 use crate::accounts::{self, Account};
 use crate::auth::oauth::ConfiguredProvider;
+use crate::auth::return_to::ReturnTo;
 use crate::AppState;
 
 /// The name of the cookie that carries the session id.
@@ -177,22 +179,29 @@ async fn sign_out(State(state): State<AppState>, jar: CookieJar) -> Response {
 }
 
 /// `GET /auth/dev`: a page listing every enabled account, each a button that
-/// signs in as it.
-async fn dev_picker(_: LoopbackDevAuth, State(state): State<AppState>) -> Response {
+/// signs in as it, then goes to the page the `return_to` query names.
+async fn dev_picker(
+    _: LoopbackDevAuth,
+    State(state): State<AppState>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let return_to = ReturnTo::from_query(query.as_deref());
     match accounts::list_enabled(&state.db).await {
-        Ok(enabled) => Html(picker_page(&enabled)).into_response(),
+        Ok(enabled) => Html(picker_page(&enabled, &return_to)).into_response(),
         Err(error) => internal_error("listing the dev picker's accounts", &error).into_response(),
     }
 }
 
-/// The dev picker's form: the account picked.
+/// The dev picker's form: the account picked, and the page to go to.
 #[derive(Deserialize)]
 struct DevSignIn {
     account_id: AccountId,
+    return_to: Option<String>,
 }
 
-/// `POST /auth/dev`: sign in as the picked account, then go to `/`. A picked
-/// id that names no enabled account is a `400`.
+/// `POST /auth/dev`: sign in as the picked account, then go to the
+/// [`ReturnTo`] the form names. A picked id that names no enabled account is
+/// a `400`.
 async fn dev_sign_in(
     _: LoopbackDevAuth,
     State(state): State<AppState>,
@@ -204,10 +213,11 @@ async fn dev_sign_in(
         Ok(false) => return StatusCode::BAD_REQUEST.into_response(),
         Err(error) => return internal_error("account lookup", &error).into_response(),
     }
+    let return_to = ReturnTo::new(form.return_to.as_deref());
     match create_session(&state.db, form.account_id).await {
-        // Relative, so a sign-in through `trunk serve`'s proxy on :3000
-        // lands back on :3000.
-        Ok(session_id) => (jar.add(session_cookie(session_id)), Redirect::to("/")).into_response(),
+        Ok(session_id) => {
+            (jar.add(session_cookie(session_id)), return_to.redirect()).into_response()
+        }
         Err(error) => internal_error("starting a session", &error).into_response(),
     }
 }
@@ -325,8 +335,9 @@ fn is_loopback(host: &str) -> bool {
     matches!(name, "localhost" | "127.0.0.1" | "::1")
 }
 
-/// The dev picker page offering each of `enabled`.
-fn picker_page(enabled: &[Account]) -> String {
+/// The dev picker page offering each of `enabled`, whose sign-in goes on to
+/// `return_to`.
+fn picker_page(enabled: &[Account], return_to: &ReturnTo) -> String {
     let mut buttons = String::new();
     for account in enabled {
         let _ = write!(
@@ -343,7 +354,10 @@ fn picker_page(enabled: &[Account]) -> String {
     }
     page(
         "Dev sign-in",
-        &format!(r#"<form method="post" action="{DEV_PICKER}">{buttons}</form>"#),
+        &format!(
+            r#"<form method="post" action="{DEV_PICKER}"><input type="hidden" name="{RETURN_TO_PARAM}" value="{}">{buttons}</form>"#,
+            escape(return_to.as_str())
+        ),
     )
 }
 
