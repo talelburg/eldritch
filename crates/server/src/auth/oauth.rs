@@ -3,16 +3,17 @@
 //! them.
 //!
 //! Login keeps the provider's [`PendingSignIn`] in an encrypted cookie,
-//! [`SIGN_IN_COOKIE`], and sends the browser to the provider. The callback
+//! [`SIGN_IN_COOKIE`], beside the [`ReturnTo`] its link named, and sends the
+//! browser to the provider. The callback
 //! clears that cookie whatever happens, checks the `state` the provider sent
 //! back against it, exchanges the code for the reported emails, and signs in
-//! as the enabled account holding any verified one (ADR 0023). Every refusal
-//! is a page, and none writes a session.
+//! as the enabled account holding any verified one (ADR 0023), going on to
+//! the [`ReturnTo`]. Every refusal is a page, and none writes a session.
 
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
+use axum::extract::{Query, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{routing, Router};
@@ -26,6 +27,7 @@ use crate::accounts::{self, Email};
 use crate::auth::{
     self,
     provider::{IdentityProvider, PendingSignIn, ProviderError, ReportedEmail},
+    return_to::ReturnTo,
     SIGN_IN_COOKIE,
 };
 use crate::AppState;
@@ -103,7 +105,13 @@ pub(crate) fn routes(
         router
             .route(
                 &format!("/{slug}/login"),
-                routing::get(move |jar: PrivateCookieJar| login(for_login.clone(), jar)),
+                routing::get(move |jar: PrivateCookieJar, RawQuery(query): RawQuery| {
+                    login(
+                        for_login.clone(),
+                        jar,
+                        ReturnTo::from_query(query.as_deref()),
+                    )
+                }),
             )
             .route(
                 &format!("/{slug}/callback"),
@@ -119,29 +127,38 @@ pub(crate) fn routes(
     })
 }
 
-/// What the in-flight cookie holds: which provider the sign-in went to, and
-/// what that provider's callback needs.
+/// What the in-flight cookie holds: which provider the sign-in went to, what
+/// that provider's callback needs, and the page to go to afterwards.
 #[derive(Serialize, Deserialize)]
 struct InFlight {
     provider: String,
     #[serde(flatten)]
     pending: PendingSignIn,
+    /// Defaulted, so a cookie written before this field existed still
+    /// decodes, and its sign-in lands on `/`.
+    #[serde(default)]
+    return_to: ReturnTo,
 }
 
-/// `GET /auth/{provider}/login`: set the in-flight cookie and send the
-/// browser to the provider, or answer the "try again" page when the provider
-/// couldn't be asked where to send it.
-async fn login(configured: ConfiguredProvider, jar: PrivateCookieJar) -> Response {
+/// `GET /auth/{provider}/login`: set the in-flight cookie, keeping
+/// `return_to` in it, and send the browser to the provider, or answer the
+/// "try again" page when the provider couldn't be asked where to send it.
+async fn login(
+    configured: ConfiguredProvider,
+    jar: PrivateCookieJar,
+    return_to: ReturnTo,
+) -> Response {
     let (url, pending) = match configured.authorize().await {
         Ok(authorize) => authorize,
         Err(error) => {
             tracing::warn!(%error, provider = configured.slug(), "starting a sign-in failed");
-            return try_again(StatusCode::BAD_GATEWAY);
+            return try_again(StatusCode::BAD_GATEWAY, &return_to);
         }
     };
     let in_flight = InFlight {
         provider: configured.slug().to_string(),
         pending,
+        return_to,
     };
     let value = serde_json::to_string(&in_flight).expect("an in-flight sign-in serializes");
     // `Lax`, so the cookie goes with the provider's redirect back, which is
@@ -166,7 +183,10 @@ struct Callback {
 }
 
 /// `GET /auth/{provider}/callback`: finish the sign-in, setting the session
-/// cookie and going to `/`, or answer a refusal page.
+/// cookie and going to the in-flight cookie's [`ReturnTo`], or answer a
+/// refusal page. Its "Try again" links to that [`ReturnTo`] too, whenever the
+/// cookie decoded: it is encrypted by this server and its path was checked
+/// at login, so it holds even when the `state` doesn't match.
 async fn callback(
     configured: ConfiguredProvider,
     State(state): State<AppState>,
@@ -178,17 +198,22 @@ async fn callback(
         .get(SIGN_IN_COOKIE)
         .and_then(|cookie| serde_json::from_str::<InFlight>(cookie.value()).ok());
     let in_flight_jar = in_flight_jar.remove(Cookie::build(SIGN_IN_COOKIE).path("/auth"));
-    let account = match signed_in_account(&configured, &state, callback, in_flight).await {
-        Ok(account) => account,
-        Err(refusal) => return (in_flight_jar, refusal).into_response(),
-    };
+    let return_to = in_flight
+        .as_ref()
+        .map(|in_flight| in_flight.return_to.clone())
+        .unwrap_or_default();
+    let account =
+        match signed_in_account(&configured, &state, callback, in_flight, &return_to).await {
+            Ok(account) => account,
+            Err(refusal) => return (in_flight_jar, refusal).into_response(),
+        };
     match auth::create_session(&state.db, account).await {
         // Relative, as the dev picker's is, so a sign-in through `trunk
         // serve`'s proxy lands back on :3000.
         Ok(session_id) => (
             in_flight_jar,
             sessions.add(auth::session_cookie(session_id)),
-            Redirect::to("/"),
+            return_to.redirect(),
         )
             .into_response(),
         Err(error) => (
@@ -205,21 +230,22 @@ async fn signed_in_account(
     state: &AppState,
     callback: Callback,
     in_flight: Option<InFlight>,
+    return_to: &ReturnTo,
 ) -> Result<AccountId, Response> {
     if callback.error.is_some() {
-        return Err(try_again(StatusCode::FORBIDDEN));
+        return Err(try_again(StatusCode::FORBIDDEN, return_to));
     }
     let pending = in_flight
         .filter(|in_flight| in_flight.provider == configured.slug())
         .map(|in_flight| in_flight.pending)
         .filter(|pending| callback.state.as_deref() == Some(pending.state()))
-        .ok_or_else(|| try_again(StatusCode::BAD_REQUEST))?;
+        .ok_or_else(|| try_again(StatusCode::BAD_REQUEST, return_to))?;
     let code = callback
         .code
-        .ok_or_else(|| try_again(StatusCode::BAD_REQUEST))?;
+        .ok_or_else(|| try_again(StatusCode::BAD_REQUEST, return_to))?;
     let reported = configured.exchange(code, pending).await.map_err(|error| {
         tracing::warn!(%error, provider = configured.slug(), "sign-in exchange failed");
-        try_again(StatusCode::BAD_GATEWAY)
+        try_again(StatusCode::BAD_GATEWAY, return_to)
     })?;
 
     let (verified, unverified): (Vec<ReportedEmail>, Vec<ReportedEmail>) =
@@ -245,11 +271,15 @@ async fn signed_in_account(
 }
 
 /// The page for a sign-in that didn't complete: cancelled at the provider,
-/// stale, forged, or failed at the provider.
-fn try_again(status: StatusCode) -> Response {
+/// stale, forged, or failed at the provider. "Try again" goes back to
+/// `return_to`, whose sign-in screen offers the methods again.
+fn try_again(status: StatusCode, return_to: &ReturnTo) -> Response {
     let page = auth::page(
         "Sign-in didn't complete",
-        r#"<p>Sign-in didn't complete. <a href="/">Try again</a>.</p>"#,
+        &format!(
+            r#"<p>Sign-in didn't complete. <a href="{}">Try again</a>.</p>"#,
+            auth::escape(return_to.as_str())
+        ),
     );
     (status, Html(page)).into_response()
 }
