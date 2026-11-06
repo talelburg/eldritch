@@ -55,14 +55,36 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
         "act threshold missing: {text}"
     );
     assert!(
-        text.contains("Objective"),
-        "act ability text missing: {text}"
-    );
-    assert!(
         text.contains("They're Getting Out!"),
         "agenda name missing: {text}"
     );
     assert!(text.contains("doom 1/10"), "agenda doom missing: {text}");
+    // The cards are header-only: their printed text waits for a hover.
+    assert!(
+        !text.contains("Objective"),
+        "act ability text on the card face: {text}"
+    );
+    assert!(
+        !text.contains("Forced"),
+        "agenda ability text on the card face: {text}"
+    );
+
+    let act_text = hovered_popover(&act_card()).await;
+    assert!(
+        act_text.contains("Objective"),
+        "act ability text missing from its popover: {act_text}"
+    );
+    let agenda_text = hovered_popover(&agenda_card()).await;
+    assert!(
+        agenda_text.contains("Forced"),
+        "agenda ability text missing from its popover: {agenda_text}"
+    );
+}
+
+/// Hover `card` and return its popover's text, failing if none opens.
+async fn hovered_popover(card: &Element) -> String {
+    common::hover(card).await;
+    common::popover_text(card).expect("hovering the card opens its popover")
 }
 
 /// The act card's clue line for `act`, staged by code under two seated
@@ -294,9 +316,10 @@ async fn agenda_shows_reverse_face_while_advancing() {
         text.contains("A Lapse in Time"),
         "reverse name shown: {text}"
     );
+    let popover = hovered_popover(&agenda_card()).await;
     assert!(
-        text.contains("discard"),
-        "reverse text (discard-or-horror choice) shown: {text}"
+        popover.contains("discard"),
+        "reverse text (discard-or-horror choice) in the popover: {popover}"
     );
     assert!(
         !text.contains("What's Going On?!"),
@@ -346,7 +369,11 @@ async fn act_shows_reverse_face_while_advancing() {
         text.contains("Breaking the Barrier"),
         "act reverse name shown: {text}"
     );
-    assert!(text.contains("Parlor"), "act reverse text shown: {text}");
+    let popover = hovered_popover(&act_card()).await;
+    assert!(
+        popover.contains("Parlor"),
+        "act reverse text in the popover: {popover}"
+    );
     assert!(
         act_card().class_name().contains("card--reverse"),
         "the flipped act is tagged card--reverse"

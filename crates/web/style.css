@@ -58,16 +58,15 @@
    opaque background + greyed text + dashed border keep the card solid. */
 .map-location.unrevealed .loc-card { background: #ececec; color: #888; border-style: dashed; }
 
-/* Header: `[shroud] Name ★victory [clues]` on three fixed columns, so both
-   numerals sit at the same x in every node and are read by position and colour
-   instead of by a label. */
+/* Header: `[shroud] Name [clues]` on three fixed columns, so both numerals sit
+   at the same x in every node and are read by position and colour instead of
+   by a label. The card is only this header; its printed text is in the
+   popover. */
 .loc-head {
     display: grid; grid-template-columns: 1.35rem 1fr 1.35rem;
     align-items: center; gap: 0.3rem; margin-bottom: 0.15rem;
 }
-/* The name yields first when the header is tight; the victory pip is its
-   sibling, not its content, so an ellipsis can never swallow the star. */
-.loc-title { display: flex; align-items: baseline; min-width: 0; }
+/* The name yields when the header is tight; its full text is its title. */
 .loc-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge {
     width: 1.35rem; height: 1.35rem; box-sizing: border-box;
@@ -91,7 +90,7 @@
 
 /* The satellite rail beside the card. Each occupant is its own bordered box, so
    each can carry its own glow and its own context menu. */
-.node-tokens { flex: none; width: 150px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
+.node-tokens { flex: none; width: 110px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
 .node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1rem 0.25rem; }
 .node-tokens:empty { display: none; }
 .inv-token { color: #157a3a; }
@@ -250,6 +249,9 @@
    `.has-menu` rather than on `.actionable`, because a rail token can be the
    node's only actionable surface and its menu needs the same band (#847). */
 .map-location.has-menu { z-index: 20; }
+/* The same lift for a node whose popover is open: the popover is fixed, but it
+   still paints inside its node's band, under every later node. */
+.map-location.popover-open { z-index: 21; }
 /* Glow and cursor go on the card and its hit-layer, never on the node: the node
    also spans the token rail, and a rail token that shows a pointer while the
    hit-layer doesn't reach it is advertising a click that does nothing. Rail
@@ -269,6 +271,17 @@
     background: #1b1b1b; border: 1px solid #666; padding: 4px;
 }
 .context-menu .menu-item { display: block; width: 100%; text-align: left; cursor: pointer; }
+/* The hover popover (`popover.rs`): a card's full printed text beside the
+   pointer. Fixed, so no overflow ancestor clips it; no pointer events, so it
+   never takes the hover from the card it describes. */
+.popover {
+    position: fixed; z-index: 30; pointer-events: none;
+    width: 20rem; box-sizing: border-box; padding: 0.4rem 0.6rem;
+    background: #fff; color: #222; border: 1px solid #333; border-radius: 4px;
+    box-shadow: 0 3px 12px #0004; font-size: 0.8rem; font-style: normal; font-weight: normal;
+    display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
+}
+.popover-title { font-weight: 600; }
 
 /* Interactivity S3 (#538): hand-card wrapper — glow (Play) / ring (select). */
 .hand-slot { position: relative; }

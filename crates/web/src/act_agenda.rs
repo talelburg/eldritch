@@ -1,8 +1,9 @@
 //! Act + Agenda cards atop the board (above the map).
 //!
 //! A pure render of `GameState` (mirrors `map::location_map`): the current act
-//! and agenda render as cards — name + ability text from the corpus by `code`,
-//! thresholds from the `Act`/`Agenda` structs. The act has no running clue
+//! and agenda render as header-only cards — the name from the corpus by `code`,
+//! thresholds from the `Act`/`Agenda` structs — and a hover
+//! [`Popover`](crate::popover::Popover) shows the face's printed text. The act has no running clue
 //! counter (clues sit on locations/investigators), so it shows `clues to
 //! advance: N` rather than a fake `0/N` ([`clue_line`]). Both cards glow + open a context menu
 //! when the live prompt anchors an option to them
@@ -17,6 +18,7 @@ use game_core::state::{
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
+use crate::popover::{Hover, Popover};
 use crate::{card, controls, registry};
 
 /// Which face of an act/agenda to show.
@@ -77,14 +79,19 @@ pub(crate) fn name_and_text_src(
     (name_src.unwrap_or_else(|| code.to_string()), text_src)
 }
 
-/// [`name_and_text_src`] with the text rendered to views, for the card itself,
-/// read from the registry provided at mount.
-fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
-    let (name, text) = name_and_text_src(registry::use_cards(), code, face);
-    (
-        name,
-        text.map(|t| card::render_segments(card::parse_card_text(&t))),
-    )
+/// [`name_and_text_src`] read from the registry provided at mount.
+fn name_and_text(code: &CardCode, face: Face) -> (String, Option<String>) {
+    name_and_text_src(registry::use_cards(), code, face)
+}
+
+/// An act or agenda card's popover: the name and printed text of the face the
+/// card is showing. The card itself shows only its header and thresholds.
+fn card_popover(name: &str, text: Option<&str>) -> impl IntoView {
+    let text = text.map(|t| card::render_segments(card::parse_card_text(t)));
+    view! {
+        <div class="popover-title">{name.to_owned()}</div>
+        {text.map(|t| view! { <div class="card-text">{t}</div> })}
+    }
 }
 
 /// The act's front-face clue line, `None` for an act that advances on a
@@ -131,13 +138,20 @@ pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView
     if actionable {
         root_class.push_str(" actionable");
     }
+    let hover = Hover::new();
+    let popover_name = name.clone();
     view! {
-        <article class=root_class>
+        <article
+            class=root_class
+            on:mouseenter=move |ev| hover.track(&ev)
+            on:mousemove=move |ev| hover.track(&ev)
+            on:mouseleave=move |_| hover.clear()
+        >
             <div class="card-head">
                 <span class="card-kind">"Act"</span>
                 <span class="card-name">{name}</span>
             </div>
-            <div class="card-text">{text}</div>
+            <Popover hover=hover>{card_popover(&popover_name, text.as_deref())}</Popover>
             {
                 // Thresholds belong to the front face only — the reverse ("1b")
                 // side prints the on-advance effect, not the advance cost.
@@ -186,13 +200,20 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     if actionable {
         root_class.push_str(" actionable");
     }
+    let hover = Hover::new();
+    let popover_name = name.clone();
     view! {
-        <article class=root_class>
+        <article
+            class=root_class
+            on:mouseenter=move |ev| hover.track(&ev)
+            on:mousemove=move |ev| hover.track(&ev)
+            on:mouseleave=move |_| hover.clear()
+        >
             <div class="card-head">
                 <span class="card-kind">"Agenda"</span>
                 <span class="card-name">{name}</span>
             </div>
-            <div class="card-text">{text}</div>
+            <Popover hover=hover>{card_popover(&popover_name, text.as_deref())}</Popover>
             {
                 // Doom belongs to the front face only — the reverse ("1b") side
                 // prints the on-advance effect, not the doom track.

@@ -1,9 +1,12 @@
-//! Regression for #848: a map node keeps its occupancy tokens in view however
-//! long its card text.
+//! Regression for #848: a map node keeps its occupancy tokens in view, and
+//! stays inside its grid cell.
 //!
-//! A fixed-size node with `overflow: hidden` would clip them on the Parlor
-//! 01115, the longest printed text of any Core location, and hide Lita Chantler
-//! once an investigator stands there.
+//! A fixed-size node with `overflow: hidden` clipped them on the Parlor 01115,
+//! the longest printed text of any Core location, and hid Lita Chantler once an
+//! investigator stood there. The card is header-only now (its printed text is
+//! in a hover popover, #1356), and the cells shrank to fit it, so the premise
+//! has turned over: in a 100px row it is the token rail that sets a node's
+//! height, and the Parlor, with Lita always in its rail, is the densest node.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the
@@ -139,7 +142,8 @@ async fn assert_parlor_tokens_visible(investigators: usize) {
 }
 
 /// The reported symptom: an investigator in the Parlor pushed Lita's token past
-/// the bottom of the node.
+/// the bottom of the node. With a header-only card, an investigator's token
+/// joins Lita's in the rail, the part of the node that sets its height.
 #[wasm_bindgen_test]
 async fn parlor_tokens_are_visible_with_one_investigator() {
     assert_parlor_tokens_visible(1).await;
@@ -158,8 +162,11 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 }
 
 /// The node grows with its content, so the other half of "nothing is clipped" is
-/// that a tall node must not grow into the grid row beneath it. The Parlor
-/// (01115, the tallest Core location) sits one row below the Hallway (01112).
+/// that a tall node must not grow into the grid row beneath it. The Parlor,
+/// with two investigators and Lita in its rail, is the tallest node the
+/// Gathering can show, and it sits one row below the Hallway (01112). Nor may
+/// an open popover grow a node: it shows the text the card no longer does, and
+/// it has to do so without pushing the node into its neighbours.
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
     let state = parlor_board(2, [])
@@ -189,13 +196,27 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
         "the Parlor node is {}px tall, taller than the {row_height}px grid row",
         parlor.offset_height(),
     );
+
+    let closed = parlor.offset_height();
+    common::hover(&parlor).await;
+    assert!(
+        common::popover_text(&parlor).is_some(),
+        "hovering the Parlor opens its popover",
+    );
+    assert_eq!(
+        parlor.offset_height(),
+        closed,
+        "the open popover changed the Parlor node's height",
+    );
+    common::unhover(&parlor).await;
 }
 
 /// Connection lines anchor on the *card*, not on the node — the node spans card
 /// plus rail, so its own centre falls in the gap between them. The short-card
-/// case is the one that bites: an unrevealed location is barely a header tall,
-/// so without a card min-height its line would end below the card in empty
-/// space. Asserted by measurement: every endpoint lands inside some card's box.
+/// case is the one that bites, and every card is short now that it is only a
+/// header: without a card min-height a line would end below the card in empty
+/// space. The unrevealed Hallway is the shortest of all. Asserted by
+/// measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
     let state = parlor_board(1, [HALLWAY])

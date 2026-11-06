@@ -40,6 +40,30 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
         .collect()
 }
 
+/// Point at `host` and let the popover it carries render.
+///
+/// CSS `:hover` can't be driven headless, so the popover is signal-driven and
+/// this dispatches the `mouseenter` that opens it, then ticks.
+pub(crate) async fn hover(host: &Element) {
+    let event = web_sys::MouseEvent::new("mouseenter").expect("a mouseenter event");
+    host.dispatch_event(&event).expect("dispatch mouseenter");
+    task::tick().await;
+}
+
+/// Move the pointer off `host`, closing its popover.
+pub(crate) async fn unhover(host: &Element) {
+    let event = web_sys::MouseEvent::new("mouseleave").expect("a mouseleave event");
+    host.dispatch_event(&event).expect("dispatch mouseleave");
+    task::tick().await;
+}
+
+/// The text of the open popover inside `host`, `None` while none is open.
+pub(crate) fn popover_text(host: &Element) -> Option<String> {
+    host.query_selector(".popover")
+        .expect("query")
+        .map(|el| el.text_content().unwrap_or_default())
+}
+
 /// Mount `view` into a container of its own over a fresh store; return the
 /// store and the container. The DOM accumulates across tests in one browser
 /// session, so every assertion is scoped to this container.
