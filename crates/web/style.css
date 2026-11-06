@@ -473,6 +473,20 @@
 .strip-roster { display: flex; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
 .start-strip .dismiss { margin-left: auto; }
 
+/* Whom the live prompt waits on, above the board: grey, with no controls. */
+.waiting-strip, .lead-waiting {
+    background: #ececec; color: #444; border: 1px solid #c8c8c8; border-radius: 4px;
+    padding: 0.4rem 1rem; margin: 0.25rem 0;
+}
+
+/* On an investigator's heading while another account decides for them. */
+@keyframes spinner-turn { to { transform: rotate(360deg); } }
+.spinner {
+    display: inline-block; width: 0.8em; height: 0.8em; margin-left: 0.4em;
+    border: 2px solid #c8c8c8; border-top-color: #e8a23d; border-radius: 50%;
+    vertical-align: middle; animation: spinner-turn 0.9s linear infinite;
+}
+
 /* Toast: why a lobby command was refused. Above the lobby (30) and the lock
    banner (35), below the terminal overlays (38 and up). */
 .toast {

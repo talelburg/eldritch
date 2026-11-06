@@ -270,7 +270,7 @@ impl ClientState {
 
     /// The display name of the member `account`, or [`SOMEONE`] for an
     /// account this client doesn't know as one.
-    fn member_name(&self, account: AccountId) -> &str {
+    pub(crate) fn member_name(&self, account: AccountId) -> &str {
         self.members
             .iter()
             .find(|member| member.account == account)
@@ -359,7 +359,7 @@ pub enum DeleteAnswer {
 }
 
 /// What a toast calls an account this client doesn't know as a member.
-const SOMEONE: &str = "someone";
+pub(crate) const SOMEONE: &str = "someone";
 
 #[cfg(test)]
 impl ClientState {

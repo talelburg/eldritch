@@ -8,13 +8,13 @@
 
 use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::GameState;
+use game_core::state::{GameState, InvestigatorId};
 use leptos::prelude::*;
 
 use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
-use crate::{act_agenda, map, registry, store};
+use crate::{act_agenda, map, prompt_layout, registry, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
@@ -23,20 +23,24 @@ use crate::{act_agenda, map, registry, store};
 pub fn BoardView() -> impl IntoView {
     let store = store::use_store();
 
-    let board = move || match store.get().game {
-        None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
-        Some(game) => view! {
-            <div class="game">
-                {board_menu()}
-                {resolution_banner(&game)}
-                {act_agenda::act_agenda_view(&game)}
-                <div class="board-main">
-                    {map::location_map(&game)}
-                    {investigators_panel(&game)}
+    let board = move || {
+        let state = store.get();
+        let spinners = prompt_layout::layout(&state).spinners();
+        match state.game {
+            None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
+            Some(game) => view! {
+                <div class="game">
+                    {board_menu()}
+                    {resolution_banner(&game)}
+                    {act_agenda::act_agenda_view(&game)}
+                    <div class="board-main">
+                        {map::location_map(&game)}
+                        {investigators_panel(&game, &spinners)}
+                    </div>
                 </div>
-            </div>
+            }
+            .into_any(),
         }
-        .into_any(),
     };
 
     view! {
@@ -60,8 +64,10 @@ fn board_menu() -> impl IntoView {
 
 /// One panel per investigator: name, location, actions, resources,
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
-/// status; hand and cards-in-play as text lists of card names.
-fn investigators_panel(game: &GameState) -> impl IntoView {
+/// status; hand and cards-in-play as text lists of card names. The heading of
+/// each investigator in `spinners` carries a spinner: the prompt waits on them,
+/// and another account answers for them.
+fn investigators_panel(game: &GameState, spinners: &[InvestigatorId]) -> impl IntoView {
     let cards = registry::use_cards();
     let panels: Vec<_> = game
         .investigators
@@ -116,7 +122,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .collect();
             view! {
                 <article class="investigator">
-                    <h3 class="inv-name">{inv.name.clone()}</h3>
+                    {heading(inv.name.clone(), spinners.contains(&inv_id))}
                     <div class="inv-zones-top">
                         <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
                         <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
@@ -169,6 +175,15 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             {panels}
         </section>
     }
+}
+
+/// An investigator panel's heading: their name, and a spinner while
+/// `deciding`. The spinner is text-free, so the heading still reads as the
+/// name alone.
+fn heading(name: String, deciding: bool) -> impl IntoView {
+    let spinner =
+        deciding.then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
+    view! { <h3 class="inv-name">{name}{spinner}</h3> }
 }
 
 /// Scenario-ending banner — rendered only once `GameState.ending` latches.

@@ -18,6 +18,7 @@ use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 use crate::lobby::LobbyScreen;
 #[cfg(target_arch = "wasm32")]
 use crate::prompt_banner::PromptBanner;
+use crate::prompt_layout::WaitingLine;
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]
@@ -135,8 +136,9 @@ pub fn MainColumn() -> impl IntoView {
     }
 }
 
-/// The start strip, above the board: shown once, to a member present at
-/// Start.
+/// What sits above the board: the start strip, shown once, to a member present
+/// at Start, then the line saying whom the live prompt waits on, when it asks
+/// none of this account's investigators.
 #[component]
 fn BoardStrip() -> impl IntoView {
     view! {
@@ -146,6 +148,7 @@ fn BoardStrip() -> impl IntoView {
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }
         }
+        <WaitingLine/>
     }
 }
 
