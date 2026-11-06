@@ -209,6 +209,53 @@ impl Lobby {
         Ok(())
     }
 
+    /// `account` leaves the lobby: [`depart`](Self::depart) it.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::CreatorStays`] for the creator, and
+    /// [`LobbyRefusal::NotAMember`] unless `account` is a member.
+    pub fn leave(&mut self, account: AccountId) -> Result<(), LobbyRefusal> {
+        self.depart(account)
+    }
+
+    /// The creator `by` removes `member` from the lobby:
+    /// [`depart`](Self::depart) it.
+    ///
+    /// # Errors
+    ///
+    /// [`LobbyRefusal::NotCreator`] unless `by` created the lobby,
+    /// [`LobbyRefusal::CreatorStays`] if `member` is the creator, and
+    /// [`LobbyRefusal::NotAMember`] unless `member` is a member.
+    pub fn remove(&mut self, by: AccountId, member: AccountId) -> Result<(), LobbyRefusal> {
+        self.check_creator(by)?;
+        self.depart(member)
+    }
+
+    /// `account` stops being a member, and every pick of its is given up as
+    /// [`give_up`](Self::give_up) gives one up: a lead among them passes to
+    /// the new first position, or to nobody when no picks remain. The creator
+    /// never departs, so the lobby always has someone to order the seating
+    /// and press Start.
+    fn depart(&mut self, account: AccountId) -> Result<(), LobbyRefusal> {
+        if account == self.creator {
+            return Err(LobbyRefusal::CreatorStays);
+        }
+        if !self.is_member(account) {
+            return Err(LobbyRefusal::NotAMember);
+        }
+        self.members.retain(|member| member.account != account);
+        let lead_departs = self
+            .picks
+            .iter()
+            .any(|pick| pick.account == account && self.lead.as_ref() == Some(&pick.investigator));
+        self.picks.retain(|pick| pick.account != account);
+        if lead_departs {
+            self.lead = self.picks.first().map(|pick| pick.investigator.clone());
+        }
+        Ok(())
+    }
+
     /// Refuses a creator-only command from any other `account`.
     fn check_creator(&self, account: AccountId) -> Result<(), LobbyRefusal> {
         if account == self.creator {
@@ -332,8 +379,12 @@ pub enum LobbyRefusal {
         investigator: CardCode,
     },
     /// The command is the creator's alone: ordering the seating, choosing the
-    /// lead, and starting the game.
+    /// lead, removing a member, and starting the game.
     NotCreator,
+    /// The creator can't leave the lobby or be removed from it.
+    CreatorStays,
+    /// The command names an account that isn't a member of the lobby.
+    NotAMember,
     /// The command names an investigator nobody has picked.
     NotPicked {
         /// The investigator named.
