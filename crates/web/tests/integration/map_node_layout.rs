@@ -20,7 +20,6 @@ use game_core::state::{
     Owner as CardOwner,
 };
 use game_core::test_support::{self, location, seat};
-use leptos::prelude::{document, window};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::{Element, HtmlElement};
@@ -30,31 +29,6 @@ use crate::common;
 const PARLOR: LocationId = LocationId(5);
 const HALLWAY: LocationId = LocationId(6);
 const LITA: CardInstanceId = CardInstanceId(60);
-
-/// Inject `style.css` once per browser session, so measurements are taken
-/// against the stylesheet the app ships rather than an unstyled DOM.
-///
-/// Every browser test shares one page, so the stylesheet stays in force for
-/// every test that runs after this one. A test that measures layout calls this
-/// itself rather than depend on whether this file ran first.
-fn inject_style() {
-    let doc = document();
-    if doc
-        .query_selector("style[data-app-css]")
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    let style = doc.create_element("style").expect("create style");
-    style.set_attribute("data-app-css", "1").expect("attr");
-    style.set_text_content(Some(include_str!("../../style.css")));
-    doc.head()
-        .expect("head")
-        .append_child(&style)
-        .expect("append");
-}
 
 /// The Parlor (01115) with Lita Chantler (01117) at it, connected to
 /// `connections`, and `investigators` investigators standing in it. Real card
@@ -90,7 +64,7 @@ async fn mount(state: GameState) -> Element {
 
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
 async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
-    inject_style();
+    common::inject_style();
     common::mount_board(common::hello(state, outcome), &cards::TEST_REGISTRY)
         .await
         .root
@@ -301,12 +275,7 @@ async fn only_the_card_advertises_the_location_menu() {
             .query_selector(sel)
             .expect("query")
             .unwrap_or_else(|| panic!("a {sel} in the node"));
-        window()
-            .get_computed_style(&el)
-            .expect("computed style")
-            .expect("a style declaration")
-            .get_property_value("cursor")
-            .expect("the cursor property")
+        common::computed(&el, "cursor")
     };
     assert_eq!(cursor(".loc-card"), "pointer", "the card takes the click");
     assert_eq!(

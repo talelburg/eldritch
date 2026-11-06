@@ -40,6 +40,41 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
         .collect()
 }
 
+/// Inject `style.css` once per browser session, so measurements are taken
+/// against the stylesheet the app ships rather than an unstyled DOM.
+///
+/// Every browser test shares one page, so the stylesheet stays in force for
+/// every test that runs after this one. A test that measures layout calls this
+/// itself rather than depend on whether another test ran first.
+pub(crate) fn inject_style() {
+    let doc = document();
+    if doc
+        .query_selector("style[data-app-css]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    let style = doc.create_element("style").expect("create style");
+    style.set_attribute("data-app-css", "1").expect("attr");
+    style.set_text_content(Some(include_str!("../../../style.css")));
+    doc.head()
+        .expect("head")
+        .append_child(&style)
+        .expect("append");
+}
+
+/// The computed value of `el`'s CSS `property`.
+pub(crate) fn computed(el: &Element, property: &str) -> String {
+    window()
+        .get_computed_style(el)
+        .expect("computed style")
+        .expect("a style declaration")
+        .get_property_value(property)
+        .expect("the property")
+}
+
 /// Point at `host` and let the popover it carries render.
 ///
 /// CSS `:hover` can't be driven headless, so the popover is signal-driven and

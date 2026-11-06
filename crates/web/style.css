@@ -177,11 +177,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 /* The event log is a drawer. Closed, it is only its toggle, in the
    header. Open, it lies over the board's left side, full height, scrolling with
    the newest entry pinned to the bottom. Monospace so raw Debug lines align.
-   Above the board's menus and popovers' hosts (20/21), below the in-game modals
-   (28/29). */
+   Toggle and drawer alike sit above the in-game modals' scrims and cards
+   (28/29), so the log can be read while a decision waits, and below the lock
+   banner (35) and the terminal overlays. */
+.event-log { position: relative; z-index: 30; }
 .event-log:not(.open) h2 { display: none; }
 .event-log.open {
-    position: fixed; top: 0; bottom: 0; left: 0; z-index: 25; width: 24rem;
+    position: fixed; top: 0; bottom: 0; left: 0; width: 24rem;
     display: flex; flex-direction: column; gap: 0.25rem; box-sizing: border-box; padding: 0.5rem;
     background: #fff; border-right: 1px solid #ccc; box-shadow: 4px 0 14px rgba(0, 0, 0, 0.2);
 }
@@ -302,7 +304,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 /* Interactivity S1/S2 (#536/#537): actionable glow + cursor-anchored menu. */
 /* `.map-location` sets `z-index:1` (a stacking context), so its fixed menu is
    confined to that band. The sticky `.action-bar` that used to overpaint it is
-   gone (#541), but the `z-index:20` lift stays: the log drawer (25) and the result
+   gone (#541), but the `z-index:20` lift stays: the log drawer (30) and the result
    modal still sit above the board, and removing layout code on a reasoning chain
    is how the map band breaks silently. Cards (`.card.actionable`) set no
    z-index, so their menu escapes to the root context. The lift is keyed on

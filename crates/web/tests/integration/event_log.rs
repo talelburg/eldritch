@@ -5,9 +5,9 @@
 //! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use game_core::engine::EngineOutcome;
+use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
 use game_core::event::Event;
-use game_core::state::GameStateBuilder;
+use game_core::state::{GameStateBuilder, InvestigatorId};
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
@@ -118,6 +118,71 @@ async fn a_hello_from_another_build_logs_none_of_its_setup() {
     assert!(
         !text.contains("ScenarioStarted"),
         "a mismatched Hello reaches the overlay, not the log: {text}"
+    );
+}
+
+/// `el`'s stacking level among the page's fixed layers: its computed
+/// `z-index`, or `None` when it isn't positioned, and so sits under every
+/// layer that is.
+fn stacking(el: &Element) -> Option<i32> {
+    if common::computed(el, "position") == "static" {
+        return None;
+    }
+    common::computed(el, "z-index").parse().ok()
+}
+
+/// During "A Lapse in Time" the `▸ log` toggle sat under the decision modal's
+/// scrim and couldn't be opened. The log, closed to its toggle or open as a
+/// drawer, stacks above the scrim. Measured as stacking levels: the page is
+/// shared, so another test's overlay may lie over any point a hit test reads.
+#[wasm_bindgen_test]
+async fn the_log_and_its_toggle_sit_above_a_decisions_scrim() {
+    common::inject_style();
+    let (_store, container) = common::mount(|| leptos::view! { <EventLogView/> });
+    let decision = test_support::awaiting_request(
+        InputRequest::pick_single(
+            "Choose one",
+            vec![
+                ChoiceOption::new(OptionId(0), "Each investigator discards 1 card at random"),
+                ChoiceOption::new(OptionId(1), "The lead investigator takes 2 horror"),
+            ],
+        )
+        .deciding()
+        .answered_by(Responder::Investigator(InvestigatorId(1))),
+    );
+    let state = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .build();
+    let board = common::mount_board(
+        common::hello(state, decision),
+        &test_support::TEST_REGISTRY,
+    )
+    .await;
+    let scrim = board
+        .root
+        .query_selector(".decision-backdrop")
+        .expect("query")
+        .expect("the decision modal's scrim");
+    let scrim_level = stacking(&scrim).expect("the scrim is positioned");
+
+    let log = container
+        .query_selector(".event-log")
+        .expect("query")
+        .expect("the event log");
+    assert!(
+        stacking(&log).is_some_and(|level| level > scrim_level),
+        "the closed log's toggle sits above the scrim ({scrim_level})"
+    );
+    log.query_selector(".log-toggle")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("the toggle")
+        .click();
+    task::tick().await;
+    assert!(log.class_list().contains("open"), "the toggle opens it");
+    assert!(
+        stacking(&log).is_some_and(|level| level > scrim_level),
+        "the open drawer sits above the scrim ({scrim_level})"
     );
 }
 
