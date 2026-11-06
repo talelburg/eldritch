@@ -52,7 +52,7 @@ fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
 /// prompt to name one, it logs an error and sends nothing.
 ///
 /// **The one place the client sends player input.** Every surface that submits —
-/// these controls, the prompt banner's buttons, the skill-test modal's Confirm —
+/// these controls, the prompt strips' buttons, the skill-test modal's Confirm —
 /// goes through it, so the store update and the frame can't drift apart at one
 /// call site. wasm-only, because the `OutboundTx` it needs is; the `tx` is read
 /// from context and absent in render-only mounts, so a missing one is a no-op

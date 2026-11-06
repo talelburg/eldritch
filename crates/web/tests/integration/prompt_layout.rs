@@ -58,8 +58,8 @@ async fn tal_sees_a_spinner_on_wendy_and_a_waiting_strip_with_no_controls() {
         "the waiting strip offers no controls"
     );
     assert!(
-        lobby::texts(&handle, ".prompt-banner").is_empty(),
-        "nothing on Tal's prompt bar"
+        lobby::texts(&handle, ".prompt-strip").is_empty(),
+        "no strip for Tal"
     );
 }
 
@@ -95,8 +95,8 @@ async fn tal_decides_for_the_table_in_the_lead_strip_above_the_board() {
         vec![prompt_text(&handle)]
     );
     assert!(
-        lobby::texts(&handle, ".prompt-banner").is_empty(),
-        "the lead's decision is in no bottom-bar strip"
+        lobby::texts(&handle, ".prompt-strip").is_empty(),
+        "the lead's decision is in no docked strip"
     );
     assert!(spinning(&handle).is_empty(), "a lead decision marks no tab");
     assert!(lobby::texts(&handle, ".lead-waiting").is_empty());

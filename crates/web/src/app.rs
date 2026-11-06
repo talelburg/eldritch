@@ -17,8 +17,8 @@ use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 #[cfg(target_arch = "wasm32")]
 use crate::lobby::LobbyScreen;
 #[cfg(target_arch = "wasm32")]
-use crate::prompt_banner::{LeadStrip, PromptBanner};
-use crate::prompt_layout::{self, OpenTab, OpenTabSignal, WaitingAboveBoard};
+use crate::prompt_banner::LeadStrip;
+use crate::prompt_layout::{OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]
@@ -93,7 +93,7 @@ pub fn provide_board_contexts(store: StoreSignal) {
     provide_context(DecisionLive(decision_live));
 
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
-    // the prompt banner; cleared whenever a PickMultiple isn't live.
+    // the prompt strips; cleared whenever a PickMultiple isn't live.
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let multi_active = Signal::derive(move || store.with(interaction::is_multi_select));
     Effect::new(move |_| {
@@ -106,22 +106,17 @@ pub fn provide_board_contexts(store: StoreSignal) {
         selected,
     });
 
-    // The open tab, which a tab or a map token opens with a click. Until then,
-    // the effect records what `layout` opens on each store change: a player's
-    // settles there when the board first has a game, and a viewer's follows
-    // the active investigator.
+    // The open tab, which a tab or a map token opens with a click. The effect
+    // records what `layout` opens on each store change: a player's settles
+    // there when the board first has a game, a viewer's follows the active
+    // investigator until a click, and a new prompt for one of this account's
+    // investigators opens the first it asks.
     let open = RwSignal::new(OpenTab::default());
     Effect::new(move |_| {
         let current = open.get_untracked();
-        if current.clicked {
-            return;
-        }
-        let opens = store.with(|s| prompt_layout::layout(s, current).open);
-        if opens != current.investigator {
-            open.set(OpenTab {
-                investigator: opens,
-                clicked: false,
-            });
+        let next = store.with(|s| current.settle(s));
+        if next != current {
+            open.set(next);
         }
     });
     provide_context(OpenTabSignal(open));
@@ -181,8 +176,8 @@ fn BoardStrip() -> impl IntoView {
     }
 }
 
-/// The board's in-game modals: the skill-test result, the decision modal and
-/// the prompt banner. Each is its own viewport-fixed overlay, and all of them
+/// The board's in-game modals: the skill-test result and
+/// the decision modal. Each is its own viewport-fixed overlay, and all of them
 /// sit inside the lockout wrapper with the board.
 #[component]
 fn BoardOverlays() -> impl IntoView {
@@ -192,7 +187,6 @@ fn BoardOverlays() -> impl IntoView {
             { view! {
                 <SkillTestResultView/>
                 <DecisionView/>
-                <PromptBanner/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }

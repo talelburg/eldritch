@@ -50,7 +50,7 @@ pub fn options_for(options: &[ChoiceOption], target: &OptionTarget) -> Vec<Choic
 /// The board surface the **live prompt itself** renders on, else `None` — either
 /// because no prompt is live or because the prompt is un-anchored (ADR 0011).
 ///
-/// Read by the prompt banner, which suppresses the open-turn menu's *text* when
+/// Read by the prompt strips, which suppress the open-turn menu's *text* when
 /// this is a [`TurnControl`](OptionTarget::TurnControl) — structurally, rather
 /// than by matching the `"Choose an action"` string. The option-less counterpart
 /// the encounter deck reads is [`confirm_anchor`]. Pure.
@@ -120,7 +120,7 @@ pub fn options_for_hand_card(
 pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 
 /// Multi-select (`PickMultiple`) UI state, shared so hand cards toggle it and the
-/// prompt banner reads it. `active` is true iff a `PickMultiple` prompt is live.
+/// prompt strip reads it. `active` is true iff a `PickMultiple` prompt is live.
 #[derive(Clone)]
 pub struct MultiSelect {
     /// True iff the live outcome is `AwaitingInput { kind: PickMultiple }`.

@@ -10,7 +10,7 @@
 use game_core::engine::{self, EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
-use protocol::AccountId;
+use protocol::{AccountId, LogPosition};
 
 use crate::decision;
 use crate::store::{self, ClientState};
@@ -27,6 +27,9 @@ pub struct PromptLayout {
     /// The investigator whose tab is open, and so is docked. `None` with no
     /// game.
     pub open: Option<InvestigatorId>,
+    /// The investigator whose strip goes in the dock: the open tab's, when the
+    /// prompt asks them and this account holds them.
+    pub dock_strip: Option<InvestigatorId>,
 }
 
 /// One investigator's tab over the dock.
@@ -43,28 +46,50 @@ pub struct Tab {
     /// Where the live prompt puts their part, when it asks them: a
     /// [`Spinner`](Placement::Spinner) when another account answers for them.
     pub asked: Option<Placement>,
+    /// "Needs you": the prompt asks them, this account holds them, and their
+    /// tab isn't the open one.
+    pub needs_you: bool,
 }
 
 /// Which tab this client has open: UI state, kept outside the
 /// [`ClientState`] and passed to [`layout`].
 ///
 /// The board settles it when it first has a game, and a click sets it. Until a
-/// click, a viewer's follows the active investigator.
+/// click, a viewer's follows the active investigator. A new prompt for one of
+/// this account's investigators opens the first it asks, unless the open tab
+/// is already one it asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OpenTab {
     /// The investigator whose tab is open, once one is settled.
     pub investigator: Option<InvestigatorId>,
     /// Whether this account picked it with a click.
     pub clicked: bool,
+    /// The [`ClientState::prompt`] this tab was last settled on, so a prompt
+    /// at any other position is new. `None` before the board has a game.
+    pub prompt: Option<LogPosition>,
 }
 
 impl OpenTab {
-    /// The tab of `investigator`, picked with a click.
+    /// The tab of `investigator`, picked with a click, with no prompt seen.
     #[must_use]
     pub fn clicked(investigator: InvestigatorId) -> Self {
         Self {
             investigator: Some(investigator),
             clicked: true,
+            prompt: None,
+        }
+    }
+
+    /// What this client settles on next for `state`: [`layout`]'s open tab,
+    /// with the prompt it was settled on. A click stands until a new prompt
+    /// moves the tab.
+    #[must_use]
+    pub fn settle(self, state: &ClientState) -> Self {
+        let investigator = layout(state, self).open;
+        Self {
+            investigator,
+            clicked: self.clicked && investigator == self.investigator,
+            prompt: state.game.as_ref().map(|_| state.prompt),
         }
     }
 }
@@ -75,9 +100,15 @@ impl OpenTab {
 pub struct OpenTabSignal(pub RwSignal<OpenTab>);
 
 impl OpenTabSignal {
-    /// Open `investigator`'s tab, as a click does.
+    /// Open `investigator`'s tab, as a click does. The prompt it was settled
+    /// on stays, so the live prompt doesn't count as new.
     pub fn click(self, investigator: InvestigatorId) {
-        self.0.set(OpenTab::clicked(investigator));
+        self.0.update(|open| {
+            *open = OpenTab {
+                prompt: open.prompt,
+                ..OpenTab::clicked(investigator)
+            };
+        });
     }
 }
 
@@ -93,7 +124,8 @@ pub fn use_open_tab() -> OpenTab {
 /// Where one investigator's part of the prompt goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Placement {
-    /// A strip with their controls, in the prompt bar: they are yours.
+    /// A strip with their controls, in the dock while their tab is open: they
+    /// are yours.
     Strip,
     /// A spinner on their tab: another account answers for them.
     Spinner,
@@ -142,7 +174,11 @@ impl PromptLayout {
 #[component]
 pub fn WaitingAboveBoard() -> impl IntoView {
     let store = store::use_store();
-    let above_board = Memo::new(move |_| store.with(|s| layout(s, OpenTab::default()).above_board));
+    let open_tab = use_context::<OpenTabSignal>();
+    let above_board = Memo::new(move |_| {
+        let open = open_tab.map(|open| open.0.get()).unwrap_or_default();
+        store.with(|s| layout(s, open).above_board)
+    });
     move || match above_board.get() {
         Some(AboveBoard::WaitingStrip(text)) => {
             Some(view! { <div class="waiting-strip" role="status">{text}</div> })
@@ -150,7 +186,7 @@ pub fn WaitingAboveBoard() -> impl IntoView {
         Some(AboveBoard::LeadWaitingLine(text)) => {
             Some(view! { <div class="lead-waiting" role="status">{text}</div> })
         }
-        // The lead's strip has controls, so the prompt banner's `LeadStrip`
+        // The lead's strip has controls, so `prompt_banner::LeadStrip`
         // renders it.
         Some(AboveBoard::LeadStrip(_)) | None => None,
     }
@@ -160,20 +196,39 @@ pub fn WaitingAboveBoard() -> impl IntoView {
 /// dock with `open` as what this client has settled so far. Pure.
 ///
 /// An investigator the prompt asks gets a [`Strip`](Placement::Strip) if this account holds them
-/// and a [`Spinner`](Placement::Spinner) if not, and above the board goes the
-/// lead's strip, the lead-waiting line, or the waiting strip, which
-/// shows only when the prompt asks none of your investigators.
+/// and a [`Spinner`](Placement::Spinner) if not. The strip goes in the dock
+/// when their tab is open, and their tab says "needs you" when it isn't. Above
+/// the tabs goes the lead's strip, the lead-waiting line, or the waiting
+/// strip, which shows only when the prompt asks none of your investigators
+/// and the open tab isn't one it asks.
 ///
-/// The open tab is the one clicked. Until a click, a viewer's follows the
-/// active investigator, staying put while no one takes a turn. A player's is
-/// the one settled, and before that, at load: the first investigator of
-/// theirs the prompt asks, in seating order, else their active investigator,
-/// else their first in seating order.
+/// The open tab is the first of yours a new prompt asks, in seating order,
+/// unless the open tab is already one of yours it asks. Otherwise it is the
+/// one clicked. Until a click, a viewer's follows the active investigator,
+/// staying put while no one takes a turn. A player's is the one settled, and
+/// before that, at load, their active investigator, else their first in
+/// seating order. A prompt is new when it sits at a position other than
+/// [`OpenTab::prompt`].
 #[must_use]
 pub fn layout(state: &ClientState, open: OpenTab) -> PromptLayout {
     let mut placed = placements(state);
     placed.tabs = tabs(state, &placed);
-    placed.open = open_tab(state, &placed, open);
+    let opened = open_tab(state, &placed, open);
+    placed.open = opened;
+    let asks_open = |tab: &Tab| Some(tab.investigator) == opened && tab.asked.is_some();
+    // The open tab's spinner already says what the waiting strip would.
+    if placed.tabs.iter().any(asks_open)
+        && matches!(placed.above_board, Some(AboveBoard::WaitingStrip(_)))
+    {
+        placed.above_board = None;
+    }
+    for tab in &mut placed.tabs {
+        let yours = tab.asked == Some(Placement::Strip);
+        if yours && Some(tab.investigator) == opened {
+            placed.dock_strip = opened;
+        }
+        tab.needs_you = yours && Some(tab.investigator) != opened;
+    }
     placed
 }
 
@@ -197,6 +252,7 @@ fn tabs(state: &ClientState, placed: &PromptLayout) -> Vec<Tab> {
                 .iter()
                 .find(|(asked, _)| *asked == investigator)
                 .map(|(_, placement)| *placement),
+            needs_you: false,
         })
         .collect()
 }
@@ -206,6 +262,21 @@ fn open_tab(state: &ClientState, placed: &PromptLayout, open: OpenTab) -> Option
     let tabs = &placed.tabs;
     let has_tab = |id: &InvestigatorId| tabs.iter().any(|tab| tab.investigator == *id);
     let settled = open.investigator.filter(has_tab);
+    // A new prompt for one of yours opens the first it asks, in seating
+    // order, unless the open tab is one it asks.
+    let new_prompt = open.prompt != Some(state.prompt);
+    let first_yours_asked = tabs
+        .iter()
+        .find(|tab| tab.asked == Some(Placement::Strip))
+        .map(|tab| tab.investigator);
+    // A tab another account answers for isn't one to answer from, so it
+    // doesn't hold you.
+    let open_is_asked = tabs
+        .iter()
+        .any(|tab| Some(tab.investigator) == settled && tab.asked == Some(Placement::Strip));
+    if new_prompt && first_yours_asked.is_some() && !open_is_asked {
+        return first_yours_asked;
+    }
     if open.clicked && settled.is_some() {
         return settled;
     }
@@ -223,9 +294,7 @@ fn open_tab(state: &ClientState, placed: &PromptLayout, open: OpenTab) -> Option
     if yours.is_empty() {
         return active.or(settled).or(first);
     }
-    let strips = placed.strips();
     settled
-        .or_else(|| yours.iter().copied().find(|id| strips.contains(id)))
         .or_else(|| active.filter(|id| yours.contains(id)))
         .or_else(|| yours.first().copied())
 }
@@ -495,6 +564,7 @@ mod tests {
         let settled = OpenTab {
             investigator: Some(AGNES),
             clicked: false,
+            ..OpenTab::default()
         };
         assert_eq!(opens(&rolands_turn, settled), Some(AGNES));
     }
@@ -519,6 +589,7 @@ mod tests {
         let followed = OpenTab {
             investigator: Some(DAISY),
             clicked: false,
+            ..OpenTab::default()
         };
         let agness_turn = with_active(seen_by(ALEX, daisys_horror()), AGNES);
         assert_eq!(opens(&agness_turn, followed), Some(AGNES));
@@ -537,6 +608,7 @@ mod tests {
         let followed = OpenTab {
             investigator: Some(DAISY),
             clicked: false,
+            ..OpenTab::default()
         };
         assert_eq!(opens(&no_turn, followed), Some(DAISY));
     }
@@ -650,9 +722,11 @@ mod tests {
         assert_eq!(sam.above_board, None);
     }
 
-    /// The waiting strip text `you` sees for `request`.
-    fn waiting_for(you: AccountId, request: InputRequest) -> String {
-        match layout_of(&seen_by(you, request)).above_board {
+    /// The waiting strip text `you` see for `request` on `open`'s tab, which
+    /// the request doesn't ask.
+    fn waiting_for(you: AccountId, request: InputRequest, open: InvestigatorId) -> String {
+        let state = seen_by(you, request);
+        match layout(&state, clicked_after(&state, open)).above_board {
             Some(AboveBoard::WaitingStrip(text)) => text,
             other => panic!("expected a waiting strip, got {other:?}"),
         }
@@ -675,11 +749,11 @@ mod tests {
     #[test]
     fn the_waiting_text_gives_one_clause_per_account_in_seating_order() {
         assert_eq!(
-            waiting_for(ALEX, daisy_and_wendy()),
+            waiting_for(ALEX, daisy_and_wendy(), ROLAND),
             "Waiting for Sam: Daisy Walker · Jo: Wendy Adams: You may trigger"
         );
         assert_eq!(
-            waiting_for(ALEX, three_reactions()),
+            waiting_for(ALEX, three_reactions(), WENDY),
             "Waiting for Tal: Roland Banks, Agnes Baker · Sam: Daisy Walker: You may trigger"
         );
     }
@@ -689,7 +763,10 @@ mod tests {
         let open_turn = InputRequest::pick_single("Choose an action", vec![])
             .at(OptionTarget::TurnControl(DAISY))
             .answered_by(Responder::Investigator(DAISY));
-        assert_eq!(waiting_for(TAL, open_turn), "Waiting for Sam: Daisy Walker");
+        assert_eq!(
+            waiting_for(TAL, open_turn, ROLAND),
+            "Waiting for Sam: Daisy Walker"
+        );
     }
 
     #[test]
@@ -766,5 +843,165 @@ mod tests {
         let sam = layout_of(&sam);
         assert_eq!(sam.strips(), vec![AGNES]);
         assert_eq!(sam.above_board, None);
+    }
+
+    /// Agnes's hand-size discard, which Tal answers.
+    fn agness_discard() -> InputRequest {
+        InputRequest::pick_single("Choose a card to discard", vec![])
+            .answered_by(Responder::Investigator(AGNES))
+    }
+
+    /// `investigator`'s tab, open with the live prompt of `state` already
+    /// seen, as after a click once it arrived.
+    fn clicked_after(state: &ClientState, investigator: InvestigatorId) -> OpenTab {
+        OpenTab {
+            prompt: Some(state.prompt),
+            ..OpenTab::clicked(investigator)
+        }
+    }
+
+    /// `investigator`'s tab, open from before the live prompt of `state`
+    /// arrived: the prompt is new.
+    fn open_before(state: &ClientState, investigator: InvestigatorId) -> OpenTab {
+        OpenTab {
+            investigator: Some(investigator),
+            clicked: false,
+            prompt: Some(LogPosition(state.prompt.0 - 1)),
+        }
+    }
+
+    /// The tabs `placed` marks "needs you".
+    fn needing_you(placed: &PromptLayout) -> Vec<InvestigatorId> {
+        placed
+            .tabs
+            .iter()
+            .filter(|tab| tab.needs_you)
+            .map(|tab| tab.investigator)
+            .collect()
+    }
+
+    #[test]
+    fn agness_tab_needs_tal_while_he_reads_rolands() {
+        let tal = seen_by(TAL, agness_discard());
+        let placed = layout(&tal, clicked_after(&tal, ROLAND));
+        assert_eq!(placed.open, Some(ROLAND));
+        assert_eq!(needing_you(&placed), vec![AGNES]);
+        assert_eq!(placed.dock_strip, None, "Roland isn't asked");
+
+        let placed = layout(&tal, clicked_after(&tal, AGNES));
+        assert_eq!(needing_you(&placed), vec![], "her strip is in the dock");
+        assert_eq!(placed.dock_strip, Some(AGNES));
+    }
+
+    /// A window offering Roland and Agnes a reaction each.
+    fn roland_and_agnes() -> InputRequest {
+        InputRequest::pick_single(
+            "You may trigger",
+            vec![
+                ChoiceOption::new(OptionId(0), "Agnes's reaction").offered_to(AGNES),
+                ChoiceOption::new(OptionId(1), "Roland's reaction").offered_to(ROLAND),
+            ],
+        )
+        .skippable()
+        .answered_by(Responder::Several)
+    }
+
+    #[test]
+    fn a_window_asking_roland_and_agnes_keeps_rolands_tab_and_leaves_daisys() {
+        let tal = seen_by(TAL, roland_and_agnes());
+
+        let from_roland = layout(&tal, open_before(&tal, ROLAND));
+        assert_eq!(from_roland.open, Some(ROLAND));
+        assert_eq!(from_roland.dock_strip, Some(ROLAND));
+        assert_eq!(needing_you(&from_roland), vec![AGNES]);
+
+        let from_daisy = layout(&tal, open_before(&tal, DAISY));
+        assert_eq!(from_daisy.open, Some(ROLAND), "Roland sits first of Tal's");
+        assert_eq!(from_daisy.dock_strip, Some(ROLAND));
+        assert_eq!(needing_you(&from_daisy), vec![AGNES]);
+    }
+
+    #[test]
+    fn a_new_prompt_for_agnes_opens_her_tab_even_from_one_clicked() {
+        let tal = seen_by(TAL, agness_discard());
+        let clicked_before = OpenTab {
+            prompt: Some(LogPosition(tal.prompt.0 - 1)),
+            ..OpenTab::clicked(DAISY)
+        };
+        assert_eq!(opens(&tal, clicked_before), Some(AGNES));
+    }
+
+    #[test]
+    fn a_tab_clicked_while_the_prompt_waits_stays_open() {
+        let tal = seen_by(TAL, agness_discard());
+        let placed = layout(&tal, clicked_after(&tal, DAISY));
+        assert_eq!(placed.open, Some(DAISY));
+        assert_eq!(needing_you(&placed), vec![AGNES]);
+    }
+
+    #[test]
+    fn a_new_prompt_not_yours_leaves_the_tab_where_it_is() {
+        let tal = with_active(seen_by(TAL, daisys_horror()), ROLAND);
+        assert_eq!(opens(&tal, open_before(&tal, AGNES)), Some(AGNES));
+    }
+
+    #[test]
+    fn tal_on_daisys_tab_sees_no_waiting_strip_and_on_any_other_tab_sees_it() {
+        let tal = seen_by(TAL, daisys_horror());
+        assert_eq!(
+            layout(&tal, clicked_after(&tal, DAISY)).above_board,
+            None,
+            "the spinner on the open tab already says it"
+        );
+        let waiting = Some(AboveBoard::WaitingStrip(
+            "Waiting for Sam: Daisy Walker: Assign the horror".to_owned(),
+        ));
+        for open in [ROLAND, AGNES, WENDY] {
+            assert_eq!(layout(&tal, clicked_after(&tal, open)).above_board, waiting);
+        }
+    }
+
+    #[test]
+    fn a_lead_decision_stays_above_the_tabs_whichever_is_open() {
+        let tal = seen_by(TAL, rats_move());
+        for open in [ROLAND, DAISY] {
+            let placed = layout(&tal, open_before(&tal, open));
+            assert_eq!(placed.open, Some(open), "a lead decision switches nothing");
+            assert_eq!(placed.above_board, Some(AboveBoard::LeadStrip(ROLAND)));
+            assert_eq!(needing_you(&placed), vec![]);
+            assert_eq!(placed.dock_strip, None);
+        }
+    }
+
+    #[test]
+    fn a_reassignment_of_agnes_to_sam_moves_needs_you_and_the_strip() {
+        let mut tal = seen_by(TAL, agness_discard());
+        let mut sam = seen_by(SAM, agness_discard());
+        let gave_agnes_to_sam = ServerMessage::Assigned {
+            by: TAL,
+            investigator: AGNES,
+            assigned: Assignment::from_iter([
+                (ROLAND, TAL),
+                (AGNES, SAM),
+                (DAISY, SAM),
+                (WENDY, JO),
+            ]),
+        };
+        store::reduce(&mut tal, gave_agnes_to_sam.clone());
+        store::reduce(&mut sam, gave_agnes_to_sam);
+
+        let tal = layout(&tal, clicked_after(&tal, ROLAND));
+        assert_eq!(needing_you(&tal), vec![]);
+
+        let sams_open_tab = clicked_after(&sam, DAISY);
+        let on_daisy = layout(&sam, sams_open_tab);
+        assert_eq!(
+            on_daisy.open,
+            Some(DAISY),
+            "a reassignment switches nothing"
+        );
+        assert_eq!(needing_you(&on_daisy), vec![AGNES]);
+        let on_agnes = layout(&sam, clicked_after(&sam, AGNES));
+        assert_eq!(on_agnes.dock_strip, Some(AGNES));
     }
 }

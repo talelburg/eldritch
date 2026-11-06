@@ -191,12 +191,12 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
         .finish();
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
-    // 1. The open turn. The banner stays silent — the menu is anchored to the
+    // 1. The open turn. The strip stays silent — the menu is anchored to the
     //    turn control, so its "Choose an action" text is suppressed structurally
     //    (ADR 0011) rather than by matching the string.
     assert!(
-        h.absent(".prompt-banner"),
-        "the open-turn menu must not put 'Choose an action' in the banner"
+        h.absent(".dock .prompt-strip"),
+        "the open-turn menu must not put 'Choose an action' in the strip"
     );
     assert!(
         !h.is_disabled(".turn-control"),
@@ -221,8 +221,8 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     h.pump().await;
 
     // 4. Rotting Remains' revelation opens a Willpower test. Its commit prompt has
-    //    no board home, so the banner — the floor — carries it. Commit nothing.
-    h.find(".prompt-banner .confirm").click();
+    //    no board home, so the strip — the floor — carries it. Commit nothing.
+    h.find(".dock .prompt-strip .confirm").click();
     h.pump().await;
 
     // 5. The result lands in a modal carrying the acknowledge pause's only
@@ -251,7 +251,7 @@ const KIT: CardInstanceId = CardInstanceId(7);
 /// on the asset the player has just clicked would make the game read as stalled
 /// at exactly the moment it is waiting on them, so the branches present
 /// themselves, on one surface: the modal carries them, the card keeps its glow
-/// but opens no menu, and the banner stands down.
+/// but opens no menu, and the strip stands down.
 #[wasm_bindgen_test]
 async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // An open turn with First Aid 01019 in play and harm to heal, so its
@@ -315,7 +315,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     );
 
     // 3. The modal is the sole surface. The asset still glows — that is the
-    //    provenance signal — but it opens no menu, and the banner renders
+    //    provenance signal — but it opens no menu, and the strip renders
     //    neither the prompt nor the branches, so nothing is offered twice.
     assert!(
         !h.absent(".card-slot.actionable"),
@@ -326,8 +326,8 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
         "but opens no context menu: the modal is the sole surface",
     );
     assert!(
-        h.absent(".prompt-banner .banner-option") && h.absent(".prompt-banner .prompt"),
-        "the banner renders neither the branches nor the prompt text",
+        h.absent(".dock .prompt-strip .banner-option") && h.absent(".dock .prompt-strip .prompt"),
+        "the strip renders neither the branches nor the prompt text",
     );
 
     // 4. The branch is real engine input, and it resolves.
@@ -394,7 +394,7 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
     task::tick().await;
     assert_eq!(h.hand_slots(".hand-slot.selected").len(), 1);
 
-    h.find(".prompt-banner .confirm").click();
+    h.find(".dock .prompt-strip .confirm").click();
     h.pump().await;
 
     let seat2 = &h.state().investigators[&INV2].hand;

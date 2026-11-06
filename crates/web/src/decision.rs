@@ -9,7 +9,7 @@
 //!
 //! It is the **sole** surface for a decision: the card it is printed on keeps its
 //! glow, the provenance signal, but opens no context menu while the modal is up,
-//! and the prompt banner renders neither the prompt text nor the branches. One
+//! and the prompt strip renders neither the prompt text nor the branches. One
 //! choice is never offered on two surfaces, as an anchored option is never
 //! rendered twice.
 //!
@@ -86,7 +86,7 @@ pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decisi
 
 /// True iff the decision modal is up.
 ///
-/// Public because the prompt banner and the board's cards consult it — the
+/// Public because the prompt strips and the board's cards consult it — the
 /// modal is the sole surface, so the rule lives here, with the view it governs,
 /// rather than being re-derived by each of them (the pattern
 /// [`crate::skill_test_result::modal_is_live`] already set). Pure.

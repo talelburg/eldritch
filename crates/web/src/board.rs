@@ -8,7 +8,7 @@
 
 use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::investigator::Investigator;
+use game_core::state::investigator::{Investigator, InvestigatorId};
 use game_core::state::GameState;
 use leptos::prelude::*;
 
@@ -52,6 +52,19 @@ pub fn BoardView() -> impl IntoView {
     }
 }
 
+/// `investigator`'s prompt strip, on wasm, where it can send.
+fn prompt_strip(investigator: InvestigatorId) -> AnyView {
+    #[cfg(target_arch = "wasm32")]
+    {
+        view! { <crate::prompt_banner::PromptStrip investigator=investigator/> }.into_any()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = investigator;
+        ().into_any()
+    }
+}
+
 /// The board's ⋯ menu, on wasm, where it can send.
 fn board_menu() -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
@@ -66,7 +79,8 @@ fn board_menu() -> impl IntoView {
 
 /// The tabs and the dock: one tab per investigator in seating order, carrying
 /// its marks (tinted when this account holds them, ▶ for whose turn it is, ★
-/// for the lead, a spinner while another account answers for them), and below
+/// for the lead, a spinner while another account answers for them, "needs
+/// you" while the prompt asks one of yours whose tab isn't open), and below
 /// them the open tab's investigator. A tab click opens it.
 fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
     let open_tab = use_context::<OpenTabSignal>();
@@ -82,10 +96,14 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                 .unwrap_or_default();
             let spinner = (tab.asked == Some(Placement::Spinner))
                 .then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
+            let needs_you = tab
+                .needs_you
+                .then(|| view! { <span class="tab-needs-you">"needs you"</span> });
             view! {
                 <button
                     class="inv-tab"
                     class:held=tab.held
+                    class:needs-you=tab.needs_you
                     class:open=placed.open == Some(investigator)
                     on:click=move |_| {
                         if let Some(open) = open_tab {
@@ -97,6 +115,7 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                     <span class="tab-name">{name}</span>
                     {tab.lead.then(|| view! { <span class="tab-lead">"★"</span> })}
                     {spinner}
+                    {needs_you}
                 </button>
             }
         })
@@ -106,9 +125,10 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
             .tabs
             .iter()
             .any(|tab| tab.investigator == open && tab.held);
+        let strip = placed.dock_strip == Some(open);
         game.investigators
             .get(&open)
-            .map(|inv| investigator_panel(game, inv, held))
+            .map(|inv| investigator_panel(game, inv, held, strip))
     });
     view! {
         <section class="dock">
@@ -118,10 +138,16 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
     }
 }
 
-/// One investigator's panel in the dock: name, stats, actions, resources,
-/// clues and status; in play, the threat area with engaged enemies, discard,
-/// deck and hand.
-fn investigator_panel(game: &GameState, inv: &Investigator, held: bool) -> impl IntoView {
+/// One investigator's panel in the dock: name, their prompt strip when it is
+/// docked, stats, actions, resources, clues and status; in play, the threat
+/// area with engaged enemies, discard, deck and hand.
+fn investigator_panel(
+    game: &GameState,
+    inv: &Investigator,
+    held: bool,
+    strip: bool,
+) -> impl IntoView {
+    let strip = strip.then(|| prompt_strip(inv.id));
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();
@@ -162,6 +188,7 @@ fn investigator_panel(game: &GameState, inv: &Investigator, held: bool) -> impl 
     view! {
         <article class="investigator">
             <h3 class="inv-name">{inv.name.clone()}</h3>
+            {strip}
             <div class="inv-zones-top">
                 <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
                 <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>

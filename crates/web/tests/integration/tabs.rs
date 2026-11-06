@@ -5,12 +5,14 @@
 //! Baker, Sam holds Daisy Walker, and Alex is a viewer.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::engine::EngineOutcome;
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, InputRequest, Responder};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{location, seat};
+use game_core::test_support::{self, location, seat};
 use leptos::task;
 use protocol::lobby::Member;
-use protocol::{AccountId, Assignment, GameId, LogPosition, ServerMessage};
+use protocol::logged_answer::LoggedResponse;
+use protocol::{AccountId, Applied, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
@@ -208,4 +210,83 @@ async fn a_viewer_sees_every_hand_as_a_count() {
         );
         assert!(lobby::texts(&handle, ".dock .hand-slot").is_empty());
     }
+}
+
+/// Agnes's prompt: a skippable choice of what to discard, which Tal answers.
+fn agness_discard() -> EngineOutcome {
+    test_support::awaiting_request(
+        InputRequest::pick_single("Choose a card to discard", vec![])
+            .skippable()
+            .answered_by(Responder::Investigator(AGNES)),
+    )
+}
+
+/// The `Applied` that answers the prompt at log position 0 and leaves
+/// `outcome` live, with the table's game as it was.
+fn next_prompt(outcome: EngineOutcome) -> ServerMessage {
+    ServerMessage::Applied(Applied {
+        answered: LogPosition(0),
+        by: ROLAND,
+        response: LoggedResponse::Confirm,
+        prompt: LogPosition(1),
+        state: Box::new(table().build()),
+        events: Vec::new(),
+        outcome,
+    })
+}
+
+#[wasm_bindgen_test]
+async fn a_new_prompt_for_agnes_opens_her_tab_with_her_strip_in_the_dock() {
+    let mut handle = mount_table(YOU, table(), EngineOutcome::Done).await;
+    assert_eq!(docked(&handle), "Roland Banks");
+
+    common::arrives(&handle, next_prompt(agness_discard())).await;
+    task::tick().await;
+
+    assert_eq!(docked(&handle), "Agnes Baker");
+    assert_eq!(
+        lobby::texts(&handle, ".dock .investigator .prompt-strip .strip-name"),
+        vec!["Agnes Baker"]
+    );
+    assert_eq!(lobby::texts(&handle, ".prompt-strip").len(), 1);
+    lobby::click(&handle, ".dock .prompt-strip .pass");
+    task::tick().await;
+    match lobby::sent(&mut handle) {
+        ClientMessage::Submit {
+            action:
+                PlayerAction::ResolveInput {
+                    investigator,
+                    response,
+                },
+            ..
+        } => assert_eq!((investigator, response), (AGNES, InputResponse::Skip)),
+        other => panic!("expected a ResolveInput, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn agness_tab_needs_tal_while_he_reads_rolands() {
+    let handle = mount_table(YOU, table(), agness_discard()).await;
+    assert_eq!(docked(&handle), "Agnes Baker");
+    assert!(lobby::texts(&handle, ".inv-tab.needs-you").is_empty());
+
+    open_tab(&handle, "Roland Banks").await;
+    assert_eq!(docked(&handle), "Roland Banks");
+    assert!(lobby::texts(&handle, ".prompt-strip").is_empty());
+    assert_eq!(
+        lobby::texts(&handle, ".inv-tab.needs-you .tab-name"),
+        vec!["Agnes Baker"]
+    );
+}
+
+#[wasm_bindgen_test]
+async fn the_waiting_strip_hides_while_tal_reads_daisys_tab() {
+    let daisys_horror = test_support::awaiting_request(
+        InputRequest::confirm("Assign the horror").answered_by(Responder::Investigator(DAISY)),
+    );
+    let handle = mount_table(YOU, table(), daisys_horror).await;
+    assert_eq!(lobby::texts(&handle, ".waiting-strip").len(), 1);
+
+    open_tab(&handle, "Daisy Walker").await;
+    assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
 }
