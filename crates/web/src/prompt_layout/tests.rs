@@ -1,4 +1,5 @@
 use game_core::engine::{ChoiceOption, InputRequest, OptionId};
+use game_core::scenario::ScenarioEnding;
 use game_core::state::{GameState, GameStateBuilder};
 use game_core::test_support::{self, seat};
 use protocol::lobby::Member;
@@ -142,6 +143,30 @@ fn each_tab_marks_whether_you_hold_them_whose_turn_it_is_and_who_leads() {
         layout_of(&alex).tabs.iter().all(|tab| !tab.held),
         "a viewer holds no tab"
     );
+}
+
+/// Once the scenario has ended nobody takes a turn and nobody leads, so no tab
+/// carries ▶ or ★. The playthrough of PR #1359 ended with both of Tal's
+/// investigators defeated: Roland's tab lost its ★ but kept its ▶.
+#[test]
+fn no_tab_is_marked_once_the_scenario_has_ended() {
+    let mut tal = with_active(
+        ClientState {
+            outcome: Some(EngineOutcome::Done),
+            ..seen_by(TAL, daisys_horror())
+        },
+        ROLAND,
+    );
+    if let Some(game) = &mut tal.game {
+        game.ending = Some(ScenarioEnding::NoResolution);
+    }
+    let marked: Vec<_> = layout_of(&tal)
+        .tabs
+        .iter()
+        .filter(|tab| tab.active || tab.lead)
+        .map(|tab| tab.investigator)
+        .collect();
+    assert_eq!(marked, vec![]);
 }
 
 #[test]

@@ -274,7 +274,11 @@ fn tabs(state: &ClientState, placed: &PromptLayout) -> Vec<Tab> {
     let Some(game) = &state.game else {
         return Vec::new();
     };
-    let lead = engine::the_lead(game);
+    // Once the scenario has ended nobody takes a turn or leads, though the
+    // state still names whoever did last.
+    let playing = game.ending.is_none();
+    let lead = engine::the_lead(game).filter(|_| playing);
+    let active = game.active_investigator.filter(|_| playing);
     let mut seated: Vec<InvestigatorId> = game.investigators.keys().copied().collect();
     seated.sort_by_key(|id| seat_rank(state, *id));
     seated
@@ -282,7 +286,7 @@ fn tabs(state: &ClientState, placed: &PromptLayout) -> Vec<Tab> {
         .map(|investigator| Tab {
             investigator,
             held: state.holds(investigator),
-            active: game.active_investigator == Some(investigator),
+            active: active == Some(investigator),
             lead: lead == Some(investigator),
             asked: placed
                 .investigators
