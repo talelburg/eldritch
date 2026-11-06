@@ -313,7 +313,6 @@ enum Outbound {
 fn outbound(event: RoomEvent, account: AccountId) -> Outbound {
     let message = match event {
         RoomEvent::Applied(committed) => ServerMessage::Applied(committed.applied_for(account)),
-        RoomEvent::Lobby(view) => room::lobby_message(account, (*view).clone(), false),
         RoomEvent::Started(live) => live.hello_for(account),
         RoomEvent::Departed {
             account: departing, ..
@@ -323,7 +322,10 @@ fn outbound(event: RoomEvent, account: AccountId) -> Outbound {
                 reason: "no longer a member",
             }
         }
-        RoomEvent::Departed { view, .. } => room::lobby_message(account, (*view).clone(), false),
+        // Every other connection is sent the lobby without the departed.
+        RoomEvent::Lobby(view) | RoomEvent::Departed { view, .. } => {
+            room::lobby_message(account, (*view).clone(), false)
+        }
     };
     Outbound::Send(Box::new(message))
 }

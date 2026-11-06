@@ -209,7 +209,10 @@ impl Lobby {
         Ok(())
     }
 
-    /// `account` leaves the lobby: [`depart`](Self::depart) it.
+    /// `account` leaves the lobby: it stops being a member, and every pick of
+    /// its is given up as [`give_up`](Self::give_up) gives one up, so a lead
+    /// among them passes to the new first position, or to nobody when no
+    /// picks remain.
     ///
     /// # Errors
     ///
@@ -219,8 +222,8 @@ impl Lobby {
         self.depart(account)
     }
 
-    /// The creator `by` removes `member` from the lobby:
-    /// [`depart`](Self::depart) it.
+    /// The creator `by` removes `member` from the lobby, with what
+    /// [`leave`](Self::leave) does to a member and its picks.
     ///
     /// # Errors
     ///

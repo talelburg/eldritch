@@ -676,7 +676,7 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// resume it.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
-/// The close code ending each of an account's WebSockets to a game it is no
+/// The close code ending every WebSocket an account has open to a game it is no
 /// longer a member of: it left the lobby, or the creator removed it.
 ///
 /// It is not retried: a reconnect would make the account a member again,
