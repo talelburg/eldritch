@@ -10,9 +10,10 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameState, GameStateBuilder};
 use game_core::test_support;
+use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web_sys::{Element, HtmlButtonElement};
+use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
 use crate::common;
 
@@ -28,7 +29,7 @@ async fn mount(state: GameState) -> Element {
     .root
 }
 
-/// The `.deck-count` text of each `.player-deck`, in panel order.
+/// The `.deck-count` text of each `.player-deck`: the docked investigator's.
 fn deck_counts(root: &Element) -> Vec<String> {
     let decks = root.query_selector_all(".player-deck").expect("query");
     (0..decks.length())
@@ -58,7 +59,16 @@ async fn each_panel_shows_its_own_deck_count() {
         .build();
 
     let root = mount(state).await;
-    assert_eq!(deck_counts(&root), vec!["3".to_string(), "1".to_string()]);
+    assert_eq!(deck_counts(&root), vec!["3".to_string()]);
+
+    root.query_selector_all(".inv-tab")
+        .expect("query")
+        .item(1)
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+        .expect("the second investigator's tab")
+        .click();
+    task::tick().await;
+    assert_eq!(deck_counts(&root), vec!["1".to_string()]);
 }
 
 #[wasm_bindgen_test]

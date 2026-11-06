@@ -334,7 +334,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
 }
 
 #[wasm_bindgen_test]
-async fn map_and_investigators_are_inside_board_main() {
+async fn map_and_dock_are_inside_board_main() {
     let state = GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
         .with_seat(roland(1))
@@ -351,10 +351,10 @@ async fn map_and_investigators_are_inside_board_main() {
         ".map must be a descendant of .board-main"
     );
     assert!(
-        game.query_selector(".board-main .investigators")
+        game.query_selector(".board-main .dock")
             .expect("query ok")
             .is_some(),
-        ".investigators must be a descendant of .board-main"
+        ".dock must be a descendant of .board-main"
     );
 }
 

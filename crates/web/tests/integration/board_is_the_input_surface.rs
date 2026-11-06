@@ -28,7 +28,7 @@ use protocol::{ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store;
-use web_sys::{Element, HtmlButtonElement, HtmlElement};
+use web_sys::{HtmlButtonElement, HtmlElement};
 
 use crate::common::{self, BoardHandle};
 
@@ -121,16 +121,28 @@ impl Harness {
             .disabled()
     }
 
-    /// The hand slots on the `n`th investigator panel, in seat order.
-    fn hand_slots(&self, n: u32, sel: &str) -> Vec<HtmlElement> {
+    /// Open the `n`th investigator's tab, in seat order, and let the board
+    /// react.
+    async fn open_tab(&self, n: u32) {
+        self.board
+            .root
+            .query_selector_all(".inv-tab")
+            .expect("query")
+            .item(n)
+            .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+            .expect("an investigator's tab")
+            .click();
+        task::tick().await;
+    }
+
+    /// The hand slots on the docked investigator's panel.
+    fn hand_slots(&self, sel: &str) -> Vec<HtmlElement> {
         let panel = self
             .board
             .root
-            .query_selector_all(".investigator")
+            .query_selector(".dock .investigator")
             .expect("query")
-            .item(n)
-            .and_then(|node| node.dyn_into::<Element>().ok())
-            .expect("an investigator panel");
+            .expect("a docked investigator");
         let slots = panel.query_selector_all(sel).expect("query");
         (0..slots.length())
             .filter_map(|i| slots.item(i))
@@ -360,23 +372,27 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
     let outcome = test_support::awaiting_request(seeded.prompt().clone());
     let mut h = Harness::mount(seeded.state().clone(), outcome).await;
 
+    h.open_tab(0).await;
     assert!(
-        h.hand_slots(0, ".hand-slot.selectable").is_empty(),
+        h.hand_slots(".hand-slot.selectable").is_empty(),
         "seat 1's hand is not in selection mode"
     );
+    h.open_tab(1).await;
     assert_eq!(
-        h.hand_slots(1, ".hand-slot.selectable").len(),
+        h.hand_slots(".hand-slot.selectable").len(),
         2,
         "seat 2's whole hand is"
     );
 
     // A click on seat 1's card selects nothing; seat 2 picks their second card.
-    h.hand_slots(0, ".hand-slot")[0].click();
+    h.open_tab(0).await;
+    h.hand_slots(".hand-slot")[0].click();
     task::tick().await;
-    h.hand_slots(1, ".hand-slot")[1].click();
+    assert!(h.hand_slots(".hand-slot.selected").is_empty());
+    h.open_tab(1).await;
+    h.hand_slots(".hand-slot")[1].click();
     task::tick().await;
-    assert!(h.hand_slots(0, ".hand-slot.selected").is_empty());
-    assert_eq!(h.hand_slots(1, ".hand-slot.selected").len(), 1);
+    assert_eq!(h.hand_slots(".hand-slot.selected").len(), 1);
 
     h.find(".prompt-banner .confirm").click();
     h.pump().await;

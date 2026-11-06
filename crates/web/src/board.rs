@@ -8,25 +8,26 @@
 
 use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::investigator::InvestigatorId;
+use game_core::state::investigator::Investigator;
 use game_core::state::GameState;
 use leptos::prelude::*;
 
 use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
+use crate::prompt_layout::{OpenTabSignal, Placement, PromptLayout};
 use crate::{act_agenda, map, prompt_layout, registry, store};
 
 /// Read-only board. Always renders a status line (connection status +
-/// last rejection); renders the panels when a game is present, else a
-/// placeholder.
+/// last rejection); renders the map and the dock when a game is present, else
+/// a placeholder.
 #[component]
 pub fn BoardView() -> impl IntoView {
     let store = store::use_store();
 
     let board = move || {
         let state = store.get();
-        let spinners = prompt_layout::layout(&state).spinners();
+        let placed = prompt_layout::layout(&state, prompt_layout::use_open_tab());
         match state.game {
             None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
             Some(game) => view! {
@@ -36,7 +37,7 @@ pub fn BoardView() -> impl IntoView {
                     {act_agenda::act_agenda_view(&game)}
                     <div class="board-main">
                         {map::location_map(&game)}
-                        {investigators_panel(&game, &spinners)}
+                        {dock(&game, &placed)}
                     </div>
                 </div>
             }
@@ -63,128 +64,180 @@ fn board_menu() -> impl IntoView {
     }
 }
 
-/// One panel per investigator: name, location, actions, resources,
-/// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
-/// status; hand and cards-in-play as text lists of card names. The heading of
-/// each investigator in `spinners` carries a spinner: the prompt waits on them,
-/// and another account answers for them.
-fn investigators_panel(game: &GameState, spinners: &[InvestigatorId]) -> impl IntoView {
-    let cards = registry::use_cards();
-    let panels: Vec<_> = game
-        .investigators
-        .values()
-        .map(|inv| {
-            let inv_id = inv.id;
-            let deck_remaining = inv.deck.len();
-            let hand: Vec<_> = inv
-                .hand
-                .iter()
-                .cloned()
-                .enumerate()
-                .map(|(i, code)| {
-                    let index = u8::try_from(i).unwrap_or(u8::MAX);
-                    view! {
-                        <HandCardView code=code investigator=inv_id index=index/>
-                    }
-                })
-                .collect();
-            let in_play: Vec<_> = inv
-                .cards_in_play
-                .iter()
-                .cloned()
-                .map(|c| view! { <InPlayCardView instance=c/> })
-                .collect();
-            let threat: Vec<_> = inv
-                .threat_area
-                .iter()
-                .cloned()
-                .map(|c| view! { <InPlayCardView instance=c/> })
-                .collect();
-            let engaged: Vec<_> = game
-                .enemies
-                .values()
-                .filter(|e| e.engaged_with == Some(inv.id))
-                .cloned()
-                .map(|e| view! { <EnemyCard enemy=e/> })
-                .collect();
-            let vitals = view! {
-                <div class="inv-vitals">
-                    <span class="inv-skills">
-                        "W" {inv.skills.willpower} " I" {inv.skills.intellect}
-                        " C" {inv.skills.combat} " A" {inv.skills.agility}
-                    </span>
-                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health(cards)}</span>
-                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
-                </div>
-            };
-            // Standard plus additional: "Skids" O'Toole's bought action is a pip too.
-            let pips: Vec<_> = (0..engine::actions_available(game, cards, inv_id))
-                .map(|_| view! { <span class="pip">"●"</span> })
-                .collect();
+/// The tabs and the dock: one tab per investigator in seating order, carrying
+/// its marks (tinted when this account holds them, ▶ for whose turn it is, ★
+/// for the lead, a spinner while another account answers for them), and below
+/// them the open tab's investigator. A tab click opens it.
+fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
+    let open_tab = use_context::<OpenTabSignal>();
+    let tabs: Vec<_> = placed
+        .tabs
+        .iter()
+        .map(|tab| {
+            let investigator = tab.investigator;
+            let name = game
+                .investigators
+                .get(&investigator)
+                .map(|inv| inv.name.clone())
+                .unwrap_or_default();
+            let spinner = (tab.asked == Some(Placement::Spinner))
+                .then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
             view! {
-                <article class="investigator">
-                    {heading(inv.name.clone(), spinners.contains(&inv_id))}
-                    <div class="inv-zones-top">
-                        <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
-                        <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
-                    </div>
-                    <div class="inv-zones-bottom">
-                        <div class="investigator-block">
-                            <div class="investigator-card">
-                                <InPlayCardView instance=inv.investigator_card.clone()/>
-                                {vitals}
-                            </div>
-                            <div class="inv-meta">
-                                <span class="inv-actions">"actions " {pips}</span>
-                                <span class="inv-resources">
-                                    "resources " {inv.resources}
-                                    // The Gain-resource affordance sits with the
-                                    // number it changes.
-                                    <AnchoredControl
-                                        label="Gain resource".to_string()
-                                        class="resource-control"
-                                        target=OptionTarget::ResourcePool(inv_id)
-                                    />
-                                </span>
-                                <span class="inv-clues">"clues " {inv.clues}</span>
-                                <span class="inv-status">{format!("{:?}", inv.status)}</span>
-                            </div>
-                            // End turn lives on the investigator's own panel, in
-                            // the same place all game — greyed out off-turn rather
-                            // than vanishing.
-                            <AnchoredControl
-                                label="End turn".to_string()
-                                class="turn-control"
-                                target=OptionTarget::TurnControl(inv_id)
-                            />
-                        </div>
-                        // Each investigator shows their *own* deck, so a
-                        // multiplayer board never leaves a count ambiguous.
-                        <PlayerDeckView
-                            investigator=inv_id
-                            remaining=deck_remaining
-                        />
-                        <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
-                    </div>
-                </article>
+                <button
+                    class="inv-tab"
+                    class:held=tab.held
+                    class:open=placed.open == Some(investigator)
+                    on:click=move |_| {
+                        if let Some(open) = open_tab {
+                            open.click(investigator);
+                        }
+                    }
+                >
+                    {tab.active.then(|| view! { <span class="tab-active">"▶"</span> })}
+                    <span class="tab-name">{name}</span>
+                    {tab.lead.then(|| view! { <span class="tab-lead">"★"</span> })}
+                    {spinner}
+                </button>
             }
         })
         .collect();
+    let docked = placed.open.and_then(|open| {
+        let held = placed
+            .tabs
+            .iter()
+            .any(|tab| tab.investigator == open && tab.held);
+        game.investigators
+            .get(&open)
+            .map(|inv| investigator_panel(game, inv, held))
+    });
     view! {
-        <section class="investigators">
-            <h2>"Investigators"</h2>
-            {panels}
+        <section class="dock">
+            <nav class="inv-tabs">{tabs}</nav>
+            {docked}
         </section>
     }
 }
 
-/// An investigator panel's heading: their name, and a spinner while
-/// `deciding`. The spinner is text-free, so the heading still reads as the
-/// name alone.
-fn heading(name: String, deciding: bool) -> impl IntoView {
-    let spinner =
-        deciding.then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
-    view! { <h3 class="inv-name">{name}{spinner}</h3> }
+/// One investigator's panel in the dock: name, stats, actions, resources,
+/// clues and status; in play, the threat area with engaged enemies, discard,
+/// deck and hand.
+fn investigator_panel(game: &GameState, inv: &Investigator, held: bool) -> impl IntoView {
+    let cards = registry::use_cards();
+    let inv_id = inv.id;
+    let deck_remaining = inv.deck.len();
+    let hand = hand_view(inv, held);
+    let in_play: Vec<_> = inv
+        .cards_in_play
+        .iter()
+        .cloned()
+        .map(|c| view! { <InPlayCardView instance=c/> })
+        .collect();
+    let threat: Vec<_> = inv
+        .threat_area
+        .iter()
+        .cloned()
+        .map(|c| view! { <InPlayCardView instance=c/> })
+        .collect();
+    let engaged: Vec<_> = game
+        .enemies
+        .values()
+        .filter(|e| e.engaged_with == Some(inv.id))
+        .cloned()
+        .map(|e| view! { <EnemyCard enemy=e/> })
+        .collect();
+    let vitals = view! {
+        <div class="inv-vitals">
+            <span class="inv-skills">
+                "W" {inv.skills.willpower} " I" {inv.skills.intellect}
+                " C" {inv.skills.combat} " A" {inv.skills.agility}
+            </span>
+            <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health(cards)}</span>
+            <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
+        </div>
+    };
+    // Standard plus additional: "Skids" O'Toole's bought action is a pip too.
+    let pips: Vec<_> = (0..engine::actions_available(game, cards, inv_id))
+        .map(|_| view! { <span class="pip">"●"</span> })
+        .collect();
+    view! {
+        <article class="investigator">
+            <h3 class="inv-name">{inv.name.clone()}</h3>
+            <div class="inv-zones-top">
+                <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
+                <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
+            </div>
+            <div class="inv-zones-bottom">
+                <div class="investigator-block">
+                    <div class="investigator-card">
+                        <InPlayCardView instance=inv.investigator_card.clone()/>
+                        {vitals}
+                    </div>
+                    <div class="inv-meta">
+                        <span class="inv-actions">"actions " {pips}</span>
+                        <span class="inv-resources">
+                            "resources " {inv.resources}
+                            // The Gain-resource affordance sits with the
+                            // number it changes.
+                            <AnchoredControl
+                                label="Gain resource".to_string()
+                                class="resource-control"
+                                target=OptionTarget::ResourcePool(inv_id)
+                            />
+                        </span>
+                        <span class="inv-clues">"clues " {inv.clues}</span>
+                        <span class="inv-status">{format!("{:?}", inv.status)}</span>
+                    </div>
+                    // End turn lives on the investigator's own panel, in
+                    // the same place all game — greyed out off-turn rather
+                    // than vanishing.
+                    <AnchoredControl
+                        label="End turn".to_string()
+                        class="turn-control"
+                        target=OptionTarget::TurnControl(inv_id)
+                    />
+                </div>
+                <div class="discard">
+                    <h4>"Discard"</h4>
+                    <span class="discard-count">{inv.discard.len()}</span>
+                </div>
+                // Each investigator shows their *own* deck, so a
+                // multiplayer board never leaves a count ambiguous.
+                <PlayerDeckView
+                    investigator=inv_id
+                    remaining=deck_remaining
+                />
+                <div class="hand"><h4>"Hand"</h4>{hand}</div>
+            </div>
+        </article>
+    }
+}
+
+/// An investigator's hand: their cards when this account `held` them, and
+/// otherwise a count of face-down cards, so no card of it reaches the DOM.
+fn hand_view(inv: &Investigator, held: bool) -> AnyView {
+    if !held {
+        return view! {
+            <div class="hand-hidden">
+                <div class="deck-back"></div>
+                <span class="hand-count">{inv.hand.len()}</span>
+            </div>
+        }
+        .into_any();
+    }
+    let inv_id = inv.id;
+    let slots: Vec<_> = inv
+        .hand
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, code)| {
+            let index = u8::try_from(i).unwrap_or(u8::MAX);
+            view! {
+                <HandCardView code=code investigator=inv_id index=index/>
+            }
+        })
+        .collect();
+    view! { <div class="card-row">{slots}</div> }.into_any()
 }
 
 /// Scenario-ending banner — rendered only once `GameState.ending` latches.

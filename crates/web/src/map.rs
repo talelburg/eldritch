@@ -14,6 +14,7 @@ use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
+use crate::prompt_layout::OpenTabSignal;
 use crate::{card, names, registry};
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
@@ -292,6 +293,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
+    let open_tab = use_context::<OpenTabSignal>();
 
     let nodes: Vec<_> = game
         .locations
@@ -304,9 +306,20 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .values()
                 .filter(|i| i.current_location == Some(loc.id))
                 .map(|i| {
+                    // A click opens their tab. Mounted without the board's
+                    // contexts, the token opens nothing.
+                    let investigator = i.id;
                     view! {
-                        <div class="inv-token">
-                            {i.name.clone()} " " {i.damage()} "/" {i.max_health(cards)} " hp · "
+                        <div
+                            class="inv-token"
+                            on:click=move |_| {
+                                if let Some(open) = open_tab {
+                                    open.click(investigator);
+                                }
+                            }
+                        >
+                            <span class="token-name">{i.name.clone()}</span>
+                            " " {i.damage()} "/" {i.max_health(cards)} " hp · "
                             {i.horror()} "/" {i.max_sanity(cards)} " san · clues " {i.clues}
                         </div>
                     }

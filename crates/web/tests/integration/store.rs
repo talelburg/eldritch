@@ -57,12 +57,8 @@ async fn hello_renders_state_present() {
     task::tick().await;
 
     // `phase_bar` was retired (phase/round moved to the turn tracker); assert the
-    // game now renders its board — the investigators-panel heading.
-    assert!(
-        root_html().contains("Investigators"),
-        "after: {}",
-        root_html()
-    );
+    // game now renders its board — the dock and its tabs.
+    assert!(root_html().contains("inv-tabs"), "after: {}", root_html());
 }
 
 #[wasm_bindgen_test]

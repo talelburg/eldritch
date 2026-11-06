@@ -8,11 +8,20 @@
 /* Center the board content (act/agenda, map, investigators) horizontally in the
    center column rather than hugging the left edge. */
 .game { display: flex; flex-direction: column; gap: 1rem; align-items: center; }
-.investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
-/* Full-width so the heading wraps onto its own line ABOVE the panels rather
-   than sitting beside them as a flex sibling. */
-.investigators h2 { flex-basis: 100%; margin: 0 0 0.25rem; }
-.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 30rem; }
+/* The dock: one tab per investigator over the open tab's panel. */
+.dock { display: flex; flex-direction: column; align-self: stretch; }
+.inv-tabs { display: flex; gap: 0.25rem; }
+.inv-tab {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0;
+    background: #f3f3f3; color: #444; padding: 0.3rem 0.7rem; cursor: pointer; font: inherit;
+}
+/* The investigators this account holds. */
+.inv-tab.held { background: #e3efe6; color: #13502a; }
+.inv-tab.open { background: #fff; font-weight: 600; position: relative; top: 1px; }
+.tab-active { color: #157a3a; }
+.tab-lead { color: #b8860b; }
+.investigator { border: 1px solid #ccc; border-radius: 0 4px 4px 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 30rem; background: #fff; }
 .investigator span { font-size: 0.9rem; }
 /* Top row: in-play (left) and threat (right), each boxed for clear separation. */
 .inv-zones-top { display: flex; gap: 1rem; align-items: flex-start; }
@@ -29,6 +38,9 @@
 .inv-meta { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
 .inv-actions .pip { color: #c8a020; margin-right: 1px; }
 .inv-zones-bottom .hand { flex: 1; min-width: 0; }
+/* A hand this account does not hold: a face-down back and a count, nothing more. */
+.hand-hidden { display: flex; align-items: center; gap: 0.4rem; }
+.discard { display: flex; flex-direction: column; align-items: center; font-size: 0.85rem; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
 /* Spatial board map (#497). Nodes are absolutely positioned at computed
@@ -94,7 +106,8 @@
 .node-tokens { flex: none; width: 150px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
 .node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1rem 0.25rem; }
 .node-tokens:empty { display: none; }
-.inv-token { color: #157a3a; }
+/* A click opens the investigator's tab. */
+.inv-token { color: #157a3a; cursor: pointer; }
 .enemy-token { color: #a3261b; }
 /* A card put into play at a location, controlled by nobody (Lita Chantler
    01117 in the Parlor). They are in play, but in no investigator's play area. */
@@ -489,7 +502,7 @@
     padding: 0.4rem 1rem; margin: 0.25rem 0;
 }
 
-/* On an investigator's heading while another account decides for them. */
+/* On an investigator's tab while another account decides for them. */
 @keyframes spinner-turn { to { transform: rotate(360deg); } }
 .spinner {
     display: inline-block; width: 0.8em; height: 0.8em; margin-left: 0.4em;

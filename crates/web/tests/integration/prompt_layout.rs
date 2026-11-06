@@ -1,4 +1,4 @@
-//! The prompt's layout on the board: the spinner on the heading of an
+//! The prompt's layout on the board: the spinner on the tab of an
 //! investigator another account answers for, the waiting strip above the
 //! board, and the lead's strip or the lead-waiting line.
 //!
@@ -21,15 +21,15 @@ use crate::reassign;
 /// Roland Banks, Tal's, in [`reassign::mount_as`]'s game.
 const ROLAND: InvestigatorId = InvestigatorId(2);
 
-/// The name in each investigator panel's heading whose heading carries a
-/// spinner.
+/// The name on each investigator's tab that carries a spinner.
 fn spinning(handle: &BoardHandle) -> Vec<String> {
-    let headings = handle.root.query_selector_all(".inv-name").expect("query");
-    (0..headings.length())
-        .filter_map(|i| headings.item(i))
+    let tabs = handle.root.query_selector_all(".inv-tab").expect("query");
+    (0..tabs.length())
+        .filter_map(|i| tabs.item(i))
         .filter_map(|node| node.dyn_into::<Element>().ok())
-        .filter(|heading| heading.query_selector(".spinner").expect("query").is_some())
-        .map(|heading| heading.text_content().unwrap_or_default())
+        .filter(|tab| tab.query_selector(".spinner").expect("query").is_some())
+        .filter_map(|tab| tab.query_selector(".tab-name").expect("query"))
+        .map(|name| name.text_content().unwrap_or_default())
         .collect()
 }
 
@@ -98,10 +98,7 @@ async fn tal_decides_for_the_table_in_the_lead_strip_above_the_board() {
         lobby::texts(&handle, ".prompt-banner").is_empty(),
         "the lead's decision is in no bottom-bar strip"
     );
-    assert!(
-        spinning(&handle).is_empty(),
-        "a lead decision marks no panel"
-    );
+    assert!(spinning(&handle).is_empty(), "a lead decision marks no tab");
     assert!(lobby::texts(&handle, ".lead-waiting").is_empty());
 }
 
@@ -113,9 +110,6 @@ async fn sam_waits_for_the_lead_by_name_and_account() {
         lobby::texts(&handle, ".lead-waiting"),
         vec!["Waiting for the lead investigator, Roland Banks (Tal)".to_string()]
     );
-    assert!(
-        spinning(&handle).is_empty(),
-        "a lead decision marks no panel"
-    );
+    assert!(spinning(&handle).is_empty(), "a lead decision marks no tab");
     assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
 }
