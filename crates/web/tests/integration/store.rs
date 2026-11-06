@@ -84,5 +84,9 @@ fn members_replaces_the_member_list_the_hello_named() {
     );
 
     assert_eq!(client.members, vec![common::you_member(), jo]);
-    assert_eq!(client.creator, Some(common::YOU), "the creator is unchanged");
+    assert_eq!(
+        client.creator,
+        Some(common::YOU),
+        "the creator is unchanged"
+    );
 }

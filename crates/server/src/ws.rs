@@ -256,19 +256,7 @@ async fn handle_socket(
             }
             broadcasted = rx.recv() => match broadcasted {
                 Ok(event) => {
-                    let message = match event {
-                        RoomEvent::Applied(committed) => {
-                            ServerMessage::Applied(committed.applied_for(account))
-                        }
-                        RoomEvent::Lobby(view) => {
-                            room::lobby_message(account, (*view).clone(), false)
-                        }
-                        RoomEvent::Started(live) => live.hello_for(account),
-                        RoomEvent::Members(members) => {
-                            ServerMessage::Members((*members).clone())
-                        }
-                    };
-                    if send_msg(&mut sink, &message).await.is_err() {
+                    if send_msg(&mut sink, &message_for(account, event)).await.is_err() {
                         break;
                     }
                 }
@@ -298,6 +286,17 @@ async fn handle_socket(
                 break;
             }
         }
+    }
+}
+
+/// The message a connection signed in as `account` is sent for `event`, which
+/// its room broadcast.
+fn message_for(account: AccountId, event: RoomEvent) -> ServerMessage {
+    match event {
+        RoomEvent::Applied(committed) => ServerMessage::Applied(committed.applied_for(account)),
+        RoomEvent::Lobby(view) => room::lobby_message(account, (*view).clone(), false),
+        RoomEvent::Started(live) => live.hello_for(account),
+        RoomEvent::Members(members) => ServerMessage::Members((*members).clone()),
     }
 }
 
