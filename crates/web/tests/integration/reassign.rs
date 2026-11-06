@@ -205,7 +205,7 @@ async fn assigned_says_who_gave_whom_to_whom_and_moves_the_prompt_to_the_new_hol
         texts(&handle, ".inv-tab.needs-you .tab-name"),
         ["Wendy Adams"]
     );
-    crate::tabs::open_tab(&handle, "Wendy Adams").await;
+    common::click_tab(&handle.root, "Wendy Adams").await;
     assert_eq!(
         texts(&handle, ".dock .prompt-strip .confirm").len(),
         1,

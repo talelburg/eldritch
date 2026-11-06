@@ -33,9 +33,9 @@ use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::prompt_layout::{AboveBoard, OpenTab};
+use crate::prompt_layout::{self, AboveBoard, OpenTab};
 use crate::store::ClientState;
-use crate::{controls, decision, prompt_layout, skill_test_result, store};
+use crate::{controls, decision, skill_test_result, store};
 
 /// `investigator`'s strip, headed with their name: the dock renders it while
 /// their tab is open. It renders nothing unless the live prompt asks them and

@@ -17,7 +17,7 @@ use web::delete_game::DeleteGame;
 use web::registry;
 use web::store::{self, ClientState, ConnStatus};
 use web::transport::OutboundTx;
-use web_sys::{Element, HtmlElement};
+use web_sys::{Element, HtmlElement, MouseEvent};
 
 /// The last element matching `sel`: the browser tests share one page and
 /// nothing unmounts, so a test reads the last match.
@@ -45,16 +45,50 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
 /// CSS `:hover` can't be driven headless, so the popover is signal-driven and
 /// this dispatches the `mouseenter` that opens it, then ticks.
 pub(crate) async fn hover(host: &Element) {
-    let event = web_sys::MouseEvent::new("mouseenter").expect("a mouseenter event");
-    host.dispatch_event(&event).expect("dispatch mouseenter");
-    task::tick().await;
+    pointer(host, "mouseenter").await;
 }
 
 /// Move the pointer off `host`, closing its popover.
 pub(crate) async fn unhover(host: &Element) {
-    let event = web_sys::MouseEvent::new("mouseleave").expect("a mouseleave event");
-    host.dispatch_event(&event).expect("dispatch mouseleave");
+    pointer(host, "mouseleave").await;
+}
+
+/// Dispatch the mouse event `kind` on `host`, and let the page react.
+async fn pointer(host: &Element, kind: &str) {
+    let event = MouseEvent::new(kind).expect("a mouse event");
+    host.dispatch_event(&event).expect("dispatch the mouse event");
     task::tick().await;
+}
+
+/// Hover `host` and return the text of the popover that opens.
+pub(crate) async fn hovered_popover(host: &Element) -> String {
+    hover(host).await;
+    popover_text(host).expect("hovering it opens its popover")
+}
+
+/// Click the investigator tab under `root` named `name`, and let the board
+/// react.
+pub(crate) async fn click_tab(root: &Element, name: &str) {
+    click_named(root, ".inv-tab", ".tab-name", name);
+    task::tick().await;
+}
+
+/// Click the one `sel` under `root` whose `name_sel` reads `name`.
+pub(crate) fn click_named(root: &Element, sel: &str, name_sel: &str, name: &str) {
+    let all = root.query_selector_all(sel).expect("query");
+    let el = (0..all.length())
+        .filter_map(|i| all.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .find(|el| {
+            el.query_selector(name_sel)
+                .expect("query")
+                .and_then(|n| n.text_content())
+                .is_some_and(|text| text == name)
+        })
+        .unwrap_or_else(|| panic!("a {sel} named {name}"));
+    el.dyn_into::<HtmlElement>()
+        .expect("an HTML element")
+        .click();
 }
 
 /// The text of the open popover inside `host`, `None` while none is open.

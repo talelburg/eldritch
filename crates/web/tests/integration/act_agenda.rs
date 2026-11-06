@@ -69,12 +69,12 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
         "agenda ability text on the card face: {text}"
     );
 
-    let act_text = hovered_popover(&act_card()).await;
+    let act_text = common::hovered_popover(&act_card()).await;
     assert!(
         act_text.contains("Objective"),
         "act ability text missing from its popover: {act_text}"
     );
-    let agenda_text = hovered_popover(&agenda_card()).await;
+    let agenda_text = common::hovered_popover(&agenda_card()).await;
     assert!(
         agenda_text.contains("Forced"),
         "agenda ability text missing from its popover: {agenda_text}"
@@ -82,11 +82,6 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
 }
 
 /// Hover `card` and return its popover's text, failing if none opens.
-async fn hovered_popover(card: &Element) -> String {
-    common::hover(card).await;
-    common::popover_text(card).expect("hovering the card opens its popover")
-}
-
 /// The act card's clue line for `act`, staged by code under two seated
 /// investigators.
 async fn clue_line_of_act(act: &'static str) -> String {
@@ -316,7 +311,7 @@ async fn agenda_shows_reverse_face_while_advancing() {
         text.contains("A Lapse in Time"),
         "reverse name shown: {text}"
     );
-    let popover = hovered_popover(&agenda_card()).await;
+    let popover = common::hovered_popover(&agenda_card()).await;
     assert!(
         popover.contains("discard"),
         "reverse text (discard-or-horror choice) in the popover: {popover}"
@@ -369,7 +364,7 @@ async fn act_shows_reverse_face_while_advancing() {
         text.contains("Breaking the Barrier"),
         "act reverse name shown: {text}"
     );
-    let popover = hovered_popover(&act_card()).await;
+    let popover = common::hovered_popover(&act_card()).await;
     assert!(
         popover.contains("Parlor"),
         "act reverse text in the popover: {popover}"

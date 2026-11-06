@@ -13,10 +13,8 @@ use leptos::task;
 use protocol::lobby::Member;
 use protocol::logged_answer::LoggedResponse;
 use protocol::{AccountId, Applied, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
-use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
-use web_sys::{Element, HtmlElement};
 
 use crate::common::{self, BoardHandle, YOU};
 use crate::lobby::{self, SAM};
@@ -102,30 +100,6 @@ pub(crate) fn docked(handle: &BoardHandle) -> String {
     names[0].clone()
 }
 
-/// Click the tab named `name`, and let the board react.
-pub(crate) async fn open_tab(handle: &BoardHandle, name: &str) {
-    click_named(handle, ".inv-tab", ".tab-name", name);
-    task::tick().await;
-}
-
-/// Click the one `sel` under `handle`'s root whose `name_sel` reads `name`.
-fn click_named(handle: &BoardHandle, sel: &str, name_sel: &str, name: &str) {
-    let all = handle.root.query_selector_all(sel).expect("query");
-    let el = (0..all.length())
-        .filter_map(|i| all.item(i))
-        .filter_map(|node| node.dyn_into::<Element>().ok())
-        .find(|el| {
-            el.query_selector(name_sel)
-                .expect("query")
-                .and_then(|n| n.text_content())
-                .is_some_and(|text| text == name)
-        })
-        .unwrap_or_else(|| panic!("a {sel} named {name}"));
-    el.dyn_into::<HtmlElement>()
-        .expect("an HTML element")
-        .click();
-}
-
 /// The printed name of `code`.
 fn card_name(code: &str) -> String {
     (cards::TEST_REGISTRY.metadata_for)(&CardCode::new(code))
@@ -158,7 +132,7 @@ async fn a_tab_click_switches_the_dock() {
     let handle = mount_table(YOU, table(), EngineOutcome::Done).await;
     assert_eq!(docked(&handle), "Roland Banks", "Tal's first in seating");
 
-    open_tab(&handle, "Daisy Walker").await;
+    common::click_tab(&handle.root, "Daisy Walker").await;
     assert_eq!(docked(&handle), "Daisy Walker");
     assert_eq!(
         lobby::texts(&handle, ".inv-tab.open .tab-name"),
@@ -170,7 +144,7 @@ async fn a_tab_click_switches_the_dock() {
 async fn a_map_token_click_opens_their_tab() {
     let handle = mount_table(YOU, table(), EngineOutcome::Done).await;
 
-    click_named(&handle, ".inv-token", ".token-name", "Agnes Baker");
+    common::click_named(&handle.root, ".inv-token", ".token-name", "Agnes Baker");
     task::tick().await;
     assert_eq!(docked(&handle), "Agnes Baker");
 }
@@ -179,14 +153,14 @@ async fn a_map_token_click_opens_their_tab() {
 async fn another_accounts_hand_is_a_count_with_no_cards_in_the_dom() {
     let handle = mount_table(YOU, table(), EngineOutcome::Done).await;
 
-    open_tab(&handle, "Agnes Baker").await;
+    common::click_tab(&handle.root, "Agnes Baker").await;
     assert_eq!(
         lobby::texts(&handle, ".dock .hand .hand-slot").len(),
         AGNESS_HAND.len(),
         "Tal's own hand shows its cards"
     );
 
-    open_tab(&handle, "Daisy Walker").await;
+    common::click_tab(&handle.root, "Daisy Walker").await;
     assert_eq!(lobby::texts(&handle, ".dock .hand-count"), vec!["2"]);
     assert!(lobby::texts(&handle, ".dock .hand-slot").is_empty());
     let page = handle.root.inner_html();
@@ -202,7 +176,7 @@ async fn a_viewer_sees_every_hand_as_a_count() {
     let handle = mount_table(ALEX, table(), EngineOutcome::Done).await;
 
     for (name, count) in [("Roland Banks", 2), ("Daisy Walker", 2), ("Agnes Baker", 4)] {
-        open_tab(&handle, name).await;
+        common::click_tab(&handle.root, name).await;
         assert_eq!(docked(&handle), name);
         assert_eq!(
             lobby::texts(&handle, ".dock .hand-count"),
@@ -270,7 +244,7 @@ async fn agness_tab_needs_tal_while_he_reads_rolands() {
     assert_eq!(docked(&handle), "Agnes Baker");
     assert!(lobby::texts(&handle, ".inv-tab.needs-you").is_empty());
 
-    open_tab(&handle, "Roland Banks").await;
+    common::click_tab(&handle.root, "Roland Banks").await;
     assert_eq!(docked(&handle), "Roland Banks");
     assert!(lobby::texts(&handle, ".prompt-strip").is_empty());
     assert_eq!(
@@ -287,6 +261,6 @@ async fn the_waiting_strip_hides_while_tal_reads_daisys_tab() {
     let handle = mount_table(YOU, table(), daisys_horror).await;
     assert_eq!(lobby::texts(&handle, ".waiting-strip").len(), 1);
 
-    open_tab(&handle, "Daisy Walker").await;
+    common::click_tab(&handle.root, "Daisy Walker").await;
     assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
 }

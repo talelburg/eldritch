@@ -121,20 +121,6 @@ impl Harness {
             .disabled()
     }
 
-    /// Open the `n`th investigator's tab, in seat order, and let the board
-    /// react.
-    async fn open_tab(&self, n: u32) {
-        self.board
-            .root
-            .query_selector_all(".inv-tab")
-            .expect("query")
-            .item(n)
-            .and_then(|node| node.dyn_into::<HtmlElement>().ok())
-            .expect("an investigator's tab")
-            .click();
-        task::tick().await;
-    }
-
     /// The hand slots on the docked investigator's panel.
     fn hand_slots(&self, sel: &str) -> Vec<HtmlElement> {
         let panel = self
@@ -372,12 +358,12 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
     let outcome = test_support::awaiting_request(seeded.prompt().clone());
     let mut h = Harness::mount(seeded.state().clone(), outcome).await;
 
-    h.open_tab(0).await;
+    common::click_tab(&h.board.root, "Roland Banks").await;
     assert!(
         h.hand_slots(".hand-slot.selectable").is_empty(),
         "seat 1's hand is not in selection mode"
     );
-    h.open_tab(1).await;
+    common::click_tab(&h.board.root, "Daisy Walker").await;
     assert_eq!(
         h.hand_slots(".hand-slot.selectable").len(),
         2,
@@ -385,11 +371,11 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
     );
 
     // A click on seat 1's card selects nothing; seat 2 picks their second card.
-    h.open_tab(0).await;
+    common::click_tab(&h.board.root, "Roland Banks").await;
     h.hand_slots(".hand-slot")[0].click();
     task::tick().await;
     assert!(h.hand_slots(".hand-slot.selected").is_empty());
-    h.open_tab(1).await;
+    common::click_tab(&h.board.root, "Daisy Walker").await;
     h.hand_slots(".hand-slot")[1].click();
     task::tick().await;
     assert_eq!(h.hand_slots(".hand-slot.selected").len(), 1);

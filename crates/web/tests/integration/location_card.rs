@@ -12,7 +12,7 @@ use cards::TEST_REGISTRIES;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{CardCode, GameStateBuilder};
+use game_core::state::{CardCode, GameState, GameStateBuilder};
 use game_core::test_support::location;
 use leptos::prelude::document;
 use leptos::{mount, task};
@@ -78,7 +78,7 @@ fn node(name: &str) -> Element {
 
 /// Mount `game`'s map over `cards`, and return the `name` node.
 async fn mount_node(
-    game: game_core::state::GameState,
+    game: GameState,
     cards: &'static CardRegistry,
     name: &str,
 ) -> Element {
@@ -91,11 +91,6 @@ async fn mount_node(
 }
 
 /// Hover `node` and return its popover's text, failing if none opens.
-async fn hovered_popover(node: &Element) -> String {
-    common::hover(node).await;
-    common::popover_text(node).expect("hovering the node opens its popover")
-}
-
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_text_and_victory() {
     // Attic 01113: victory 1, Forced text "After you enter the Attic: Take 1 horror."
@@ -116,7 +111,7 @@ async fn revealed_location_shows_metadata_text_and_victory() {
         "victory pip on the card face: {face}"
     );
 
-    let text = hovered_popover(&attic).await;
+    let text = common::hovered_popover(&attic).await;
     assert!(text.contains("\u{2605}1"), "victory pip missing: {text}");
     assert!(text.contains("horror"), "ability text missing: {text}");
 
@@ -139,7 +134,7 @@ async fn revealed_location_shows_metadata_traits() {
 
     let face = node.text_content().unwrap_or_default();
     assert!(!face.contains("Arkham"), "traits on the card face: {face}");
-    let text = hovered_popover(&node).await;
+    let text = common::hovered_popover(&node).await;
     assert!(text.contains("Arkham"), "traits missing: {text}");
 }
 
@@ -154,7 +149,7 @@ async fn unrevealed_location_withholds_metadata() {
         .build();
     let node = mount_node(game, &PROBE_REGISTRY, "Hidden Room").await;
 
-    let popover = hovered_popover(&node).await;
+    let popover = common::hovered_popover(&node).await;
     assert!(
         popover.contains("Hidden Room"),
         "the popover still names the location: {popover}"
