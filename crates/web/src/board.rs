@@ -108,21 +108,20 @@ fn board_menu() -> impl IntoView {
 #[component]
 fn Dock() -> impl IntoView {
     let store = store::use_store();
-    let open = Memo::new(move |_| {
+    let placed = Memo::new(move |_| {
         let open_tab = prompt_layout::use_open_tab();
-        store.with(|s| prompt_layout::layout(s, open_tab).open_investigator)
+        store.with(|s| prompt_layout::layout(s, open_tab))
     });
+    let open = Memo::new(move |_| placed.with(|p| p.open_investigator));
     let tabs = move || {
         let state = store.get();
-        let placed = prompt_layout::layout(&state, prompt_layout::use_open_tab());
-        state.game.as_ref().map(|game| tabs_view(game, &placed))
+        placed.with(|p| state.game.as_ref().map(|game| tabs_view(game, p)))
     };
     let panel = move |investigator: InvestigatorId| {
         move || {
             let state = store.get();
-            let placed = prompt_layout::layout(&state, prompt_layout::use_open_tab());
-            let held = placed.holds(investigator);
-            let strip = placed.dock_strip == Some(investigator);
+            let (held, strip) =
+                placed.with(|p| (p.holds(investigator), p.dock_strip == Some(investigator)));
             state.game.as_ref().and_then(|game| {
                 game.investigators
                     .get(&investigator)

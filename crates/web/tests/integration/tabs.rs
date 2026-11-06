@@ -9,7 +9,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat};
-use leptos::prelude::Update as _;
+use leptos::prelude::*;
 use leptos::task;
 use protocol::lobby::Member;
 use protocol::logged_answer::LoggedResponse;
@@ -159,10 +159,8 @@ fn hand_row(handle: &BoardHandle) -> Element {
         .expect("the docked hand's row")
 }
 
-/// Roland's hand, scrolled sideways, was clamped to Agnes's when her tab
-/// opened, and came back clamped: one row was shared between the tabs. Each tab
-/// opens on its own row, scrolled to the start, and an update to the open tab
-/// leaves its row where it was.
+/// Each tab opens on its own hand row, scrolled to the start, and an update to
+/// the open tab leaves its row where it was.
 #[wasm_bindgen_test]
 async fn each_tab_opens_its_own_hand_row_scrolled_to_the_start() {
     common::inject_style();
@@ -174,9 +172,7 @@ async fn each_tab_opens_its_own_hand_row_scrolled_to_the_start() {
         .class_list()
         .add_1("narrow-hand")
         .expect("class");
-    let style = leptos::prelude::document()
-        .create_element("style")
-        .expect("create style");
+    let style = document().create_element("style").expect("create style");
     style.set_text_content(Some(".narrow-hand .dock .hand .card-row { width: 40px; }"));
     handle.root.append_child(&style).expect("append style");
 

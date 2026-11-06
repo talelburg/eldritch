@@ -65,19 +65,6 @@ fn roland(id: u32) -> Seat<Printed> {
     seat(id).as_card(ROLAND)
 }
 
-/// Visible text of `el`'s descendant matching `sel`.
-///
-/// Names are asserted against `text_content` rather than `inner_html` because
-/// the latter escapes — the apostrophe in "What's Going On?!" arrives as an
-/// entity, and a substring test against it would be testing the escaper.
-fn text_of(el: &Element, sel: &str) -> String {
-    el.query_selector(sel)
-        .expect("query")
-        .unwrap_or_else(|| panic!("expected {sel}"))
-        .text_content()
-        .unwrap_or_default()
-}
-
 /// How many descendants of `el` match `sel`.
 fn count_in(el: &Element, sel: &str) -> u32 {
     el.query_selector_all(sel).expect("query").length()
@@ -108,13 +95,6 @@ async fn render_state(state: GameState) -> Element {
     root
 }
 
-/// The element matching `sel` under `root`.
-fn find(root: &Element, sel: &str) -> Element {
-    root.query_selector(sel)
-        .expect("query")
-        .unwrap_or_else(|| panic!("no {sel} under the root"))
-}
-
 #[wasm_bindgen_test]
 async fn act_agenda_cards_render_name_and_thresholds() {
     let state = GameStateBuilder::new()
@@ -132,7 +112,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     // `crates/web/tests/integration/act_agenda.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
     // earns its own name, rather than asserting only thresholds.
-    let board = find(&root, ".board");
+    let board = common::one(&root, ".board");
     let text = board.text_content().unwrap_or_default();
     assert!(text.contains("Trapped"), "act name missing: {text}");
     assert!(
@@ -193,18 +173,18 @@ async fn investigators_panel_renders_stats_and_hand() {
     // renders too, so a bare `html.contains(..)` shares the board with the
     // printed text of four cards — a false pass from a collision is the same failure mode as
     // an assertion riding the unresolved-code fallback.
-    let inv_el = find(&root, ".investigator");
+    let inv_el = common::one(&root, ".investigator");
 
     // Identity and skills are on the investigator card's tile; the stats sit
     // beside it.
     assert_eq!(
-        text_of(&inv_el, ".investigator-card .tile-name"),
+        common::text_of(&inv_el, ".investigator-card .tile-name"),
         "Roland Banks"
     );
     // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2.
-    assert_eq!(text_of(&inv_el, ".inv-skills"), "W3I3C4A2");
-    assert_eq!(text_of(&inv_el, ".inv-hp"), "hp 2/9");
-    assert_eq!(text_of(&inv_el, ".inv-san"), "san 1/5");
+    assert_eq!(common::text_of(&inv_el, ".inv-skills"), "W3I3C4A2");
+    assert_eq!(common::text_of(&inv_el, ".inv-hp"), "hp 2/9");
+    assert_eq!(common::text_of(&inv_el, ".inv-san"), "san 1/5");
     // Meta cluster: actions as pips.
     assert_eq!(
         count_in(&inv_el, ".inv-meta .inv-actions .pip"),
@@ -212,10 +192,10 @@ async fn investigators_panel_renders_stats_and_hand() {
         "two action pips: {html}"
     );
     assert!(
-        text_of(&inv_el, ".inv-resources").contains("resources 4"),
+        common::text_of(&inv_el, ".inv-resources").contains("resources 4"),
         "resources missing: {html}"
     );
-    assert_eq!(text_of(&inv_el, ".inv-clues"), "clues 3");
+    assert_eq!(common::text_of(&inv_el, ".inv-clues"), "clues 3");
     // Location is not shown in the panel (it's on the map token).
     assert!(
         !html.contains("inv-location"),
@@ -231,7 +211,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         2,
         "two hand cards: {html}"
     );
-    let hand = text_of(&inv_el, ".inv-zones-bottom .hand");
+    let hand = common::text_of(&inv_el, ".inv-zones-bottom .hand");
     assert!(
         hand.contains("Roland's .38 Special"),
         "hand card name missing: {hand}"
@@ -246,7 +226,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         "one in-play card: {html}"
     );
     assert!(
-        text_of(&inv_el, ".inv-zones-top .in-play").contains("Magnifying Glass"),
+        common::text_of(&inv_el, ".inv-zones-top .in-play").contains("Magnifying Glass"),
         "in-play card name missing: {html}"
     );
 
@@ -273,7 +253,7 @@ async fn empty_board_renders_placeholder_without_panels() {
         .await
         .root;
 
-    let html = find(&root, ".board").inner_html();
+    let html = common::one(&root, ".board").inner_html();
 
     assert!(
         html.contains("&lt;no game&gt;"),
@@ -302,7 +282,7 @@ async fn resolution_banner_names_the_resolution_point() {
     // The banner names the ending the player takes to the campaign guide, not
     // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
     // that "lost" is a standalone-mode projection this client does not make.
-    let html = find(&root, ".resolution").inner_html();
+    let html = common::one(&root, ".resolution").inner_html();
     assert!(
         html.contains("Resolution 3"),
         "banner must name the resolution point: {html}"
@@ -326,7 +306,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
     // RR Elimination step 6's ending has its own campaign-guide entry ("If no
     // resolution was reached"), and an investigator who got here by resigning
     // is "not considered to have been defeated".
-    let html = find(&root, ".resolution").inner_html();
+    let html = common::one(&root, ".resolution").inner_html();
     assert!(
         html.contains("no resolution reached"),
         "no-resolution banner text missing: {html}"
@@ -346,7 +326,7 @@ async fn map_and_dock_are_inside_board_main() {
         .build();
     let root = render_state(state).await;
 
-    let game = find(&root, ".game");
+    let game = common::one(&root, ".game");
 
     assert!(
         game.query_selector(".board-main .map")
@@ -377,7 +357,7 @@ async fn engaged_enemy_renders_as_a_tile_in_threat_area() {
     let root = render_state(state).await;
     let html = root.inner_html();
 
-    let game = find(&root, ".game");
+    let game = common::one(&root, ".game");
     let card = game
         .query_selector(".threat .card-row .tile.card--enemy")
         .expect("query_selector");
@@ -400,7 +380,7 @@ async fn threat_area_treachery_renders_as_a_tile() {
     let root = render_state(state).await;
     let html = root.inner_html();
 
-    let game = find(&root, ".game");
+    let game = common::one(&root, ".game");
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
     // its tile takes the generic class. Asserting `card--generic` rather than
     // the bare `.tile` is what distinguishes it from `card--unknown`, which
@@ -412,7 +392,7 @@ async fn threat_area_treachery_renders_as_a_tile() {
         card.is_some(),
         "threat-area treachery should render as a tile: {html}"
     );
-    let treachery = text_of(&game, ".threat .card-row .card--generic");
+    let treachery = common::text_of(&game, ".threat .card-row .card--generic");
     assert!(
         treachery.contains("Cover Up"),
         "treachery name missing: {html}"

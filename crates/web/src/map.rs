@@ -175,8 +175,9 @@ impl Badge {
 }
 
 /// One `<line>` per undirected pair of connected, in-play locations, between
-/// card centres ([`cell_centre`]). A peer not in `positions` (set-aside, not yet in play) is
-/// skipped. Dedups by ordered `LocationId` pair so each edge draws once.
+/// card centres ([`cell_centre`]). A peer not in `positions` (set-aside, not yet
+/// in play) is skipped. Dedups by ordered `LocationId` pair so each edge draws
+/// once.
 fn connection_lines(
     game: &GameState,
     positions: &BTreeMap<LocationId, (u16, u16)>,

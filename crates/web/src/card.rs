@@ -9,7 +9,7 @@
 
 use std::mem;
 
-use card_dsl::card_data::{CardKind, Class, SkillIcons, Skills, Slot};
+use card_dsl::card_data::{CardKind, Class, SkillIcons, SkillKind, Skills, Slot};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
@@ -233,6 +233,8 @@ pub struct CardFace {
     pub cost_corner: Option<String>,
     pub slot_chips: Vec<String>,
     pub skill_chips: Vec<(String, u8)>,
+    /// The icons `skill_chips` names, for a tile's icon stand-ins.
+    pub skill_icons: SkillIcons,
     pub is_fast: bool,
 }
 
@@ -253,6 +255,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: Some(cost_label(*cost)),
             slot_chips: slot_chips(slots),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
         CardKind::Event {
@@ -266,6 +269,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: Some(cost_label(*cost)),
             slot_chips: Vec::new(),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
         CardKind::Skill {
@@ -275,6 +279,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: None,
             slot_chips: Vec::new(),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: false,
         }),
         _ => None,
@@ -386,17 +391,14 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
                 slot_chips,
                 skill_chips,
                 is_fast,
+                ..
             } = face;
             let cost_view = if is_in_play {
                 None
             } else {
                 cost_corner.map(|c| view! { <span class="card-cost">{c}</span> })
             };
-            let root_class = if exhausted {
-                format!("card {class_css} card--exhausted")
-            } else {
-                format!("card {class_css}")
-            };
+            let root_class = exhaustible_class(&format!("card {class_css}"), exhausted);
             let fast_view = is_fast.then(|| view! { <span class="card-fast">"Fast"</span> });
             let slot_views: Vec<_> = slot_chips
                 .into_iter()
@@ -457,23 +459,55 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
     }
 }
 
-/// The one-letter stand-in a tile shows for a skill icon, until the game's own
-/// glyphs replace it.
-fn skill_letter(skill: &str) -> &'static str {
-    match skill {
-        "willpower" => "W",
-        "intellect" => "I",
-        "combat" => "C",
-        "agility" => "A",
-        _ => "?",
+/// A card's root class: `base`, dimmed by `card--exhausted` while it is
+/// `exhausted`.
+pub(crate) fn exhaustible_class(base: &str, exhausted: bool) -> String {
+    if exhausted {
+        format!("{base} card--exhausted")
+    } else {
+        base.to_owned()
     }
 }
 
-/// One skill icon's stand-in: its letter on the skill's colour, named in its
-/// `title`.
-pub(crate) fn skill_icon(skill: &str) -> impl IntoView {
-    let class = format!("skill-icon skill-icon--{skill}");
-    view! { <span class=class title=skill.to_owned()>{skill_letter(skill)}</span> }
+/// The four skills, in the order a card prints their icons.
+const SKILLS: [SkillKind; 4] = [
+    SkillKind::Willpower,
+    SkillKind::Intellect,
+    SkillKind::Combat,
+    SkillKind::Agility,
+];
+
+/// A skill's name, as its icon's `title` and colour class, and the one-letter
+/// stand-in a tile shows for its icon until the game's own glyphs replace it.
+fn skill_label(skill: SkillKind) -> (&'static str, &'static str) {
+    match skill {
+        SkillKind::Willpower => ("willpower", "W"),
+        SkillKind::Intellect => ("intellect", "I"),
+        SkillKind::Combat => ("combat", "C"),
+        SkillKind::Agility => ("agility", "A"),
+    }
+}
+
+/// One icon's stand-in: `letter` on the colour of the icon `name`, named in
+/// its `title`.
+fn icon_view(name: &'static str, letter: &'static str) -> AnyView {
+    let class = format!("skill-icon skill-icon--{name}");
+    view! { <span class=class title=name>{letter}</span> }.into_any()
+}
+
+/// One skill icon's stand-in.
+fn skill_icon(skill: SkillKind) -> AnyView {
+    let (name, letter) = skill_label(skill);
+    icon_view(name, letter)
+}
+
+/// The stand-ins for every icon in `icons`, wild last, in printed order.
+fn icon_views(icons: SkillIcons) -> Vec<AnyView> {
+    SKILLS
+        .into_iter()
+        .flat_map(|skill| (0..icons.matching(skill)).map(move |_| skill_icon(skill)))
+        .chain((0..icons.wild).map(|_| icon_view("wild", "?")))
+        .collect()
 }
 
 /// A card as a compact tile: its name, its cost, its skill icons, a border in
@@ -508,21 +542,16 @@ fn card_tile(code: &CardCode, in_play: Option<&CardInPlay>, skills: Option<Skill
             None => view! { <span class="tile-cost none">"–"</span> }.into_any(),
         });
     let icons: Vec<AnyView> = match skills {
-        None => face
-            .map(|f| f.skill_chips)
-            .unwrap_or_default()
-            .into_iter()
-            .flat_map(|(skill, n)| (0..n).map(move |_| skill_icon(&skill).into_any()))
-            .collect(),
-        Some(s) => vec![view! {
-            <span class="inv-skills">
-                {skill_icon("willpower")}<span class="skill-value">{s.willpower}</span>
-                {skill_icon("intellect")}<span class="skill-value">{s.intellect}</span>
-                {skill_icon("combat")}<span class="skill-value">{s.combat}</span>
-                {skill_icon("agility")}<span class="skill-value">{s.agility}</span>
-            </span>
+        None => face.map(|f| icon_views(f.skill_icons)).unwrap_or_default(),
+        Some(s) => {
+            let values: Vec<_> = SKILLS
+                .into_iter()
+                .map(|skill| {
+                    view! { {skill_icon(skill)}<span class="skill-value">{s.value(skill)}</span> }
+                })
+                .collect();
+            vec![view! { <span class="inv-skills">{values}</span> }.into_any()]
         }
-        .into_any()],
     };
     let weakness = meta.is_weakness();
     let exhausted = in_play.is_some_and(|c| c.exhausted);
@@ -532,12 +561,9 @@ fn card_tile(code: &CardCode, in_play: Option<&CardInPlay>, skills: Option<Skill
         .into_iter()
         .map(|s| view! { <span class="chip chip--live">{s}</span> })
         .collect();
-    let mut root = format!("tile {class}");
+    let mut root = exhaustible_class(&format!("tile {class}"), exhausted);
     if weakness {
         root.push_str(" weakness");
-    }
-    if exhausted {
-        root.push_str(" card--exhausted");
     }
     view! {
         <div class=root>

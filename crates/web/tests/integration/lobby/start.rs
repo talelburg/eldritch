@@ -13,7 +13,7 @@ use wasm_bindgen_test::*;
 use web::store::{self, ClientState, ConnStatus};
 use web_sys::HtmlButtonElement;
 
-use super::{click, mount_lobby, one, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM};
+use super::{click, mount_lobby, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM};
 use crate::common::{self, YOU};
 
 #[wasm_bindgen_test]
@@ -46,7 +46,7 @@ async fn start_with_one_pick_names_one_investigator() {
 async fn start_is_unavailable_until_there_is_a_pick() {
     let handle = mount_lobby(tals_lobby_with_picks(&[]), YOU, false).await;
 
-    let start = one(&handle, ".lobby button.start")
+    let start = common::one(&handle.root, ".lobby button.start")
         .dyn_into::<HtmlButtonElement>()
         .expect("a button");
     assert!(start.disabled(), "an empty game can't start");

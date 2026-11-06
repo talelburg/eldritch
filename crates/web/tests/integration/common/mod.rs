@@ -31,6 +31,23 @@ pub(crate) fn last_mounted(sel: &str) -> Element {
         .unwrap_or_else(|| panic!("at least one {sel}"))
 }
 
+/// The first element under `within` matching `sel`.
+pub(crate) fn one(within: &Element, sel: &str) -> Element {
+    within
+        .query_selector(sel)
+        .expect("query")
+        .unwrap_or_else(|| panic!("no {sel} under the element"))
+}
+
+/// The text of the first element under `within` matching `sel`.
+///
+/// Read as `text_content` rather than `inner_html`, which escapes: the
+/// apostrophe in "What's Going On?!" arrives as an entity, and a substring test
+/// against it would be testing the escaper.
+pub(crate) fn text_of(within: &Element, sel: &str) -> String {
+    one(within, sel).text_content().unwrap_or_default()
+}
+
 /// The text of every element `sel` matches inside `within`, in document order.
 pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
     let nodes = within.query_selector_all(sel).expect("query");

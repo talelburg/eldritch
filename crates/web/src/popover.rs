@@ -45,7 +45,7 @@ impl Spot {
     fn of(ev: &MouseEvent) -> Self {
         let (x, y) = (ev.client_x(), ev.client_y());
         let window = window();
-        // An unreadable size opens the popover below and right, as before.
+        // An unreadable size opens the popover below and right.
         let half = |size: Option<f64>| size.map_or(f64::MAX, |v| v / 2.0);
         Self {
             x,

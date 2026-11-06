@@ -131,9 +131,8 @@ fn stacking(el: &Element) -> Option<i32> {
     common::computed(el, "z-index").parse().ok()
 }
 
-/// During "A Lapse in Time" the `▸ log` toggle sat under the decision modal's
-/// scrim and couldn't be opened. The log, closed to its toggle or open as a
-/// drawer, stacks above the scrim. Measured as stacking levels: the page is
+/// The log, closed to its `▸ log` toggle or open as a drawer, stacks above a
+/// decision modal's scrim, such as "A Lapse in Time"'s. Measured as stacking levels: the page is
 /// shared, so another test's overlay may lie over any point a hit test reads.
 #[wasm_bindgen_test]
 async fn the_log_and_its_toggle_sit_above_a_decisions_scrim() {
@@ -143,7 +142,10 @@ async fn the_log_and_its_toggle_sit_above_a_decisions_scrim() {
         InputRequest::pick_single(
             "Choose one",
             vec![
-                ChoiceOption::new(OptionId(0), "Each investigator discards 1 card at random"),
+                ChoiceOption::new(
+                    OptionId(0),
+                    "Each investigator discards 1 card at random from his or her hand",
+                ),
                 ChoiceOption::new(OptionId(1), "The lead investigator takes 2 horror"),
             ],
         )

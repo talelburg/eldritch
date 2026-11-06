@@ -8,13 +8,15 @@
 use game_core::engine::EngineOutcome;
 use game_core::state::{GameStateBuilder, UseKind};
 use game_core::test_support::{clues, seat, uses};
+use leptos::prelude::*;
+use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web_sys::Element;
+use web_sys::{Element, MouseEvent, MouseEventInit};
 
 use crate::common;
 
-/// Machete: Guardian asset, cost 3, one [combat] icon.
+/// Machete: Guardian asset, cost 3, one `[combat]` icon.
 const MACHETE: &str = "01020";
 /// Flashlight: Neutral asset, cost 2, "Uses (3 supplies)".
 const FLASHLIGHT: &str = "01087";
@@ -43,21 +45,6 @@ async fn rolands_dock() -> Element {
     .root
 }
 
-/// The one element under `within` matching `sel`.
-fn one(within: &Element, sel: &str) -> Element {
-    let all = within.query_selector_all(sel).expect("query");
-    assert_eq!(all.length(), 1, "expected one {sel}");
-    within
-        .query_selector(sel)
-        .expect("query")
-        .expect("the element")
-}
-
-/// The text of the one element under `within` matching `sel`.
-fn text(within: &Element, sel: &str) -> String {
-    one(within, sel).text_content().unwrap_or_default()
-}
-
 /// The skill each of the tile's icons stands for, in order.
 fn icons(tile: &Element) -> Vec<String> {
     let all = tile.query_selector_all(".skill-icon").expect("query");
@@ -70,12 +57,12 @@ fn icons(tile: &Element) -> Vec<String> {
 #[wasm_bindgen_test]
 async fn a_hand_card_is_a_tile_and_hovering_it_shows_the_whole_card() {
     let root = rolands_dock().await;
-    let slot = one(&root, ".dock .hand .hand-slot");
-    let tile = one(&slot, ".tile");
+    let slot = common::one(&root, ".dock .hand .hand-slot");
+    let tile = common::one(&slot, ".tile");
 
     assert!(tile.class_list().contains("card--guardian"), "class border");
-    assert_eq!(text(&tile, ".tile-name"), "Machete");
-    assert_eq!(text(&tile, ".tile-cost"), "3");
+    assert_eq!(common::text_of(&tile, ".tile-name"), "Machete");
+    assert_eq!(common::text_of(&tile, ".tile-cost"), "3");
     assert_eq!(icons(&tile), vec!["combat"]);
     let rules = "If the attacked enemy is the only enemy engaged with you, \
                  this attack deals +1 damage.";
@@ -93,14 +80,14 @@ async fn a_hand_card_is_a_tile_and_hovering_it_shows_the_whole_card() {
 #[wasm_bindgen_test]
 async fn an_in_play_card_is_a_tile_showing_its_uses() {
     let root = rolands_dock().await;
-    let slot = one(&root, ".dock .in-play .card-slot");
-    let tile = one(&slot, ".tile");
+    let slot = common::one(&root, ".dock .in-play .card-slot");
+    let tile = common::one(&slot, ".tile");
 
     assert!(tile.class_list().contains("card--neutral"), "class border");
-    assert_eq!(text(&tile, ".tile-name"), "Flashlight");
-    assert_eq!(text(&tile, ".tile-cost"), "2");
+    assert_eq!(common::text_of(&tile, ".tile-name"), "Flashlight");
+    assert_eq!(common::text_of(&tile, ".tile-cost"), "2");
     assert_eq!(icons(&tile), vec!["intellect"]);
-    assert_eq!(text(&tile, ".chip--live"), "2 supplies");
+    assert_eq!(common::text_of(&tile, ".chip--live"), "2 supplies");
 
     let popover = common::hovered_popover(&slot).await;
     assert!(
@@ -110,28 +97,26 @@ async fn an_in_play_card_is_a_tile_showing_its_uses() {
     common::unhover(&slot).await;
 }
 
-/// The hand is the bottom row of the window, so a popover opened below and
-/// right of the pointer, as on the map, ran off the screen and cut the card's
-/// text. A popover opens away from the window's nearer edges, so it stays on
-/// screen wherever the pointer is.
+/// A popover opens away from the window's nearer edges, so it stays on screen
+/// wherever the pointer is, even over the hand at the window's bottom row.
 #[wasm_bindgen_test]
 async fn a_tiles_popover_stays_on_screen_at_the_windows_corner() {
     common::inject_style();
     let root = rolands_dock().await;
-    let slot = one(&root, ".dock .hand .hand-slot");
+    let slot = common::one(&root, ".dock .hand .hand-slot");
     let (width, height) = (
-        leptos::prelude::window()
+        window()
             .inner_width()
             .expect("width")
             .as_f64()
             .expect("a number"),
-        leptos::prelude::window()
+        window()
             .inner_height()
             .expect("height")
             .as_f64()
             .expect("a number"),
     );
-    let init = web_sys::MouseEventInit::new();
+    let init = MouseEventInit::new();
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a window's size in CSS pixels fits an i32"
@@ -140,12 +125,11 @@ async fn a_tiles_popover_stays_on_screen_at_the_windows_corner() {
         init.set_client_x(width as i32 - 5);
         init.set_client_y(height as i32 - 5);
     }
-    let enter =
-        web_sys::MouseEvent::new_with_mouse_event_init_dict("mouseenter", &init).expect("event");
+    let enter = MouseEvent::new_with_mouse_event_init_dict("mouseenter", &init).expect("event");
     slot.dispatch_event(&enter).expect("dispatch");
-    leptos::task::tick().await;
+    task::tick().await;
 
-    let popover = one(&slot, ".popover").get_bounding_client_rect();
+    let popover = common::one(&slot, ".popover").get_bounding_client_rect();
     assert!(
         popover.left() >= 0.0
             && popover.top() >= 0.0
@@ -163,10 +147,10 @@ async fn a_tiles_popover_stays_on_screen_at_the_windows_corner() {
 #[wasm_bindgen_test]
 async fn a_weakness_tile_is_marked_as_one() {
     let root = rolands_dock().await;
-    let tile = one(&root, ".dock .threat .tile");
+    let tile = common::one(&root, ".dock .threat .tile");
 
-    assert_eq!(text(&tile, ".tile-name"), "Cover Up");
+    assert_eq!(common::text_of(&tile, ".tile-name"), "Cover Up");
     assert!(tile.class_list().contains("weakness"), "the corner mark");
-    assert_eq!(text(&tile, ".tile-weakness"), "Weakness");
-    assert_eq!(text(&tile, ".chip--live"), "clues 3");
+    assert_eq!(common::text_of(&tile, ".tile-weakness"), "Weakness");
+    assert_eq!(common::text_of(&tile, ".chip--live"), "clues 3");
 }

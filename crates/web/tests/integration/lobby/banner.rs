@@ -3,13 +3,13 @@
 
 use wasm_bindgen_test::*;
 
-use super::{mount_lobby, one, tals_lobby_with_sam, SAM};
-use crate::common::YOU;
+use super::{mount_lobby, tals_lobby_with_sam, SAM};
+use crate::common::{self, YOU};
 
 #[wasm_bindgen_test]
 async fn opening_the_link_shows_whose_game_you_joined() {
     let handle = mount_lobby(tals_lobby_with_sam(), SAM, true).await;
-    let banner = one(&handle, ".joined-banner")
+    let banner = common::one(&handle.root, ".joined-banner")
         .text_content()
         .unwrap_or_default();
     assert!(banner.contains("Tal's game"), "{banner}");

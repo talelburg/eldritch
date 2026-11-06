@@ -344,10 +344,10 @@ fn node_class(root: &Element, loc_name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Clicking the Cellar opened "Move to Cellar" underneath the Cellar's own
-/// popover, which sits above every menu. The popover closes while the menu is
-/// open, stays closed while the pointer moves about with it open, and comes
-/// back once the menu is dismissed.
+/// A location's popover sits above every menu, so clicking the Study for
+/// "Investigate" closes the Study's popover while the menu is open. It stays
+/// closed while the pointer moves about with the menu open, and comes back once
+/// the menu is dismissed.
 #[wasm_bindgen_test]
 async fn a_locations_popover_closes_while_its_menu_is_open() {
     let outcome = test_support::awaiting_pick_single_with(

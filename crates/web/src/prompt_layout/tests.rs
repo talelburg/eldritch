@@ -146,8 +146,7 @@ fn each_tab_marks_whether_you_hold_them_whose_turn_it_is_and_who_leads() {
 }
 
 /// Once the scenario has ended nobody takes a turn and nobody leads, so no tab
-/// carries ▶ or ★. The playthrough of PR #1359 ended with both of Tal's
-/// investigators defeated: Roland's tab lost its ★ but kept its ▶.
+/// carries ▶ or ★.
 #[test]
 fn no_tab_is_marked_once_the_scenario_has_ended() {
     let mut tal = with_active(

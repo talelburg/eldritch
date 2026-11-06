@@ -71,11 +71,7 @@ fn enemy_face(enemy: &Enemy) -> impl IntoView {
         .into_iter()
         .map(|s| view! { <span class="chip chip--keyword">{s}</span> })
         .collect();
-    let root_class = if enemy.exhausted {
-        "card card--enemy card--exhausted"
-    } else {
-        "card card--enemy"
-    };
+    let root_class = card::exhaustible_class("card card--enemy", enemy.exhausted);
     view! {
         <div class=root_class>
             <div class="card-head">
@@ -110,10 +106,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let open = RwSignal::new(None::<(i32, i32)>);
     let hover = Hover::beside_menu(open);
     let face = enemy.clone();
-    let mut root_class = String::from("tile card--enemy");
-    if enemy.exhausted {
-        root_class.push_str(" card--exhausted");
-    }
+    let mut root_class = card::exhaustible_class("tile card--enemy", enemy.exhausted);
     if actionable {
         root_class.push_str(" actionable");
     }
