@@ -10,8 +10,8 @@
 use leptos::prelude::*;
 use protocol::ClientMessage;
 
-use crate::more_menu::{MenuEntry, MoreMenu};
 use crate::delete_game;
+use crate::more_menu::{MenuEntry, MoreMenu};
 use crate::store::{self, ClientState, StoreSignal};
 use crate::transport::OutboundTx;
 

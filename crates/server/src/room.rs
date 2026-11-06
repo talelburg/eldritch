@@ -14,8 +14,8 @@ use sqlx::SqlitePool;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use crate::{lobby, store};
 use crate::session::{GameSession, NewGame, ReassignError, SessionError};
+use crate::{lobby, store};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
 /// of a single scenario; a slow client that overruns it gets a

@@ -16,8 +16,9 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
 use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
-    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_DELETED, CLOSE_GAME_NOT_FOUND,
-    CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_DELETED,
+    CLOSE_GAME_NOT_FOUND, CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED,
+    CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::error::{RecvError, TryRecvError};
@@ -215,19 +216,8 @@ async fn handle_socket(
     // already include (see `GameRoom::attach`).
     let Attached { mut rx, first } = match room.attach(member).await {
         Ok(attached) => attached,
-        // Deleted since the room was got: the game is gone, as if never found.
-        Err(AttachError::Deleted) => {
-            close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await;
-            return;
-        }
-        // Dropped bare, so the client reconnects and the membership is tried
-        // again.
-        Err(AttachError::Db(err)) => {
-            tracing::error!(
-                game_id = game_id.as_str(),
-                error = %err,
-                "refusing to attach: the membership couldn't be stored",
-            );
+        Err(error) => {
+            refuse_attach(socket, &game_id, error).await;
             return;
         }
     };
@@ -301,6 +291,21 @@ async fn handle_socket(
                 break;
             }
         }
+    }
+}
+
+/// End `socket`, which [`GameRoom::attach`] refused with `error`.
+async fn refuse_attach(socket: WebSocket, game_id: &GameId, error: AttachError) {
+    match error {
+        // Deleted since the room was got: the game is gone, as if never found.
+        AttachError::Deleted => close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await,
+        // Dropped bare, so the client reconnects and the membership is tried
+        // again.
+        AttachError::Db(err) => tracing::error!(
+            game_id = game_id.as_str(),
+            error = %err,
+            "refusing to attach: the membership couldn't be stored",
+        ),
     }
 }
 

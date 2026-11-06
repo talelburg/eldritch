@@ -86,10 +86,7 @@ async fn the_boards_delete_is_the_creators_even_on_a_finished_game() {
     click(&handle, ".confirm-dialog .confirm-delete");
     task::tick().await;
 
-    assert_eq!(
-        deleted(&mut handle),
-        Some(GameId::new(reassign::GAME_ID))
-    );
+    assert_eq!(deleted(&mut handle), Some(GameId::new(reassign::GAME_ID)));
 }
 
 #[wasm_bindgen_test]

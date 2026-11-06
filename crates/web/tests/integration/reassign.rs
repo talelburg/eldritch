@@ -12,9 +12,7 @@ use game_core::test_support::{self, seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::lobby::Member;
-use protocol::{
-    AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage,
-};
+use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
 
