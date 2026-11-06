@@ -1,0 +1,1084 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not part of the web crate's build, never served.
+  Spec #863 / PR #1359: the board redesign.
+
+  Question: with a fluid, proportional board (dock ~40% of the height, the map
+  the rest, the round band full height on the right), compact card tiles with
+  the full card in a hover popover, and a continuous round band, which dock
+  structure reads best? Three docks, ?variant=A|B|C:
+    A  two rows: investigator + stats, in play, threat area / the hand
+    B  columns: investigator + stats | in play over threat | hand as a wrapping grid
+    C  dock on the right: the panel is a column beside the map, the hand a
+       full-width strip along the bottom
+  ?tiles=1|2|3 picks what a tile shows; ?frame=window|1366 renders the board in
+  the window or in a fixed 1366x768 box (no scaling). ?tab=roland|agnes|daisy.
+
+  Fixed moment: The Gathering, round 3, Investigation phase. Tal holds Roland
+  Banks (lead, active) and Agnes Baker; Sam holds Daisy Walker.
+
+  Card data is verbatim from data/arkhamdb-snapshot/pack/core/, spliced in by
+  board-redesign-cards.py (beside this file). Roland's hand is from the Learn
+  to Play starter deck; Agnes's and Daisy's from crates/cards/src/decks.rs.
+  Plain CSS and JS, no build, no network. Buttons submit nothing.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE: board redesign (#863)</title>
+<style>
+  /* A registered length inherits as px, so every descendant sizes off the
+     board's own unit rather than its own font size. */
+  @property --u { syntax: '<length>'; inherits: true; initial-value: 16px; }
+  @property --mu { syntax: '<length>'; inherits: true; initial-value: 16px; }
+  @property --tu { syntax: '<length>'; inherits: true; initial-value: 16px; }
+
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body.framed { background: #5d5d66; }
+  /* The stage is the size container every proportion is taken from: the
+     window, or a fixed 1366x768 box. Container units, not viewport units, so
+     the box behaves like a small screen. No transform anywhere. */
+  .stage { position: fixed; inset: 0; container-type: size; background: #fff; overflow: hidden; }
+  body.framed .stage {
+    inset: auto; width: 1366px; height: 768px;
+    left: max(0px, calc(50% - 683px)); top: max(0px, calc(50% - 384px));
+    outline: 3px dashed #ff2fa8; outline-offset: 3px;
+  }
+  .app {
+    --u: clamp(13px, calc(0.35cqw + 0.5cqh + 6px), 22px);
+    --tu: var(--u);
+    font-size: var(--u); height: 100%; color: #1a1a1a;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .col-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+  /* --- header (the app's own, serif as today) --- */
+  .app-header { flex: none; display: flex; align-items: baseline; gap: 1em; margin: 0.35em 0.8em; font-family: serif; }
+  .app-header h1 { margin: 0; font-size: 1.4em; }
+  .app-header .status { font-size: 0.85em; color: #555; }
+  .app-header button { font-size: 0.75em; }
+  .app-header .more { margin-left: auto; }
+
+  /* --- the board area: a grid whose proportions are the design --- */
+  .board-area { flex: 1 1 auto; min-height: 0; display: grid; gap: 0.4em; margin: 0 0.6em 0.4em; font-family: system-ui, sans-serif; }
+  .v-A .board-area, .v-B .board-area { grid-template-rows: minmax(0, 1fr) 40cqh; }
+  .v-C .board-area { grid-template-columns: minmax(0, 1fr) clamp(15em, 23cqw, 30em); grid-template-rows: minmax(0, 1fr) 21cqh; }
+  /* The dock's tiles size off the dock: A and B take it from the dock's height
+     (a fixed 40% share), C's hand strip from its width. */
+  .v-A .dock, .v-B .dock { container-type: size; }
+  .v-A .dock > *, .v-B .dock > * { --tu: clamp(calc(var(--u) * 0.9), 5cqh, calc(var(--u) * 1.4)); font-size: var(--tu); }
+  .v-C .handstrip { container-type: size; }
+  .v-C .side .inv-tab { font-size: 0.8em; padding: 0.25em 0.5em; }
+  .v-C .handstrip > * { --tu: clamp(calc(var(--u) * 0.9), min(1.1cqw, 8cqh), calc(var(--u) * 1.5)); }
+  .v-C .mapzone { grid-area: 1 / 1; }
+  .v-C .side { grid-area: 1 / 2; }
+  .v-C .handstrip { grid-area: 2 / 1 / 3 / 3; }
+
+  /* --- map zone --- */
+  .mapzone { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 0.3em; }
+  .act-row { flex: none; display: flex; gap: 0.5em; align-items: center; justify-content: center; }
+  .hdr-card {
+    border: 2px solid #888; border-radius: 6px; background: #faf9f6; padding: 0.25em 0.5em;
+    font-size: 0.82em; display: flex; flex-direction: column; gap: 0.1em; min-width: 12em; cursor: default;
+  }
+  .hdr-card .card-kind { font-size: 0.75em; text-transform: uppercase; opacity: 0.7; margin-right: 0.3em; }
+  .hdr-card .card-name { font-weight: bold; }
+  .card--act { border-color: #c8a020; }
+  .card--agenda { border-color: #7a2f2f; }
+  .encounter-deck { display: flex; align-items: center; gap: 0.4em; font-size: 0.85em; }
+  .deck-back {
+    width: 1.6em; height: 2.2em; border-radius: 3px; flex: none;
+    background: repeating-linear-gradient(45deg, #2a2a4a, #2a2a4a 4px, #3a3a5e 4px, #3a3a5e 8px);
+    border: 1px solid #1a1a2e;
+  }
+  .deck-label { font-size: 0.8em; text-transform: uppercase; opacity: 0.7; }
+  .deck-count { font-variant-numeric: tabular-nums; }
+  .ctl {
+    font: inherit; font-size: 0.8em; padding: 0.1em 0.5em; border: 1px solid #999;
+    border-radius: 4px; background: #f6f6f6; cursor: pointer;
+  }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .ctl.actionable { box-shadow: 0 0 0 2px #e0b84c; background: #fff; }
+
+  .map-box { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+  .map-lines { position: absolute; inset: 0; pointer-events: none; }
+  .map-line { stroke: #999; stroke-width: 2; }
+  .map-location { position: absolute; display: flex; gap: calc(var(--mu) * 0.4); align-items: flex-start; font-size: calc(var(--mu) * 0.85); }
+  .loc-card {
+    width: calc(var(--mu) * 9.5); min-height: calc(var(--mu) * 2.3); box-sizing: border-box;
+    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35em; cursor: default;
+  }
+  .map-location.unrevealed .loc-card { background: #ececec; color: #888; border-style: dashed; }
+  .map-location.actionable .loc-card { box-shadow: 0 0 0 2px #e0b84c; }
+  .loc-head { display: grid; grid-template-columns: 1.4em 1fr 1.4em; align-items: center; gap: 0.3em; }
+  .loc-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    width: 1.4em; height: 1.4em; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.9em; font-weight: 700; border-radius: 3px; border: 1px solid transparent;
+  }
+  .badge--shroud { background: #2b2b3a; color: #fff; border-radius: 0; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+  .badge--clues { background: #d9a441; color: #3a2a08; border-color: #a87b23; border-radius: 999px; }
+  .badge--clues.is-zero { background: #f0ece4; color: #a9a297; border-color: #ddd6c9; }
+  .badge--unknown { background: #fff; color: #aaa; border: 1px dashed #bbb; }
+  .node-tokens { width: calc(var(--mu) * 7.5); display: flex; flex-direction: column; gap: 0.2em; font-size: 0.92em; }
+  .node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1em 0.3em; }
+  .inv-token { color: #157a3a; cursor: pointer; }
+  .inv-token:hover { border-color: #157a3a; }
+  .inv-token.open { font-weight: 600; border-color: #157a3a; }
+  .enemy-token { color: #a3261b; cursor: default; }
+
+  /* --- tabs and panel --- */
+  .dock, .side { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+  .inv-tabs { display: flex; gap: 0.25em; flex: none; flex-wrap: wrap; }
+  .inv-tab {
+    display: inline-flex; align-items: center; gap: 0.3em; font: inherit; font-size: 0.9em;
+    border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0;
+    background: #f3f3f3; color: #444; padding: 0.25em 0.7em; cursor: pointer;
+  }
+  .inv-tab.held { background: #e3efe6; color: #13502a; }
+  .inv-tab.open { background: #fff; font-weight: 600; position: relative; top: 1px; }
+  .tab-active { color: #157a3a; }
+  .tab-lead { color: #b8860b; }
+  .panel {
+    flex: 1 1 auto; min-height: 0; border: 1px solid #ccc; border-radius: 0 4px 4px 4px; background: #fff;
+    padding: 0.4em; box-sizing: border-box; overflow: hidden;
+  }
+
+  /* the prompt strip, as the app styles it, a little slimmer */
+  @keyframes prompt-strip-in { 0% { box-shadow: 0 0 0 0 rgba(232,162,61,0); } 50% { box-shadow: 0 0 18px 4px rgba(232,162,61,.85); } 100% { box-shadow: 0 0 0 0 rgba(232,162,61,0); } }
+  .prompt-strip {
+    display: flex; align-items: center; gap: 0.75em; flex-wrap: wrap;
+    background: #e8a23d; color: #1a1a1a; border: 2px solid #b06f00; border-radius: 4px;
+    padding: 0.25em 0.8em; animation: prompt-strip-in 0.6s ease-out;
+  }
+  .strip-name { font-weight: bold; white-space: nowrap; font-size: 0.9em; }
+  .strip-name::after { content: ":"; }
+  .prompt-strip .prompt { font-weight: bold; font-size: 1.02em; margin-right: auto; }
+  .prompt-strip .pass { font: inherit; background: transparent; color: #1a1a1a; border: 1px solid #1a1a1a; border-radius: 4px; padding: 0.2em 0.9em; cursor: pointer; }
+  .waiting-strip { background: #ececec; color: #444; border: 1px solid #c8c8c8; border-radius: 4px; padding: 0.25em 0.8em; font-size: 0.9em; }
+
+  .zone { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.2em; }
+  .zone-label { font-size: 0.68em; text-transform: uppercase; letter-spacing: 0.04em; color: #777; font-weight: 600; }
+  .zone-empty { font-size: 0.75em; color: #aaa; font-style: italic; }
+  .row { display: flex; gap: 0.4em; align-items: flex-start; }
+  .boxed { border: 1px solid #e3e3e3; border-radius: 4px; padding: 0.3em; }
+
+  /* investigator block */
+  .inv-card { cursor: default; }
+  .stats { display: grid; grid-template-columns: auto auto; gap: 0.05em 0.6em; font-size: 0.8em; align-items: baseline; }
+  .stats .k { color: #666; }
+  .stats .v { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pip { color: #c8a020; }
+  .pip.spent { color: #ddd; }
+  .player-deck { display: flex; align-items: center; gap: 0.4em; font-size: 0.85em; }
+  .discard { font-size: 0.8em; color: #444; }
+  .hand-hidden { display: flex; align-items: center; gap: 0.5em; font-size: 0.9em; color: #444; }
+  .hand-hidden .deck-back { width: 2.2em; height: 3em; }
+
+  /* --- tiles: the compact card --- */
+  .tile {
+    --tw: calc(var(--tu) * 8.6);
+    flex: none; width: var(--tw); box-sizing: border-box; position: relative; overflow: hidden;
+    border: 2px solid #888; border-radius: 6px; background: #faf9f6; color: #1a1a1a;
+    padding: 0.25em 0.4em; font-size: calc(var(--tu) * 0.8); cursor: pointer;
+    display: flex; flex-direction: column; gap: 0.2em;
+  }
+  .tiles-3 .tile { --tw: calc(var(--tu) * 11); }
+  .tiles-2 .tile { --tw: calc(var(--tu) * 8); }
+  .tile:hover { box-shadow: 0 0 0 2px #e0b84c; }
+  .tile-head { display: flex; align-items: center; gap: 0.35em; min-width: 0; }
+  .tile-cost {
+    flex: none; font-weight: bold; border: 1px solid currentColor; border-radius: 50%;
+    min-width: 1.35em; height: 1.35em; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; font-size: 0.9em;
+  }
+  .tile-cost.none { border-style: dotted; color: #999; }
+  .tile-name { font-weight: bold; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-icons { display: flex; gap: 0.15em; align-items: center; min-height: 1.2em; flex-wrap: wrap; }
+  .tile-live { margin-left: auto; }
+  .tile-meta { font-style: italic; color: #555; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-text { font-size: 0.85em; line-height: 1.25; color: #333; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .tiles-2 .tile-icons, .tiles-2 .tile-meta, .tiles-2 .tile-text { display: none; }
+  .tiles-1 .tile-meta, .tiles-1 .tile-text { display: none; }
+  /* weakness mark: a red corner, and the word where the tile has room */
+  .tile.weak::after { content: ""; position: absolute; top: 0; right: 0; border: 0.55em solid #c0392b; border-left-color: transparent; border-bottom-color: transparent; }
+  .weak-label { color: #c0392b; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
+  .tile.inv-card { --tw: auto; }
+
+  .card--guardian { border-color: #2f6fb3; }
+  .card--seeker   { border-color: #c8a020; }
+  .card--rogue    { border-color: #3a8f4f; }
+  .card--mystic   { border-color: #7a4fb0; }
+  .card--survivor { border-color: #c0432f; }
+  .card--neutral  { border-color: #888; }
+  .card--enemy    { border-color: #a3261b; }
+  .card--mythos   { border-color: #555; }
+
+  .chip { display: inline-block; padding: 0 0.3em; border: 1px solid #b0b0b0; border-radius: 3px; background: #eceae5; color: #222; font-size: 0.85em; font-weight: 600; margin: 0 0.1em; font-style: normal; }
+  .chip--live { background: #e3ecf5; }
+  .chip--enemy-stat { background: #eef0f2; }
+  .sk {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.15em; height: 1.15em;
+    border-radius: 3px; color: #fff; font-size: 0.78em; font-weight: 800; font-style: normal; vertical-align: middle; flex: none;
+  }
+  .sk-willpower { background: #4f5aa8; } .sk-intellect { background: #c77c1e; }
+  .sk-combat { background: #a33a2a; } .sk-agility { background: #2f8a4c; } .sk-wild { background: #777; }
+  .sk-n { font-weight: 700; margin: 0 0.35em 0 0.1em; font-size: 0.9em; }
+  .card-trait-ref { font-style: italic; font-weight: bold; }
+
+  /* --- variant A: two rows --- */
+  .pA { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); gap: 0.35em; }
+  .pA .top { display: flex; gap: 0.5em; min-height: 0; align-items: stretch; }
+  .pA .top > .boxed { overflow: hidden; }
+  .pA .top .tiles { display: flex; gap: 0.35em; flex-wrap: wrap; align-content: flex-start; }
+  .pA .bottom { display: flex; gap: 0.6em; min-height: 0; align-items: stretch; }
+  .pA .hand-tiles { flex: 1 1 auto; display: flex; gap: 0.4em; overflow-x: auto; overflow-y: hidden; padding: 3px; align-items: flex-start; }
+  .pA .invblock { display: flex; gap: 0.5em; align-items: flex-start; flex: none; }
+  .pA .piles { display: flex; flex-direction: column; gap: 0.3em; flex: none; }
+
+  /* --- variant B: columns --- */
+  .pB { display: grid; grid-template-columns: auto minmax(12em, 26%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 0.4em 0.6em; }
+  .pB .prompt-strip, .pB .waiting-strip { grid-column: 1 / -1; }
+  .pB .left { display: flex; flex-direction: column; gap: 0.4em; min-height: 0; width: 11.5em; }
+  .pB .left .inv-card { --tw: 100%; }
+  .pB .mid { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 0.4em; min-height: 0; }
+  .pB .mid .tiles { display: flex; flex-wrap: wrap; gap: 0.35em; align-content: flex-start; }
+  .pB .hand-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tw-min), 1fr)); gap: 0.4em; align-content: start; overflow: hidden; padding: 3px; min-height: 0; }
+  .tiles-1 .pB { --tw-min: calc(var(--tu) * 8.6); } .tiles-2 .pB { --tw-min: calc(var(--tu) * 8); } .tiles-3 .pB { --tw-min: calc(var(--tu) * 11); }
+  .pB .hand-tiles .tile { width: auto; }
+  .pB .right { min-height: 0; display: flex; flex-direction: column; }
+  .pB .right .hand-tiles { flex: 1 1 auto; }
+
+  /* --- variant C: dock on the right, hand along the bottom --- */
+  .pC { display: flex; flex-direction: column; gap: 0.45em; overflow-y: hidden; }
+  .pC .prompt-strip .prompt { flex-basis: 100%; }
+  .pC .invblock { display: flex; gap: 0.5em; align-items: flex-start; }
+  .pC .tiles { display: flex; flex-wrap: wrap; gap: 0.35em; }
+  .handstrip {
+    min-height: 0; min-width: 0; border: 1px solid #ccc; border-radius: 6px; background: #f6f4ef;
+    display: flex; flex-direction: column; padding: 0.3em 0.5em; box-sizing: border-box; gap: 0.2em;
+  }
+  .handstrip .hand-tiles { flex: 1 1 auto; min-height: 0; display: flex; gap: 0.5em; overflow-x: auto; overflow-y: hidden; align-items: stretch; justify-content: safe center; padding: 3px; }
+  /* a hand of portrait cards: the name may wrap, the icons sit at the foot */
+  .handstrip .tile-name { white-space: normal; }
+  .handstrip .tile-head { align-items: flex-start; }
+  .tiles-1 .handstrip .tile-icons { margin-top: auto; }
+  .handstrip .tile { --tw: calc(var(--tu) * 9.5); }
+  .tiles-3 .handstrip .tile { --tw: calc(var(--tu) * 11.5); }
+  .handstrip .tile-text { -webkit-line-clamp: 6; }
+
+  /* --- the round band: continuous from the top --- */
+  .band {
+    width: calc(var(--u) * 3); box-sizing: border-box; border-left: 1px solid #ddd; background: #fafafa;
+    font-family: system-ui, sans-serif; font-size: calc(var(--u) * 0.72); line-height: 1.4; text-align: center;
+    display: flex; flex-direction: column; justify-content: flex-start; overflow: hidden; padding: 0.4em 0;
+  }
+  .band ul { list-style: none; margin: 0; padding: 0.15em 0 0.3em; }
+  .band li { cursor: default; }
+  .tracker-round { font-weight: 700; font-size: 1.15em; padding-bottom: 0.3em; }
+  .tracker-phase { border-top: 1px solid #ddd; }
+  .tracker-phase.current { background: #fff4d0; }
+  .tracker-phase-label { font-weight: 700; color: #444; }
+  .tracker-phase.current .tracker-phase-label { color: #000; }
+  .tracker-step { color: #777; }
+  .tracker-window { color: #bbb; }
+  .tracker-phase.current :is(.tracker-step, .tracker-window) { color: #000; }
+  .band li:hover { background: #f2d264; color: #000; }
+
+  /* --- popover: instant, at the pointer, clamped to the stage --- */
+  .popover {
+    position: fixed; z-index: 30; pointer-events: none; display: none;
+    width: calc(var(--u) * 20); box-sizing: border-box; padding: 0.4em 0.6em;
+    background: #fff; color: #222; border: 1px solid #333; border-radius: 4px;
+    box-shadow: 0 3px 12px #0004; font: calc(var(--u) * 0.8) / 1.35 system-ui, sans-serif;
+    flex-direction: column; gap: 0.3em; text-align: left;
+  }
+  .popover.on { display: flex; }
+  .popover-title { font-weight: 600; font-size: 1.08em; }
+  .pop-sub { font-weight: normal; font-style: italic; color: #555; }
+  .pop-kind { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.03em; color: #666; }
+  .card-traits { font-style: italic; color: #555; }
+  .card-text { line-height: 1.35; }
+  .pop-foot { display: flex; flex-wrap: wrap; gap: 0.3em; align-items: center; border-top: 1px solid #eee; padding-top: 0.25em; }
+
+  /* --- the prototype switcher: obviously not the design --- */
+  .switcher {
+    position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 50;
+    background: #111; color: #fff; border-radius: 2rem; padding: 6px 14px;
+    display: flex; gap: 12px; align-items: center; box-shadow: 0 3px 14px #000a, 0 0 0 2px #ff2fa8;
+    font: 13px/1.2 ui-monospace, monospace; white-space: nowrap;
+  }
+  .switcher.hidden { display: none; }
+  .switcher b { color: #ff9fd6; font-weight: 700; }
+  .switcher button { font: inherit; background: #333; color: #fff; border: 1px solid #555; border-radius: 1rem; padding: 2px 9px; cursor: pointer; }
+  .switcher button.on { background: #ff2fa8; border-color: #ff2fa8; }
+  .switcher .sep { width: 1px; align-self: stretch; background: #444; }
+  .switcher .metrics { color: #9fe0a6; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"><div class="app" id="app"></div></div>
+<div class="popover" id="pop"></div>
+<div class="switcher" id="switcher"></div>
+<script>
+const CARDS = /*CARDS-BEGIN*/{
+"01001": {
+"back_text": "<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Guardian cards ([guardian]) level 0-5, Seeker cards ([seeker]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Roland's .38 Special, Cover Up, 1 random basic weakness.",
+"code": "01001",
+"faction_code": "guardian",
+"health": 9,
+"is_unique": true,
+"name": "Roland Banks",
+"sanity": 5,
+"skill_agility": 2,
+"skill_combat": 4,
+"skill_intellect": 3,
+"skill_willpower": 3,
+"subname": "The Fed",
+"text": "[reaction] After you defeat an enemy: Discover 1 clue at your location. (Limit once per round.)\n[elder_sign] effect: +1 for each clue on your location.",
+"traits": "Agency. Detective.",
+"type_code": "investigator"
+},
+"01002": {
+"back_text": "<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Seeker cards ([seeker]) level 0-5, Mystic cards ([mystic]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Daisy’s Tote Bag, The Necronomicon (John Dee Translation), 1 random basic weakness.",
+"code": "01002",
+"faction_code": "seeker",
+"health": 5,
+"is_unique": true,
+"name": "Daisy Walker",
+"sanity": 9,
+"skill_agility": 2,
+"skill_combat": 2,
+"skill_intellect": 5,
+"skill_willpower": 3,
+"subname": "The Librarian",
+"text": "You may take an additional action during your turn, which can only be used on [[Tome]] [action] abilities.\n[elder_sign] effect: +0. If you succeed, draw 1 card for each [[Tome]] you control.",
+"traits": "Miskatonic.",
+"type_code": "investigator"
+},
+"01004": {
+"back_text": "<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Mystic cards ([mystic]) level 0-5, Survivor cards ([survivor]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Heirloom of Hyperborea, Dark Memory, 1 random basic weakness.",
+"code": "01004",
+"faction_code": "mystic",
+"health": 6,
+"is_unique": true,
+"name": "Agnes Baker",
+"sanity": 8,
+"skill_agility": 3,
+"skill_combat": 2,
+"skill_intellect": 2,
+"skill_willpower": 5,
+"subname": "The Waitress",
+"text": "[reaction] After 1 or more horror is placed on Agnes Baker: Deal 1 damage to an enemy at your location. (Limit once per phase.)\n[elder_sign] effect: +1 for each horror on Agnes Baker.",
+"traits": "Sorcerer.",
+"type_code": "investigator"
+},
+"01006": {
+"code": "01006",
+"cost": 3,
+"faction_code": "neutral",
+"is_unique": true,
+"name": "Roland's .38 Special",
+"skill_agility": 1,
+"skill_combat": 1,
+"skill_wild": 1,
+"slot": "Hand",
+"text": "Roland Banks deck only.\nUses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack (if there are 1 or more clues on your location, you get +3 [combat], instead). This attack deals +1 damage.",
+"traits": "Item. Weapon. Firearm.",
+"type_code": "asset"
+},
+"01007": {
+"code": "01007",
+"faction_code": "neutral",
+"name": "Cover Up",
+"subtype_code": "weakness",
+"text": "<b>Revelation</b> - Put Cover Up into play in your threat area, with 3 clues on it.\n[reaction] When you would discover 1 or more clues at your location: Discard that many clues from Cover Up instead.\n<b>Forced</b> - When the game ends, if there are any clues on Cover Up: You suffer 1 mental trauma.",
+"traits": "Task.",
+"type_code": "treachery"
+},
+"01008": {
+"code": "01008",
+"cost": 2,
+"faction_code": "neutral",
+"is_unique": true,
+"name": "Daisy's Tote Bag",
+"skill_intellect": 1,
+"skill_wild": 1,
+"skill_willpower": 1,
+"text": "Daisy Walker deck only.\nYou have 2 additional hand slots, which can only be used to hold [[Tome]] assets.",
+"traits": "Item.",
+"type_code": "asset"
+},
+"01012": {
+"code": "01012",
+"cost": 3,
+"faction_code": "neutral",
+"is_unique": true,
+"name": "Heirloom of Hyperborea",
+"skill_combat": 1,
+"skill_wild": 1,
+"skill_willpower": 1,
+"slot": "Accessory",
+"subname": "Artifact from Another Life",
+"text": "Agnes Baker deck only.\n[reaction] After you play a [[Spell]] card: Draw 1 card.",
+"traits": "Item. Relic.",
+"type_code": "asset"
+},
+"01013": {
+"code": "01013",
+"cost": 2,
+"faction_code": "neutral",
+"name": "Dark Memory",
+"subtype_code": "weakness",
+"text": "Place 1 doom on the current agenda. This effect can cause the current agenda to advance.\n<b>Forced</b> - If Dark Memory is in your hand at the end of your turn, reveal it and take 2 horror.",
+"traits": "Spell.",
+"type_code": "event"
+},
+"01016": {
+"code": "01016",
+"cost": 4,
+"faction_code": "guardian",
+"name": ".45 Automatic",
+"skill_agility": 1,
+"slot": "Hand",
+"text": "Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack. This attack deals +1 damage.",
+"traits": "Item. Weapon. Firearm.",
+"type_code": "asset"
+},
+"01017": {
+"code": "01017",
+"cost": 2,
+"faction_code": "guardian",
+"name": "Physical Training",
+"skill_combat": 1,
+"skill_willpower": 1,
+"text": "[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [combat] for this skill test.",
+"traits": "Talent.",
+"type_code": "asset"
+},
+"01018": {
+"code": "01018",
+"cost": 4,
+"faction_code": "guardian",
+"health": 2,
+"name": "Beat Cop",
+"sanity": 2,
+"skill_combat": 1,
+"slot": "Ally",
+"text": "You get +1 [combat].\n[fast] Discard Beat Cop: Deal 1 damage to an enemy at your location.",
+"traits": "Ally. Police.",
+"type_code": "asset"
+},
+"01019": {
+"code": "01019",
+"cost": 2,
+"faction_code": "guardian",
+"name": "First Aid",
+"skill_willpower": 1,
+"text": "Uses (3 supplies). If First Aid has no supplies, discard it.\n[action] Spend 1 supply: Heal 1 damage or horror from an investigator at your location.",
+"traits": "Talent. Science.",
+"type_code": "asset"
+},
+"01022": {
+"code": "01022",
+"cost": 1,
+"faction_code": "guardian",
+"name": "Evidence!",
+"skill_intellect": 2,
+"text": "Fast. Play after you defeat an enemy.\nDiscover 1 clue at your location.",
+"traits": "Insight.",
+"type_code": "event"
+},
+"01023": {
+"code": "01023",
+"cost": 1,
+"faction_code": "guardian",
+"name": "Dodge",
+"skill_agility": 1,
+"skill_willpower": 1,
+"text": "Fast. Play when an enemy attacks an investigator at your location.\nCancel that attack.",
+"traits": "Tactic.",
+"type_code": "event"
+},
+"01025": {
+"code": "01025",
+"faction_code": "guardian",
+"name": "Vicious Blow",
+"skill_combat": 1,
+"text": "If this skill test is successful during an attack, that attack deals +1 damage.",
+"traits": "Practiced.",
+"type_code": "skill"
+},
+"01030": {
+"code": "01030",
+"cost": 1,
+"faction_code": "seeker",
+"name": "Magnifying Glass",
+"skill_intellect": 1,
+"slot": "Hand",
+"text": "Fast.\nYou get +1 [intellect] while investigating.",
+"traits": "Item. Tool.",
+"type_code": "asset"
+},
+"01037": {
+"code": "01037",
+"cost": 2,
+"faction_code": "seeker",
+"name": "Working a Hunch",
+"skill_intellect": 2,
+"text": "Fast. Play only during your turn.\nDiscover 1 clue at your location.",
+"traits": "Insight.",
+"type_code": "event"
+},
+"01039": {
+"code": "01039",
+"faction_code": "seeker",
+"name": "Deduction",
+"skill_intellect": 1,
+"text": "If this skill test is successful while investigating a location, discover 1 additional clue at that location.",
+"traits": "Practiced.",
+"type_code": "skill"
+},
+"01060": {
+"code": "01060",
+"cost": 3,
+"faction_code": "mystic",
+"name": "Shrivelling",
+"skill_combat": 1,
+"slot": "Arcane",
+"text": "Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat] and deals +1 damage. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror.",
+"traits": "Spell.",
+"type_code": "asset"
+},
+"01067": {
+"code": "01067",
+"faction_code": "mystic",
+"name": "Fearless",
+"skill_willpower": 1,
+"text": "If this skill test is successful, heal 1 horror.",
+"traits": "Innate.",
+"type_code": "skill"
+},
+"01072": {
+"code": "01072",
+"cost": 0,
+"faction_code": "survivor",
+"health": 2,
+"name": "Leather Coat",
+"skill_combat": 1,
+"slot": "Body",
+"traits": "Item. Armor.",
+"type_code": "asset"
+},
+"01080": {
+"code": "01080",
+"cost": 1,
+"faction_code": "survivor",
+"name": "Lucky!",
+"text": "Fast. Play when you would fail a skill test.\nGet +2 to your skill value for that test.",
+"traits": "Fortune.",
+"type_code": "event"
+},
+"01086": {
+"code": "01086",
+"cost": 1,
+"faction_code": "neutral",
+"name": "Knife",
+"skill_combat": 1,
+"slot": "Hand",
+"text": "[action]: <b>Fight.</b> You get +1 [combat] for this attack.\n[action] Discard Knife: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage.",
+"traits": "Item. Weapon. Melee.",
+"type_code": "asset"
+},
+"01087": {
+"code": "01087",
+"cost": 2,
+"faction_code": "neutral",
+"name": "Flashlight",
+"skill_intellect": 1,
+"slot": "Hand",
+"text": "Uses (3 supplies).\n[action] Spend 1 supply: <b>Investigate.</b> Your location gets -2 shroud for this investigation.",
+"traits": "Item. Tool.",
+"type_code": "asset"
+},
+"01088": {
+"code": "01088",
+"cost": 0,
+"faction_code": "neutral",
+"name": "Emergency Cache",
+"text": "Gain 3 resources.",
+"traits": "Supply.",
+"type_code": "event"
+},
+"01089": {
+"code": "01089",
+"faction_code": "neutral",
+"name": "Guts",
+"skill_willpower": 2,
+"text": "Max 1 committed per skill test.\nIf this test is successful, draw 1 card.",
+"traits": "Innate.",
+"type_code": "skill"
+},
+"01090": {
+"code": "01090",
+"faction_code": "neutral",
+"name": "Perception",
+"skill_intellect": 2,
+"text": "Max 1 committed per skill test.\nIf this test is successful, draw 1 card.",
+"traits": "Practiced.",
+"type_code": "skill"
+},
+"01105": {
+"back_name": "A Lapse in Time",
+"back_text": "The lead investigator must decide (choose one): Either each investigator discards 1 card at random from his or her hand, or the lead investigator takes 2 horror.",
+"code": "01105",
+"doom": 3,
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "What's Going On?!",
+"stage": 1,
+"type_code": "agenda"
+},
+"01109": {
+"back_name": "Breaking the Barrier",
+"back_text": "The barrier blocking passage into the parlor has vanished. Reveal the Parlor.\nPut the set-aside Lita Chantler into play in the Parlor.\nSpawn the set-aside Ghoul Priest in the Hallway.",
+"clues": 3,
+"code": "01109",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "The Barrier",
+"stage": 2,
+"text": "<b>Objective</b> - When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance.",
+"type_code": "act"
+},
+"01111": {
+"clues": 2,
+"code": "01111",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "Study",
+"shroud": 2,
+"type_code": "location"
+},
+"01112": {
+"clues": 0,
+"code": "01112",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "Hallway",
+"shroud": 1,
+"type_code": "location"
+},
+"01113": {
+"clues": 2,
+"code": "01113",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "Attic",
+"shroud": 1,
+"text": "<b>Forced</b> - After you enter the Attic: Take 1 horror.",
+"type_code": "location",
+"victory": 1
+},
+"01114": {
+"clues": 2,
+"code": "01114",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "Cellar",
+"shroud": 4,
+"text": "<b>Forced</b> - After you enter the Cellar: Take 1 damage.",
+"type_code": "location",
+"victory": 1
+},
+"01115": {
+"back_text": "The entrance to the Parlor is blocked by a darkly glowing unfathomable barrier. You cannot move into the Parlor.",
+"clues": 0,
+"code": "01115",
+"encounter_code": "torch",
+"faction_code": "mythos",
+"name": "Parlor",
+"shroud": 2,
+"text": "[action] <b>Resign.</b> \"This is too much for me!\" You run out the front door, fleeing in panic.\nWhile Lita Chantler is not controlled by a player, she gains: \"[action]: <b>Parley.</b> Test [intellect] (4). If you succeed, take control of Lita Chantler.\"",
+"type_code": "location"
+},
+"01160": {
+"code": "01160",
+"encounter_code": "ghouls",
+"enemy_damage": 1,
+"enemy_evade": 2,
+"enemy_fight": 2,
+"enemy_horror": 1,
+"faction_code": "mythos",
+"health": 2,
+"name": "Ghoul Minion",
+"traits": "Humanoid. Monster. Ghoul.",
+"type_code": "enemy"
+}
+}/*CARDS-END*/;
+
+// ---------- the fixed moment ----------
+const NAME = { study: 'Study', hallway: 'Hallway', attic: 'Attic', cellar: 'Cellar', parlor: 'Parlor' };
+const byName = n => Object.values(CARDS).find(c => c.name === n);
+const SEATING = ['roland', 'agnes', 'daisy'];
+const INV = {
+  roland: { code: '01001', account: 'Tal', held: true, lead: true, active: true,
+    damage: 1, horror: 0, resources: 4, clues: 1, actions: 2, actionsMax: 3, deck: 22, discard: ['01088', '01019', '01025'],
+    inPlay: [{ code: '01087', live: '2 supplies' }],
+    threat: [{ code: byName('Ghoul Minion').code, live: '1 damage', note: 'engaged' }, { code: '01007', live: '2 clues' }],
+    hand: ['01006', '01016', '01017', '01018', '01022', '01023', '01030', '01037', '01089'],
+    prompt: 'Choose an action' },
+  agnes: { code: '01004', account: 'Tal', held: true,
+    damage: 0, horror: 2, resources: 3, clues: 0, actions: 3, actionsMax: 3, deck: 24, discard: ['01067'],
+    inPlay: [{ code: '01012' }], threat: [],
+    hand: ['01060', '01013', '01072', '01080', '01090'] },
+  daisy: { code: '01002', account: 'Sam', held: false,
+    damage: 0, horror: 1, resources: 2, clues: 2, actions: 3, actionsMax: 3, deck: 23, discard: ['01039', '01086'],
+    inPlay: [{ code: '01008' }], threat: [], handCount: 5 },
+};
+// Map: grid positions as in shot 44, the Study to the Hallway's left.
+const LOCS = [
+  { key: 'study',   gx: 0, gy: 1, revealed: true,  clues: 1, inv: [] },
+  { key: 'attic',   gx: 1, gy: 0, revealed: false, inv: [] },
+  { key: 'hallway', gx: 1, gy: 1, revealed: true,  clues: 0, inv: ['roland', 'daisy'] },
+  { key: 'parlor',  gx: 1, gy: 2, revealed: false, inv: [] },
+  { key: 'cellar',  gx: 2, gy: 1, revealed: true,  clues: 1, inv: ['agnes'] },
+];
+const LINKS = [['hallway', 'attic'], ['hallway', 'cellar'], ['hallway', 'parlor']];
+const ACT = { code: byName('The Barrier').code, perInv: 3 };
+const AGENDA = { code: byName("What's Going On?!").code, doom: 2 };
+const ENCOUNTER_COUNT = 22;
+const ROUND = 3, PHASE = 'Investigation';
+
+// The band's steps, from crates/web/src/turn_tracker.rs on web/table-as-tabs.
+const WINDOW_TEXT = 'Player window. Players may use [free] triggered abilities in these windows.';
+const W = null;
+const OUTLINE = [
+  ['Mythos', ['1.1 Round begins. Mythos phase begins.', '1.2 Place 1 doom on the current agenda.', '1.3 Check doom threshold.', '1.4 Each investigator draws 1 encounter card.', W, '1.5 Mythos phase ends.']],
+  ['Investigation', ['2.1 Investigation phase begins.', W, "2.2 Next investigator's turn begins.", W, '2.2.1 Active investigator may take an action, if able.', "2.2.2 Investigator's turn ends.", '2.3 Investigation phase ends.']],
+  ['Enemy', ['3.1 Enemy phase begins.', '3.2 Hunter enemies move.', W, '3.3 Next investigator resolves engaged enemy attacks.', W, '3.4 Enemy phase ends.']],
+  ['Upkeep', ['4.1 Upkeep phase begins.', W, '4.2 Reset actions.', '4.3 Ready each exhausted card.', '4.4 Each investigator draws 1 card and gains 1 resource.', '4.5 Each investigator checks hand size.', '4.6 Upkeep phase ends. Round ends.']],
+];
+
+// ---------- url state ----------
+const VARIANTS = [['A', 'two rows'], ['B', 'columns'], ['C', 'dock on the right']];
+const q = new URLSearchParams(location.search);
+const st = {
+  variant: VARIANTS.some(v => v[0] === q.get('variant')) ? q.get('variant') : 'A',
+  tiles: ['1', '2', '3'].includes(q.get('tiles')) ? q.get('tiles') : '1',
+  frame: q.get('frame') === '1366' ? '1366' : 'window',
+  tab: INV[q.get('tab')] ? q.get('tab') : 'roland',
+};
+function push() {
+  history.replaceState(null, '', '?' + new URLSearchParams(st));
+  render();
+}
+
+// ---------- text ----------
+const SKILLS = ['willpower', 'intellect', 'combat', 'agility', 'wild'];
+const SK_LETTER = { willpower: 'W', intellect: 'I', combat: 'C', agility: 'A', wild: '?' };
+const skIcon = s => `<span class="sk sk-${s}" title="">${SK_LETTER[s]}</span>`;
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ArkhamDB markup -> the app's look: [token] as a chip (skills as their icon),
+// <b>/<i> kept, [[Trait]] as a bold italic trait reference.
+function renderText(s) {
+  if (!s) return '';
+  let h = esc(s);
+  h = h.replace(/&lt;(\/?)(b|i|em|strong)&gt;/g, '<$1$2>').replace(/&lt;\/?cite&gt;/g, '');
+  h = h.replace(/\[\[([^\]]+)\]\]/g, '<span class="card-trait-ref">$1</span>');
+  h = h.replace(/\[([a-z_]+)\]/g, (m, t) => SKILLS.includes(t) ? skIcon(t) : `<span class="chip">${t}</span>`);
+  return h.replace(/\n/g, '<br>');
+}
+const plain = s => (s || '').replace(/<[^>]+>/g, '').replace(/\[\[([^\]]+)\]\]/g, '$1').replace(/\[([a-z_]+)\]/g, '[$1]');
+function iconsOf(c) {
+  let h = '';
+  for (const s of SKILLS) for (let i = 0; i < (c['skill_' + s] || 0); i++) h += skIcon(s);
+  return h;
+}
+const cls = c => c.type_code === 'enemy' ? 'card--enemy' : `card--${c.faction_code}`;
+const isWeak = c => c.subtype_code === 'weakness' || c.subtype_code === 'basicweakness';
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : '';
+
+// ---------- popover registry ----------
+const POPS = [];
+const pop = fn => `data-pop="${POPS.push(fn) - 1}"`;
+
+function cardPop(code, live) {
+  const c = CARDS[code];
+  const kind = [cap(c.type_code), c.type_code === 'enemy' || c.faction_code === 'mythos' ? null : cap(c.faction_code),
+    c.slot ? c.slot + ' slot' : null, c.cost != null ? 'cost ' + c.cost : null].filter(Boolean).join(' · ');
+  let stats = '';
+  if (c.type_code === 'enemy') {
+    stats = `<span class="chip chip--enemy-stat">fight ${c.enemy_fight}</span><span class="chip chip--enemy-stat">health ${c.health}</span><span class="chip chip--enemy-stat">evade ${c.enemy_evade}</span>
+      <span class="chip chip--enemy-stat">damage ${c.enemy_damage}</span><span class="chip chip--enemy-stat">horror ${c.enemy_horror}</span>`;
+  } else if (c.type_code === 'investigator') {
+    stats = SKILLS.slice(0, 4).map(s => `${skIcon(s)}<span class="sk-n">${c['skill_' + s]}</span>`).join('') +
+      `<span class="chip">health ${c.health}</span><span class="chip">sanity ${c.sanity}</span>`;
+  } else {
+    stats = iconsOf(c) + (c.health != null ? `<span class="chip">health ${c.health}</span>` : '') + (c.sanity != null ? `<span class="chip">sanity ${c.sanity}</span>` : '');
+  }
+  return `<div class="popover-title">${esc(c.name)}${c.subname ? ` <span class="pop-sub">${esc(c.subname)}</span>` : ''}</div>
+    <div class="pop-kind">${kind}${isWeak(c) ? ' · <span class="weak-label">weakness</span>' : ''}</div>
+    ${c.traits ? `<div class="card-traits">${esc(c.traits)}</div>` : ''}
+    ${c.text ? `<div class="card-text">${renderText(c.text)}</div>` : ''}
+    <div class="pop-foot">${stats}${live ? `<span class="chip chip--live">${live}</span>` : ''}</div>`;
+}
+
+// ---------- pieces ----------
+function tile(code, live, extra = '') {
+  const c = CARDS[code];
+  const cost = c.type_code === 'enemy' ? '' : `<span class="tile-cost ${c.cost == null ? 'none' : ''}">${c.cost == null ? '–' : c.cost}</span>`;
+  const icons = c.type_code === 'enemy'
+    ? `<span class="chip chip--enemy-stat">${c.enemy_fight}·${c.health}·${c.enemy_evade}</span>`
+    : iconsOf(c);
+  const meta = [cap(c.type_code), c.traits].filter(Boolean).join(' · ');
+  return `<div class="tile ${cls(c)} ${isWeak(c) ? 'weak' : ''} ${extra}" ${pop(() => cardPop(code, live))}>
+    <div class="tile-head">${cost}<span class="tile-name">${esc(c.name)}</span></div>
+    <div class="tile-icons">${icons}${isWeak(c) ? '<span class="weak-label">weakness</span>' : ''}${live ? `<span class="chip chip--live tile-live">${live}</span>` : ''}</div>
+    <div class="tile-meta">${esc(meta)}</div>
+    <div class="tile-text">${renderText(c.text).replace(/<br>/g, ' ')}</div>
+  </div>`;
+}
+function invCard(id) {
+  const i = INV[id], c = CARDS[i.code];
+  const sk = SKILLS.slice(0, 4).map(s => `${skIcon(s)}<span class="sk-n">${c['skill_' + s]}</span>`).join('');
+  return `<div class="tile inv-card ${cls(c)}" ${pop(() => cardPop(i.code))}>
+    <div class="tile-head"><span class="tile-name">${esc(c.name)}</span></div>
+    <div class="tile-icons" style="display:flex">${sk}</div></div>`;
+}
+function stats(id) {
+  const i = INV[id], c = CARDS[i.code];
+  const pips = Array.from({ length: i.actionsMax }, (_, n) => `<span class="pip ${n < i.actions ? '' : 'spent'}">●</span>`).join('');
+  const gain = i.active ? `<button class="ctl actionable">+1</button>` : '';
+  return `<div class="stats">
+    <span class="k">health</span><span class="v">${c.health - i.damage}/${c.health}</span>
+    <span class="k">sanity</span><span class="v">${c.sanity - i.horror}/${c.sanity}</span>
+    <span class="k">resources</span><span class="v">${i.resources} ${gain}</span>
+    <span class="k">clues</span><span class="v">${i.clues}</span>
+    <span class="k">actions</span><span class="v">${pips}</span></div>`;
+}
+function piles(id) {
+  const i = INV[id];
+  const top = i.discard.length ? CARDS[i.discard[i.discard.length - 1]] : null;
+  return `<div class="player-deck"><div class="deck-back"></div><span class="deck-count">${i.deck}</span>
+      ${i.held ? `<button class="ctl ${i.active ? 'actionable' : ''}" ${i.active ? '' : 'disabled'}>Draw</button>` : ''}</div>
+    <div class="discard" ${top ? pop(() => cardPop(top.code)) : ''}>discard ${i.discard.length}${top ? ` · <i>${esc(top.name)}</i>` : ''}</div>`;
+}
+function strip(id) {
+  const i = INV[id];
+  if (i.prompt) return `<div class="prompt-strip"><span class="strip-name">${esc(CARDS[i.code].name)}</span><span class="prompt">${i.prompt} (${i.actions} left)</span><button class="pass">End turn</button></div>`;
+  return '';
+}
+const tiles = list => list.length ? list.map(x => tile(x.code, x.live)).join('') : '<span class="zone-empty">none</span>';
+function hand(id) {
+  const i = INV[id];
+  if (!i.held) return `<div class="hand-hidden"><div class="deck-back"></div><span>${i.handCount} cards, face down (${i.account} holds ${esc(CARDS[i.code].name)})</span></div>`;
+  return i.hand.map(c => tile(c)).join('');
+}
+const handLabel = id => `Hand${INV[id].held ? ` (${INV[id].hand.length})` : ''}`;
+
+function tabs() {
+  return `<nav class="inv-tabs">${SEATING.map(id => {
+    const i = INV[id];
+    return `<button class="inv-tab ${i.held ? 'held' : ''} ${st.tab === id ? 'open' : ''}" data-tab="${id}">
+      ${i.active ? '<span class="tab-active">▶</span>' : ''}<span>${esc(CARDS[i.code].name)}</span>${i.lead ? '<span class="tab-lead">★</span>' : ''}</button>`;
+  }).join('')}</nav>`;
+}
+
+// ---------- the three docks ----------
+function panelA(id) {
+  return `<div class="panel pA">
+    <div>${strip(id)}</div>
+    <div class="top">
+      <div class="invblock">${invCard(id)}${stats(id)}<div class="piles">${piles(id)}</div></div>
+      <div class="zone boxed" style="flex:1 1 0"><span class="zone-label">In play</span><div class="tiles">${tiles(INV[id].inPlay)}</div></div>
+      <div class="zone boxed" style="flex:1 1 0"><span class="zone-label">Threat area</span><div class="tiles">${tiles(INV[id].threat)}</div></div>
+    </div>
+    <div class="bottom">
+      <div class="zone" style="flex:1 1 auto"><span class="zone-label">${handLabel(id)}</span><div class="hand-tiles" id="hand">${hand(id)}</div></div>
+    </div></div>`;
+}
+function panelB(id) {
+  return `<div class="panel pB">
+    ${strip(id)}
+    <div class="left">${invCard(id)}${stats(id)}${piles(id)}</div>
+    <div class="mid">
+      <div class="zone boxed"><span class="zone-label">In play</span><div class="tiles">${tiles(INV[id].inPlay)}</div></div>
+      <div class="zone boxed"><span class="zone-label">Threat area</span><div class="tiles">${tiles(INV[id].threat)}</div></div>
+    </div>
+    <div class="right zone"><span class="zone-label">${handLabel(id)}</span><div class="hand-tiles" id="hand">${hand(id)}</div></div></div>`;
+}
+function panelC(id) {
+  return `<div class="panel pC">
+    ${strip(id)}
+    <div class="invblock">${invCard(id)}${stats(id)}</div>
+    <div class="zone"><span class="zone-label">In play</span><div class="tiles">${tiles(INV[id].inPlay)}</div></div>
+    <div class="zone"><span class="zone-label">Threat area</span><div class="tiles">${tiles(INV[id].threat)}</div></div>
+    <div class="zone" style="margin-top:auto">${piles(id)}</div></div>`;
+}
+
+// ---------- map zone ----------
+function mapzone() {
+  const act = CARDS[ACT.code], ag = CARDS[AGENDA.code];
+  const actPop = () => `<div class="popover-title">${esc(act.name)}</div><div class="pop-kind">Act ${act.stage}a · clues ${act.clues} per investigator (${act.clues * 3})</div><div class="card-text">${renderText(act.text)}</div>`;
+  const agPop = () => `<div class="popover-title">${esc(ag.name)}</div><div class="pop-kind">Agenda ${ag.stage}a · doom ${AGENDA.doom}/${ag.doom}</div>${ag.text ? `<div class="card-text">${renderText(ag.text)}</div>` : '<div class="card-traits">No printed text on this side.</div>'}`;
+  const nodes = LOCS.map(l => {
+    const c = byName(NAME[l.key]);
+    const head = l.revealed
+      ? `<span class="badge badge--shroud">${c.shroud}</span><span class="loc-name">${esc(c.name)}</span><span class="badge badge--clues ${l.clues ? '' : 'is-zero'}">${l.clues}</span>`
+      : `<span class="badge badge--unknown">?</span><span class="loc-name">${esc(c.name)}</span><span class="badge badge--unknown">?</span>`;
+    const p = () => l.revealed
+      ? `<div class="popover-title">${esc(c.name)}</div><div class="pop-kind">Location · shroud ${c.shroud} · clues ${l.clues}</div>${c.text ? `<div class="card-text">${renderText(c.text)}</div>` : ''}`
+      : `<div class="popover-title">${esc(c.name)}</div><div class="card-traits">Unrevealed</div>${c.back_text ? `<div class="card-text">${renderText(c.back_text)}</div>` : ''}`;
+    const toks = l.inv.map(id => `<span class="inv-token ${st.tab === id ? 'open' : ''}" data-tab="${id}">${esc(CARDS[INV[id].code].name)}</span>`).join('');
+    return `<div class="map-location ${l.revealed ? '' : 'unrevealed'} ${l.key === 'hallway' || l.key === 'attic' || l.key === 'cellar' ? 'actionable' : ''}" data-loc="${l.key}">
+      <div class="loc-card" ${pop(p)}><div class="loc-head">${head}</div></div>
+      <div class="node-tokens">${toks}</div></div>`;
+  }).join('');
+  return `<section class="mapzone">
+    <div class="act-row">
+      <div class="hdr-card card--act" ${pop(actPop)}><div><span class="card-kind">Act</span><span class="card-name">${esc(act.name)}</span></div><span>clues ${act.clues} per investigator (${act.clues * 3})</span></div>
+      <div class="hdr-card card--agenda" ${pop(agPop)}><div><span class="card-kind">Agenda</span><span class="card-name">${esc(ag.name)}</span></div><span>doom ${AGENDA.doom}/${ag.doom}</span></div>
+      <div class="encounter-deck"><span class="deck-label">Encounter</span><div class="deck-back"></div><span class="deck-count">${ENCOUNTER_COUNT}</span><button class="ctl" disabled>Draw</button></div>
+    </div>
+    <div class="map-box" id="mapbox"><svg class="map-lines" id="maplines"></svg>${nodes}</div>
+  </section>`;
+}
+
+function band() {
+  const li = (c, shown, text) => `<li class="${c}" ${pop(() => `<div class="card-text">${renderText(text)}</div>`)}>${shown}</li>`;
+  return `<aside class="band"><div class="tracker-round">R${ROUND}</div>${OUTLINE.map(([label, steps]) =>
+    `<div class="tracker-phase ${label === PHASE ? 'current' : ''}"><ul>${li('tracker-phase-label', label[0], label + ' phase')}${steps.map(s =>
+      s === W ? li('tracker-window', '◇', WINDOW_TEXT) : li('tracker-step', s.split(' ')[0], s)).join('')}</ul></div>`).join('')}</aside>`;
+}
+
+// ---------- render ----------
+function render() {
+  POPS.length = 0;
+  hidePop();
+  document.body.classList.toggle('framed', st.frame === '1366');
+  const id = st.tab;
+  const header = `<header class="app-header"><h1>Eldritch</h1><button>▸ log</button><span class="status">status: connected</span>
+    <span>signed in as Tal</span><button>Sign out</button><button class="more">⋯</button></header>`;
+  let area;
+  if (st.variant === 'A') area = `${mapzone()}<section class="dock">${tabs()}${panelA(id)}</section>`;
+  else if (st.variant === 'B') area = `${mapzone()}<section class="dock">${tabs()}${panelB(id)}</section>`;
+  else area = `${mapzone()}<section class="side dock">${tabs()}${panelC(id)}</section>
+    <section class="handstrip"><span class="zone-label">${esc(CARDS[INV[id].code].name)} · ${handLabel(id)}</span><div class="hand-tiles" id="hand">${hand(id)}</div></section>`;
+  const app = document.getElementById('app');
+  app.className = `app v-${st.variant} tiles-${st.tiles}`;
+  app.innerHTML = `<div class="col-main">${header}<div class="board-area">${area}</div></div>${band()}`;
+  switcher();
+  requestAnimationFrame(() => { layoutMap(); metrics(); });
+}
+
+// The map fills its box: cards scale with the space (within bounds), and the
+// gaps between them take up whatever is left, so no band of dead space.
+function layoutMap() {
+  const box = document.getElementById('mapbox');
+  if (!box) return;
+  const Wd = box.clientWidth, H = box.clientHeight;
+  const U = parseFloat(getComputedStyle(document.getElementById('app')).fontSize);
+  const cols = 3, rows = 3, slack = 2;
+  // a node is 9.5 card + 0.4 gap + 7.5 rail = 17.4mu wide, ~3.4mu tall
+  const mu = Math.max(U * 0.8, Math.min(U * 1.4, (Wd - 2 * slack) / (cols * 17.4 + 4), H / (rows * 2.6 + 3)));
+  const app = document.getElementById('app');
+  box.style.setProperty('--mu', mu + 'px');
+  const nodeW = 17.4 * mu + 4, cardW = 9.5 * mu, cardH = 2.3 * mu;
+  const colStep = Math.max(nodeW + mu, Math.min((Wd - 2 * slack - nodeW) / (cols - 1), nodeW + 6 * mu));
+  const rowStep = Math.max(cardH + 1.5 * mu, Math.min((H - cardH - mu) / (rows - 1), cardH + 5 * mu));
+  const x0 = (Wd - (colStep * (cols - 1) + nodeW)) / 2, y0 = (H - (rowStep * (rows - 1) + cardH)) / 2;
+  const centre = {};
+  box.querySelectorAll('.map-location').forEach(n => {
+    const l = LOCS.find(l => l.key === n.dataset.loc);
+    const x = x0 + l.gx * colStep, y = y0 + l.gy * rowStep;
+    n.style.left = x + 'px'; n.style.top = y + 'px';
+    centre[l.key] = [x + cardW / 2, y + cardH / 2];
+  });
+  const svg = document.getElementById('maplines');
+  svg.setAttribute('width', Wd); svg.setAttribute('height', H);
+  svg.innerHTML = LINKS.map(([a, b]) => `<line class="map-line" x1="${centre[a][0]}" y1="${centre[a][1]}" x2="${centre[b][0]}" y2="${centre[b][1]}"/>`).join('');
+}
+
+let lastMetrics = '';
+function metrics() {
+  const dock = st.variant === 'C' ? document.querySelector('.handstrip') : document.querySelector('.dock');
+  const handEl = document.getElementById('hand');
+  const dh = dock ? Math.round(dock.getBoundingClientRect().height) : 0;
+  let ov = 'fits';
+  if (handEl) {
+    const x = handEl.scrollWidth - handEl.clientWidth, y = handEl.scrollHeight - handEl.clientHeight;
+    if (st.variant === 'B') {
+      const hb = handEl.getBoundingClientRect().bottom;
+      const hidden = [...handEl.children].filter(t => t.getBoundingClientRect().bottom > hb + 1).length;
+      if (hidden || y > 0) ov = `${hidden} tile${hidden === 1 ? '' : 's'} cut off (${y}px)`;
+    } else if (x > 0) ov = `${x}px sideways`;
+  }
+  const s = `dock ${dh}px · hand ${ov} · stage ${document.getElementById('stage').clientWidth}×${document.getElementById('stage').clientHeight}`;
+  lastMetrics = s;
+  const m = document.getElementById('metrics');
+  if (m) m.textContent = s;
+}
+
+function switcher() {
+  const v = VARIANTS.find(v => v[0] === st.variant);
+  document.getElementById('switcher').innerHTML = `
+    <span>variant</span><button data-sw="prev">◀</button><b>${v[0]} (${v[1]})</b><button data-sw="next">▶</button>
+    <span class="sep"></span><span>tiles</span>${['1', '2', '3'].map(t => `<button data-tiles="${t}" class="${st.tiles === t ? 'on' : ''}">${t}</button>`).join('')}
+    <span class="sep"></span><span>frame</span><button data-frame="window" class="${st.frame === 'window' ? 'on' : ''}">window</button><button data-frame="1366" class="${st.frame === '1366' ? 'on' : ''}">1366×768</button>
+    <span class="sep"></span><span class="metrics" id="metrics">${lastMetrics}</span>`;
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v => v[0] === st.variant);
+  st.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0];
+  push();
+}
+
+// ---------- popover ----------
+const popEl = document.getElementById('pop');
+let popOn = null;
+function hidePop() { popEl.classList.remove('on'); popOn = null; }
+function placePop(x, y) {
+  const r = document.getElementById('stage').getBoundingClientRect();
+  const w = popEl.offsetWidth, h = popEl.offsetHeight, g = 14;
+  let left = x + g, top = y + g;
+  if (left + w > r.right - 4) left = x - g - w;
+  if (left < r.left + 4) left = r.left + 4;
+  if (top + h > r.bottom - 4) top = Math.max(r.top + 4, y - g - h);
+  if (top + h > r.bottom - 4) top = Math.max(r.top + 4, r.bottom - 4 - h);
+  popEl.style.left = left + 'px'; popEl.style.top = top + 'px';
+}
+document.addEventListener('mousemove', e => {
+  const t = e.target.closest && e.target.closest('[data-pop]');
+  if (!t || !document.getElementById('stage').contains(t)) { if (popOn) hidePop(); return; }
+  if (popOn !== t) {
+    popOn = t;
+    popEl.style.setProperty('--u', getComputedStyle(document.getElementById('app')).getPropertyValue('--u'));
+    popEl.innerHTML = POPS[+t.dataset.pop]();
+    popEl.classList.add('on');
+  }
+  placePop(e.clientX, e.clientY);
+});
+document.addEventListener('mouseleave', hidePop);
+
+// ---------- input ----------
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { st.tab = tab.dataset.tab; push(); return; }
+  const sw = e.target.closest('[data-sw]');
+  if (sw) { cycle(sw.dataset.sw === 'next' ? 1 : -1); return; }
+  const t = e.target.closest('[data-tiles]');
+  if (t) { st.tiles = t.dataset.tiles; push(); return; }
+  const f = e.target.closest('[data-frame]');
+  if (f) { st.frame = f.dataset.frame; push(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  else if (e.key === 'ArrowRight') cycle(1);
+  else if (e.key === 'h') document.getElementById('switcher').classList.toggle('hidden');
+});
+new ResizeObserver(() => { layoutMap(); metrics(); }).observe(document.getElementById('stage'));
+render();
+</script>
+</body>
+</html>
