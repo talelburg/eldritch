@@ -264,6 +264,9 @@ async fn handle_socket(
                             room::lobby_message(account, (*view).clone(), false)
                         }
                         RoomEvent::Started(live) => live.hello_for(account),
+                        RoomEvent::Members(members) => {
+                            ServerMessage::Members((*members).clone())
+                        }
                     };
                     if send_msg(&mut sink, &message).await.is_err() {
                         break;

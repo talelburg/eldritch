@@ -50,6 +50,7 @@ fn at_turn_menu() -> LiveGame {
         vec![Event::ScenarioStarted],
         TURN_MENU,
         holder_holds_inv(),
+        HOLDER,
         TEST_REGISTRIES,
     )
 }
@@ -300,6 +301,7 @@ fn hello_carries_the_build_account_assignment_position_outcome_and_setup_events(
         state,
         outcome,
         events,
+        ..
     } = live.hello_for(VIEWER)
     else {
         panic!("expected Hello");
@@ -349,6 +351,7 @@ fn two_seats(outcome: EngineOutcome, ending: Option<ScenarioEnding>) -> LiveGame
         Vec::new(),
         LogPosition(0),
         Assignment::from_iter([(INV, TAL), (INV2, SAM)]),
+        TAL,
         TEST_REGISTRIES,
     )
 }

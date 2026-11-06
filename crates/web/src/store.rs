@@ -6,7 +6,7 @@ use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
-use protocol::lobby::{LobbyRefusal, LobbyView, MAX_PICKS};
+use protocol::lobby::{LobbyRefusal, LobbyView, Member, MAX_PICKS};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
     AccountId, Applied, Assignment, GameEntry, GameId, LogPosition, Refusal, ServerMessage,
@@ -162,6 +162,12 @@ pub struct ClientState {
     /// a prompt, and a Pass, only for the investigators [`you`](Self::you)
     /// hold.
     pub assigned: Assignment,
+    /// The account that created the started game, from `Hello`. `None` before
+    /// the first `Hello`.
+    pub creator: Option<AccountId>,
+    /// Every member of the started game, in the order they joined: from
+    /// `Hello`, then replaced by each `Members`.
+    pub members: Vec<Member>,
     pub last_rejection: Option<String>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
@@ -397,6 +403,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         ServerMessage::Hello {
             build: _,
             you,
+            creator,
+            members,
             assigned,
             prompt,
             state: s,
@@ -408,6 +416,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                 .take()
                 .map(|lobby| start_strip(&lobby, &s, &assigned));
             state.you = Some(you);
+            state.creator = Some(creator);
+            state.members = members;
             state.assigned = assigned;
             state.toast = None;
             state.game = Some(*s);
@@ -518,6 +528,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             }
             state.log.push(LogBatch { header, events });
         }
+        ServerMessage::Members(members) => state.members = members,
         ServerMessage::Rejected(refusal) => reduce_refusal(state, refusal),
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
@@ -903,6 +914,8 @@ mod tests {
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
             you: ACCOUNT_1,
+            creator: ACCOUNT_1,
+            members: Vec::new(),
             assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(prompt),
             state: Box::new(sample_state()),
@@ -951,6 +964,8 @@ mod tests {
         serde_json::to_string(&ServerMessage::Hello {
             build: build.to_string(),
             you: ACCOUNT_1,
+            creator: ACCOUNT_1,
+            members: Vec::new(),
             assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(0),
             state: Box::new(sample_state()),

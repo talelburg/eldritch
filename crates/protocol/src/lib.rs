@@ -117,6 +117,11 @@ pub enum ServerMessage {
         build: String,
         /// The account this connection is signed in as.
         you: AccountId,
+        /// The account that created the game.
+        creator: AccountId,
+        /// Every member of the game, with the name it is shown by, in the
+        /// order they joined. [`ServerMessage::Members`] replaces it.
+        members: Vec<Member>,
         /// Which account holds each investigator: the client offers a prompt,
         /// and a Pass, only for the investigators `you` holds.
         assigned: Assignment,
@@ -159,6 +164,10 @@ pub enum ServerMessage {
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied(Applied),
+    /// Broadcast to every connection of a started game when an account opens
+    /// its link for the first time: every member, in the order they joined,
+    /// the newcomer last. It replaces the members the `Hello` named.
+    Members(Vec<Member>),
     /// Sent only to the submitting client when its submit is refused.
     Rejected(Refusal),
     /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
@@ -750,9 +759,21 @@ mod tests {
             .build();
         let events = vec![Event::ScenarioStarted];
         let assigned = Assignment::all_to(AccountId(7), [InvestigatorId(1)]);
+        let members = vec![
+            Member {
+                account: AccountId(7),
+                display_name: "Tal".to_string(),
+            },
+            Member {
+                account: AccountId(8),
+                display_name: "Sam".to_string(),
+            },
+        ];
         let msg = ServerMessage::Hello {
             build: "a1b2c3".to_string(),
             you: AccountId(8),
+            creator: AccountId(7),
+            members: members.clone(),
             assigned: assigned.clone(),
             prompt: LogPosition(0),
             state: Box::new(state.clone()),
@@ -767,6 +788,8 @@ mod tests {
             ServerMessage::Hello {
                 build,
                 you,
+                creator,
+                members: m,
                 assigned: a,
                 state: s,
                 events: e,
@@ -774,6 +797,8 @@ mod tests {
             } => {
                 assert_eq!(build, "a1b2c3");
                 assert_eq!(you, AccountId(8));
+                assert_eq!(creator, AccountId(7));
+                assert_eq!(m, members, "the members round-trip through JSON");
                 assert_eq!(a, assigned, "the assignment round-trips through JSON");
                 assert_eq!(*s, state);
                 assert_eq!(e, events, "events round-trip through JSON");

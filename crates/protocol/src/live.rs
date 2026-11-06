@@ -29,6 +29,7 @@ use game_core::state::investigator::InvestigatorId;
 use game_core::state::{CardCode, GameState, Phase};
 use serde::{Deserialize, Serialize};
 
+use crate::lobby::Member;
 use crate::logged_answer::{self, LoggedAnswer, Unrecordable};
 use crate::{AccountId, Applied, Assignment, LogPosition, Refusal, ServerMessage};
 
@@ -47,6 +48,10 @@ pub struct LiveGame {
     prompt: LogPosition,
     /// The account answering for each investigator.
     assignment: Assignment,
+    /// The account that created the game.
+    creator: AccountId,
+    /// Every member, in the order they joined.
+    members: Vec<Member>,
     registries: Registries,
 }
 
@@ -111,9 +116,11 @@ impl From<Refused> for Refusal {
 }
 
 impl LiveGame {
-    /// The live game at `state`, whose last apply (or setup) left `outcome`,
-    /// awaiting the answer at log position `prompt`, and each investigator
-    /// answered for by the account `assignment` gives them to.
+    /// The live game `creator` created, at `state`, whose last apply (or
+    /// setup) left `outcome`, awaiting the answer at log position `prompt`,
+    /// and each investigator answered for by the account `assignment` gives
+    /// them to. It has no members until [`with_members`](Self::with_members)
+    /// gives it them.
     #[must_use]
     pub fn new(
         state: GameState,
@@ -121,6 +128,7 @@ impl LiveGame {
         setup_events: Vec<Event>,
         prompt: LogPosition,
         assignment: Assignment,
+        creator: AccountId,
         registries: Registries,
     ) -> Self {
         Self {
@@ -129,8 +137,44 @@ impl LiveGame {
             setup_events,
             prompt,
             assignment,
+            creator,
+            members: Vec::new(),
             registries,
         }
+    }
+
+    /// This live game with `members`, in the order they joined, as they are
+    /// stored.
+    #[must_use]
+    pub fn with_members(mut self, members: Vec<Member>) -> Self {
+        self.members = members;
+        self
+    }
+
+    /// The account that created the game.
+    #[must_use]
+    pub fn creator(&self) -> AccountId {
+        self.creator
+    }
+
+    /// Every member, in the order they joined.
+    #[must_use]
+    pub fn members(&self) -> &[Member] {
+        &self.members
+    }
+
+    /// Add `member` at the end of the members, unless their account is one
+    /// already. Returns whether it was added.
+    pub fn join(&mut self, member: Member) -> bool {
+        if self
+            .members
+            .iter()
+            .any(|known| known.account == member.account)
+        {
+            return false;
+        }
+        self.members.push(member);
+        true
     }
 
     /// The current state.
@@ -171,6 +215,8 @@ impl LiveGame {
         ServerMessage::Hello {
             build: crate::build_id().to_string(),
             you: account,
+            creator: self.creator,
+            members: self.members.clone(),
             assigned: self.assignment.clone(),
             prompt: self.prompt(),
             state: Box::new(view_for(account, self.state.clone())),

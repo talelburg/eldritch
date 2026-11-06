@@ -32,6 +32,8 @@ async fn mount_at(phase: Phase, round: u32) {
             ServerMessage::Hello {
                 build: protocol::build_id().to_string(),
                 you: common::YOU,
+                creator: common::YOU,
+                members: vec![common::you_member()],
                 assigned: common::you_hold(Some(&state), None),
                 prompt: LogPosition(0),
                 state: Box::new(state),

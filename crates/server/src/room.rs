@@ -55,6 +55,9 @@ pub(crate) enum RoomEvent {
     /// the `Hello` for its account built from it, so an answer committed
     /// after Start reaches it once, as an `Applied`.
     Started(Arc<LiveGame>),
+    /// An account opened the started game's link for the first time, and the
+    /// members now read like this.
+    Members(Arc<Vec<Member>>),
 }
 
 /// What a connection gets on attaching to a room: its subscription and the
@@ -92,7 +95,8 @@ impl GameRoom {
     /// broadcasts under, so every event the subscription receives is one the
     /// first message doesn't already include. A lobby that this attach joins
     /// is broadcast before the subscription, so the joining connection is sent
-    /// the lobby once, with its `joined` flag set.
+    /// the lobby once, with its `joined` flag set. So are a started game's
+    /// members, which the joining connection is sent only in its `Hello`.
     ///
     /// # Errors
     ///
@@ -102,7 +106,14 @@ impl GameRoom {
         let mut game = self.game.lock().await;
         let joined = lobby::add_member(&self.db, &self.game_id, account).await?;
         let first = match &mut *game {
-            RoomGame::Live(session) => session.live().hello_for(account),
+            RoomGame::Live(session) => {
+                if joined && session.join(member) {
+                    // As the lobby's below: nobody else to tell if it fails.
+                    let members = session.live().members().to_vec();
+                    let _ = self.tx.send(RoomEvent::Members(Arc::new(members)));
+                }
+                session.live().hello_for(account)
+            }
             RoomGame::Lobby(lobby) => {
                 if joined && lobby.join(member) {
                     // A broadcast send fails only when no connection is
@@ -180,7 +191,7 @@ impl GameRoom {
         self.store_start(&new_game)
             .await
             .map_err(|error| LobbyRefusal::Failed(error.to_string()))?;
-        let session = new_game.into_session(self.db.clone());
+        let session = new_game.into_session(self.db.clone(), lobby.view().members);
         let live = Arc::new(session.live().clone());
         *game = RoomGame::Live(Box::new(session));
         // Sent under the game's lock, as every change is. A send fails only

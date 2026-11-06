@@ -124,7 +124,9 @@ pub(crate) async fn start_game(
     let mut tx = pool.begin().await.expect("begin a transaction");
     new_game.store(&mut tx).await.expect("store the game");
     tx.commit().await.expect("commit the game");
-    new_game.into_session(pool.clone())
+    // Stored without a lobby, so no member row either: the first account to
+    // open its link joins it.
+    new_game.into_session(pool.clone(), Vec::new())
 }
 
 /// A migrated single-connection in-memory pool.

@@ -9,7 +9,8 @@ use game_core::state::GameStateBuilder;
 use game_core::test_support;
 use leptos::prelude::Update;
 use leptos::task;
-use protocol::{LogPosition, ServerMessage};
+use protocol::lobby::Member;
+use protocol::{AccountId, LogPosition, ServerMessage};
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
 
@@ -40,6 +41,8 @@ async fn hello_renders_state_present() {
             ServerMessage::Hello {
                 build: protocol::build_id().to_string(),
                 you: common::YOU,
+                creator: common::YOU,
+                members: vec![common::you_member()],
                 assigned: common::you_hold(Some(&game), None),
                 prompt: LogPosition(0),
                 state: Box::new(game),
@@ -60,4 +63,26 @@ async fn hello_renders_state_present() {
         "after: {}",
         root_html()
     );
+}
+
+#[wasm_bindgen_test]
+fn members_replaces_the_member_list_the_hello_named() {
+    let game = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .build();
+    let mut client = common::hello(game, EngineOutcome::Done);
+    assert_eq!(client.creator, Some(common::YOU), "Hello names the creator");
+    assert_eq!(client.members, vec![common::you_member()]);
+
+    let jo = Member {
+        account: AccountId(3),
+        display_name: "Jo".to_string(),
+    };
+    store::reduce(
+        &mut client,
+        ServerMessage::Members(vec![common::you_member(), jo.clone()]),
+    );
+
+    assert_eq!(client.members, vec![common::you_member(), jo]);
+    assert_eq!(client.creator, Some(common::YOU), "the creator is unchanged");
 }

@@ -82,9 +82,12 @@ fn daisy_and_roland_seated() -> GameState {
 /// The `Hello` frame each connection to the started game is sent, for the
 /// account `you`.
 fn hello_after_start(you: AccountId) -> String {
+    let lobby = tals_lobby_with_picks(&[]);
     serde_json::to_string(&ServerMessage::Hello {
         build: protocol::build_id().to_string(),
         you,
+        creator: lobby.creator,
+        members: lobby.members,
         assigned: Assignment::from_iter([(InvestigatorId(1), SAM), (InvestigatorId(2), YOU)]),
         prompt: LogPosition(0),
         state: Box::new(daisy_and_roland_seated()),

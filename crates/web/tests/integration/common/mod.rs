@@ -9,6 +9,7 @@ use game_core::state::GameState;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
+use protocol::lobby::Member;
 use protocol::{AccountId, Assignment, ClientMessage, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use web::app::{self, MainColumn};
@@ -155,6 +156,15 @@ pub(crate) async fn mount_board(
 /// The account a browser test's client is signed in as.
 pub(crate) const YOU: AccountId = AccountId(1);
 
+/// [`YOU`] as a member of the game, which every `Hello` here names as its
+/// creator and only member.
+pub(crate) fn you_member() -> Member {
+    Member {
+        account: YOU,
+        display_name: "You".to_string(),
+    }
+}
+
 /// Every investigator `game` seats or `outcome` asks, held by [`YOU`].
 pub(crate) fn you_hold(game: Option<&GameState>, outcome: Option<&EngineOutcome>) -> Assignment {
     let mut investigators: Vec<InvestigatorId> = game
@@ -195,6 +205,8 @@ pub(crate) fn hello(state: GameState, outcome: EngineOutcome) -> ClientState {
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
             you: YOU,
+            creator: YOU,
+            members: vec![you_member()],
             assigned,
             prompt: LogPosition(0),
             state: Box::new(state),
@@ -218,6 +230,8 @@ pub(crate) fn hello_frame(
     serde_json::to_string(&ServerMessage::Hello {
         build: build.to_string(),
         you: YOU,
+        creator: YOU,
+        members: vec![you_member()],
         assigned,
         prompt: LogPosition(0),
         state: Box::new(state),
