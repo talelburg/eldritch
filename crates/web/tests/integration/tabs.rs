@@ -9,12 +9,14 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat};
+use leptos::prelude::Update as _;
 use leptos::task;
 use protocol::lobby::Member;
 use protocol::logged_answer::LoggedResponse;
 use protocol::{AccountId, Applied, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
+use web_sys::Element;
 
 use crate::common::{self, BoardHandle, YOU};
 use crate::lobby::{self, SAM};
@@ -93,9 +95,10 @@ pub(crate) fn tab_names(handle: &BoardHandle) -> Vec<String> {
     lobby::texts(handle, ".inv-tab .tab-name")
 }
 
-/// The name of the investigator docked below the tabs.
+/// The name of the investigator docked below the tabs, read off their
+/// investigator card.
 pub(crate) fn docked(handle: &BoardHandle) -> String {
-    let names = lobby::texts(handle, ".dock .investigator .inv-name");
+    let names = lobby::texts(handle, ".dock .investigator-card .tile-name");
     assert_eq!(names.len(), 1, "one investigator is docked: {names:?}");
     names[0].clone()
 }
@@ -125,6 +128,78 @@ async fn the_tabs_render_in_seating_order_and_tint_the_ones_you_hold() {
         vec!["★"],
         "Roland leads"
     );
+}
+
+/// The tab and the investigator card already name the docked investigator, so
+/// the dock repeats the name in no heading of its own.
+#[wasm_bindgen_test]
+async fn the_dock_names_its_investigator_only_on_the_tab_and_card() {
+    let handle = mount_table(YOU, table(), EngineOutcome::Done).await;
+    let dock = handle
+        .root
+        .query_selector(".dock .investigator")
+        .expect("query")
+        .expect("a docked investigator");
+    assert!(
+        dock.query_selector("h1, h2, h3, h4, .inv-name")
+            .expect("query")
+            .is_none(),
+        "the dock has no heading: {}",
+        dock.inner_html()
+    );
+    assert_eq!(docked(&handle), "Roland Banks");
+}
+
+/// The hand row of the docked investigator.
+fn hand_row(handle: &BoardHandle) -> Element {
+    handle
+        .root
+        .query_selector(".dock .hand .card-row")
+        .expect("query")
+        .expect("the docked hand's row")
+}
+
+/// Roland's hand, scrolled sideways, was clamped to Agnes's when her tab
+/// opened, and came back clamped: one row was shared between the tabs. Each tab
+/// opens on its own row, scrolled to the start, and an update to the open tab
+/// leaves its row where it was.
+#[wasm_bindgen_test]
+async fn each_tab_opens_its_own_hand_row_scrolled_to_the_start() {
+    common::inject_style();
+    let handle = mount_table(YOU, table(), EngineOutcome::Done).await;
+    // A row far narrower than its cards, scoped to this board alone, so every
+    // hand overflows it whatever the page's width.
+    handle
+        .root
+        .class_list()
+        .add_1("narrow-hand")
+        .expect("class");
+    let style = leptos::prelude::document()
+        .create_element("style")
+        .expect("create style");
+    style.set_text_content(Some(".narrow-hand .dock .hand .card-row { width: 40px; }"));
+    handle.root.append_child(&style).expect("append style");
+
+    hand_row(&handle).set_scroll_left(30);
+    assert_eq!(
+        hand_row(&handle).scroll_left(),
+        30,
+        "Roland's hand overflows"
+    );
+    handle.store.update(|s| {
+        s.game.as_mut().expect("a game").round += 1;
+    });
+    task::tick().await;
+    assert_eq!(hand_row(&handle).scroll_left(), 30, "an update keeps it");
+
+    common::click_tab(&handle.root, "Agnes Baker").await;
+    assert_eq!(
+        hand_row(&handle).scroll_left(),
+        0,
+        "Agnes's row starts at 0"
+    );
+    common::click_tab(&handle.root, "Roland Banks").await;
+    assert_eq!(hand_row(&handle).scroll_left(), 0, "so does Roland's again");
 }
 
 #[wasm_bindgen_test]

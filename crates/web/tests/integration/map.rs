@@ -372,7 +372,9 @@ async fn a_locations_popover_closes_while_its_menu_is_open() {
     find(".menu-hit").click();
     task::tick().await;
     assert!(
-        node.query_selector(".context-menu").expect("query").is_some(),
+        node.query_selector(".context-menu")
+            .expect("query")
+            .is_some(),
         "the click opens the menu"
     );
     assert_eq!(common::popover_text(&node), None, "the popover closes");

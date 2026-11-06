@@ -47,6 +47,7 @@ mod smoke;
 mod status_bar;
 mod store;
 mod tabs;
+mod tiles;
 mod turn_tracker;
 mod unresumable;
 mod version_mismatch;

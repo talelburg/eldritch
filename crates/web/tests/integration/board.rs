@@ -9,7 +9,7 @@
 //! [`render_state`] asserts as much on every render.
 //!
 //! Two of the three code→name paths the board can take are pinned here: the
-//! `Card` component's (hand / in play / threat area) and
+//! tiles' (hand / in play / threat area, `card::card_tile`) and
 //! `act_agenda::name_and_text_src`'s. The third — `names::card_name`, reached
 //! only from the map's card-at-location token (`crates/web/src/map.rs`) — is
 //! *not*, because this file seeds no `cards_at_location` and no location
@@ -95,10 +95,10 @@ async fn render_state(state: GameState) -> Element {
     .await
     .root;
     let html = root.inner_html();
-    // The guard that keeps this file honest. `Card` renders
+    // The guard that keeps this file honest. A tile renders
     // `card--unknown` for a code the registry cannot resolve
-    // (`crates/web/src/card.rs:324-331`), and that element still matches
-    // `.card` — so a selector or substring assertion below could pass on the
+    // (`card::card_tile`), and that element still matches
+    // `.tile` — so a selector or substring assertion below could pass on the
     // fallback without anyone noticing.
     // Every code it seeds is a real one, so the class must never appear.
     assert!(
@@ -195,10 +195,14 @@ async fn investigators_panel_renders_stats_and_hand() {
     // an assertion riding the unresolved-code fallback.
     let inv_el = find(&root, ".investigator");
 
-    // Identity + folded vitals (skills + hp/san) live in the investigator block.
-    assert_eq!(text_of(&inv_el, ".inv-name"), "Roland Banks");
+    // Identity and skills are on the investigator card's tile; the stats sit
+    // beside it.
+    assert_eq!(
+        text_of(&inv_el, ".investigator-card .tile-name"),
+        "Roland Banks"
+    );
     // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2.
-    assert_eq!(text_of(&inv_el, ".inv-skills"), "W3 I3 C4 A2");
+    assert_eq!(text_of(&inv_el, ".inv-skills"), "W3I3C4A2");
     assert_eq!(text_of(&inv_el, ".inv-hp"), "hp 2/9");
     assert_eq!(text_of(&inv_el, ".inv-san"), "san 1/5");
     // Meta cluster: actions as pips.
@@ -223,7 +227,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     // tell the zones apart — the counts and the per-zone text are what make
     // these assertions load-bearing.
     assert_eq!(
-        count_in(&inv_el, ".inv-zones-bottom .hand .card"),
+        count_in(&inv_el, ".inv-zones-bottom .hand .tile"),
         2,
         "two hand cards: {html}"
     );
@@ -237,7 +241,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         "hand card name missing: {hand}"
     );
     assert_eq!(
-        count_in(&inv_el, ".inv-zones-top .in-play .card"),
+        count_in(&inv_el, ".inv-zones-top .in-play .tile"),
         1,
         "one in-play card: {html}"
     );
@@ -246,14 +250,14 @@ async fn investigators_panel_renders_stats_and_hand() {
         "in-play card name missing: {html}"
     );
 
-    // Layout: in-play + threat in the top row; investigator block (card + vitals +
-    // meta) and hand in the bottom row.
+    // Layout: the investigator block (card, stats and piles), in play and the
+    // threat area in the top row; the hand alone in the bottom row.
     for sel in [
+        ".inv-zones-top .investigator-block .investigator-card .card-slot",
+        ".inv-zones-top .investigator-block .inv-meta",
+        ".inv-zones-top .investigator-block .inv-piles",
         ".inv-zones-top .in-play",
         ".inv-zones-top .threat",
-        ".inv-zones-bottom .investigator-block .investigator-card .card-slot",
-        ".inv-zones-bottom .investigator-block .inv-vitals",
-        ".inv-zones-bottom .investigator-block .inv-meta",
         ".inv-zones-bottom .hand",
     ] {
         assert!(
@@ -359,7 +363,7 @@ async fn map_and_dock_are_inside_board_main() {
 }
 
 #[wasm_bindgen_test]
-async fn engaged_enemy_renders_as_card_in_threat_area() {
+async fn engaged_enemy_renders_as_a_tile_in_threat_area() {
     // A stock enemy is a primitive builder (ADR 0016): the `Enemy` struct
     // carries its own name and stats, and `EnemyCard` reads them from state —
     // the registry is consulted only for the printed card's optional traits
@@ -375,17 +379,17 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 
     let game = find(&root, ".game");
     let card = game
-        .query_selector(".threat .card-row .card")
+        .query_selector(".threat .card-row .tile.card--enemy")
         .expect("query_selector");
     assert!(
         card.is_some(),
-        "engaged enemy should render as a card: {html}"
+        "engaged enemy should render as a tile: {html}"
     );
     assert!(html.contains("Test Brute"), "enemy name missing: {html}");
 }
 
 #[wasm_bindgen_test]
-async fn threat_area_treachery_renders_as_card() {
+async fn threat_area_treachery_renders_as_a_tile() {
     // Seeded the way its Revelation puts it into play — "with 3 clues on it" —
     // so the state matches the card rather than merely occupying the zone.
     let state = GameStateBuilder::new()
@@ -398,16 +402,15 @@ async fn threat_area_treachery_renders_as_card() {
 
     let game = find(&root, ".game");
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
-    // it renders the generic rectangle (`crates/web/src/card.rs:416-433`).
-    // Asserting `card--generic` rather than the bare `.card` is what
-    // distinguishes it from `card--unknown`, which also matches `.card` and
-    // would let it pass silently.
+    // its tile takes the generic class. Asserting `card--generic` rather than
+    // the bare `.tile` is what distinguishes it from `card--unknown`, which
+    // also matches `.tile` and would let it pass silently.
     let card = game
         .query_selector(".threat .card-row .card--generic")
         .expect("query_selector");
     assert!(
         card.is_some(),
-        "threat-area treachery should render as a card: {html}"
+        "threat-area treachery should render as a tile: {html}"
     );
     let treachery = text_of(&game, ".threat .card-row .card--generic");
     assert!(

@@ -153,11 +153,8 @@ async fn the_log_and_its_toggle_sit_above_a_decisions_scrim() {
     let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .build();
-    let board = common::mount_board(
-        common::hello(state, decision),
-        &test_support::TEST_REGISTRY,
-    )
-    .await;
+    let board =
+        common::mount_board(common::hello(state, decision), &test_support::TEST_REGISTRY).await;
     let scrim = board
         .root
         .query_selector(".decision-backdrop")

@@ -2,15 +2,17 @@
 //!
 //! Enemies are a distinct data source — the `Enemy` state struct carries stats
 //! *and* live state, while its traits and text stay on the printed card — so
-//! they get a dedicated `EnemyCard` component rather than reusing `Card` (which
+//! they get a dedicated `EnemyCard` tile rather than reusing `Card` (which
 //! is built around registry lookup + a `CardInPlay`). Shares the card CSS /
-//! chip vocabulary and the text renderer. Display-only.
+//! chip vocabulary and the text renderer, and puts the whole card in a hover
+//! popover.
 
 use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
+use crate::popover::{Hover, Popover};
 use crate::{card, registry};
 
 /// Combat stat chips for an enemy: fight, evade, health (damage/max), attack
@@ -45,18 +47,11 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
     chips
 }
 
-/// One engaged enemy rendered as a card (red border via `card--enemy`), reusing
-/// the card CSS and the `card--exhausted` dim the asset cards use. Stats and
-/// live state come from the `Enemy` state struct; traits and ability text come
-/// from its printed card, looked up by code via the registry.
-/// Display-only — no click handlers.
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "Leptos `#[component]` takes `enemy` by value into its owned props struct"
-)]
-#[component]
-pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
-    let name = enemy.name.clone();
+/// An engaged enemy's whole card: stats and live state from the `Enemy` state
+/// struct, traits and ability text from its printed card, looked up by code
+/// via the registry. Red-bordered (`card--enemy`), with the `card--exhausted`
+/// dim the asset cards use. Display-only: what [`EnemyCard`]'s popover shows.
+fn enemy_face(enemy: &Enemy) -> impl IntoView {
     let meta = (registry::use_cards().metadata_for)(&enemy.code);
     let traits = match meta {
         Some(m) if !m.traits.is_empty() => format!("{}.", m.traits.join(". ")),
@@ -65,37 +60,26 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let text_view = meta
         .and_then(|m| m.text.as_deref())
         .map(|t| card::render_segments(card::parse_card_text(t)));
-    let exhausted = enemy.exhausted;
-    let exhausted_badge =
-        exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
-    // Interactivity: route the live prompt's options to this enemy; glow +
-    // open a context menu of its offered actions (Fight/Evade) when non-empty.
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
-    let menu_opts = interaction::options_for(&pending, &OptionTarget::Enemy(enemy.id));
-    let actionable = !menu_opts.is_empty();
-    #[cfg(target_arch = "wasm32")]
-    let open = RwSignal::new(None::<(i32, i32)>);
-    let stat_views: Vec<_> = enemy_stat_chips(&enemy)
+    let exhausted_badge = enemy
+        .exhausted
+        .then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
+    let stat_views: Vec<_> = enemy_stat_chips(enemy)
         .into_iter()
         .map(|s| view! { <span class="chip chip--enemy-stat">{s}</span> })
         .collect();
-    let keyword_views: Vec<_> = enemy_keyword_chips(&enemy)
+    let keyword_views: Vec<_> = enemy_keyword_chips(enemy)
         .into_iter()
         .map(|s| view! { <span class="chip chip--keyword">{s}</span> })
         .collect();
-    let mut root_class = String::from("card card--enemy");
-    if exhausted {
-        root_class.push_str(" card--exhausted");
-    }
-    if actionable {
-        root_class.push_str(" actionable");
-    }
+    let root_class = if enemy.exhausted {
+        "card card--enemy card--exhausted"
+    } else {
+        "card card--enemy"
+    };
     view! {
         <div class=root_class>
             <div class="card-head">
-                <span class="card-name">{name}</span>
+                <span class="card-name">{enemy.name.clone()}</span>
                 {exhausted_badge}
             </div>
             <div class="card-traits">{traits}</div>
@@ -104,6 +88,53 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
                 {stat_views}
                 {keyword_views}
             </div>
+        </div>
+    }
+}
+
+/// One engaged enemy in its investigator's threat area, as a tile: its name,
+/// its fight, health and evade, and the damage on it, with the whole card in
+/// its hover popover. Glows and opens a context menu of its offered actions
+/// (Fight / Evade) when the live prompt anchors any to it.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos `#[component]` takes `enemy` by value into its owned props struct"
+)]
+#[component]
+pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
+    let pending = use_context::<PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+    let menu_opts = interaction::options_for(&pending, &OptionTarget::Enemy(enemy.id));
+    let actionable = !menu_opts.is_empty();
+    let open = RwSignal::new(None::<(i32, i32)>);
+    let hover = Hover::beside_menu(open);
+    let face = enemy.clone();
+    let mut root_class = String::from("tile card--enemy");
+    if enemy.exhausted {
+        root_class.push_str(" card--exhausted");
+    }
+    if actionable {
+        root_class.push_str(" actionable");
+    }
+    let stats = format!(
+        "{}\u{b7}{}\u{b7}{}",
+        enemy.fight, enemy.max_health, enemy.evade
+    );
+    let damage = (enemy.damage > 0).then(|| {
+        view! { <span class="chip chip--live">{format!("{} damage", enemy.damage)}</span> }
+    });
+    view! {
+        <div class={root_class} {..hover.handlers()}>
+            <div class="tile-head">
+                <span class="tile-name">{enemy.name.clone()}</span>
+            </div>
+            <div class="tile-icons">
+                <span class="chip chip--enemy-stat" title="fight · health · evade">{stats}</span>
+                {enemy.exhausted.then(|| view! { <span class="tile-exhausted">"Exhausted"</span> })}
+                {damage}
+            </div>
+            <Popover hover=hover>{enemy_face(&face)}</Popover>
             {
                 // wasm-only trigger + menu (web_sys / OutboundTx); host: empty,
                 // `menu_opts` used above by `actionable` (no unused-var warning).
