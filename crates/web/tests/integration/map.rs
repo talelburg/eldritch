@@ -113,9 +113,9 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
         "engaged enemy must NOT render in the location node; node = {:?}",
         node_text(&root, "Study"),
     );
-    // …but present in the investigator detail panel.
+    // …but present in the docked investigator panel.
     let panel = root
-        .query_selector(".investigators")
+        .query_selector(".dock")
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default();

@@ -33,7 +33,7 @@ use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::prompt_layout::AboveBoard;
+use crate::prompt_layout::{AboveBoard, OpenTab};
 use crate::store::ClientState;
 use crate::{controls, decision, prompt_layout, skill_test_result, store};
 
@@ -50,7 +50,7 @@ pub fn PromptBanner() -> impl IntoView {
         // supplies what goes in them. The two agree, because a strip means
         // this account holds the investigator, so it can answer the prompt.
         let request = state.answerable_request()?;
-        let investigators = prompt_layout::layout(&state).strips();
+        let investigators = prompt_layout::layout(&state, OpenTab::default()).strips();
         let strips: Vec<_> = investigators
             .iter()
             .enumerate()
@@ -84,7 +84,9 @@ pub fn LeadStrip() -> impl IntoView {
     let ms = use_context::<MultiSelect>();
     move || {
         let state = store.get();
-        let Some(AboveBoard::LeadStrip(_)) = prompt_layout::layout(&state).above_board else {
+        let Some(AboveBoard::LeadStrip(_)) =
+            prompt_layout::layout(&state, OpenTab::default()).above_board
+        else {
             return None;
         };
         // `layout` decided the lead strip exists; `answerable_request` only

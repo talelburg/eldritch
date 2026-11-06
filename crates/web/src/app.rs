@@ -18,7 +18,7 @@ use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 use crate::lobby::LobbyScreen;
 #[cfg(target_arch = "wasm32")]
 use crate::prompt_banner::{LeadStrip, PromptBanner};
-use crate::prompt_layout::WaitingAboveBoard;
+use crate::prompt_layout::{self, OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]
@@ -68,8 +68,9 @@ pub fn App() -> impl IntoView {
 /// Provide the board's derived contexts from `store`.
 ///
 /// They are the live prompt's options, the confirm anchor, whether a decision
-/// modal is up, and the multi-select state with the effect that clears it. The
-/// store, the card registry and the outbound channel are the caller's.
+/// modal is up, the multi-select state with the effect that clears it, and the
+/// open tab with the effect that settles it. The store, the card registry and
+/// the outbound channel are the caller's.
 ///
 /// `App` calls it, and so does the web tests' `mount_board`, so a context the
 /// app adds here reaches every board test without a test being edited.
@@ -104,6 +105,26 @@ pub fn provide_board_contexts(store: StoreSignal) {
         active: multi_active,
         selected,
     });
+
+    // The open tab, which a tab or a map token opens with a click. Until then,
+    // the effect records what `layout` opens on each store change: a player's
+    // settles there when the board first has a game, and a viewer's follows
+    // the active investigator.
+    let open = RwSignal::new(OpenTab::default());
+    Effect::new(move |_| {
+        let current = open.get_untracked();
+        if current.clicked {
+            return;
+        }
+        let opens = store.with(|s| prompt_layout::layout(s, current).open);
+        if opens != current.investigator {
+            open.set(OpenTab {
+                investigator: opens,
+                clicked: false,
+            });
+        }
+    });
+    provide_context(OpenTabSignal(open));
 }
 
 /// The main column: the board and its in-game modals inside the lockout

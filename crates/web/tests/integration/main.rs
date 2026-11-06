@@ -46,6 +46,7 @@ mod skill_test_result_across_batches;
 mod smoke;
 mod status_bar;
 mod store;
+mod tabs;
 mod turn_tracker;
 mod unresumable;
 mod version_mismatch;

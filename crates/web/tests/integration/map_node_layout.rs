@@ -281,6 +281,7 @@ async fn every_connection_line_ends_inside_a_card() {
 /// when clicked. The node carries the `actionable` class and spans card *and*
 /// rail, while its hit-layer covers only the card — so a cursor set on the node
 /// promises a click the rail can't take. Glow and cursor belong on the card.
+/// An investigator token is the exception: its own click opens their tab.
 #[wasm_bindgen_test]
 async fn only_the_card_advertises_the_location_menu() {
     let outcome = test_support::awaiting_pick_single_with(
@@ -314,5 +315,9 @@ async fn only_the_card_advertises_the_location_menu() {
         "auto",
         "a rail token must not advertise a click the hit-layer can't take",
     );
-    assert_eq!(cursor(".inv-token"), "auto", "nor an investigator token");
+    assert_eq!(
+        cursor(".inv-token"),
+        "pointer",
+        "an investigator token takes its own click: it opens their tab"
+    );
 }
