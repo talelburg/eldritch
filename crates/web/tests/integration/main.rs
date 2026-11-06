@@ -33,6 +33,7 @@ mod lobby;
 mod location_card;
 mod map;
 mod map_node_layout;
+mod more_menu;
 mod panel_controls;
 mod prompt_banner;
 mod provisional_verdict;

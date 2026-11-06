@@ -13,11 +13,14 @@ use leptos::prelude::*;
 use leptos::task;
 use protocol::lobby::Member;
 use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::store::{self, ClientState};
+use web_sys::Element;
 
-use crate::common::{self, BoardHandle, YOU};
+use crate::common::{self, arrives, BoardHandle, YOU};
 use crate::lobby::{click, sent, texts, SAM};
+use crate::more_menu::open_menu;
 
 /// Jo, a member holding no investigator.
 const JO: AccountId = AccountId(3);
@@ -79,11 +82,8 @@ pub(crate) async fn mount_as(you: AccountId, outcome: Option<EngineOutcome>) -> 
     common::mount_board(client, &cards::TEST_REGISTRY).await
 }
 
-/// Open the board's ⋯ menu.
-pub(crate) async fn open_menu(handle: &BoardHandle) {
-    click(handle, ".board-menu .more-menu-toggle");
-    task::tick().await;
-}
+/// Where the board's ⋯ menu sits, for [`crate::more_menu`]'s helpers.
+pub(crate) const BOARD_MENU: &str = ".board-menu";
 
 /// Each heading of the open ⋯ menu, with the entries under it.
 fn menu(handle: &BoardHandle) -> Vec<(String, Vec<String>)> {
@@ -93,7 +93,7 @@ fn menu(handle: &BoardHandle) -> Vec<(String, Vec<String>)> {
         .expect("query");
     (0..groups.length())
         .filter_map(|i| groups.item(i))
-        .filter_map(|node| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(node).ok())
+        .filter_map(|node| node.dyn_into::<Element>().ok())
         .map(|group| {
             let heading = group
                 .query_selector(".menu-heading")
@@ -108,15 +108,6 @@ fn menu(handle: &BoardHandle) -> Vec<(String, Vec<String>)> {
             (heading, items)
         })
         .collect()
-}
-
-/// Feed `handle`'s store `message`, as the transport would.
-async fn arrives(handle: &BoardHandle, message: ServerMessage) {
-    let frame = serde_json::to_string(&message).expect("a ServerMessage serializes");
-    handle.store.update(|s| {
-        store::receive(s, &frame);
-    });
-    task::tick().await;
 }
 
 /// The `Assigned` Sam's reassignment of Wendy to Tal broadcasts.
@@ -140,7 +131,7 @@ fn reassign(investigator: &str, to: &[&str]) -> (String, Vec<String>) {
 async fn the_creator_may_reassign_every_investigator_to_any_member_but_its_holder() {
     let handle = mount_as(YOU, None).await;
 
-    open_menu(&handle).await;
+    open_menu(&handle, BOARD_MENU).await;
 
     assert_eq!(
         menu(&handle),
@@ -155,7 +146,7 @@ async fn the_creator_may_reassign_every_investigator_to_any_member_but_its_holde
 async fn a_holder_may_reassign_only_their_own_investigator() {
     let handle = mount_as(SAM, None).await;
 
-    open_menu(&handle).await;
+    open_menu(&handle, BOARD_MENU).await;
 
     assert_eq!(menu(&handle), [reassign("Wendy Adams", &["Tal", "Jo"])]);
 }
@@ -174,7 +165,7 @@ async fn a_viewer_is_offered_no_reassignment() {
 async fn a_finished_game_offers_no_reassignment() {
     let handle = mount_as(YOU, Some(EngineOutcome::Done)).await;
 
-    open_menu(&handle).await;
+    open_menu(&handle, BOARD_MENU).await;
 
     assert!(menu(&handle).is_empty(), "no Reassign submenu");
 }
@@ -182,7 +173,7 @@ async fn a_finished_game_offers_no_reassignment() {
 #[wasm_bindgen_test]
 async fn picking_a_member_sends_the_reassignment() {
     let mut handle = mount_as(YOU, None).await;
-    open_menu(&handle).await;
+    open_menu(&handle, BOARD_MENU).await;
 
     // Jo, under Wendy Adams.
     click(&handle, ".board-menu .menu-group .menu-item:last-child");

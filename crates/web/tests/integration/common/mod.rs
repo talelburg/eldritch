@@ -252,6 +252,16 @@ pub(crate) fn hello_frame(
     .expect("a Hello serializes")
 }
 
+/// Feed `handle`'s store `message`, as the transport would, and let the page
+/// react.
+pub(crate) async fn arrives(handle: &BoardHandle, message: ServerMessage) {
+    let frame = serde_json::to_string(&message).expect("a ServerMessage serializes");
+    handle.store.update(|s| {
+        store::receive(s, &frame);
+    });
+    task::tick().await;
+}
+
 /// A build id that is not this client's.
 pub(crate) fn another_build() -> String {
     format!("not-{}", protocol::build_id())

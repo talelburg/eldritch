@@ -7,6 +7,7 @@
 
 use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioId};
 use game_core::state::{CardCode, InvestigatorId, Phase};
+use leptos::prelude::Update as _;
 use leptos::task;
 use protocol::live::{LiveSummary, WaitedOn};
 use protocol::lobby::Member;
@@ -16,11 +17,13 @@ use protocol::{
 };
 use wasm_bindgen::JsCast as _;
 use web::socket_ending::{NextStep, SocketEnding};
-use web::store::{ClientState, ConnStatus};
+use web::store::{ClientState, ConnStatus, DeleteAnswer};
 use web::url;
 use web_sys::Element;
 
 use crate::common::{self, BoardHandle};
+use crate::lobby::click;
+use crate::more_menu::{choose, open_menu};
 
 /// Tal, who creates the games.
 const TAL: AccountId = AccountId(1);
@@ -399,31 +402,6 @@ async fn each_reason_a_game_cannot_resume_reads_in_plain_words() {
 }
 
 #[wasm_bindgen_test::wasm_bindgen_test]
-async fn home_after_a_no_longer_a_member_close_says_why_in_a_toast() {
-    // The address the close sends the client to, read back as the transport
-    // reads it on arriving at the home page.
-    let NextStep::GoHome(ended) = SocketEnding::NoLongerMember.next_step() else {
-        panic!("the close goes home");
-    };
-    let address = url::home_path(ended);
-    let query = &address[address.find('?').expect("the address names the ending")..];
-    let client = ClientState {
-        status: ConnStatus::Home,
-        games: Some(vec![]),
-        toast: url::ended_from_query(query).map(|ended| ended.toast().to_string()),
-        ..ClientState::default()
-    };
-    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
-    task::tick().await;
-
-    assert_eq!(
-        texts(&handle, ".toast"),
-        ["You're no longer a member of this game"]
-    );
-    assert_eq!(texts(&handle, ".home .games-heading").len(), 1, "on Home");
-}
-
-#[wasm_bindgen_test::wasm_bindgen_test]
 async fn an_unresumable_game_with_no_creator_or_holders_still_lists_its_investigators() {
     let mut entry = stale("g-old", 1_000, UnresumableCause::NoAssignment);
     entry.creator = None;
@@ -470,19 +448,6 @@ fn rows_with_a_menu(handle: &BoardHandle) -> Vec<String> {
         .collect()
 }
 
-/// Click the one `sel` under `handle`'s root, and let the page react.
-async fn click(handle: &BoardHandle, sel: &str) {
-    handle
-        .root
-        .query_selector(sel)
-        .expect("query")
-        .unwrap_or_else(|| panic!("the page renders {sel}"))
-        .dyn_into::<web_sys::HtmlElement>()
-        .expect("an HTML element")
-        .click();
-    task::tick().await;
-}
-
 #[wasm_bindgen_test::wasm_bindgen_test]
 async fn delete_is_on_every_kind_of_row_the_account_created_and_no_other() {
     let handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
@@ -505,9 +470,8 @@ async fn a_rows_delete_asks_first_then_deletes_that_game() {
     let mut handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
     let row = r#".game-row-item[data-game="g-stale"]"#;
 
-    click(&handle, &format!("{row} .more-menu-toggle")).await;
-    assert_eq!(texts(&handle, &format!("{row} .menu-item")), ["Delete"]);
-    click(&handle, &format!("{row} .menu-item")).await;
+    assert_eq!(open_menu(&handle, row).await, ["Delete"]);
+    choose(&handle, row, "Delete").await;
 
     assert_eq!(
         texts(&handle, ".confirm-dialog .confirm-question"),
@@ -515,27 +479,68 @@ async fn a_rows_delete_asks_first_then_deletes_that_game() {
     );
     assert!(handle.deleted.try_recv().is_err(), "nothing is deleted yet");
 
-    click(&handle, ".confirm-dialog .confirm-delete").await;
+    click(&handle, ".confirm-dialog .confirm-delete");
+    task::tick().await;
 
     assert_eq!(handle.deleted.try_recv().ok(), Some(GameId::new("g-stale")));
 }
 
 #[wasm_bindgen_test::wasm_bindgen_test]
-async fn home_after_a_deleted_close_says_why_in_a_toast() {
-    let NextStep::GoHome(ended) = SocketEnding::Deleted.next_step() else {
-        panic!("the close goes home");
-    };
-    let address = url::home_path(ended);
-    let query = &address[address.find('?').expect("the address names the ending")..];
-    let client = ClientState {
-        status: ConnStatus::Home,
-        games: Some(vec![]),
-        toast: url::ended_from_query(query).map(|ended| ended.toast().to_string()),
-        ..ClientState::default()
-    };
-    let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+async fn home_after_a_no_longer_a_member_or_deleted_close_says_why_in_a_toast() {
+    for (ending, toast) in [
+        (
+            SocketEnding::NoLongerMember,
+            "You're no longer a member of this game",
+        ),
+        (SocketEnding::Deleted, "This game was deleted"),
+    ] {
+        // The address the close sends the client to, read back as the
+        // transport reads it on arriving at the home page.
+        let NextStep::GoHome(ended) = ending.next_step() else {
+            panic!("the close goes home");
+        };
+        let address = url::home_path(ended);
+        let query = &address[address.find('?').expect("the address names the ending")..];
+        let client = ClientState {
+            status: ConnStatus::Home,
+            games: Some(vec![]),
+            toast: url::ended_from_query(query).map(|ended| ended.toast().to_string()),
+            ..ClientState::default()
+        };
+        let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
+        task::tick().await;
+
+        assert_eq!(texts(&handle, ".toast"), [toast], "{ending:?}");
+        assert_eq!(texts(&handle, ".home .games-heading").len(), 1, "on Home");
+    }
+}
+
+/// Another tab deleted Tal's stale game first, so Tal's delete finds none.
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_delete_the_server_finds_no_game_for_drops_the_row_and_says_so() {
+    let handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
+
+    handle
+        .store
+        .update(|s| s.delete_answered(&GameId::new("g-stale"), DeleteAnswer::NotFound));
     task::tick().await;
 
-    assert_eq!(texts(&handle, ".toast"), ["This game was deleted"]);
-    assert_eq!(texts(&handle, ".home .games-heading").len(), 1, "on Home");
+    assert!(!rows_with_a_menu(&handle).contains(&"g-stale".to_string()));
+    assert_eq!(texts(&handle, ".toast"), ["This game was already deleted"]);
+}
+
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn a_delete_that_failed_keeps_the_row_and_asks_for_a_retry() {
+    let handle = mount_page_as(TAL, tals_games_and_alexs_lobby()).await;
+
+    handle
+        .store
+        .update(|s| s.delete_answered(&GameId::new("g-stale"), DeleteAnswer::Failed));
+    task::tick().await;
+
+    assert!(rows_with_a_menu(&handle).contains(&"g-stale".to_string()));
+    assert_eq!(
+        texts(&handle, ".toast"),
+        ["Couldn't delete the game, try again."]
+    );
 }
