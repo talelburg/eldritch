@@ -56,8 +56,7 @@ async fn hello_renders_state_present() {
     // with `update`. Yield so the DOM reflects the new signal value.
     task::tick().await;
 
-    // `phase_bar` was retired (phase/round moved to the turn tracker); assert the
-    // game now renders its board — the dock and its tabs.
+    // With a game, the board renders: the dock and its tabs.
     assert!(root_html().contains("inv-tabs"), "after: {}", root_html());
 }
 

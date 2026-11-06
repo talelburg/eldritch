@@ -53,7 +53,7 @@ fn line_count(root: &Element) -> u32 {
 }
 
 /// The map pans inside its own box, and a store update, which re-renders the
-/// whole board, leaves the pan where the player put it. The re-render rebuilds
+/// whole board, leaves the pan where it was put. The re-render rebuilds
 /// the box in place rather than replacing it; this pins that, since a
 /// replaced box would snap the map back to its corner on every update.
 #[wasm_bindgen_test]

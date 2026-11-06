@@ -1,5 +1,5 @@
 /* P6.5 board — minimal functional layout. */
-/* One screen (#863): the page never scrolls. The header and the main column
+/* One screen: the page never scrolls. The header and the main column
    share the left, the round band runs down the whole right edge, and whatever
    doesn't fit scrolls inside its own box: the map pans in `.map-box`, the
    dock's card rows scroll sideways, and the log is a drawer over the board. */
@@ -171,7 +171,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
     padding: 0.5rem 1rem; font-weight: bold;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
-/* The event log (#505) is a drawer. Closed, it is only its toggle, in the
+/* The event log is a drawer. Closed, it is only its toggle, in the
    header. Open, it lies over the board's left side, full height, scrolling with
    the newest entry pinned to the bottom. Monospace so raw Debug lines align.
    Above the board's menus and popovers' hosts (20/21), below the in-game modals

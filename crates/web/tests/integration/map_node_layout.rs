@@ -3,10 +3,10 @@
 //!
 //! A fixed-size node with `overflow: hidden` clipped them on the Parlor 01115,
 //! the longest printed text of any Core location, and hid Lita Chantler once an
-//! investigator stood there. The card is header-only now (its printed text is
-//! in a hover popover, #1356), and the cells shrank to fit it, so the premise
-//! has turned over: in a 100px row it is the token rail that sets a node's
-//! height, and the Parlor, with Lita always in its rail, is the densest node.
+//! investigator stood there. The card is a header only, with its printed text
+//! in a hover popover, so in a 100px row it is the token rail that sets a
+//! node's height, and the Parlor, with Lita always in its rail, is the densest
+//! node.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the
@@ -165,8 +165,8 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 /// that a tall node must not grow into the grid row beneath it. The Parlor,
 /// with two investigators and Lita in its rail, is the tallest node the
 /// Gathering can show, and it sits one row below the Hallway (01112). Nor may
-/// an open popover grow a node: it shows the text the card no longer does, and
-/// it has to do so without pushing the node into its neighbours.
+/// an open popover grow a node: it shows the printed text the card leaves out,
+/// and it has to do so without pushing the node into its neighbours.
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
     let state = parlor_board(2, [])
@@ -213,9 +213,8 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
 
 /// Connection lines anchor on the *card*, not on the node — the node spans card
 /// plus rail, so its own centre falls in the gap between them. The short-card
-/// case is the one that bites, and every card is short now that it is only a
-/// header: without a card min-height a line would end below the card in empty
-/// space. The unrevealed Hallway is the shortest of all. Asserted by
+/// case is the one that bites, and every card is short, being only a header:
+/// without a card min-height a line would end below the card in empty space. The unrevealed Hallway is the shortest of all. Asserted by
 /// measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
