@@ -46,9 +46,6 @@ pub struct Tab {
     /// Where the live prompt puts their part, when it asks them: a
     /// [`Spinner`](Placement::Spinner) when another account answers for them.
     pub asked: Option<Placement>,
-    /// "Needs you": the prompt asks them, this account holds them, and their
-    /// tab isn't the open one.
-    pub needs_you: bool,
 }
 
 /// Which tab this client has open: UI state, kept outside the
@@ -160,6 +157,13 @@ impl PromptLayout {
         self.placed(Placement::Spinner)
     }
 
+    /// Whether `investigator`'s tab says "needs you": the prompt asks them,
+    /// this account holds them, and their tab isn't the open one.
+    #[must_use]
+    pub fn needs_you(&self, investigator: InvestigatorId) -> bool {
+        self.open != Some(investigator) && self.strips().contains(&investigator)
+    }
+
     fn placed(&self, placement: Placement) -> Vec<InvestigatorId> {
         self.investigators
             .iter()
@@ -222,13 +226,7 @@ pub fn layout(state: &ClientState, open: OpenTab) -> PromptLayout {
     {
         placed.above_board = None;
     }
-    for tab in &mut placed.tabs {
-        let yours = tab.asked == Some(Placement::Strip);
-        if yours && Some(tab.investigator) == opened {
-            placed.dock_strip = opened;
-        }
-        tab.needs_you = yours && Some(tab.investigator) != opened;
-    }
+    placed.dock_strip = opened.filter(|open| placed.strips().contains(open));
     placed
 }
 
@@ -252,7 +250,6 @@ fn tabs(state: &ClientState, placed: &PromptLayout) -> Vec<Tab> {
                 .iter()
                 .find(|(asked, _)| *asked == investigator)
                 .map(|(_, placement)| *placement),
-            needs_you: false,
         })
         .collect()
 }
@@ -875,7 +872,7 @@ mod tests {
         placed
             .tabs
             .iter()
-            .filter(|tab| tab.needs_you)
+            .filter(|tab| placed.needs_you(tab.investigator))
             .map(|tab| tab.investigator)
             .collect()
     }

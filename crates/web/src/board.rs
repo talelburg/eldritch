@@ -96,14 +96,14 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                 .unwrap_or_default();
             let spinner = (tab.asked == Some(Placement::Spinner))
                 .then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
-            let needs_you = tab
-                .needs_you
-                .then(|| view! { <span class="tab-needs-you">"needs you"</span> });
+            let needs_you = placed.needs_you(investigator);
+            let needs_you_mark =
+                needs_you.then(|| view! { <span class="tab-needs-you">"needs you"</span> });
             view! {
                 <button
                     class="inv-tab"
                     class:held=tab.held
-                    class:needs-you=tab.needs_you
+                    class:needs-you=needs_you
                     class:open=placed.open == Some(investigator)
                     on:click=move |_| {
                         if let Some(open) = open_tab {
@@ -115,7 +115,7 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                     <span class="tab-name">{name}</span>
                     {tab.lead.then(|| view! { <span class="tab-lead">"★"</span> })}
                     {spinner}
-                    {needs_you}
+                    {needs_you_mark}
                 </button>
             }
         })
