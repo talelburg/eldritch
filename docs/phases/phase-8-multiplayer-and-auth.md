@@ -53,6 +53,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #642 | When two or more ST.7 results are pending, the performer picks which applies next; modifiers and the follow-up stay first and Retaliate last, PR #1315; slices #1312, #1313, #1314 |
 | #662 | A barricade-stranded enemy engages the investigators left at the origin, PR #1299 |
 | #795 | A hunter's prey tie offers only the directions it can move, per FFG's ruling, PR #1300 |
+| #863 | The board is one screen: a tab per investigator in seating order, marked held, ▶, ★, a spinner or "needs you", over one docked panel that carries the open tab's prompt strip and hides a hand this account doesn't hold; location, act and agenda cards are headers with their text in a hover popover; the map pans inside its own box; the event log is a drawer and the turn tracker a round band, PR #1359; slices #1355, #1356, #1357, #1358 |
 | #974 | Cover Up triggers for a co-located investigator, PR #984 |
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1061 | Scrying 01061 reorders any investigator's deck, chosen once and kept for its placements; an eliminated investigator is never offered by a choice of investigator, PR #1326; slice #1324 |
@@ -124,7 +125,7 @@ landed, before phase 9 is scoped.
 (✅ PR #1350), returning to the page a sign-in started from, follows #1237
 (✅ PR #1277) and #1239 (✅ PR #1339).
 
-**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 → #534 and
+**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) → #534 and
 #1101. #1242 (✅ PR #1353) → #1243 and #1322.** #1322, the board surface for committed cards, also follows
 #65 (✅ PR #1321), which records each card's committer.
 
