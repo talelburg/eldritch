@@ -191,22 +191,7 @@ impl GameRoom {
         &self,
         command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
     ) -> Result<(), LobbyRefusal> {
-        let mut game = self.game.lock().await;
-        let RoomGame::Lobby(lobby) = &mut *game else {
-            return Err(LobbyRefusal::Started);
-        };
-        let mut changed = lobby.clone();
-        command(&mut changed)?;
-        let view = changed.view();
-        self.store_lobby(&view, None)
-            .await
-            .map_err(|error| LobbyRefusal::Failed(error.to_string()))?;
-        *lobby = changed;
-        // Sent under the game's lock, which a connection attaching also holds
-        // while it subscribes. A send fails only when no connection is
-        // subscribed, and the one that sent this command is.
-        let _ = self.tx.send(RoomEvent::Lobby(Arc::new(view)));
-        Ok(())
+        self.apply_to_lobby(None, command).await
     }
 
     /// Apply `command`, which makes `departing` no longer a member of the
@@ -225,22 +210,41 @@ impl GameRoom {
         departing: AccountId,
         command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
     ) -> Result<(), LobbyRefusal> {
+        self.apply_to_lobby(Some(departing), command).await
+    }
+
+    /// Apply `command` to a copy of the room's lobby, store it, dropping
+    /// `departing`'s membership if there is one, then replace the lobby and
+    /// broadcast it: as [`RoomEvent::Departed`] if an account departed, and
+    /// as [`RoomEvent::Lobby`] otherwise.
+    async fn apply_to_lobby(
+        &self,
+        departing: Option<AccountId>,
+        command: impl FnOnce(&mut Lobby) -> Result<(), LobbyRefusal>,
+    ) -> Result<(), LobbyRefusal> {
         let mut game = self.game.lock().await;
         let RoomGame::Lobby(lobby) = &mut *game else {
+            // A deleted room is refused here too. Its connections never see
+            // this refusal: the socket forwards the room's events before a
+            // reply, and the queued `Deleted` closes it first.
             return Err(LobbyRefusal::Started);
         };
         let mut changed = lobby.clone();
         command(&mut changed)?;
         let view = changed.view();
-        self.store_lobby(&view, Some(departing))
+        self.store_lobby(&view, departing)
             .await
             .map_err(|error| LobbyRefusal::Failed(error.to_string()))?;
         *lobby = changed;
-        // Sent under the game's lock, as `change_lobby`'s is.
-        let _ = self.tx.send(RoomEvent::Departed {
-            account: departing,
-            view: Arc::new(view),
-        });
+        let view = Arc::new(view);
+        let event = match departing {
+            Some(account) => RoomEvent::Departed { account, view },
+            None => RoomEvent::Lobby(view),
+        };
+        // Sent under the game's lock, which a connection attaching also holds
+        // while it subscribes. A send fails only when no connection is
+        // subscribed, and the one that sent this command is.
+        let _ = self.tx.send(event);
         Ok(())
     }
 
@@ -314,6 +318,8 @@ impl GameRoom {
     ) -> Result<(), Refusal> {
         let mut game = self.game.lock().await;
         let RoomGame::Live(session) = &mut *game else {
+            // A deleted room is refused here too, unseen, as
+            // `apply_to_lobby` says.
             return Err(Refusal::NotStarted);
         };
         let assigned =
@@ -352,11 +358,9 @@ impl GameRoom {
         if account != creator {
             return Err(DeleteError::NotCreator);
         }
-        let mut tx = self.db.begin().await.map_err(DeleteError::Db)?;
-        store::delete_game(&mut tx, &self.game_id)
+        store::delete_game(&self.db, &self.game_id)
             .await
             .map_err(DeleteError::Db)?;
-        tx.commit().await.map_err(DeleteError::Db)?;
         *game = RoomGame::Deleted;
         // Sent under the game's lock, as every change is. A send fails only
         // when no connection is subscribed, and then there is none to close.

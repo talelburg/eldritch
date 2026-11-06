@@ -1,5 +1,5 @@
-//! The **live game**: a game as it is being played, and the one decision of
-//! whether a submitted answer is accepted.
+//! The **live game**: a game as it is being played, and the decisions of
+//! whether a submitted answer, or a **reassignment**, is accepted.
 //!
 //! [`LiveGame`] holds the current state, its place in the action log, the
 //! [`Assignment`] of investigators to accounts and the registries every apply
@@ -8,6 +8,8 @@
 //! accepted. It persists nothing and sends nothing: a host stores the
 //! [`Accepted`] answer's logged form, then commits it and sends each
 //! connection the [`Committed::applied_for`] its account.
+//! [`LiveGame::reassign`] decides a reassignment the same way, and
+//! [`LiveGame::commit_reassignment`] makes it.
 //!
 //! Every answer names the [`LogPosition`] of the prompt it answers, and
 //! [`LiveGame::submit`] refuses any position but the current one before the
@@ -192,15 +194,17 @@ impl LiveGame {
     /// Add `member` at the end of the members, unless their account is one
     /// already. Returns whether it was added.
     pub fn join(&mut self, member: Member) -> bool {
-        if self
-            .members
-            .iter()
-            .any(|known| known.account == member.account)
-        {
+        if self.is_member(member.account) {
             return false;
         }
         self.members.push(member);
         true
+    }
+
+    /// Whether `account` is a member.
+    #[must_use]
+    pub fn is_member(&self, account: AccountId) -> bool {
+        self.members.iter().any(|member| member.account == account)
     }
 
     /// The current state.
@@ -382,7 +386,7 @@ impl LiveGame {
         if by != self.creator && by != holder {
             return Err(ReassignRefusal::NotHolder);
         }
-        if !self.members.iter().any(|member| member.account == to) {
+        if !self.is_member(to) {
             return Err(ReassignRefusal::NotAMember);
         }
         if to == holder {

@@ -17,7 +17,7 @@ use crate::auth::SignedInAccount;
 use crate::room::{DeleteError, RoomGame};
 use crate::rooms::LoadFailure;
 use crate::session::{SessionError, UnresumableReason};
-use crate::store::{self, StartedGame};
+use crate::store::{self, StartedGame, StoredCreator};
 use crate::{id, lobby, session, AppState};
 
 /// `POST /games`: create a game of a scenario as a lobby, with the signed-in
@@ -88,8 +88,10 @@ pub(crate) async fn list_games(
 ///
 /// The game is got through the room registry, as a socket gets it. A room is
 /// deleted under its lock, which closes every connection to it, and is then
-/// evicted. An unresumable game has no room: its rows are deleted, and its
-/// cached failure is evicted. Either way, a later connection finds no game.
+/// evicted. An unresumable game has no room: its rows are deleted through the
+/// registry, which holds the game's place while they go, so a connection
+/// arriving meanwhile waits for the delete. Either way, a later connection
+/// finds no game.
 /// The creator is read from the lobby, the live game, or for an unresumable
 /// game its stored row.
 ///
@@ -102,18 +104,27 @@ pub(crate) async fn delete_game(
     Path(game_id): Path<GameId>,
 ) -> StatusCode {
     let deleted = match state.rooms.get_or_load(&game_id).await {
-        Ok(connection) => connection
-            .room()
-            .delete(account.id)
-            .await
-            .map_err(|error| match error {
-                DeleteError::NotCreator => StatusCode::FORBIDDEN,
-                DeleteError::Deleted => StatusCode::NOT_FOUND,
-                DeleteError::Db(error) => internal_error(error),
-            }),
+        Ok(connection) => {
+            let deleted = connection
+                .room()
+                .delete(account.id)
+                .await
+                .map_err(|error| match error {
+                    DeleteError::NotCreator => StatusCode::FORBIDDEN,
+                    DeleteError::Deleted => StatusCode::NOT_FOUND,
+                    DeleteError::Db(error) => internal_error(error),
+                });
+            if deleted.is_ok() {
+                state.rooms.forget(&game_id);
+            }
+            deleted
+        }
         Err(LoadFailure::NotFound) => Err(StatusCode::NOT_FOUND),
         Err(LoadFailure::Failed(err)) if matches!(*err, SessionError::Unresumable { .. }) => {
-            delete_unresumable(&state, &game_id, account.id).await
+            state
+                .rooms
+                .delete_with(&game_id, delete_unresumable(&state, &game_id, account.id))
+                .await
         }
         Err(LoadFailure::Failed(err)) => {
             tracing::error!(
@@ -125,17 +136,13 @@ pub(crate) async fn delete_game(
         }
     };
     match deleted {
-        Ok(()) => {
-            state.rooms.forget(&game_id);
-            StatusCode::NO_CONTENT
-        }
+        Ok(()) => StatusCode::NO_CONTENT,
         Err(status) => status,
     }
 }
 
 /// Delete the unresumable game `game_id`'s rows if `account` created it, as
-/// its stored row says. A row with no creator, stored before the creator
-/// was recorded, can't be deleted by anyone.
+/// its stored row says. A row with no creator can't be deleted by anyone.
 ///
 /// # Errors
 ///
@@ -150,15 +157,14 @@ async fn delete_unresumable(
         .await
         .map_err(internal_error)?
     {
-        None => return Err(StatusCode::NOT_FOUND),
-        Some(creator) if creator != Some(account) => return Err(StatusCode::FORBIDDEN),
-        Some(_) => {}
+        StoredCreator::NoGame => Err(StatusCode::NOT_FOUND),
+        StoredCreator::Account(creator) if creator == account => {
+            store::delete_game(&state.db, game_id)
+                .await
+                .map_err(internal_error)
+        }
+        StoredCreator::Account(_) | StoredCreator::Unrecorded => Err(StatusCode::FORBIDDEN),
     }
-    let mut tx = state.db.begin().await.map_err(internal_error)?;
-    store::delete_game(&mut tx, game_id)
-        .await
-        .map_err(internal_error)?;
-    tx.commit().await.map_err(internal_error)
 }
 
 /// The entry `account` is shown for the started game `game`, loaded through

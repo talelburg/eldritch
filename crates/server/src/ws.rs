@@ -1,7 +1,8 @@
 //! Websocket hub: one [`GameRoom`] per game, fanning each change out to every
 //! connection while serializing changes through the room's mutex. Each
 //! connection keeps the account it signed in as: it submits as that account,
-//! and is sent the `Hello`, `Lobby` and `Applied` built for it.
+//! and turns each [`RoomEvent`] into what it does for that account, a message
+//! sent or the socket closed, through [`outbound`].
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -427,6 +428,9 @@ async fn handle_client_message(
             Ok(ClientMessage::Submit { prompt, action }) => {
                 let mut game = room.game.lock().await;
                 let RoomGame::Live(session) = &mut *game else {
+                    // A deleted room is refused here too. Its connection never
+                    // sees this refusal: `forward_waiting` forwards the queued
+                    // `Deleted`, which closes the socket, before the reply.
                     return Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                         Refusal::NotStarted,
                     ))));

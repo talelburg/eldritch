@@ -1,7 +1,8 @@
-//! Action-log persistence: thin CRUD over the `games`, `game_assignments`
-//! and `actions` tables. JSON (de)serialization lives in
-//! [`crate::session`]; this layer only moves strings and integers in and out
-//! of `SQLite`.
+//! Started-game persistence: thin CRUD over the `games`, `game_assignments`
+//! and `actions` tables, plus the reads and the delete that span a game's
+//! lobby rows too ([`creator_of`], [`delete_game`]). JSON (de)serialization
+//! lives in [`crate::session`]; this layer only moves strings and integers in
+//! and out of `SQLite`.
 
 use game_core::state::InvestigatorId;
 use protocol::{AccountId, Assignment, GameId};
@@ -105,17 +106,24 @@ pub(crate) async fn update_holder(
     }
 }
 
+/// Who created a game, as [`creator_of`] reads it from the stored rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StoredCreator {
+    /// Neither a stored game nor a lobby has this id.
+    NoGame,
+    /// The game's row has no creator.
+    Unrecorded,
+    /// This account created the game.
+    Account(AccountId),
+}
+
 /// The creator of the game `game_id`, read from its stored game's row or its
-/// lobby's: `None` if neither row exists, and `Some(None)` for a stored game
-/// from before the creator was recorded.
+/// lobby's.
 ///
 /// # Errors
 ///
 /// The database failed.
-pub(crate) async fn creator_of(
-    db: &SqlitePool,
-    game_id: &GameId,
-) -> Result<Option<Option<AccountId>>, Error> {
+pub(crate) async fn creator_of(db: &SqlitePool, game_id: &GameId) -> Result<StoredCreator, Error> {
     let row: Option<(Option<i64>,)> = sqlx::query_as(
         "SELECT creator FROM games WHERE game_id = ? \
          UNION ALL SELECT creator FROM lobbies WHERE game_id = ?",
@@ -124,18 +132,23 @@ pub(crate) async fn creator_of(
     .bind(game_id.as_str())
     .fetch_optional(db)
     .await?;
-    Ok(row.map(|(creator,)| creator.map(AccountId)))
+    Ok(match row {
+        None => StoredCreator::NoGame,
+        Some((None,)) => StoredCreator::Unrecorded,
+        Some((Some(creator),)) => StoredCreator::Account(AccountId(creator)),
+    })
 }
 
-/// Delete every row stored under `game_id`, on `db`: the stored game, its
-/// actions and its assignment, the lobby and its picks, and its members.
-/// Each table's rows go before the rows they reference, since the foreign
-/// keys are enforced.
+/// Delete every row stored under `game_id`, in one transaction: the stored
+/// game, its actions and its assignment, the lobby and its picks, and its
+/// members. Each table's rows go before the rows they reference, since the
+/// foreign keys are enforced.
 ///
 /// # Errors
 ///
-/// The database failed.
-pub(crate) async fn delete_game(db: &mut SqliteConnection, game_id: &GameId) -> Result<(), Error> {
+/// The database failed, and nothing was deleted.
+pub(crate) async fn delete_game(db: &SqlitePool, game_id: &GameId) -> Result<(), Error> {
+    let mut tx = db.begin().await?;
     for delete in [
         "DELETE FROM actions WHERE game_id = ?",
         "DELETE FROM game_assignments WHERE game_id = ?",
@@ -146,10 +159,10 @@ pub(crate) async fn delete_game(db: &mut SqliteConnection, game_id: &GameId) -> 
     ] {
         sqlx::query(delete)
             .bind(game_id.as_str())
-            .execute(&mut *db)
+            .execute(&mut *tx)
             .await?;
     }
-    Ok(())
+    tx.commit().await
 }
 
 /// Fetch a game's assignment: empty if it has no assignment rows.

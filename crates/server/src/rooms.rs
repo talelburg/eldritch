@@ -87,6 +87,20 @@ struct Slot<R> {
     idle_timer: Option<AbortHandle>,
 }
 
+impl<R> Slot<R> {
+    /// A slot for an entry not yet loaded, with no connection counted.
+    fn unloaded() -> Self {
+        Self {
+            entry: Arc::new(Entry {
+                loaded: OnceCell::new(),
+            }),
+            connections: 0,
+            generation: 0,
+            idle_timer: None,
+        }
+    }
+}
+
 /// The map from each game to its slot, shared by the registry, its
 /// connections and their idle timers.
 type Map<R> = Arc<Mutex<HashMap<GameId, Slot<R>>>>;
@@ -193,24 +207,60 @@ impl<L: Loader> RoomRegistry<L> {
         let room = place
             .entry
             .loaded
-            .get_or_init(|| async {
-                let loaded = self.load(game_id).await;
-                let kept = match &loaded {
-                    Ok(_) => true,
-                    Err(LoadFailure::NotFound) => false,
-                    Err(LoadFailure::Failed(err)) => self.loader.is_permanent(err),
-                };
-                if !kept {
-                    place.remove_if(|_| true);
-                }
-                loaded
-            })
+            .get_or_init(|| self.load_into(place))
             .await
             .clone()?;
         Ok(Connection {
             room,
             _registration: registration,
         })
+    }
+
+    /// Delete `game_id`, which has no room to delete it under, through
+    /// `delete`, holding the game's place in the map while `delete` runs: a
+    /// get that arrives meanwhile waits for it. If `delete` deletes the
+    /// game's rows, those gets, and every later one, find no game. If it
+    /// fails, the game is loaded again, and they get what that load gets.
+    ///
+    /// Whatever the map held for the game, a cached failure included, is
+    /// replaced. A get that started its load first runs it to the end; the
+    /// delete then replaces what it loaded.
+    ///
+    /// # Errors
+    ///
+    /// The error `delete` failed with.
+    pub(crate) async fn delete_with<E>(
+        &self,
+        game_id: &GameId,
+        delete: impl Future<Output = Result<(), E>>,
+    ) -> Result<(), E> {
+        let mut delete = Some(delete);
+        loop {
+            let registration = self.register_afresh(game_id);
+            let place = &registration.0;
+            let mut deleted = None;
+            let (delete, deleted_out) = (&mut delete, &mut deleted);
+            place
+                .entry
+                .loaded
+                .get_or_init(|| async move {
+                    let result = delete.take().expect("the delete runs once").await;
+                    let loaded = if result.is_ok() {
+                        place.remove_if(|_| true);
+                        Err(LoadFailure::NotFound)
+                    } else {
+                        self.load_into(place).await
+                    };
+                    *deleted_out = Some(result);
+                    loaded
+                })
+                .await;
+            // `None` if a get registered on the new entry and began its load
+            // before this delete could; the delete is still to run.
+            if let Some(result) = deleted {
+                return result;
+            }
+        }
     }
 
     /// Take `game_id`'s entry out of the map, whatever it holds: a room, or a
@@ -231,24 +281,57 @@ impl<L: Loader> RoomRegistry<L> {
     /// there is none, and abort the entry's idle timer.
     fn register(&self, game_id: &GameId) -> Registration<L::Room> {
         let mut rooms = lock(&self.rooms);
-        let slot = rooms.entry(game_id.clone()).or_insert_with(|| Slot {
-            entry: Arc::new(Entry {
-                loaded: OnceCell::new(),
-            }),
-            connections: 0,
-            generation: 0,
-            idle_timer: None,
-        });
+        let slot = rooms.entry(game_id.clone()).or_insert_with(Slot::unloaded);
+        Self::count_on(&self.rooms, game_id, slot)
+    }
+
+    /// Put a new, unloaded entry in the map for `game_id` in place of
+    /// whatever it held, and count a connection on it.
+    fn register_afresh(&self, game_id: &GameId) -> Registration<L::Room> {
+        let mut rooms = lock(&self.rooms);
+        if let Some(timer) = rooms
+            .insert(game_id.clone(), Slot::unloaded())
+            .and_then(|replaced| replaced.idle_timer)
+        {
+            timer.abort();
+        }
+        let slot = rooms.get_mut(game_id).expect("inserted above");
+        Self::count_on(&self.rooms, game_id, slot)
+    }
+
+    /// Count a connection on `slot`, `game_id`'s in `rooms`, and abort its
+    /// idle timer.
+    fn count_on(
+        rooms: &Map<L::Room>,
+        game_id: &GameId,
+        slot: &mut Slot<L::Room>,
+    ) -> Registration<L::Room> {
         slot.connections += 1;
         slot.generation += 1;
         if let Some(timer) = slot.idle_timer.take() {
             timer.abort();
         }
         Registration(Place {
-            rooms: Arc::clone(&self.rooms),
+            rooms: Arc::clone(rooms),
             game_id: game_id.clone(),
             entry: Arc::clone(&slot.entry),
         })
+    }
+
+    /// Load the game at `place` into its entry: the load's result, which the
+    /// entry keeps only if it is a room or a failure the loader calls
+    /// permanent. Any other result takes the entry out of the map.
+    async fn load_into(&self, place: &Place<L::Room>) -> Loaded<L::Room> {
+        let loaded = self.load(&place.game_id).await;
+        let kept = match &loaded {
+            Ok(_) => true,
+            Err(LoadFailure::NotFound) => false,
+            Err(LoadFailure::Failed(err)) => self.loader.is_permanent(err),
+        };
+        if !kept {
+            place.remove_if(|_| true);
+        }
+        loaded
     }
 
     /// Read `game_id`, then rebuild its room on a blocking thread.
@@ -325,7 +408,7 @@ impl<R: Send + Sync + 'static> Drop for Registration<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc;
 
     use tokio::sync::{watch, Notify};
@@ -357,6 +440,8 @@ mod tests {
         rebuild_gate: Option<Mutex<mpsc::Receiver<()>>>,
         /// Notified once rebuild has started.
         rebuild_started: Arc<Notify>,
+        /// Set once the game's rows are deleted: read then finds no game.
+        deleted: AtomicBool,
         reads: AtomicUsize,
         rebuilds: AtomicUsize,
     }
@@ -369,6 +454,7 @@ mod tests {
                 read_gate: None,
                 rebuild_gate: None,
                 rebuild_started: Arc::new(Notify::new()),
+                deleted: AtomicBool::new(false),
                 reads: AtomicUsize::new(0),
                 rebuilds: AtomicUsize::new(0),
             }
@@ -431,6 +517,9 @@ mod tests {
                     .wait_for(|open| *open)
                     .await
                     .expect("gate sender held");
+            }
+            if game.deleted.load(Ordering::SeqCst) {
+                return Ok(None);
             }
             match game.read {
                 Read::Found => Ok(Some(game_id.clone())),
@@ -738,5 +827,70 @@ mod tests {
             (1, 1),
             "the second get neither read nor rebuilt"
         );
+    }
+
+    /// A delete of `game` through [`RoomRegistry::delete_with`] that waits
+    /// until the returned sender sends, then deletes its rows if `deletes`,
+    /// and fails otherwise.
+    fn held_delete(
+        game: &Arc<TestGame>,
+        deletes: bool,
+    ) -> (impl Future<Output = Result<(), ()>>, watch::Sender<bool>) {
+        let (tx, mut rx) = watch::channel(false);
+        let game = Arc::clone(game);
+        let delete = async move {
+            rx.wait_for(|open| *open).await.expect("gate sender held");
+            if deletes {
+                game.deleted.store(true, Ordering::SeqCst);
+                Ok(())
+            } else {
+                Err(())
+            }
+        };
+        (delete, tx)
+    }
+
+    #[tokio::test]
+    async fn a_get_during_a_delete_waits_for_it_and_finds_no_game() {
+        let game = Arc::new(TestGame::new(Read::Found, Rebuild::Unresumable));
+        let (registry, id) = registry_for(&game);
+        assert!(is_unresumable(&registry.get_or_load(&id).await));
+        let (delete, finish_delete) = held_delete(&game, true);
+
+        // `join!` polls in order, so the get arrives while the delete is held.
+        let (deleted, during, ()) = tokio::join!(
+            registry.delete_with(&id, delete),
+            registry.get_or_load(&id),
+            async {
+                finish_delete.send_replace(true);
+            },
+        );
+
+        assert_eq!(deleted, Ok(()));
+        assert!(matches!(during, Err(LoadFailure::NotFound)));
+        assert!(matches!(
+            registry.get_or_load(&id).await,
+            Err(LoadFailure::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_get_during_a_failed_delete_finds_the_game_as_it_was() {
+        let game = Arc::new(TestGame::new(Read::Found, Rebuild::Unresumable));
+        let (registry, id) = registry_for(&game);
+        assert!(is_unresumable(&registry.get_or_load(&id).await));
+        let (delete, finish_delete) = held_delete(&game, false);
+
+        let (deleted, during, ()) = tokio::join!(
+            registry.delete_with(&id, delete),
+            registry.get_or_load(&id),
+            async {
+                finish_delete.send_replace(true);
+            },
+        );
+
+        assert_eq!(deleted, Err(()));
+        assert!(is_unresumable(&during));
+        assert!(is_unresumable(&registry.get_or_load(&id).await));
     }
 }
