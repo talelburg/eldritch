@@ -213,6 +213,20 @@ impl<L: Loader> RoomRegistry<L> {
         })
     }
 
+    /// Take `game_id`'s entry out of the map, whatever it holds: a room, or a
+    /// cached failure. The next get loads the game afresh. For a game whose
+    /// rows were deleted, that load finds no game.
+    ///
+    /// A connection still holding the forgotten room keeps it until it
+    /// drops, and its leaving then changes nothing in the map.
+    pub(crate) fn forget(&self, game_id: &GameId) {
+        if let Some(slot) = lock(&self.rooms).remove(game_id) {
+            if let Some(timer) = slot.idle_timer {
+                timer.abort();
+            }
+        }
+    }
+
     /// Count a connection on `game_id`'s entry, putting one in the map if
     /// there is none, and abort the entry's idle timer.
     fn register(&self, game_id: &GameId) -> Registration<L::Room> {

@@ -14,7 +14,7 @@ use sqlx::SqlitePool;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use crate::lobby;
+use crate::{lobby, store};
 use crate::session::{GameSession, NewGame, ReassignError, SessionError};
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
@@ -43,6 +43,10 @@ pub(crate) enum RoomGame {
     Lobby(Lobby),
     /// Started. Boxed: a live game dwarfs a lobby.
     Live(Box<GameSession>),
+    /// Deleted by its creator, its rows gone. A connection that got the room
+    /// before the delete evicted it is refused, as one to a game that
+    /// doesn't exist.
+    Deleted,
 }
 
 /// One change a room broadcasts to its connections.
@@ -71,6 +75,28 @@ pub(crate) enum RoomEvent {
         /// The lobby without it.
         view: Arc<LobbyView>,
     },
+    /// The creator deleted the game. Every connection closes.
+    Deleted,
+}
+
+/// Why [`GameRoom::attach`] attached no connection.
+#[derive(Debug)]
+pub(crate) enum AttachError {
+    /// The game was deleted while the connection was getting its room.
+    Deleted,
+    /// Storing the membership failed.
+    Db(sqlx::Error),
+}
+
+/// Why [`GameRoom::delete`] deleted nothing.
+#[derive(Debug)]
+pub(crate) enum DeleteError {
+    /// The account asking isn't the game's creator.
+    NotCreator,
+    /// The game was already deleted.
+    Deleted,
+    /// Deleting its rows failed.
+    Db(sqlx::Error),
 }
 
 /// What a connection gets on attaching to a room: its subscription and the
@@ -113,11 +139,17 @@ impl GameRoom {
     ///
     /// # Errors
     ///
-    /// Storing the membership failed.
-    pub(crate) async fn attach(&self, member: Member) -> Result<Attached, sqlx::Error> {
+    /// [`AttachError::Deleted`] in a deleted room, which stores nothing;
+    /// [`AttachError::Db`] if storing the membership failed.
+    pub(crate) async fn attach(&self, member: Member) -> Result<Attached, AttachError> {
         let account = member.account;
         let mut game = self.game.lock().await;
-        let joined = lobby::add_member(&self.db, &self.game_id, account).await?;
+        if matches!(*game, RoomGame::Deleted) {
+            return Err(AttachError::Deleted);
+        }
+        let joined = lobby::add_member(&self.db, &self.game_id, account)
+            .await
+            .map_err(AttachError::Db)?;
         let first = match &mut *game {
             RoomGame::Live(session) => {
                 if joined && session.join(member) {
@@ -135,6 +167,7 @@ impl GameRoom {
                 }
                 lobby_message(account, lobby.view(), joined)
             }
+            RoomGame::Deleted => unreachable!("a deleted room is refused above"),
         };
         Ok(Attached {
             rx: self.tx.subscribe(),
@@ -294,6 +327,40 @@ impl GameRoom {
         // Sent under the game's lock, as every change is. A send fails only
         // when no connection is subscribed, and the one that asked is.
         let _ = self.tx.send(RoomEvent::Assigned(Arc::new(assigned)));
+        Ok(())
+    }
+
+    /// Delete the room's game, lobby or started, as `account` asks: delete
+    /// every row stored under it in one transaction, mark the room deleted
+    /// and broadcast [`RoomEvent::Deleted`], which closes every connection.
+    /// The caller then evicts the room from the registry. Only the creator
+    /// may; a refused delete, or one that couldn't be stored, changes
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`DeleteError::NotCreator`] for anyone else; [`DeleteError::Deleted`]
+    /// if it already was; [`DeleteError::Db`] if the rows couldn't be
+    /// deleted.
+    pub(crate) async fn delete(&self, account: AccountId) -> Result<(), DeleteError> {
+        let mut game = self.game.lock().await;
+        let creator = match &*game {
+            RoomGame::Lobby(lobby) => lobby.creator(),
+            RoomGame::Live(session) => session.live().creator(),
+            RoomGame::Deleted => return Err(DeleteError::Deleted),
+        };
+        if account != creator {
+            return Err(DeleteError::NotCreator);
+        }
+        let mut tx = self.db.begin().await.map_err(DeleteError::Db)?;
+        store::delete_game(&mut tx, &self.game_id)
+            .await
+            .map_err(DeleteError::Db)?;
+        tx.commit().await.map_err(DeleteError::Db)?;
+        *game = RoomGame::Deleted;
+        // Sent under the game's lock, as every change is. A send fails only
+        // when no connection is subscribed, and then there is none to close.
+        let _ = self.tx.send(RoomEvent::Deleted);
         Ok(())
     }
 

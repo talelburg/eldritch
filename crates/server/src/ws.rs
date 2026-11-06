@@ -16,7 +16,7 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
 use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
-    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
+    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_DELETED, CLOSE_GAME_NOT_FOUND,
     CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
@@ -25,7 +25,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::time::{self, Instant};
 
 use crate::auth::SignedInAccount;
-use crate::room::{self, Attached, GameRoom, RoomEvent, RoomGame};
+use crate::room::{self, AttachError, Attached, GameRoom, RoomEvent, RoomGame};
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
 use crate::session::{ApplyError, GameSession, SessionError, StoredGame};
 use crate::{auth, lobby, AppState};
@@ -215,9 +215,14 @@ async fn handle_socket(
     // already include (see `GameRoom::attach`).
     let Attached { mut rx, first } = match room.attach(member).await {
         Ok(attached) => attached,
+        // Deleted since the room was got: the game is gone, as if never found.
+        Err(AttachError::Deleted) => {
+            close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await;
+            return;
+        }
         // Dropped bare, so the client reconnects and the membership is tried
         // again.
-        Err(err) => {
+        Err(AttachError::Db(err)) => {
             tracing::error!(
                 game_id = game_id.as_str(),
                 error = %err,
@@ -320,6 +325,12 @@ fn outbound(event: RoomEvent, account: AccountId) -> Outbound {
         RoomEvent::Started(live) => live.hello_for(account),
         RoomEvent::Members(members) => ServerMessage::Members((*members).clone()),
         RoomEvent::Assigned(assigned) => (*assigned).clone(),
+        RoomEvent::Deleted => {
+            return Outbound::Close {
+                code: CLOSE_GAME_DELETED,
+                reason: "game deleted",
+            }
+        }
         RoomEvent::Departed {
             account: departing, ..
         } if departing == account => {

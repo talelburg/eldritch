@@ -105,6 +105,53 @@ pub(crate) async fn update_holder(
     }
 }
 
+/// The creator of the game `game_id`, read from its stored game's row or its
+/// lobby's: `None` if neither row exists, and `Some(None)` for a stored game
+/// from before the creator was recorded.
+///
+/// # Errors
+///
+/// The database failed.
+pub(crate) async fn creator_of(
+    db: &SqlitePool,
+    game_id: &GameId,
+) -> Result<Option<Option<AccountId>>, Error> {
+    let row: Option<(Option<i64>,)> = sqlx::query_as(
+        "SELECT creator FROM games WHERE game_id = ? \
+         UNION ALL SELECT creator FROM lobbies WHERE game_id = ?",
+    )
+    .bind(game_id.as_str())
+    .bind(game_id.as_str())
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|(creator,)| creator.map(AccountId)))
+}
+
+/// Delete every row stored under `game_id`, on `db`: the stored game, its
+/// actions and its assignment, the lobby and its picks, and its members.
+/// Each table's rows go before the rows they reference, since the foreign
+/// keys are enforced.
+///
+/// # Errors
+///
+/// The database failed.
+pub(crate) async fn delete_game(db: &mut SqliteConnection, game_id: &GameId) -> Result<(), Error> {
+    for delete in [
+        "DELETE FROM actions WHERE game_id = ?",
+        "DELETE FROM game_assignments WHERE game_id = ?",
+        "DELETE FROM games WHERE game_id = ?",
+        "DELETE FROM lobby_picks WHERE game_id = ?",
+        "DELETE FROM lobbies WHERE game_id = ?",
+        "DELETE FROM game_members WHERE game_id = ?",
+    ] {
+        sqlx::query(delete)
+            .bind(game_id.as_str())
+            .execute(&mut *db)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Fetch a game's assignment: empty if it has no assignment rows.
 pub(crate) async fn load_assignment(
     db: &SqlitePool,

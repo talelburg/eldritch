@@ -174,6 +174,13 @@ pub fn app(state: AppState) -> Router {
             "/games",
             routing::post(lifecycle::create_game).get(lifecycle::list_games),
         )
+        // A game's link is this path too: every method but DELETE falls back
+        // to the client, as an unrouted path does. Without it a `GET` of the
+        // link would be answered 405.
+        .route(
+            "/games/{game_id}",
+            routing::delete(lifecycle::delete_game).fallback_service(static_files.clone()),
+        )
         .nest("/auth", auth::router(&state))
         .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)

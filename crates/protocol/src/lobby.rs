@@ -60,6 +60,12 @@ impl Lobby {
         self
     }
 
+    /// The account that created the game, which controls the lobby.
+    #[must_use]
+    pub fn creator(&self) -> AccountId {
+        self.creator
+    }
+
     /// Add `member` at the end of the members, unless their account is one
     /// already. Returns whether it was added.
     pub fn join(&mut self, member: Member) -> bool {

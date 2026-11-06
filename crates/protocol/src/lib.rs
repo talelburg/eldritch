@@ -741,6 +741,13 @@ pub const CLOSE_UNRESUMABLE: u16 = 4410;
 /// games" instead, saying why.
 pub const CLOSE_NO_LONGER_A_MEMBER: u16 = 4403;
 
+/// The close code ending every WebSocket open to a game its creator deleted.
+///
+/// It is not retried: the game is gone, and a reconnect would be closed with
+/// [`CLOSE_GAME_NOT_FOUND`]. A client goes to "Your games" instead, saying
+/// why.
+pub const CLOSE_GAME_DELETED: u16 = 4411;
+
 /// The close code every open WebSocket gets when the server shuts down for a
 /// restart: 1012, the standard "Service Restart" code.
 ///
