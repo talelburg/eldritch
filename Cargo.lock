@@ -4565,6 +4565,7 @@ dependencies = [
  "card-dsl",
  "cards",
  "console_error_panic_hook",
+ "form_urlencoded",
  "futures",
  "game-core",
  "gloo-net 0.7.0",
