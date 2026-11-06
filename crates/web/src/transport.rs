@@ -23,20 +23,26 @@ use protocol::{
 };
 use wasm_bindgen_futures::spawn_local;
 
-use crate::socket_ending::{self, SocketEnding};
-use crate::store::{self, ConnStatus, Received, StoreSignal};
+use crate::delete_game::DeleteGame;
+use crate::socket_ending::{self, NextStep, SocketEnding};
+use crate::store::{self, ConnStatus, DeleteAnswer, Received, StoreSignal};
 use crate::url;
 
 /// The scenario every new game plays: The Gathering is the only one.
 const SCENARIO_ID: &str = "the-gathering";
 /// HTTP 401, which the server answers when the request isn't signed in.
 const UNAUTHORIZED: u16 = 401;
+/// HTTP 204, which the server answers a delete it carried out with.
+const NO_CONTENT: u16 = 204;
+/// HTTP 404, which the server answers a delete of a game it has no row of with.
+const NOT_FOUND: u16 = 404;
 
 /// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
 
-/// Start the transport: provide an `OutboundTx` into context, then spawn the
-/// connect loop. Call once from `App` (wasm only).
+/// Start the transport: provide an `OutboundTx` and the HTTP [`DeleteGame`]
+/// into context, then spawn the connect loop. Call once from `App` (wasm
+/// only).
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     // A tab brought back to the front pings at once, rather than waiting on a
@@ -50,6 +56,9 @@ pub fn start(store: StoreSignal) {
         }
     });
     provide_context(tx);
+    provide_context(DeleteGame(Callback::new(move |game_id| {
+        spawn_local(delete_game(store, game_id));
+    })));
     spawn_local(run(store, rx));
 }
 
@@ -61,8 +70,12 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     let Some(game_id) = url::current_game_id() else {
         // The "Your games" page, listing what [`fetch_games`] returns once;
         // its New game button creates a lobby through [`new_game`] and goes
-        // to it.
-        store.update(|s| s.status = ConnStatus::Home);
+        // to it. A game that sent this client here says why, in a toast.
+        let ended = url::take_current_ended();
+        store.update(|s| {
+            s.status = ConnStatus::Home;
+            s.toast = ended.map(|ended| ended.toast().to_string());
+        });
         fetch_games(store).await;
         return;
     };
@@ -74,20 +87,17 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
     let mut attempt: u32 = 0;
     loop {
         let outcome = connect_once(&store, &game_id, &mut rx, &mut attempt).await;
-        // A socket that never opened ended the way a refused connect does. A
-        // version mismatch stops the loop below, so its ending is never used.
+        // A socket that never opened ended the way a refused connect does.
         let ending = match outcome {
             ConnectOutcome::Ended(ending) => ending,
-            ConnectOutcome::Unreachable | ConnectOutcome::VersionMismatch => {
-                SocketEnding::Disconnected
-            }
-        };
-        match outcome {
+            ConnectOutcome::Unreachable => SocketEnding::Disconnected,
             // A wire-format skew: the status is already set to VersionMismatch.
             // Stop the loop entirely — retrying just hits the same stale server.
             ConnectOutcome::VersionMismatch => return,
+        };
+        match ending.next_step() {
             // The session is gone. Show the sign-in screen and stop.
-            ConnectOutcome::Ended(SocketEnding::Unauthenticated) => {
+            NextStep::SignIn => {
                 // If `/auth/me` still signs us in, the server refused the
                 // socket a session it accepts over HTTP, which only a server
                 // bug does. Nothing is live, so say so rather than leave the
@@ -101,23 +111,24 @@ async fn run(store: StoreSignal, mut rx: UnboundedReceiver<ClientMessage>) {
             // would fail the same way. Say so and stop: the link still names
             // the game, and a rollback to an earlier build can resume it. The
             // listing's entry for the game says where it stopped and why.
-            ConnectOutcome::Ended(SocketEnding::Unresumable) => {
+            NextStep::Unresumable => {
                 store.update(|s| s.status = ConnStatus::Unresumable);
                 fetch_games(store).await;
                 return;
             }
-            // The server has no game at this link (a typo, or a DB reset).
-            // Go to the home page, which offers a new one, in place of it.
-            ConnectOutcome::Ended(SocketEnding::StaleId) => {
-                go_to("/", Navigation::Replace);
+            // The server has no game at this link (a typo, or a DB reset),
+            // this account is no longer a member of it, or its creator
+            // deleted it. Go to the home page, which offers a new one, in
+            // place of it, naming the ending for its toast.
+            NextStep::GoHome(ended) => {
+                go_to(&url::home_path(ended), Navigation::Replace);
                 return;
             }
             // Couldn't reach the server, a disconnect, or a server shutting
             // down for a restart — keep the SAME game and just retry. A
             // restart says so until the next `Hello` or `Lobby`, through
             // however many refused connects it takes.
-            ConnectOutcome::Unreachable
-            | ConnectOutcome::Ended(SocketEnding::Disconnected | SocketEnding::Restarting) => {}
+            NextStep::Reconnect => {}
         }
 
         store.update(|s| s.status = s.status.retrying_after(ending));
@@ -210,6 +221,31 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
         store.update(|s| s.status = ConnStatus::Failed);
         None
     }
+}
+
+/// `DELETE /games/{id}` of `game_id`, which the creator confirmed. Deleted,
+/// or already gone, its row leaves the "Your games" listing; a lobby or board
+/// this page shows leaves when the server closes the socket as deleted.
+/// Signed out since boot, show the sign-in screen instead. Every answer but a
+/// delete says so in a toast ([`ClientState::delete_answered`]).
+///
+/// [`ClientState::delete_answered`]: crate::store::ClientState::delete_answered
+async fn delete_game(store: StoreSignal, game_id: GameId) {
+    let path = format!("/games/{}", game_id.as_str());
+    let status = Request::delete(&path)
+        .send()
+        .await
+        .map(|resp| resp.status());
+    let answer = match status {
+        Ok(UNAUTHORIZED) => {
+            check_sign_in(store).await;
+            return;
+        }
+        Ok(NO_CONTENT) => DeleteAnswer::Deleted,
+        Ok(NOT_FOUND) => DeleteAnswer::NotFound,
+        _ => DeleteAnswer::Failed,
+    };
+    store.update(|s| s.delete_answered(&game_id, answer));
 }
 
 /// One socket lifetime: open, pump inbound->reduce and outbound->sink,

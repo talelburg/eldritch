@@ -6,6 +6,7 @@
 
 mod banner;
 mod header;
+pub(crate) mod more_menu;
 mod picks;
 mod pool;
 mod seating;
@@ -76,6 +77,9 @@ pub(crate) fn tals_lobby_with_picks(picks: &[(&str, AccountId)]) -> LobbyView {
     }
     lobby.view()
 }
+
+/// Where the lobby's ⋯ menu sits, for [`crate::more_menu`]'s helpers.
+pub(crate) const HEADER: &str = ".lobby-header";
 
 /// Click the one `sel` under `handle`'s root.
 pub(crate) fn click(handle: &BoardHandle, sel: &str) {

@@ -80,11 +80,15 @@ pub fn submit_as(investigator: InvestigatorId, response: InputResponse) {
 }
 
 /// Send `action` as the answer to the prompt the store holds, if a transport
-/// is mounted.
+/// is mounted, recording the investigator it answers for.
 #[cfg(target_arch = "wasm32")]
 fn send(action: PlayerAction) {
     if let Some(tx) = use_context::<OutboundTx>() {
         let store = store::use_store();
+        if let PlayerAction::ResolveInput { investigator, .. } = &action {
+            let investigator = *investigator;
+            store.update_untracked(|s| s.last_submit = Some(investigator));
+        }
         let prompt = store.with_untracked(|s| s.prompt);
         let _ = tx.unbounded_send(ClientMessage::Submit { prompt, action });
     }

@@ -9,11 +9,13 @@ pub mod board;
 pub mod card;
 pub mod controls;
 pub mod decision;
+pub mod delete_game;
 pub mod drag;
 pub mod enemy_card;
 pub mod event_log;
 pub mod interaction;
 pub mod map;
+pub mod more_menu;
 pub mod names;
 pub mod registry;
 pub mod sign_in;
@@ -29,6 +31,9 @@ pub mod transport;
 
 #[cfg(target_arch = "wasm32")]
 pub mod prompt_banner;
+
+#[cfg(target_arch = "wasm32")]
+pub mod board_menu;
 
 #[cfg(target_arch = "wasm32")]
 pub mod home;

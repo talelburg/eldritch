@@ -1,6 +1,7 @@
-//! Game lifecycle HTTP: create a game, and list the signed-in account's games.
+//! Game lifecycle HTTP: create a game, list the signed-in account's games,
+//! and delete one.
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use game_core::scenario::ScenarioId;
@@ -8,15 +9,15 @@ use game_core::state::{CardCode, InvestigatorId};
 use protocol::lobby::Member;
 use protocol::{
     AccountId, Assignment, CreateGameRequest, CreateGameResponse, EntryInvestigator, GameEntry,
-    ListedGame, UnresumableSummary,
+    GameId, ListedGame, UnresumableSummary,
 };
 use serde_json::Value;
 
 use crate::auth::SignedInAccount;
-use crate::room::RoomGame;
+use crate::room::{DeleteError, RoomGame};
 use crate::rooms::LoadFailure;
 use crate::session::{SessionError, UnresumableReason};
-use crate::store::{self, StartedGame};
+use crate::store::{self, StartedGame, StoredCreator};
 use crate::{id, lobby, session, AppState};
 
 /// `POST /games`: create a game of a scenario as a lobby, with the signed-in
@@ -80,6 +81,90 @@ pub(crate) async fn list_games(
         }
     }
     Ok(Json(entries))
+}
+
+/// `DELETE /games/{game_id}`: the creator deletes the game, lobby or started,
+/// and every row stored under it.
+///
+/// The game is got through the room registry, as a socket gets it. A room is
+/// deleted under its lock, which closes every connection to it, and is then
+/// evicted. An unresumable game has no room: its rows are deleted through the
+/// registry, which holds the game's place while they go, so a connection
+/// arriving meanwhile waits for the delete. Either way, a later connection
+/// finds no game.
+/// The creator is read from the lobby, the live game, or for an unresumable
+/// game its stored row.
+///
+/// `204 No Content` on success; `401 Unauthorized` when not signed in; `403
+/// Forbidden` for any account but the creator, deleting nothing; `404 Not
+/// Found` for no such game; `500` on a persistence failure.
+pub(crate) async fn delete_game(
+    State(state): State<AppState>,
+    account: SignedInAccount,
+    Path(game_id): Path<GameId>,
+) -> StatusCode {
+    let deleted = match state.rooms.get_or_load(&game_id).await {
+        Ok(connection) => {
+            let deleted = connection
+                .room()
+                .delete(account.id)
+                .await
+                .map_err(|error| match error {
+                    DeleteError::NotCreator => StatusCode::FORBIDDEN,
+                    DeleteError::Deleted => StatusCode::NOT_FOUND,
+                    DeleteError::Db(error) => internal_error(error),
+                });
+            if deleted.is_ok() {
+                state.rooms.forget(&game_id);
+            }
+            deleted
+        }
+        Err(LoadFailure::NotFound) => Err(StatusCode::NOT_FOUND),
+        Err(LoadFailure::Failed(err)) if matches!(*err, SessionError::Unresumable { .. }) => {
+            state
+                .rooms
+                .delete_with(&game_id, delete_unresumable(&state, &game_id, account.id))
+                .await
+        }
+        Err(LoadFailure::Failed(err)) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to delete: this game failed to load",
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    };
+    match deleted {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(status) => status,
+    }
+}
+
+/// Delete the unresumable game `game_id`'s rows if `account` created it, as
+/// its stored row says. A row with no creator can't be deleted by anyone.
+///
+/// # Errors
+///
+/// `403` for any other account, `404` if the rows are gone, `500` on a
+/// persistence failure.
+async fn delete_unresumable(
+    state: &AppState,
+    game_id: &GameId,
+    account: AccountId,
+) -> Result<(), StatusCode> {
+    match store::creator_of(&state.db, game_id)
+        .await
+        .map_err(internal_error)?
+    {
+        StoredCreator::NoGame => Err(StatusCode::NOT_FOUND),
+        StoredCreator::Account(creator) if creator == account => {
+            store::delete_game(&state.db, game_id)
+                .await
+                .map_err(internal_error)
+        }
+        StoredCreator::Account(_) | StoredCreator::Unrecorded => Err(StatusCode::FORBIDDEN),
+    }
 }
 
 /// The entry `account` is shown for the started game `game`, loaded through

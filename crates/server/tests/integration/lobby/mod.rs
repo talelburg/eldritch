@@ -5,7 +5,10 @@
 //! The helpers, fixtures and card codes the lobby's tests share live here;
 //! each lobby command's tests get a file of their own.
 
+mod delete;
+mod leave;
 mod picks;
+mod reassign;
 mod seating;
 mod start;
 mod weakness;
@@ -17,11 +20,13 @@ use game_core::engine::Registries;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::CardCode;
 use protocol::lobby::{Direction, LobbyRefusal, LobbyView};
-use protocol::{AccountId, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
+use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
+use scenarios::the_gathering::ID as GATHERING;
 use serde_json::Value;
 use sqlx::SqlitePool;
 
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT, TEST_SCENARIO_ID};
+use crate::your_games;
 
 /// Create a lobby of the mock scenario over HTTP, signed in as the account
 /// named `name`; return its game id.
@@ -133,6 +138,64 @@ pub(crate) async fn daisy_roland_agnes(members: &mut TwoMembers) -> LobbyView {
     take_seen_by_both(&mut members.sam_ws, &mut members.tal_ws, DAISY).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, ROLAND).await;
     take_seen_by_both(&mut members.tal_ws, &mut members.sam_ws, AGNES).await
+}
+
+/// Tal and Sam's lobby of The Gathering, served `registries`.
+pub(crate) async fn tal_and_sam_at_the_gathering(registries: Registries) -> TwoMembers {
+    tal_and_sam_at(registries, GATHERING).await
+}
+
+/// A third account, which opens the game's link only after Start.
+pub(crate) const JO: &str = "Jo";
+
+/// Tal and Sam's game of The Gathering, started from Sam's Daisy and Tal's
+/// Roland and Agnes, with each socket's `Hello` read.
+pub(crate) async fn started_by_tal_and_sam() -> TwoMembers {
+    let mut members = tal_and_sam_at_the_gathering(server::REGISTRIES).await;
+    daisy_roland_agnes(&mut members).await;
+    common::send(&mut members.tal_ws, &ClientMessage::Start).await;
+    let _ = recv_hello(&mut members.tal_ws).await;
+    let _ = recv_hello(&mut members.sam_ws).await;
+    members
+}
+
+/// The next frame on `ws`, which must be a `Hello`: its `you` and assignment.
+pub(crate) async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
+    match common::recv_within(ws).await {
+        ServerMessage::Hello { you, assigned, .. } => (you, assigned),
+        other => panic!("expected a Hello, got {other:?}"),
+    }
+}
+
+/// Keep the opening hand of `investigator`, answering the mulligan prompt at
+/// the start of the log.
+pub(crate) fn keep_opening_hand(investigator: u32) -> ClientMessage {
+    ClientMessage::Submit {
+        prompt: LogPosition(0),
+        action: PlayerAction::ResolveInput {
+            investigator: InvestigatorId(investigator),
+            response: InputResponse::PickMultiple { selected: vec![] },
+        },
+    }
+}
+
+/// Whether the account named `name`'s "Your games" listing has the game
+/// `game_id`.
+pub(crate) async fn listed_for(addr: SocketAddr, game_id: &str, name: &str) -> bool {
+    your_games::listing_for(addr, name)
+        .await
+        .iter()
+        .any(|entry| entry.game_id.as_str() == game_id)
+}
+
+/// `ws` is still open and served: a `Ping` is answered with a `Pong`, and
+/// nothing reached it first.
+pub(crate) async fn assert_still_open(ws: &mut Client) {
+    common::send(ws, &ClientMessage::Ping).await;
+    match common::recv_within(ws).await {
+        ServerMessage::Pong => {}
+        other => panic!("expected a Pong, got {other:?}"),
+    }
 }
 
 /// Send a `Take` of `investigator` on `ws`.

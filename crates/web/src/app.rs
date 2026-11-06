@@ -8,6 +8,8 @@ use crate::board::BoardView;
 #[cfg(target_arch = "wasm32")]
 use crate::decision::DecisionView;
 use crate::decision::{self, DecisionLive};
+#[cfg(target_arch = "wasm32")]
+use crate::delete_game::DeleteDialog;
 use crate::event_log::EventLogView;
 #[cfg(target_arch = "wasm32")]
 use crate::home::HomeView;
@@ -201,6 +203,7 @@ fn Screens() -> impl IntoView {
                 <HomeView/>
                 <LobbyScreen/>
                 <Toast/>
+                <DeleteDialog/>
                 <SignInView/>
                 <UnresumableView/>
                 <VersionMismatchView/>

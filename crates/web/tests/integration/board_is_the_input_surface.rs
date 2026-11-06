@@ -62,6 +62,7 @@ impl Harness {
                 Vec::new(),
                 LogPosition::default(),
                 common::you_hold(Some(&state), Some(&outcome)),
+                common::YOU,
                 cards::TEST_REGISTRIES,
             ),
         }

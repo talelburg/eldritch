@@ -246,6 +246,10 @@ _Avoid_: "Host", which already names whoever runs the server and keeps the allow
 An account that has opened a game's link; the link is the invitation, and the allowlist is the only gate. Membership is recorded separately from assignment, so "your games" lists every game you're a member of. A member holding no investigator is a read-only **viewer**.
 _Avoid_: Reading membership as control. A member answers prompts only for investigators assigned to them.
 
+**Reassignment**:
+Moving an investigator, while the game is in progress, from the account that holds it to another member. The creator or the current holder does it, and it takes effect at once, so the new holder answers the prompt that is already waiting. It changes who answers, never what happens in the game. Leaving or being removed applies only in the lobby. After Start, an account steps away by reassigning its investigators and stays a member.
+_Avoid_: Bare "reassign", which **Assign / Place** already uses for damage and horror. Always give it an investigator as its object: "reassign Wendy". Also avoid "transfer" and "kick".
+
 **Stored game**:
 What the server keeps of a game: its creation inputs (scenario, roster, lead, RNG seed, whether skill-test results wait to be acknowledged) and its action log, each logged answer carrying the option and prompt it answered. Beside them, but not among the creation inputs, it keeps the assignment: which account holds each investigator (ADR 0024). Never its state. Loading re-runs setup and replays the log, checking each step.
 _Avoid_: "Save" or "snapshot" for it. A saved state is exactly what a stored game isn't, and **Snapshot** already names the vendored card data.

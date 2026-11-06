@@ -172,6 +172,19 @@ fn keep_opening_hand(prompt: LogPosition) -> ClientMessage {
     }
 }
 
+/// Require the next message on `ws` to be the `Members` that the
+/// [`OTHER_ACCOUNT`] opening the game's link brings: the fixture's game stores
+/// no member, so the first time an account connects it joins.
+async fn recv_other_joined(ws: &mut common::Client) {
+    match common::recv_within(ws).await {
+        ServerMessage::Members(members) => assert_eq!(
+            members.last().map(|member| member.display_name.as_str()),
+            Some(OTHER_ACCOUNT)
+        ),
+        other => panic!("expected Members, got {other:?}"),
+    }
+}
+
 /// Require the next message on `ws` to be a `StalePrompt` refusal.
 async fn assert_stale(ws: &mut common::Client) {
     match common::recv_within(ws).await {
@@ -224,6 +237,7 @@ async fn a_stale_answer_from_another_account_is_refused_as_stale() {
     let mut other = common::connect_as(addr, "g-stale-other", OTHER_ACCOUNT).await;
     let prompt = hello_prompt(common::recv(&mut tester).await);
     let _ = common::recv(&mut other).await;
+    recv_other_joined(&mut tester).await;
     common::send(&mut tester, &keep_opening_hand(prompt)).await;
     let _ = common::recv_within(&mut tester).await;
     let _ = common::recv_within(&mut other).await;
@@ -300,6 +314,7 @@ async fn every_account_is_sent_the_answer_with_no_rng_state() {
     let mut other = common::connect_as(addr, "g-per-account", OTHER_ACCOUNT).await;
     let prompt = hello_prompt(common::recv(&mut tester).await);
     let _ = common::recv(&mut other).await;
+    recv_other_joined(&mut tester).await;
     common::send(&mut tester, &keep_opening_hand(prompt)).await;
 
     for ws in [&mut tester, &mut other] {

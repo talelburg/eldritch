@@ -26,7 +26,7 @@ async fn get_games(addr: SocketAddr, cookie: Option<&str>) -> reqwest::Response 
 }
 
 /// The listing `GET /games` returns to the account named `name`.
-async fn listing_for(addr: SocketAddr, name: &str) -> Vec<GameEntry> {
+pub(crate) async fn listing_for(addr: SocketAddr, name: &str) -> Vec<GameEntry> {
     let cookie = common::sign_in_over_http(addr, name).await;
     let response = get_games(addr, Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -219,7 +219,7 @@ async fn add_member(pool: &SqlitePool, game_id: &str, account: AccountId) {
 /// A game of the mock scenario the [`TEST_ACCOUNT`] created, holds and is a
 /// member of, with its mulligan answered, stored by the build
 /// `"older-build"`. Returns the [`TEST_ACCOUNT`]'s id.
-async fn played_by_an_older_build(pool: &SqlitePool, game_id: &str) -> AccountId {
+pub(crate) async fn played_by_an_older_build(pool: &SqlitePool, game_id: &str) -> AccountId {
     let tester = common::test_account(pool).await;
     let mut session = common::create_game(pool, game_id).await;
     session

@@ -23,14 +23,16 @@ use game_core::scenario::ScenarioId;
 use game_core::state::game_state::GameState;
 use game_core::state::InvestigatorId;
 use protocol::live::{Committed, LiveGame, Refused};
-use protocol::lobby::Start;
+use protocol::lobby::{Member, Start};
 use protocol::logged_answer::{self, LoggedAnswer, ReplayFailure};
-use protocol::{AccountId, Assignment, GameId, LogPosition, UnresumableCause};
+use protocol::{
+    AccountId, Assignment, GameId, LogPosition, ReassignRefusal, ServerMessage, UnresumableCause,
+};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::fingerprint::{FingerprintMismatch, SetupFingerprint};
-use crate::id;
 use crate::store::{self, ActionRow, GameRow};
+use crate::{id, lobby};
 
 /// The version of the stored shape: the creation inputs and a log entry. Bumped
 /// whenever either changes; a game stored under any other version is
@@ -90,6 +92,21 @@ pub enum ApplyError {
     /// The live game refused it. Nothing was stored.
     #[error(transparent)]
     Refused(#[from] Refused),
+    /// The live game accepted it, but storing it failed. Nothing was
+    /// committed.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+}
+
+/// Why [`GameSession::reassign`] didn't reassign an investigator. A host
+/// sends the account that asked the wire [`Refusal`](protocol::Refusal) it
+/// maps to.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReassignError {
+    /// The live game refused it. Nothing was stored.
+    #[error(transparent)]
+    Refused(#[from] ReassignRefusal),
     /// The live game accepted it, but storing it failed. Nothing was
     /// committed.
     #[error(transparent)]
@@ -170,6 +187,8 @@ struct Opened {
 /// [store](Self::store) it, then [open its session](Self::into_session).
 pub struct NewGame {
     game_id: GameId,
+    /// The account that created it, which its row stores.
+    creator: AccountId,
     row: GameRow,
     opened: Opened,
     assignment: Assignment,
@@ -197,9 +216,10 @@ impl NewGame {
     }
 
     /// The live session of the game, at the mulligan prompt, once it is
-    /// [stored](Self::store), writing its later answers to `db`.
+    /// [stored](Self::store), with `members` in the order they joined, writing
+    /// its later answers to `db`.
     #[must_use]
-    pub fn into_session(self, db: SqlitePool) -> GameSession {
+    pub fn into_session(self, db: SqlitePool, members: Vec<Member>) -> GameSession {
         GameSession {
             game_id: self.game_id,
             live: LiveGame::new(
@@ -208,20 +228,23 @@ impl NewGame {
                 self.opened.events,
                 LogPosition::default(),
                 self.assignment,
+                self.creator,
                 self.registries,
-            ),
+            )
+            .with_members(members),
             db,
         }
     }
 }
 
 /// A stored game's rows as [`GameSession::read`] fetched them, before any
-/// check: its `games` row, its assignment rows and its action rows in `seq`
-/// order.
+/// check: its `games` row, its assignment rows, its members in the order they
+/// joined and its action rows in `seq` order.
 pub(crate) struct StoredGame {
     game_id: GameId,
     row: GameRow,
     assignment: Assignment,
+    members: Vec<Member>,
     actions: Vec<ActionRow>,
 }
 
@@ -372,6 +395,7 @@ impl GameSession {
         let row = inputs.to_row(creator, &SetupFingerprint::of(&opened.state))?;
         Ok(NewGame {
             game_id,
+            creator,
             row,
             opened,
             assignment,
@@ -383,6 +407,13 @@ impl GameSession {
     #[must_use]
     pub fn live(&self) -> &LiveGame {
         &self.live
+    }
+
+    /// Add `member` to the live game's members, unless their account is one
+    /// already: what a host does once it has stored the membership. Returns
+    /// whether it was added.
+    pub fn join(&mut self, member: Member) -> bool {
+        self.live.join(member)
     }
 
     /// Submit a player action, `account`'s answer to the prompt at `prompt`,
@@ -422,6 +453,36 @@ impl GameSession {
         Ok(self.live.commit(accepted))
     }
 
+    /// **Reassign** `investigator` to the member `to`, as `by` asks: the live
+    /// game decides it, the new holder is stored, then the live game commits
+    /// it. Returns the [`ServerMessage::Assigned`] every connection is sent.
+    ///
+    /// A refused reassignment stores nothing and leaves the game unchanged,
+    /// and so does a failed write. Nothing reaches the action log.
+    ///
+    /// # Errors
+    ///
+    /// [`ReassignError::Refused`] if the live game refuses it, or
+    /// [`ReassignError::Session`] wrapping [`SessionError::Db`] if storing the
+    /// new holder fails.
+    pub async fn reassign(
+        &mut self,
+        by: AccountId,
+        investigator: InvestigatorId,
+        to: AccountId,
+    ) -> Result<ServerMessage, ReassignError> {
+        let reassigned = self.live.reassign(by, investigator, to)?;
+        store::update_holder(
+            &self.db,
+            &self.game_id,
+            reassigned.investigator(),
+            reassigned.to(),
+        )
+        .await
+        .map_err(SessionError::from)?;
+        Ok(self.live.commit_reassignment(reassigned))
+    }
+
     /// Rebuild a stored game against `registries`: re-run setup from its
     /// creation inputs, check what setup decided against the stored setup
     /// fingerprint, and replay its action log, running the replay checks on
@@ -455,9 +516,9 @@ impl GameSession {
     }
 
     /// The I/O half of [`GameSession::load`]: fetch a stored game's row, its
-    /// assignment rows and its action rows, unparsed. Returns `None` if no
-    /// game with `game_id` exists. Runs no check, so every failure but a
-    /// query's is [`GameSession::rebuild`]'s to report.
+    /// assignment rows, its members and its action rows, unparsed. Returns
+    /// `None` if no game with `game_id` exists. Runs no check, so every
+    /// failure but a query's is [`GameSession::rebuild`]'s to report.
     ///
     /// # Errors
     ///
@@ -470,11 +531,13 @@ impl GameSession {
             return Ok(None);
         };
         let assignment = store::load_assignment(db, game_id).await?;
+        let members = lobby::named_members(db, game_id).await?;
         let actions = store::load_actions(db, game_id).await?;
         Ok(Some(StoredGame {
             game_id: game_id.clone(),
             row,
             assignment,
+            members,
             actions,
         }))
     }
@@ -485,7 +548,7 @@ impl GameSession {
     /// session's later writes.
     ///
     /// The checks run in this order, and the first to fail is reported:
-    /// format version, the assignment, the stored fingerprint's
+    /// format version, the assignment, the creator, the stored fingerprint's
     /// deserialization, setup, the fingerprint comparison, then each logged
     /// answer's deserialization and replay.
     ///
@@ -502,6 +565,7 @@ impl GameSession {
             game_id,
             row,
             assignment,
+            members,
             actions,
         } = stored;
         let unresumable = |reason| SessionError::Unresumable {
@@ -516,6 +580,14 @@ impl GameSession {
         if assignment.is_empty() {
             return Err(unresumable(UnresumableReason::NoAssignment));
         }
+        // Every game of this format version was stored with its creator, so a
+        // row without one is corrupt, as a column that fails to parse is.
+        let creator = row.creator.ok_or_else(|| {
+            <serde_json::Error as serde::de::Error>::custom(format!(
+                "game {} of format version {FORMAT_VERSION} stores no creator",
+                game_id.as_str()
+            ))
+        })?;
         let stored_fingerprint: SetupFingerprint = serde_json::from_str(&row.setup_fingerprint)?;
         let inputs = CreationInputs::from_row(row)?;
         let opened = open(registries, &inputs).map_err(|failure| {
@@ -564,8 +636,10 @@ impl GameSession {
                 opened.events,
                 LogPosition(i64::from(seq)),
                 assignment,
+                creator,
                 registries,
-            ),
+            )
+            .with_members(members),
             db,
         })
     }

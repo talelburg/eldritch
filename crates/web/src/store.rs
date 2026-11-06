@@ -6,7 +6,7 @@ use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::{ChaosToken, Continuation, GameState, TokenResolution};
 use leptos::prelude::*;
-use protocol::lobby::{LobbyRefusal, LobbyView, MAX_PICKS};
+use protocol::lobby::{LobbyRefusal, LobbyView, Member, MAX_PICKS};
 use protocol::logged_answer::LoggedResponse;
 use protocol::{
     AccountId, Applied, Assignment, GameEntry, GameId, LogPosition, Refusal, ServerMessage,
@@ -129,6 +129,10 @@ pub struct ClientState {
     /// The "Your games" listing `GET /games` returned, once the home page
     /// fetched it. Set by the transport, not by `reduce`.
     pub games: Option<Vec<GameEntry>>,
+    /// The game a Delete entry asked to delete, while its confirmation is
+    /// open. Set by the entry and cleared by the confirmation, not by
+    /// `reduce`.
+    pub delete_asked: Option<GameId>,
     /// The game's lobby, from the last `Lobby`, while it is in one. Cleared
     /// by `Hello`.
     pub lobby: Option<LobbyView>,
@@ -137,8 +141,9 @@ pub struct ClientState {
     /// and kept through the `Lobby`s after it, which don't.
     pub joined: bool,
     /// What the toast says: why the last lobby command this client sent was
-    /// refused. Set by `LobbyRefused`, cleared by `Hello`, and dismissed by
-    /// the toast itself after a while.
+    /// refused, or who reassigned an investigator to whom. Set by
+    /// `LobbyRefused` and `Assigned`, cleared by `Hello`, and dismissed by the
+    /// toast itself after a while.
     pub toast: Option<String>,
     /// The roster Start froze, for the one-off strip on the board: set by the
     /// `Hello` that ends the lobby this client was showing, and so absent on a
@@ -162,6 +167,16 @@ pub struct ClientState {
     /// a prompt, and a Pass, only for the investigators [`you`](Self::you)
     /// hold.
     pub assigned: Assignment,
+    /// The account that created the started game, from `Hello`. `None` before
+    /// the first `Hello`.
+    pub creator: Option<AccountId>,
+    /// Every member of the started game, in the order they joined: from
+    /// `Hello`, then replaced by each `Members`.
+    pub members: Vec<Member>,
+    /// The investigator the last answer this client sent answered for. Set by
+    /// the submit itself, and cleared by `Hello`. A `NotYours` for it once a
+    /// reassignment took them from this account lost a race, not a bug.
+    pub last_submit: Option<InvestigatorId>,
     pub last_rejection: Option<String>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
@@ -253,6 +268,72 @@ impl ClientState {
         Some(own)
     }
 
+    /// The display name of the member `account`, or [`SOMEONE`] for an
+    /// account this client doesn't know as one.
+    fn member_name(&self, account: AccountId) -> &str {
+        self.members
+            .iter()
+            .find(|member| member.account == account)
+            .map_or(SOMEONE, |member| member.display_name.as_str())
+    }
+
+    /// Whether this client's account is `creator`, the account that created
+    /// a game: the account it answers as on a game's page, or the one it is
+    /// signed in as on any other. `false` for no creator.
+    #[must_use]
+    pub fn is_creator(&self, creator: Option<AccountId>) -> bool {
+        let yours = self
+            .you
+            .or_else(|| self.account.as_ref().map(|account| account.account_id));
+        creator.is_some() && yours == creator
+    }
+
+    /// Fold the server's `answer` to this client's delete of `game_id` into
+    /// the state: a game deleted, or already gone, leaves the "Your games"
+    /// listing, and a toast says why a delete didn't go through.
+    pub fn delete_answered(&mut self, game_id: &GameId, answer: DeleteAnswer) {
+        let toast = match answer {
+            DeleteAnswer::Deleted => None,
+            DeleteAnswer::NotFound => Some("This game was already deleted"),
+            DeleteAnswer::Failed => Some("Couldn't delete the game, try again."),
+        };
+        if answer != DeleteAnswer::Failed {
+            if let Some(games) = &mut self.games {
+                games.retain(|entry| entry.game_id != *game_id);
+            }
+        }
+        if let Some(toast) = toast {
+            self.toast = Some(toast.to_owned());
+        }
+    }
+
+    /// Each investigator this account may **reassign**, with the members they
+    /// may go to: every investigator for the creator, and their own for a
+    /// holder, each offered to every member but its current holder. Nothing
+    /// while the game has no prompt waiting, as a finished game hasn't, since
+    /// the server refuses a reassignment then.
+    #[must_use]
+    pub fn reassignments(&self) -> Vec<(InvestigatorId, Vec<&Member>)> {
+        let Some(you) = self.you else {
+            return Vec::new();
+        };
+        if !matches!(self.outcome, Some(EngineOutcome::AwaitingInput { .. })) {
+            return Vec::new();
+        }
+        self.assigned
+            .iter()
+            .filter(|(_, holder)| self.creator == Some(you) || *holder == you)
+            .map(|(investigator, holder)| {
+                let to = self
+                    .members
+                    .iter()
+                    .filter(|member| member.account != holder)
+                    .collect();
+                (investigator, to)
+            })
+            .collect()
+    }
+
     /// An investigator's name, or their seat's id if no game holding them is
     /// loaded.
     #[must_use]
@@ -263,6 +344,22 @@ impl ClientState {
             .map_or_else(|| format!("Investigator {}", id.0), |inv| inv.name.clone())
     }
 }
+
+/// What the server answered a delete of a game with, as
+/// [`ClientState::delete_answered`] folds it in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteAnswer {
+    /// The game was deleted.
+    Deleted,
+    /// The server has no such game: it was deleted already, from another tab
+    /// or by another device.
+    NotFound,
+    /// Anything else: refused, or the server failed.
+    Failed,
+}
+
+/// What a toast calls an account this client doesn't know as a member.
+const SOMEONE: &str = "someone";
 
 #[cfg(test)]
 impl ClientState {
@@ -397,6 +494,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         ServerMessage::Hello {
             build: _,
             you,
+            creator,
+            members,
             assigned,
             prompt,
             state: s,
@@ -408,7 +507,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                 .take()
                 .map(|lobby| start_strip(&lobby, &s, &assigned));
             state.you = Some(you);
+            state.creator = Some(creator);
+            state.members = members;
             state.assigned = assigned;
+            state.last_submit = None;
             state.toast = None;
             state.game = Some(*s);
             state.outcome = Some(outcome);
@@ -518,10 +620,34 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             }
             state.log.push(LogBatch { header, events });
         }
+        ServerMessage::Members(members) => state.members = members,
+        ServerMessage::Assigned {
+            by,
+            investigator,
+            assigned,
+        } => reduce_assigned(state, by, investigator, assigned),
         ServerMessage::Rejected(refusal) => reduce_refusal(state, refusal),
         // Proof of life only, which the transport counts before reducing.
         ServerMessage::Pong => {}
     }
+}
+
+/// Fold an `Assigned` into the client state: `by` reassigned `investigator`,
+/// leaving `assigned`, which replaces the assignment, and the toast says so.
+fn reduce_assigned(
+    state: &mut ClientState,
+    by: AccountId,
+    investigator: InvestigatorId,
+    assigned: Assignment,
+) {
+    let holder = assigned.holder(investigator);
+    state.assigned = assigned;
+    state.toast = Some(format!(
+        "{} gave {} to {}",
+        state.member_name(by),
+        state.investigator_name(investigator),
+        holder.map_or(SOMEONE, |holder| state.member_name(holder)),
+    ));
 }
 
 /// Fold a `Rejected` into the client state: what the status bar says of it.
@@ -542,10 +668,21 @@ fn reduce_refusal(state: &mut ClientState, refusal: Refusal) {
             leptos::logging::error!("this client answered a game still in its lobby");
             state.last_rejection = Some(CLIENT_BUG.into());
         }
+        // A reassignment took the investigator this answer was for: its
+        // `Assigned` arrived first, so the prompt has already moved on.
+        Refusal::NotYours
+            if state
+                .last_submit
+                .is_some_and(|investigator| !state.holds(investigator)) => {}
         Refusal::NotYours => {
             leptos::logging::error!(
                 "this client answered for an investigator its account doesn't hold"
             );
+            state.last_rejection = Some(CLIENT_BUG.into());
+        }
+        // The board offers only the reassignments this account may make.
+        Refusal::Reassign(reason) => {
+            leptos::logging::error!("this client sent a reassignment the server refused: {reason}");
             state.last_rejection = Some(CLIENT_BUG.into());
         }
     }
@@ -586,6 +723,14 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
             leptos::logging::error!("this client sent a command only the creator may send");
             CLIENT_BUG.into()
         }
+        // The lobby offers Leave to every member but the creator, and Remove
+        // to the creator alone, for each other member.
+        LobbyRefusal::CreatorStays => {
+            leptos::logging::error!("this client sent the creator's own Leave or Remove");
+            CLIENT_BUG.into()
+        }
+        // A Remove that crossed the member's own Leave.
+        LobbyRefusal::NotAMember => "That member has already left.".into(),
         LobbyRefusal::NoPicks => {
             leptos::logging::error!("this client started a lobby with no picks");
             CLIENT_BUG.into()
@@ -903,6 +1048,8 @@ mod tests {
         ServerMessage::Hello {
             build: protocol::build_id().to_string(),
             you: ACCOUNT_1,
+            creator: ACCOUNT_1,
+            members: Vec::new(),
             assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(prompt),
             state: Box::new(sample_state()),
@@ -951,6 +1098,8 @@ mod tests {
         serde_json::to_string(&ServerMessage::Hello {
             build: build.to_string(),
             you: ACCOUNT_1,
+            creator: ACCOUNT_1,
+            members: Vec::new(),
             assigned: Assignment::all_to(ACCOUNT_1, [InvestigatorId(1)]),
             prompt: LogPosition(0),
             state: Box::new(sample_state()),

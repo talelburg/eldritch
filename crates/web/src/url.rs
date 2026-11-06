@@ -1,7 +1,15 @@
-//! The client's addresses: a game's link, read from and written to the page's
-//! path, and its same-origin WebSocket URL (D3): never a hardcoded port.
+//! The client's addresses: a game's link, the home page's, and a game's
+//! WebSocket URL.
+//!
+//! A game's link is read from and written to the page's path. The home
+//! page's `?ended=` query names the [`Ended`] that sent a client there. The
+//! WebSocket URL is same-origin (D3): never a hardcoded port.
 
 use protocol::GameId;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
+use web_sys::Location;
 
 /// The path every game's address starts with: a game's link is
 /// `/games/{id}`.
@@ -28,6 +36,65 @@ pub fn game_link(origin: &str, game_id: &GameId) -> String {
     format!("{origin}{}", game_path(game_id))
 }
 
+/// The query key naming the ending "Your games" was reached after.
+const ENDED_KEY: &str = "ended";
+
+/// An ending that sends a client from its game to "Your games", which then
+/// says why. It travels in the home page's address, `/?ended=…`, because the
+/// move is a page load, which starts a fresh store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ended {
+    /// The account left the lobby, or the creator removed it.
+    NoLongerMember,
+    /// The creator deleted the game.
+    Deleted,
+}
+
+impl Ended {
+    /// Every ending.
+    const ALL: [Ended; 2] = [Ended::NoLongerMember, Ended::Deleted];
+
+    /// The query value naming this ending.
+    fn query_value(self) -> &'static str {
+        match self {
+            Ended::NoLongerMember => "not-member",
+            Ended::Deleted => "deleted",
+        }
+    }
+
+    /// The toast "Your games" shows after this ending.
+    #[must_use]
+    pub fn toast(self) -> &'static str {
+        match self {
+            Ended::NoLongerMember => "You're no longer a member of this game",
+            Ended::Deleted => "This game was deleted",
+        }
+    }
+}
+
+/// The home page's path, naming `ended` if a client is sent there after one.
+#[must_use]
+pub fn home_path(ended: Option<Ended>) -> String {
+    match ended {
+        Some(ended) => format!("/?{ENDED_KEY}={}", ended.query_value()),
+        None => "/".to_string(),
+    }
+}
+
+/// The ending a page's query (`window.location.search`, `?` included) names,
+/// if it names one.
+#[must_use]
+pub fn ended_from_query(query: &str) -> Option<Ended> {
+    let value = query
+        .strip_prefix('?')
+        .unwrap_or(query)
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(ENDED_KEY)?.strip_prefix('='))?;
+    Ended::ALL
+        .into_iter()
+        .find(|ended| ended.query_value() == value)
+}
+
 /// Build the same-origin WebSocket URL for a game. `location_protocol`
 /// is `window.location.protocol` (`"http:"` / `"https:"`); `host`
 /// includes the port. Upgrades to `wss` under TLS; otherwise `ws`.
@@ -47,7 +114,7 @@ pub fn ws_url(location_protocol: &str, host: &str, game_id: &str) -> String {
 /// Panics if there is no browser `window` (e.g. called outside a DOM context) —
 /// always present in the wasm client this targets.
 #[cfg(target_arch = "wasm32")]
-fn location() -> web_sys::Location {
+fn location() -> Location {
     web_sys::window().expect("a browser window").location()
 }
 
@@ -66,6 +133,20 @@ pub fn current_ws_url(game_id: &str) -> String {
 #[must_use]
 pub fn current_game_id() -> Option<GameId> {
     game_id_from_path(&location().pathname().ok()?)
+}
+
+/// The ending this page's address names, if it names one. Reading it takes it
+/// out of the address, in place, so a reload or a later visit to this history
+/// entry doesn't say it again.
+#[cfg(target_arch = "wasm32")]
+#[must_use]
+pub fn take_current_ended() -> Option<Ended> {
+    let ended = ended_from_query(&location().search().ok()?)?;
+    let path = location().pathname().ok()?;
+    if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
+        let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&path));
+    }
+    Some(ended)
 }
 
 /// This page's link to `game_id`, under the page's own origin.
@@ -109,6 +190,42 @@ mod tests {
         for path in ["/", "", "/games", "/games/", "/games/g1/more", "/game/g1"] {
             assert_eq!(game_id_from_path(path), None, "{path}");
         }
+    }
+
+    #[test]
+    fn home_after_an_ending_names_it_in_the_query() {
+        assert_eq!(home_path(Some(Ended::NoLongerMember)), "/?ended=not-member");
+        assert_eq!(home_path(Some(Ended::Deleted)), "/?ended=deleted");
+        assert_eq!(home_path(None), "/");
+    }
+
+    #[test]
+    fn the_query_names_the_ending_home_was_reached_after() {
+        assert_eq!(
+            ended_from_query("?ended=not-member"),
+            Some(Ended::NoLongerMember)
+        );
+        assert_eq!(
+            ended_from_query("?x=1&ended=not-member"),
+            Some(Ended::NoLongerMember)
+        );
+        assert_eq!(ended_from_query("?ended=deleted"), Some(Ended::Deleted));
+        for query in ["", "?", "?ended=", "?ended=bogus", "?not-member", "?x=1"] {
+            assert_eq!(ended_from_query(query), None, "{query}");
+        }
+    }
+
+    #[test]
+    fn not_a_member_says_so() {
+        assert_eq!(
+            Ended::NoLongerMember.toast(),
+            "You're no longer a member of this game"
+        );
+    }
+
+    #[test]
+    fn deleted_says_so() {
+        assert_eq!(Ended::Deleted.toast(), "This game was deleted");
     }
 
     #[test]

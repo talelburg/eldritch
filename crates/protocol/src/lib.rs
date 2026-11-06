@@ -98,6 +98,27 @@ pub enum ClientMessage {
     /// Start the game in the lobby: [`Lobby::start`](lobby::Lobby::start).
     /// Every connected member is then sent a `Hello`.
     Start,
+    /// Leave the lobby: [`Lobby::leave`](lobby::Lobby::leave). Every socket
+    /// of the sender's to the game is then closed with
+    /// [`CLOSE_NO_LONGER_A_MEMBER`].
+    Leave,
+    /// The creator removes a member from the lobby:
+    /// [`Lobby::remove`](lobby::Lobby::remove). Every socket of the removed
+    /// account's to the game is then closed with
+    /// [`CLOSE_NO_LONGER_A_MEMBER`].
+    Remove {
+        /// The member removed.
+        member: AccountId,
+    },
+    /// Reassign an investigator in a started game:
+    /// [`LiveGame::reassign`](live::LiveGame::reassign). Every connection is
+    /// then sent [`ServerMessage::Assigned`].
+    Reassign {
+        /// The investigator who changes hands.
+        investigator: InvestigatorId,
+        /// The member who holds them from now on.
+        to: AccountId,
+    },
 }
 
 /// A message sent from the server to a client. Externally tagged for
@@ -117,6 +138,11 @@ pub enum ServerMessage {
         build: String,
         /// The account this connection is signed in as.
         you: AccountId,
+        /// The account that created the game.
+        creator: AccountId,
+        /// Every member of the game, with the name it is shown by, in the
+        /// order they joined. [`ServerMessage::Members`] replaces it.
+        members: Vec<Member>,
         /// Which account holds each investigator: the client offers a prompt,
         /// and a Pass, only for the investigators `you` holds.
         assigned: Assignment,
@@ -159,7 +185,23 @@ pub enum ServerMessage {
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied(Applied),
-    /// Sent only to the submitting client when its submit is refused.
+    /// Broadcast to every connection of a started game when an account opens
+    /// its link for the first time: every member, in the order they joined,
+    /// the newcomer last. It replaces the members the `Hello` named.
+    Members(Vec<Member>),
+    /// Broadcast to every connection of a started game after a reassignment:
+    /// who did it, which investigator changed hands, and the whole assignment
+    /// it left, which replaces the one the client had.
+    Assigned {
+        /// The account that reassigned the investigator.
+        by: AccountId,
+        /// The investigator who changed hands.
+        investigator: InvestigatorId,
+        /// Which account holds each investigator now.
+        assigned: Assignment,
+    },
+    /// Sent only to the submitting client when its submit, or its
+    /// reassignment, is refused.
     Rejected(Refusal),
     /// Sent only to the client whose [`ClientMessage::Ping`] it answers, never
     /// broadcast to the room.
@@ -247,6 +289,33 @@ pub enum Refusal {
     /// reason: the log can't record it, or the store write failed. Nothing
     /// changed, and the player may try again.
     Failed(String),
+    /// A [`ClientMessage::Reassign`] was refused, for this reason. A client
+    /// offers only the reassignments its account may make, so this is a
+    /// client bug.
+    Reassign(ReassignRefusal),
+}
+
+/// Why [`LiveGame::reassign`](live::LiveGame::reassign) refused a
+/// reassignment: the body of a [`Refusal::Reassign`]. The assignment is
+/// unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[serde(rename_all = "snake_case")]
+pub enum ReassignRefusal {
+    /// The game has no prompt waiting, as a finished game hasn't.
+    #[error("the game has no prompt waiting")]
+    NoPrompt,
+    /// No investigator with that id is seated.
+    #[error("no such investigator is seated")]
+    UnknownInvestigator,
+    /// The account is neither the creator nor the investigator's holder.
+    #[error("only the creator or the investigator's holder may reassign them")]
+    NotHolder,
+    /// The account it would go to isn't a member of the game.
+    #[error("that account isn't a member of this game")]
+    NotAMember,
+    /// The account it would go to holds the investigator already.
+    #[error("that account holds the investigator already")]
+    AlreadyHolds,
 }
 
 /// Stable identifier for a persisted game.
@@ -664,6 +733,21 @@ pub const CLOSE_GAME_NOT_FOUND: u16 = 4404;
 /// resume it.
 pub const CLOSE_UNRESUMABLE: u16 = 4410;
 
+/// The close code ending every WebSocket an account has open to a game it is no
+/// longer a member of: it left the lobby, or the creator removed it.
+///
+/// It is not retried: a reconnect would make the account a member again,
+/// since opening a game's link is what makes one. A client goes to "Your
+/// games" instead, saying why.
+pub const CLOSE_NO_LONGER_A_MEMBER: u16 = 4403;
+
+/// The close code ending every WebSocket open to a game its creator deleted.
+///
+/// It is not retried: the game is gone, and a reconnect would be closed with
+/// [`CLOSE_GAME_NOT_FOUND`]. A client goes to "Your games" instead, saying
+/// why.
+pub const CLOSE_GAME_DELETED: u16 = 4411;
+
 /// The close code every open WebSocket gets when the server shuts down for a
 /// restart: 1012, the standard "Service Restart" code.
 ///
@@ -750,9 +834,21 @@ mod tests {
             .build();
         let events = vec![Event::ScenarioStarted];
         let assigned = Assignment::all_to(AccountId(7), [InvestigatorId(1)]);
+        let members = vec![
+            Member {
+                account: AccountId(7),
+                display_name: "Tal".to_string(),
+            },
+            Member {
+                account: AccountId(8),
+                display_name: "Sam".to_string(),
+            },
+        ];
         let msg = ServerMessage::Hello {
             build: "a1b2c3".to_string(),
             you: AccountId(8),
+            creator: AccountId(7),
+            members: members.clone(),
             assigned: assigned.clone(),
             prompt: LogPosition(0),
             state: Box::new(state.clone()),
@@ -767,6 +863,8 @@ mod tests {
             ServerMessage::Hello {
                 build,
                 you,
+                creator,
+                members: m,
                 assigned: a,
                 state: s,
                 events: e,
@@ -774,6 +872,8 @@ mod tests {
             } => {
                 assert_eq!(build, "a1b2c3");
                 assert_eq!(you, AccountId(8));
+                assert_eq!(creator, AccountId(7));
+                assert_eq!(m, members, "the members round-trip through JSON");
                 assert_eq!(a, assigned, "the assignment round-trips through JSON");
                 assert_eq!(*s, state);
                 assert_eq!(e, events, "events round-trip through JSON");

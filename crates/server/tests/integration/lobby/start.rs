@@ -5,22 +5,22 @@
 //! Start seats real investigators with their default decks.
 
 use cards::decks::WeaknessChoice;
-use game_core::action::{InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::Registries;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::CardCode;
-use protocol::lobby::{Direction, LobbyRefusal};
-use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
-use scenarios::the_gathering::ID as GATHERING;
+use protocol::lobby::{Direction, LobbyRefusal, Member};
+use protocol::{AccountId, Assignment, ClientMessage, GameId, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
 use super::{
-    daisy_roland_agnes, move_in_seating, recv_lobby, recv_refusal, set_lead, take,
-    take_seen_by_both, tal_and_sam_at, TwoMembers, AGNES, DAISY, ROLAND, WENDY,
+    daisy_roland_agnes, keep_opening_hand, move_in_seating, recv_hello, recv_lobby, recv_refusal,
+    set_lead, started_by_tal_and_sam, take, take_seen_by_both, tal_and_sam_at_the_gathering, AGNES,
+    DAISY, JO, ROLAND, WENDY,
 };
-use crate::common::{self, Client};
+use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
 
 /// The production card registry, but with an empty weakness pool, so the
 /// engine refuses to seat any pick whose weakness is random.
@@ -35,11 +35,6 @@ const NO_RANDOM_WEAKNESS: Registries = Registries {
     ..server::REGISTRIES
 };
 
-/// Tal and Sam's lobby of The Gathering, served `registries`.
-async fn tal_and_sam_at_the_gathering(registries: Registries) -> TwoMembers {
-    tal_and_sam_at(registries, GATHERING).await
-}
-
 /// The roster and lead index stored as the creation inputs of the game
 /// `game_id`.
 async fn stored_inputs(pool: &SqlitePool, game_id: &str) -> (Vec<RosterEntry>, i64) {
@@ -53,26 +48,6 @@ async fn stored_inputs(pool: &SqlitePool, game_id: &str) -> (Vec<RosterEntry>, i
         serde_json::from_str(&roster).expect("the stored roster parses"),
         lead,
     )
-}
-
-/// The next frame on `ws`, which must be a `Hello`: its `you` and assignment.
-async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
-    match common::recv_within(ws).await {
-        ServerMessage::Hello { you, assigned, .. } => (you, assigned),
-        other => panic!("expected a Hello, got {other:?}"),
-    }
-}
-
-/// Keep the opening hand of `investigator`, answering the mulligan prompt at
-/// the start of the log.
-fn keep_opening_hand(investigator: u32) -> ClientMessage {
-    ClientMessage::Submit {
-        prompt: LogPosition(0),
-        action: PlayerAction::ResolveInput {
-            investigator: InvestigatorId(investigator),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        },
-    }
 }
 
 #[tokio::test]
@@ -248,4 +223,83 @@ async fn a_start_the_engine_rejects_is_refused_and_the_lobby_is_unchanged() {
     let (_, after, _) = recv_lobby(&mut members.sam_ws).await;
     assert_eq!(after.picks, before.picks[..2]);
     assert_eq!(after.lead, before.lead);
+}
+
+/// The next frame on `ws`, which must be a `Hello`: the creator it names and
+/// its members' display names, in the order they joined.
+async fn recv_hello_members(ws: &mut Client) -> (AccountId, Vec<String>) {
+    match common::recv_within(ws).await {
+        ServerMessage::Hello {
+            creator, members, ..
+        } => (creator, display_names(&members)),
+        other => panic!("expected a Hello, got {other:?}"),
+    }
+}
+
+/// The display names of `members`, in their order.
+fn display_names(members: &[Member]) -> Vec<String> {
+    members
+        .iter()
+        .map(|member| member.display_name.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn hello_names_the_creator_and_every_member_and_still_does_after_a_restart() {
+    let mut members = tal_and_sam_at_the_gathering(server::REGISTRIES).await;
+    daisy_roland_agnes(&mut members).await;
+
+    common::send(&mut members.tal_ws, &ClientMessage::Start).await;
+
+    let both = (
+        members.tal,
+        vec![TEST_ACCOUNT.to_string(), OTHER_ACCOUNT.to_string()],
+    );
+    assert_eq!(recv_hello_members(&mut members.tal_ws).await, both);
+    assert_eq!(recv_hello_members(&mut members.sam_ws).await, both);
+
+    // A second server on the same database loads the game from its rows.
+    let restarted = common::spawn_server_on(members.pool.clone(), server::REGISTRIES).await;
+    let mut sam_ws = common::connect_as(restarted, &members.game_id, OTHER_ACCOUNT).await;
+    assert_eq!(recv_hello_members(&mut sam_ws).await, both);
+}
+
+#[tokio::test]
+async fn opening_a_started_games_link_sends_members_naming_the_newcomer_to_every_connection() {
+    let mut members = started_by_tal_and_sam().await;
+    common::add_account(&members.pool, JO).await;
+
+    let mut jo_ws = common::connect_as(members.addr, &members.game_id, JO).await;
+
+    let all_three = vec![
+        TEST_ACCOUNT.to_string(),
+        OTHER_ACCOUNT.to_string(),
+        JO.to_string(),
+    ];
+    assert_eq!(
+        recv_hello_members(&mut jo_ws).await,
+        (members.tal, all_three.clone())
+    );
+    for ws in [&mut members.tal_ws, &mut members.sam_ws] {
+        match common::recv_within(ws).await {
+            ServerMessage::Members(sent) => assert_eq!(display_names(&sent), all_three),
+            other => panic!("expected Members, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn opening_a_started_games_link_again_as_a_member_sends_no_members() {
+    let mut members = started_by_tal_and_sam().await;
+
+    let mut sam_again = common::connect_as(members.addr, &members.game_id, OTHER_ACCOUNT).await;
+    let _ = recv_hello(&mut sam_again).await;
+    // Daisy leads, so her mulligan is the one the game awaits. Its Applied is
+    // broadcast after anything the second socket's attach broadcast.
+    common::send(&mut members.sam_ws, &keep_opening_hand(1)).await;
+
+    match common::recv_within(&mut members.tal_ws).await {
+        ServerMessage::Applied(applied) => assert_eq!(applied.by, InvestigatorId(1)),
+        other => panic!("expected Sam's answer applied and no Members, got {other:?}"),
+    }
 }

@@ -1,8 +1,10 @@
 //! Websocket hub: one [`GameRoom`] per game, fanning each change out to every
 //! connection while serializing changes through the room's mutex. Each
 //! connection keeps the account it signed in as: it submits as that account,
-//! and is sent the `Hello`, `Lobby` and `Applied` built for it.
+//! and turns each [`RoomEvent`] into what it does for that account, a message
+//! sent or the socket closed, through [`outbound`].
 
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,15 +17,17 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::Registries;
 use protocol::lobby::{Lobby, LobbyRefusal, Member};
 use protocol::{
-    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_NOT_FOUND,
-    CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED, CLOSE_UNRESUMABLE,
+    AccountId, ClientMessage, GameId, Refusal, ServerMessage, CLOSE_GAME_DELETED,
+    CLOSE_GAME_NOT_FOUND, CLOSE_NO_LONGER_A_MEMBER, CLOSE_SERVER_RESTARTING, CLOSE_UNAUTHENTICATED,
+    CLOSE_UNRESUMABLE,
 };
 use sqlx::SqlitePool;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::Receiver;
 use tokio::time::{self, Instant};
 
 use crate::auth::SignedInAccount;
-use crate::room::{self, Attached, GameRoom, RoomEvent, RoomGame};
+use crate::room::{self, AttachError, Attached, GameRoom, RoomEvent, RoomGame};
 use crate::rooms::{LoadFailure, Loader, RoomRegistry};
 use crate::session::{ApplyError, GameSession, SessionError, StoredGame};
 use crate::{auth, lobby, AppState};
@@ -213,14 +217,8 @@ async fn handle_socket(
     // already include (see `GameRoom::attach`).
     let Attached { mut rx, first } = match room.attach(member).await {
         Ok(attached) => attached,
-        // Dropped bare, so the client reconnects and the membership is tried
-        // again.
-        Err(err) => {
-            tracing::error!(
-                game_id = game_id.as_str(),
-                error = %err,
-                "refusing to attach: the membership couldn't be stored",
-            );
+        Err(error) => {
+            refuse_attach(socket, &game_id, error).await;
             return;
         }
     };
@@ -256,19 +254,10 @@ async fn handle_socket(
             }
             broadcasted = rx.recv() => match broadcasted {
                 Ok(event) => {
-                    let message = match event {
-                        RoomEvent::Applied(committed) => {
-                            ServerMessage::Applied(committed.applied_for(account))
-                        }
-                        RoomEvent::Lobby(view) => {
-                            room::lobby_message(account, (*view).clone(), false)
-                        }
-                        RoomEvent::Started(live) => live.hello_for(account),
-                    };
-                    if send_msg(&mut sink, &message).await.is_err() {
+                    if forward(&mut sink, &mut stream, account, event).await.is_break() {
                         break;
                     }
-                }
+                },
                 Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => break,
             },
@@ -278,6 +267,14 @@ async fn handle_socket(
                 if let Some(direct) = handle_client_message(room, account, message).await {
                     let ends = matches!(direct, Disposition::Close);
                     if let Disposition::Reply(msg) = direct {
+                        // A refusal never overtakes a broadcast: everything the
+                        // room sent before the reply was built goes first.
+                        if forward_waiting(&mut rx, &mut sink, &mut stream, account)
+                            .await
+                            .is_break()
+                        {
+                            break;
+                        }
                         if send_msg(&mut sink, &msg).await.is_err() {
                             break;
                         }
@@ -294,6 +291,109 @@ async fn handle_socket(
                     .await;
                 break;
             }
+        }
+    }
+}
+
+/// End `socket`, which [`GameRoom::attach`] refused with `error`.
+async fn refuse_attach(socket: WebSocket, game_id: &GameId, error: AttachError) {
+    match error {
+        // Deleted since the room was got: the game is gone, as if never found.
+        AttachError::Deleted => close_with(socket, CLOSE_GAME_NOT_FOUND, "no such game").await,
+        // Dropped bare, so the client reconnects and the membership is tried
+        // again.
+        AttachError::Db(err) => tracing::error!(
+            game_id = game_id.as_str(),
+            error = %err,
+            "refusing to attach: the membership couldn't be stored",
+        ),
+    }
+}
+
+/// What one room event makes a connection signed in as some account do.
+enum Outbound {
+    /// Send it this message. Boxed for the reason [`Disposition::Reply`] is.
+    Send(Box<ServerMessage>),
+    /// Close it with `code`, sending nothing more.
+    Close {
+        /// The close code.
+        code: u16,
+        /// The close frame's reason.
+        reason: &'static str,
+    },
+}
+
+/// What `event` makes a connection signed in as `account` do: the message
+/// built for its account, or its close.
+fn outbound(event: RoomEvent, account: AccountId) -> Outbound {
+    let message = match event {
+        RoomEvent::Applied(committed) => ServerMessage::Applied(committed.applied_for(account)),
+        RoomEvent::Started(live) => live.hello_for(account),
+        RoomEvent::Members(members) => ServerMessage::Members((*members).clone()),
+        RoomEvent::Assigned(assigned) => (*assigned).clone(),
+        RoomEvent::Deleted => {
+            return Outbound::Close {
+                code: CLOSE_GAME_DELETED,
+                reason: "game deleted",
+            }
+        }
+        RoomEvent::Departed {
+            account: departing, ..
+        } if departing == account => {
+            return Outbound::Close {
+                code: CLOSE_NO_LONGER_A_MEMBER,
+                reason: "no longer a member",
+            }
+        }
+        // Every other connection is sent the lobby without the departed.
+        RoomEvent::Lobby(view) | RoomEvent::Departed { view, .. } => {
+            room::lobby_message(account, (*view).clone(), false)
+        }
+    };
+    Outbound::Send(Box::new(message))
+}
+
+/// Do with `event` what [`outbound`] says a connection signed in as `account`
+/// does: send its message, or close. Breaks once the socket is done.
+async fn forward(
+    sink: &mut SplitSink<WebSocket, Message>,
+    stream: &mut SplitStream<WebSocket>,
+    account: AccountId,
+    event: RoomEvent,
+) -> ControlFlow<()> {
+    match outbound(event, account) {
+        Outbound::Send(message) => match send_msg(sink, &message).await {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(SendFailed) => ControlFlow::Break(()),
+        },
+        Outbound::Close { code, reason } => {
+            close(sink, Some(stream), code, reason).await;
+            ControlFlow::Break(())
+        }
+    }
+}
+
+/// [`forward`] every event already waiting on `rx`, before a direct reply.
+///
+/// The room broadcasts under its lock, and a reply is built under it too, so
+/// every event broadcast before the reply was built is already queued here.
+/// Forwarding them first means a refusal never reaches the client ahead of
+/// the broadcast that caused it: a `NotYours` arrives after the `Assigned`
+/// that moved the investigator, and a `StalePrompt` after the `Applied` that
+/// moved the prompt on. A queued close closes the socket, and the reply is
+/// never sent. Breaks once the socket is done.
+async fn forward_waiting(
+    rx: &mut Receiver<RoomEvent>,
+    sink: &mut SplitSink<WebSocket, Message>,
+    stream: &mut SplitStream<WebSocket>,
+    account: AccountId,
+) -> ControlFlow<()> {
+    loop {
+        match rx.try_recv() {
+            Ok(event) => forward(sink, stream, account, event).await?,
+            Err(TryRecvError::Lagged(_)) => {}
+            Err(TryRecvError::Empty) => return ControlFlow::Continue(()),
+            Err(TryRecvError::Closed) => return ControlFlow::Break(()),
         }
     }
 }
@@ -328,6 +428,9 @@ async fn handle_client_message(
             Ok(ClientMessage::Submit { prompt, action }) => {
                 let mut game = room.game.lock().await;
                 let RoomGame::Live(session) = &mut *game else {
+                    // A deleted room is refused here too. Its connection never
+                    // sees this refusal: `forward_waiting` forwards the queued
+                    // `Deleted`, which closes the socket, before the reply.
                     return Some(Disposition::Reply(Box::new(ServerMessage::Rejected(
                         Refusal::NotStarted,
                     ))));
@@ -360,6 +463,11 @@ async fn handle_client_message(
                 .err()
                 .map(lobby_refused),
             Ok(ClientMessage::Start) => room.start(account).await.err().map(lobby_refused),
+            Ok(ClientMessage::Reassign { investigator, to }) => room
+                .reassign(account, investigator, to)
+                .await
+                .err()
+                .map(|refusal| Disposition::Reply(Box::new(ServerMessage::Rejected(refusal)))),
             Ok(ClientMessage::SetWeakness {
                 investigator,
                 choice,
@@ -378,6 +486,18 @@ async fn handle_client_message(
                 .map(lobby_refused),
             Ok(ClientMessage::SetLead { investigator }) => room
                 .change_lobby(|lobby| lobby.set_lead(account, &investigator))
+                .await
+                .err()
+                .map(lobby_refused),
+            // Accepted, the departing account's own connections close, this
+            // one among them, through the room's `Departed`.
+            Ok(ClientMessage::Leave) => room
+                .depart(account, |lobby| lobby.leave(account))
+                .await
+                .err()
+                .map(lobby_refused),
+            Ok(ClientMessage::Remove { member }) => room
+                .depart(member, |lobby| lobby.remove(account, member))
                 .await
                 .err()
                 .map(lobby_refused),

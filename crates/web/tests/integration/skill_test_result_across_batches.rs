@@ -210,6 +210,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         Vec::new(),
         LogPosition::default(),
         Assignment::all_to(player, seeded.state().investigators.keys().copied()),
+        player,
         PROBE_REGISTRIES,
     );
     let mut response =
