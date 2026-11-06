@@ -16,6 +16,7 @@ use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
 use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
+use crate::interaction::{self, PendingOptions};
 use crate::{act_agenda, map, registry, store};
 
 /// Read-only board. Always renders a status line (connection status +
@@ -83,10 +84,14 @@ fn board_menu() -> impl IntoView {
 /// The tabs and the dock: one tab per investigator in seating order, carrying
 /// its marks (tinted when this account holds them, ▶ for whose turn it is, ★
 /// for the lead, a spinner while another account answers for them, "needs
-/// you" while the prompt asks one of yours whose tab isn't open), and below
-/// them the open tab's investigator. A tab click opens it.
+/// you" while the prompt asks one of yours whose tab isn't open, and the
+/// card's glow while an option is anchored to their investigator card), and
+/// below them the open tab's investigator. A tab click opens it.
 fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
     let open_tab_signal = use_context::<OpenTabSignal>();
+    let pending = use_context::<PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
     let tabs: Vec<_> = placed
         .tabs
         .iter()
@@ -99,6 +104,10 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                 .unwrap_or_default();
             let spinner = (tab.asked == Some(Placement::Spinner))
                 .then(|| view! { <span class="spinner" role="img" aria-label="deciding"></span> });
+            let carries_option = game
+                .investigators
+                .get(&investigator)
+                .is_some_and(|inv| !interaction::options_for(&pending, &inv.card_anchor()).is_empty());
             let needs_you = placed.needs_you(investigator);
             let needs_you_mark =
                 needs_you.then(|| view! { <span class="tab-needs-you">"needs you"</span> });
@@ -107,6 +116,7 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                     class="inv-tab"
                     class:held=tab.held
                     class:needs-you=needs_you
+                    class:actionable=carries_option
                     class:open=placed.open_investigator == Some(investigator)
                     on:click=move |_| {
                         if let Some(signal) = open_tab_signal {

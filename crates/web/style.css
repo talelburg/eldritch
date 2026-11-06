@@ -36,6 +36,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 /* The investigators this account holds. */
 .inv-tab.held { background: #e3efe6; color: #13502a; }
 .inv-tab.open { background: #fff; font-weight: 600; position: relative; top: 1px; }
+/* Their investigator card carries an option (the lead's next-turn choice):
+   the card's own glow, on the tab, since only the open tab's card shows. */
+.inv-tab.actionable { box-shadow: 0 0 0 2px #e0b84c; }
 .tab-active { color: #157a3a; }
 .tab-lead { color: #b8860b; }
 /* A prompt asks one of yours whose tab isn't open. */

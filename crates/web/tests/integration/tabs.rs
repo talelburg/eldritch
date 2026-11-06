@@ -6,7 +6,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, InputRequest, Responder};
+use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat};
 use leptos::task;
@@ -263,4 +263,30 @@ async fn the_waiting_strip_hides_while_tal_reads_daisys_tab() {
 
     common::click_tab(&handle.root, "Daisy Walker").await;
     assert!(lobby::texts(&handle, ".waiting-strip").is_empty());
+}
+
+/// The lead picks who takes the next turn, and each choice is anchored to that
+/// investigator's card. Only the open tab's card is on screen, so every tab
+/// whose investigator card carries an option glows as the card does, and the
+/// lead sees the choices without opening each tab.
+#[wasm_bindgen_test]
+async fn a_tab_glows_while_its_investigator_card_carries_an_option() {
+    let game = table().build();
+    let on_card = |id: u32, investigator: InvestigatorId| {
+        ChoiceOption::new(OptionId(id), "Take the next turn")
+            .at(game.investigators[&investigator].card_anchor())
+    };
+    let next_turn = test_support::awaiting_request(
+        InputRequest::pick_single(
+            "Choose who takes the next turn",
+            vec![on_card(0, ROLAND), on_card(1, AGNES)],
+        )
+        .answered_by(Responder::Lead(ROLAND)),
+    );
+    let handle = mount_table(YOU, table(), next_turn).await;
+
+    assert_eq!(
+        lobby::texts(&handle, ".inv-tab.actionable .tab-name"),
+        vec!["Roland Banks", "Agnes Baker"]
+    );
 }
