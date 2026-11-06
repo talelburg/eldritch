@@ -1,5 +1,6 @@
 //! Headless render test for the location-card fields that come from the corpus
-//! (traits / ability text / victory), against the real corpus
+//! (traits / ability text / victory), which the header-only card leaves to its
+//! hover popover, against the real corpus
 //! (`cards::TEST_REGISTRY`). Mounts `location_map` directly (no investigator
 //! panel → no `TEST_INV` capacity lookup). wasm32-only.
 #![cfg(target_arch = "wasm32")]
@@ -11,7 +12,7 @@ use cards::TEST_REGISTRIES;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{CardCode, GameStateBuilder};
+use game_core::state::{CardCode, GameState, GameStateBuilder};
 use game_core::test_support::location;
 use leptos::prelude::document;
 use leptos::{mount, task};
@@ -20,6 +21,8 @@ use wasm_bindgen_test::*;
 use web::map;
 use web::registry::provide_cards;
 use web_sys::Element;
+
+use crate::common;
 
 /// A probe location (ADR 0016) printed shroud 7, victory 1 and a Forced that
 /// deals horror: everything an unrevealed location withholds, with a shroud
@@ -61,8 +64,8 @@ static PROBE_REGISTRIES: Registries = Registries {
     scenarios: &ScenarioRegistry::EMPTY,
 };
 
-/// `textContent` of the last-mounted map node whose `data-loc` equals `name`.
-fn node_text(name: &str) -> String {
+/// The last-mounted map node whose `data-loc` equals `name`.
+fn node(name: &str) -> Element {
     let maps = document().query_selector_all(".map").expect("query ok");
     let last = maps
         .item(maps.length() - 1)
@@ -70,10 +73,20 @@ fn node_text(name: &str) -> String {
         .expect("a .map section");
     last.query_selector(&format!(".map-location[data-loc=\"{name}\"]"))
         .expect("query ok")
-        .and_then(|el| el.text_content())
-        .unwrap_or_default()
+        .unwrap_or_else(|| panic!("a {name} node"))
 }
 
+/// Mount `game`'s map over `cards`, and return the `name` node.
+async fn mount_node(game: GameState, cards: &'static CardRegistry, name: &str) -> Element {
+    mount::mount_to_body(move || {
+        provide_cards(cards);
+        map::location_map(&game)
+    });
+    task::tick().await;
+    node(name)
+}
+
+/// Hover `node` and return its popover's text, failing if none opens.
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_text_and_victory() {
     // Attic 01113: victory 1, Forced text "After you enter the Attic: Take 1 horror."
@@ -81,15 +94,29 @@ async fn revealed_location_shows_metadata_text_and_victory() {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(1).as_card("01113"))
         .build();
-    mount::mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        map::location_map(&game)
-    });
-    task::tick().await;
+    let attic = mount_node(game, &cards::TEST_REGISTRY, "Attic").await;
 
-    let text = node_text("Attic");
+    // The card itself is header-only: the printed text waits for a hover.
+    let face = attic.text_content().unwrap_or_default();
+    assert!(
+        !face.contains("horror"),
+        "ability text on the card face: {face}"
+    );
+    assert!(
+        !face.contains('\u{2605}'),
+        "victory pip on the card face: {face}"
+    );
+
+    let text = common::hovered_popover(&attic).await;
     assert!(text.contains("\u{2605}1"), "victory pip missing: {text}");
     assert!(text.contains("horror"), "ability text missing: {text}");
+
+    common::unhover(&attic).await;
+    assert_eq!(
+        common::popover_text(&attic),
+        None,
+        "leaving closes the popover"
+    );
 }
 
 #[wasm_bindgen_test]
@@ -99,31 +126,32 @@ async fn revealed_location_shows_metadata_traits() {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(2).as_card("01129"))
         .build();
-    mount::mount_to_body(move || {
-        provide_cards(&cards::TEST_REGISTRY);
-        map::location_map(&game)
-    });
-    task::tick().await;
+    let node = mount_node(game, &cards::TEST_REGISTRY, "Miskatonic University").await;
 
-    let text = node_text("Miskatonic University");
+    let face = node.text_content().unwrap_or_default();
+    assert!(!face.contains("Arkham"), "traits on the card face: {face}");
+    let text = common::hovered_popover(&node).await;
     assert!(text.contains("Arkham"), "traits missing: {text}");
 }
 
 #[wasm_bindgen_test]
 async fn unrevealed_location_withholds_metadata() {
     // The probe prints victory 1, Forced text ("...Take 1 horror.") and shroud
-    // 7, with 9 clues on it; unrevealed must withhold all of it (hidden info).
+    // 7, with 9 clues on it; unrevealed must withhold all of it (hidden info),
+    // on the card face and in its popover alike.
     let game = GameStateBuilder::new()
         .with_registries(PROBE_REGISTRIES)
         .with_location(location(3).as_card(HIDDEN_ROOM).unrevealed().clues(9))
         .build();
-    mount::mount_to_body(move || {
-        provide_cards(&PROBE_REGISTRY);
-        map::location_map(&game)
-    });
-    task::tick().await;
+    let node = mount_node(game, &PROBE_REGISTRY, "Hidden Room").await;
 
-    let text = node_text("Hidden Room");
+    let popover = common::hovered_popover(&node).await;
+    assert!(
+        popover.contains("Hidden Room"),
+        "the popover still names the location: {popover}"
+    );
+    // The node's text now includes the open popover's.
+    let text = node.text_content().unwrap_or_default();
     assert!(
         !text.contains('\u{2605}'),
         "victory must be withheld: {text}"

@@ -189,10 +189,16 @@ async fn a_hello_from_this_build_connects_as_before() {
 /// `MainColumn` is the one place the app declares the order.
 #[wasm_bindgen_test]
 async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
-    // A live prompt as well as the mismatch, so the prompt banner, an in-game
-    // modal it has to cover, is actually in the DOM to be ordered against.
+    // A game with a live prompt as well as the mismatch, so the docked prompt
+    // strip, which the card has to cover, is actually in the DOM to be ordered
+    // against.
     let mut client = ClientState {
         status: ConnStatus::VersionMismatch,
+        game: Some(
+            GameStateBuilder::new()
+                .with_investigator(test_support::test_investigator(1))
+                .build(),
+        ),
         outcome: Some(test_support::awaiting_confirm_input("Continue")),
         ..ClientState::default()
     };
@@ -201,10 +207,10 @@ async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
     let root = &handle.root;
 
     let lock = handle.lock();
-    let banner = lock
-        .query_selector(".prompt-banner")
+    let strip = lock
+        .query_selector(".dock .prompt-strip")
         .expect("query")
-        .expect("the prompt banner renders inside the wrapper for a live prompt");
+        .expect("the prompt strip renders inside the wrapper for a live prompt");
     let card = root
         .query_selector(".version-mismatch")
         .expect("query")
@@ -218,8 +224,8 @@ async fn the_real_composition_declares_the_mismatch_card_after_the_board() {
         "the mismatch card must be declared after the wrapper, outside it"
     );
     assert_eq!(
-        banner.compare_document_position(&card) & 4,
+        strip.compare_document_position(&card) & 4,
         4,
-        "the mismatch card must be declared after the banner it has to cover"
+        "the mismatch card must be declared after the strip it has to cover"
     );
 }

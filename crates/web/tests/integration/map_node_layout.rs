@@ -1,9 +1,12 @@
-//! Regression for #848: a map node keeps its occupancy tokens in view however
-//! long its card text.
+//! Regression for #848: a map node keeps its occupancy tokens in view, and
+//! stays inside its grid cell.
 //!
-//! A fixed-size node with `overflow: hidden` would clip them on the Parlor
-//! 01115, the longest printed text of any Core location, and hide Lita Chantler
-//! once an investigator stands there.
+//! A fixed-size node with `overflow: hidden` clipped them on the Parlor 01115,
+//! the longest printed text of any Core location, and hid Lita Chantler once an
+//! investigator stood there. The card is a header only, with its printed text
+//! in a hover popover, so in a row of the map at its smallest it is the token
+//! rail that sets a node's height, and the Parlor, with Lita always in its
+//! rail, is the densest node.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the
@@ -17,7 +20,6 @@ use game_core::state::{
     Owner as CardOwner,
 };
 use game_core::test_support::{self, location, seat};
-use leptos::prelude::{document, window};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::{Element, HtmlElement};
@@ -27,31 +29,6 @@ use crate::common;
 const PARLOR: LocationId = LocationId(5);
 const HALLWAY: LocationId = LocationId(6);
 const LITA: CardInstanceId = CardInstanceId(60);
-
-/// Inject `style.css` once per browser session, so measurements are taken
-/// against the stylesheet the app ships rather than an unstyled DOM.
-///
-/// Every browser test shares one page, so the stylesheet stays in force for
-/// every test that runs after this one. A test that measures layout calls this
-/// itself rather than depend on whether this file ran first.
-fn inject_style() {
-    let doc = document();
-    if doc
-        .query_selector("style[data-app-css]")
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    let style = doc.create_element("style").expect("create style");
-    style.set_attribute("data-app-css", "1").expect("attr");
-    style.set_text_content(Some(include_str!("../../style.css")));
-    doc.head()
-        .expect("head")
-        .append_child(&style)
-        .expect("append");
-}
 
 /// The Parlor (01115) with Lita Chantler (01117) at it, connected to
 /// `connections`, and `investigators` investigators standing in it. Real card
@@ -87,7 +64,7 @@ async fn mount(state: GameState) -> Element {
 
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
 async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
-    inject_style();
+    common::inject_style();
     common::mount_board(common::hello(state, outcome), &cards::TEST_REGISTRY)
         .await
         .root
@@ -139,7 +116,8 @@ async fn assert_parlor_tokens_visible(investigators: usize) {
 }
 
 /// The reported symptom: an investigator in the Parlor pushed Lita's token past
-/// the bottom of the node.
+/// the bottom of the node. With a header-only card, an investigator's token
+/// joins Lita's in the rail, the part of the node that sets its height.
 #[wasm_bindgen_test]
 async fn parlor_tokens_are_visible_with_one_investigator() {
     assert_parlor_tokens_visible(1).await;
@@ -158,8 +136,11 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 }
 
 /// The node grows with its content, so the other half of "nothing is clipped" is
-/// that a tall node must not grow into the grid row beneath it. The Parlor
-/// (01115, the tallest Core location) sits one row below the Hallway (01112).
+/// that a tall node must not grow into the grid row beneath it. The Parlor,
+/// with two investigators and Lita in its rail, is the tallest node the
+/// Gathering can show, and it sits one row below the Hallway (01112). Nor may
+/// an open popover grow a node: it shows the printed text the card leaves out,
+/// and it has to do so without pushing the node into its neighbours.
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
     let state = parlor_board(2, [])
@@ -189,13 +170,26 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
         "the Parlor node is {}px tall, taller than the {row_height}px grid row",
         parlor.offset_height(),
     );
+
+    let closed = parlor.offset_height();
+    common::hover(&parlor).await;
+    assert!(
+        common::popover_text(&parlor).is_some(),
+        "hovering the Parlor opens its popover",
+    );
+    assert_eq!(
+        parlor.offset_height(),
+        closed,
+        "the open popover changed the Parlor node's height",
+    );
+    common::unhover(&parlor).await;
 }
 
 /// Connection lines anchor on the *card*, not on the node — the node spans card
 /// plus rail, so its own centre falls in the gap between them. The short-card
-/// case is the one that bites: an unrevealed location is barely a header tall,
-/// so without a card min-height its line would end below the card in empty
-/// space. Asserted by measurement: every endpoint lands inside some card's box.
+/// case is the one that bites, and every card is short, being only a header:
+/// without a card min-height a line would end below the card in empty space. The unrevealed Hallway is the shortest of all. Asserted by
+/// measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
     let state = parlor_board(1, [HALLWAY])
@@ -208,58 +202,52 @@ async fn every_connection_line_ends_inside_a_card() {
         .build();
     let root = mount(state).await;
 
-    // Card boxes, in the coordinate space the SVG lines are drawn in (the `.map`
-    // section): a card is positioned inside its node, and the node inside `.map`.
-    let nodes = root.query_selector_all(".map-location").expect("query");
-    let mut cards = Vec::new();
-    for i in 0..nodes.length() {
-        let node: HtmlElement = nodes
-            .item(i)
-            .and_then(|n| n.dyn_into().ok())
-            .expect("HtmlElement node");
-        let card: HtmlElement = node
-            .query_selector(".loc-card")
-            .expect("query")
-            .expect("every node has a card")
-            .dyn_into()
-            .expect("HtmlElement");
-        let (left, top) = (
-            node.offset_left() + card.offset_left(),
-            node.offset_top() + card.offset_top(),
-        );
-        cards.push((
-            left,
-            top,
-            left + card.offset_width(),
-            top + card.offset_height(),
-        ));
-    }
+    // Card boxes and the line, both in viewport coordinates: the line's
+    // endpoints are given as percentages of the map, so they are measured
+    // rather than read.
+    let cards: Vec<(f64, f64, f64, f64)> = {
+        let all = root
+            .query_selector_all(".map-location .loc-card")
+            .expect("query");
+        (0..all.length())
+            .filter_map(|i| all.item(i))
+            .filter_map(|n| n.dyn_into::<Element>().ok())
+            .map(|card| {
+                let r = card.get_bounding_client_rect();
+                (r.left(), r.top(), r.right(), r.bottom())
+            })
+            .collect()
+    };
+    assert_eq!(cards.len(), 2, "two nodes, two cards");
 
     let lines = root.query_selector_all("line.map-line").expect("query");
     assert_eq!(lines.length(), 1, "the connected pair draws one line");
-    let line = lines.item(0).expect("the line");
-    let coord = |name: &str| -> i32 {
-        line.dyn_ref::<Element>()
-            .expect("Element")
-            .get_attribute(name)
-            .expect("the attribute")
-            .parse()
-            .expect("a number")
+    let line = lines
+        .item(0)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("the line")
+        .get_bounding_client_rect();
+    // A line's box has its endpoints at two opposite corners; which two
+    // depends on its direction, so either diagonal will do.
+    let (l, t, r, b) = (line.left(), line.top(), line.right(), line.bottom());
+    let in_a_card = |(x, y): (f64, f64)| {
+        cards
+            .iter()
+            .any(|&(cl, ct, cr, cb)| x >= cl && x <= cr && y >= ct && y <= cb)
     };
-    for (x, y) in [(coord("x1"), coord("y1")), (coord("x2"), coord("y2"))] {
-        assert!(
-            cards
-                .iter()
-                .any(|&(l, t, r, b)| x >= l && x <= r && y >= t && y <= b),
-            "line endpoint ({x}, {y}) lands outside every card; cards = {cards:?}",
-        );
-    }
+    assert!(
+        [[(l, t), (r, b)], [(l, b), (r, t)]]
+            .iter()
+            .any(|ends| ends.iter().all(|&end| in_a_card(end))),
+        "the line from ({l}, {t}) to ({r}, {b}) ends outside a card; cards = {cards:?}",
+    );
 }
 
 /// Reported live: a token in the rail showed the pointer cursor but did nothing
 /// when clicked. The node carries the `actionable` class and spans card *and*
 /// rail, while its hit-layer covers only the card — so a cursor set on the node
 /// promises a click the rail can't take. Glow and cursor belong on the card.
+/// An investigator token is the exception: its own click opens their tab.
 #[wasm_bindgen_test]
 async fn only_the_card_advertises_the_location_menu() {
     let outcome = test_support::awaiting_pick_single_with(
@@ -280,12 +268,7 @@ async fn only_the_card_advertises_the_location_menu() {
             .query_selector(sel)
             .expect("query")
             .unwrap_or_else(|| panic!("a {sel} in the node"));
-        window()
-            .get_computed_style(&el)
-            .expect("computed style")
-            .expect("a style declaration")
-            .get_property_value("cursor")
-            .expect("the cursor property")
+        common::computed(&el, "cursor")
     };
     assert_eq!(cursor(".loc-card"), "pointer", "the card takes the click");
     assert_eq!(
@@ -293,5 +276,9 @@ async fn only_the_card_advertises_the_location_menu() {
         "auto",
         "a rail token must not advertise a click the hit-layer can't take",
     );
-    assert_eq!(cursor(".inv-token"), "auto", "nor an investigator token");
+    assert_eq!(
+        cursor(".inv-token"),
+        "pointer",
+        "an investigator token takes its own click: it opens their tab"
+    );
 }

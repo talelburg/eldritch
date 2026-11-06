@@ -17,6 +17,7 @@ pub mod interaction;
 pub mod map;
 pub mod more_menu;
 pub mod names;
+pub mod popover;
 pub mod prompt_layout;
 pub mod registry;
 pub mod sign_in;
@@ -31,7 +32,7 @@ pub mod url;
 pub mod transport;
 
 #[cfg(target_arch = "wasm32")]
-pub mod prompt_banner;
+pub mod prompt_strip;
 
 #[cfg(target_arch = "wasm32")]
 pub mod board_menu;

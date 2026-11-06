@@ -1,11 +1,11 @@
 //! The prompt's **strips**: where this account answers a live prompt for one
 //! of its investigators.
 //!
-//! Which strips exist is [`prompt_layout::layout`]'s to say. The bottom-fixed prompt bar
-//! renders one strip per investigator of yours the prompt asks, each headed
-//! with their name, and the lead strip renders above the board, labelled
-//! "★ As lead investigator", when you hold the lead and the lead decides for
-//! the table. This module renders what goes inside each.
+//! Which strips exist is [`prompt_layout::layout`]'s to say. The dock renders
+//! the strip of the open tab's investigator, headed with their name, when the
+//! prompt asks them and you hold them, and the lead strip renders above the
+//! tabs, labelled "★ As lead investigator", when you hold the lead and the
+//! lead decides for the table. This module renders what goes inside each.
 //!
 //! A strip names the prompt, unless it is the open-turn menu, which the engine
 //! anchors to [`TurnControl`](game_core::engine::OptionTarget::TurnControl) so a
@@ -33,15 +33,15 @@ use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::prompt_layout::AboveBoard;
+use crate::prompt_layout::{self, AboveBoard, OpenTab};
 use crate::store::ClientState;
-use crate::{controls, decision, prompt_layout, skill_test_result, store};
+use crate::{controls, decision, skill_test_result, store};
 
-/// The bottom-fixed prompt bar: one strip per investigator of yours the live
-/// prompt asks, in the order it asks them. With no strip that has anything to
-/// carry, no bar renders at all.
+/// `investigator`'s strip, headed with their name: the dock renders it while
+/// their tab is open. It renders nothing unless the live prompt asks them and
+/// this account holds them, or when it has nothing to carry.
 #[component]
-pub fn PromptBanner() -> impl IntoView {
+pub fn PromptStrip(investigator: InvestigatorId) -> impl IntoView {
     let store = store::use_store();
     let ms = use_context::<MultiSelect>();
     move || {
@@ -50,29 +50,25 @@ pub fn PromptBanner() -> impl IntoView {
         // supplies what goes in them. The two agree, because a strip means
         // this account holds the investigator, so it can answer the prompt.
         let request = state.answerable_request()?;
-        let investigators = prompt_layout::layout(&state).strips();
-        let strips: Vec<_> = investigators
-            .iter()
-            .enumerate()
-            .filter_map(|(place, &investigator)| {
-                let share = match request.responder {
-                    Responder::Several => Share::Own {
-                        investigator,
-                        first: place == 0,
-                    },
-                    _ => Share::All,
-                };
-                let controls = strip_contents(&state, &request, ms.clone(), share)?;
-                let name = state.investigator_name(investigator);
-                Some(view! {
-                    <div class="prompt-strip">
-                        <span class="strip-name">{name}</span>
-                        {controls}
-                    </div>
-                })
-            })
-            .collect();
-        (!strips.is_empty()).then(|| view! { <div class="prompt-banner">{strips}</div> })
+        // In prompt order across all of this account's strips, so the first
+        // carries what the store answers as the first, whichever tab is open.
+        let strips = prompt_layout::layout(&state, OpenTab::default()).strips();
+        let place = strips.iter().position(|&id| id == investigator)?;
+        let share = match request.responder {
+            Responder::Several => Share::Own {
+                investigator,
+                first: place == 0,
+            },
+            _ => Share::All,
+        };
+        let controls = strip_contents(&state, &request, ms.clone(), share)?;
+        let name = state.investigator_name(investigator);
+        Some(view! {
+            <div class="prompt-strip">
+                <span class="strip-name">{name}</span>
+                {controls}
+            </div>
+        })
     }
 }
 
@@ -84,7 +80,9 @@ pub fn LeadStrip() -> impl IntoView {
     let ms = use_context::<MultiSelect>();
     move || {
         let state = store.get();
-        let Some(AboveBoard::LeadStrip(_)) = prompt_layout::layout(&state).above_board else {
+        let Some(AboveBoard::LeadStrip(_)) =
+            prompt_layout::layout(&state, OpenTab::default()).above_board
+        else {
             return None;
         };
         // `layout` decided the lead strip exists; `answerable_request` only
@@ -200,7 +198,7 @@ fn strip_contents(
         .map(|opt: ChoiceOption| {
             let ChoiceOption { id, label, .. } = opt;
             let pick = move |_| controls::submit(InputResponse::PickSingle(id));
-            view! { <button class="banner-option" on:click=pick>{label}</button> }
+            view! { <button class="strip-option" on:click=pick>{label}</button> }
         })
         .collect();
 

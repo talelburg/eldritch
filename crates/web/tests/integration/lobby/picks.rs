@@ -8,10 +8,10 @@ use wasm_bindgen_test::*;
 use web_sys::HtmlButtonElement;
 
 use super::{
-    click, entry, mount_lobby, one, sent, tals_lobby_with_picks, texts, AGNES, DAISY, ROLAND, SAM,
+    click, entry, mount_lobby, sent, tals_lobby_with_picks, texts, AGNES, DAISY, ROLAND, SAM,
     SKIDS, WENDY,
 };
-use crate::common::YOU;
+use crate::common::{self, YOU};
 
 #[wasm_bindgen_test]
 async fn a_free_investigator_is_taken_with_take() {
@@ -68,7 +68,7 @@ async fn take_is_disabled_once_four_investigators_are_picked() {
     let picks = [(ROLAND, YOU), (DAISY, SAM), (SKIDS, SAM), (AGNES, YOU)];
     let handle = mount_lobby(tals_lobby_with_picks(&picks), YOU, false).await;
 
-    let take = one(&handle, &entry(WENDY, "button.take"))
+    let take = common::one(&handle.root, &entry(WENDY, "button.take"))
         .dyn_into::<HtmlButtonElement>()
         .expect("a button");
     assert!(take.disabled(), "the lobby is full");
@@ -79,7 +79,7 @@ async fn take_is_enabled_while_the_lobby_has_room() {
     let picks = [(ROLAND, YOU), (DAISY, SAM), (SKIDS, SAM)];
     let handle = mount_lobby(tals_lobby_with_picks(&picks), YOU, false).await;
 
-    let take = one(&handle, &entry(WENDY, "button.take"))
+    let take = common::one(&handle.root, &entry(WENDY, "button.take"))
         .dyn_into::<HtmlButtonElement>()
         .expect("a button");
     assert!(!take.disabled());

@@ -9,10 +9,8 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::HtmlInputElement;
 
-use super::{
-    click, entry, mount_lobby, one, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM,
-};
-use crate::common::{BoardHandle, YOU};
+use super::{click, entry, mount_lobby, sent, tals_lobby_with_picks, texts, DAISY, ROLAND, SAM};
+use crate::common::{self, BoardHandle, YOU};
 
 /// `view` with `investigator`'s pick set to `choice`.
 fn with_weakness(mut view: LobbyView, investigator: &str, choice: WeaknessChoice) -> LobbyView {
@@ -26,10 +24,13 @@ fn with_weakness(mut view: LobbyView, investigator: &str, choice: WeaknessChoice
 
 /// Whether the weakness checkbox on `investigator`'s entry is checked.
 fn checked(handle: &BoardHandle, investigator: &str) -> bool {
-    one(handle, &entry(investigator, "input.random-basic-weakness"))
-        .dyn_into::<HtmlInputElement>()
-        .expect("an input")
-        .checked()
+    common::one(
+        &handle.root,
+        &entry(investigator, "input.random-basic-weakness"),
+    )
+    .dyn_into::<HtmlInputElement>()
+    .expect("an input")
+    .checked()
 }
 
 #[wasm_bindgen_test]

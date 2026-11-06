@@ -1,5 +1,10 @@
-//! Right-hand turn tracker: the round's four phases with their Rules-Reference
-//! sub-steps and structural player windows, highlighting the current phase.
+//! The round band down the right edge: the round number, then the round's four
+//! phases as their Rules-Reference step numbers, with ◇ for each structural
+//! player window, and the current phase lit.
+//!
+//! The band is a few characters wide, so it shows only the numbers. Hovering
+//! one shows its step's text in the hover popover, and hovering a phase's
+//! letter names the phase.
 //!
 //! The `ROUND` outline's step labels are transcribed from the RR Appendix II
 //! "Timing and Gameplay" — the Phase Sequence timing chart and Framework Event
@@ -7,13 +12,21 @@
 //! with loop/flow-control tails elided for the cheat-sheet.
 //! Grey boxes are framework events; red boxes are player windows.
 //! The engine exposes only the coarse phase, so only the current *phase* is
-//! highlighted. Display-only.
+//! lit. Display-only.
 
 use game_core::state::Phase;
 use leptos::prelude::*;
 use Step::{Framework, Window};
 
+use crate::card;
+use crate::popover::{Hover, Popover};
 use crate::store;
+
+/// A player window's hover text. The second sentence is the RR Appendix II
+/// timing chart's own: "The red boxes are player windows. Players may use
+/// \[free\] triggered abilities in these windows."
+const WINDOW_TEXT: &str =
+    "Player window. Players may use [free] triggered abilities in these windows.";
 
 /// One entry in a phase's ordered outline.
 enum Step {
@@ -82,6 +95,8 @@ const ROUND: &[PhaseOutline] = &[
     },
 ];
 
+/// The round band: "R" and the round number at its top, then each phase as
+/// its letter over its step numbers, the current phase lit.
 #[component]
 pub fn TurnTrackerView() -> impl IntoView {
     let store = store::use_store();
@@ -92,36 +107,51 @@ pub fn TurnTrackerView() -> impl IntoView {
         let phases: Vec<_> = ROUND
             .iter()
             .map(|p| {
-                let cls = if current == Some(p.phase) {
-                    "tracker-phase current"
-                } else {
-                    "tracker-phase"
-                };
                 let steps: Vec<_> = p
                     .steps
                     .iter()
                     .map(|s| match s {
-                        Framework(t) => view! { <li class="tracker-step">{*t}</li> }.into_any(),
-                        Window => {
-                            view! { <li class="tracker-window">"player window"</li> }.into_any()
+                        Framework(text) => {
+                            let number = text.split_once(' ').map_or(*text, |(n, _)| n);
+                            hover_entry("tracker-step", number, text)
                         }
+                        Window => hover_entry("tracker-window", "◇", WINDOW_TEXT),
                     })
                     .collect();
+                let letter = &p.label[..1];
+                let name = format!("{} phase", p.label);
                 view! {
-                    <div class=cls>
-                        <div class="tracker-phase-label">{p.label}</div>
-                        <ul>{steps}</ul>
+                    <div class="tracker-phase" class:current=current == Some(p.phase)>
+                        <ul>{hover_entry("tracker-phase-label", letter, &name)}{steps}</ul>
                     </div>
                 }
             })
             .collect();
         view! {
             <aside class="turn-tracker">
-                <h2>"Turn"</h2>
-                {round.map(|r| view! { <div class="tracker-round">{format!("Round {r}")}</div> })}
+                {round.map(|r| view! { <div class="tracker-round">{format!("R{r}")}</div> })}
                 {phases}
             </aside>
         }
         .into_any()
     }
+}
+
+/// One entry in the band: `shown`, and `text` in the hover popover while the
+/// pointer is over it.
+fn hover_entry(class: &'static str, shown: &str, text: &str) -> AnyView {
+    let hover = Hover::new();
+    let text = text.to_owned();
+    view! {
+        <li
+            class={class}
+            {..hover.handlers()}
+        >
+            {shown.to_owned()}
+            <Popover hover=hover>
+                {card::render_segments(card::parse_card_text(&text))}
+            </Popover>
+        </li>
+    }
+    .into_any()
 }

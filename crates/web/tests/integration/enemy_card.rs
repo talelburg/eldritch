@@ -1,4 +1,5 @@
-//! Headless render tests for the `EnemyCard` component. wasm32-only (browser DOM).
+//! Headless render tests for the `EnemyCard` tile: its name, stats and marks on
+//! the tile, its whole card in the hover popover. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use cards::TEST_REGISTRIES;
@@ -21,15 +22,9 @@ use web_sys::{Element, HtmlElement};
 
 use crate::common;
 
+/// The last-mounted enemy tile.
 fn last_card() -> Element {
-    let cards = document()
-        .query_selector_all(".card")
-        .expect("query_selector_all");
-    cards
-        .item(cards.length() - 1)
-        .expect("at least one .card")
-        .dyn_into::<Element>()
-        .expect("Element")
+    common::last_mounted(".tile.card--enemy")
 }
 
 #[wasm_bindgen_test]
@@ -52,15 +47,25 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
     let card = last_card();
     let classes = card.class_name();
     assert!(
-        classes.contains("card--enemy"),
-        "enemy class missing: {classes}"
-    );
-    assert!(
         classes.contains("card--exhausted"),
         "exhausted class missing: {classes}"
     );
-    let html = card.inner_html();
-    assert!(html.contains("Test Brute"), "name missing: {html}");
+    let tile = card.text_content().unwrap_or_default();
+    assert!(tile.contains("Test Brute"), "name missing: {tile}");
+    assert!(
+        tile.contains("4\u{b7}2\u{b7}4"),
+        "fight, health, evade: {tile}"
+    );
+    assert!(tile.contains("Exhausted"), "exhausted mark missing: {tile}");
+
+    // The whole card, with every stat and keyword, is in the popover.
+    common::hover(&card).await;
+    let html = card
+        .query_selector(".popover")
+        .expect("query")
+        .expect("hovering opens the popover")
+        .inner_html();
+    common::unhover(&card).await;
     assert!(html.contains("fight 4"), "fight chip missing: {html}");
     assert!(html.contains("health 0/2"), "health chip missing: {html}");
     assert!(html.contains("evade 4"), "evade chip missing: {html}");
@@ -86,11 +91,14 @@ async fn enemy_shows_its_printed_traits() {
     });
     task::tick().await;
 
-    let traits = last_card()
-        .query_selector(".card-traits")
+    let card = last_card();
+    common::hover(&card).await;
+    let traits = card
+        .query_selector(".popover .card-traits")
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default();
+    common::unhover(&card).await;
     assert_eq!(traits, "Humanoid. Monster. Ghoul.");
 }
 

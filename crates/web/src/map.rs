@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use card_dsl::card_data::CardKind;
+use card_dsl::card_data::{CardKind, CardMetadata};
 use cards::impls::{attic, cellar, parlor};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::{ChoiceOption, OptionTarget};
@@ -14,6 +14,8 @@ use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
+use crate::popover::{Hover, Popover};
+use crate::prompt_layout::OpenTabSignal;
 use crate::{card, names, registry};
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
@@ -86,35 +88,32 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
     }
 }
 
-/// Pixel geometry for the grid. A node is `CARD_W` of location card plus a
-/// token rail beside it, `NODE_W` wide in total; cells are larger again to
-/// leave gaps for the connection lines. Node *height* is deliberately absent:
-/// the node grows with its tokens rather than clipping them.
-const CELL_W: u16 = 400;
-const CELL_H: u16 = 250;
-const NODE_W: u16 = 360;
-/// The card's box inside a node. Both are emitted onto the node as the CSS
-/// custom properties `--loc-card-w` / `--loc-card-h`, so this is their single
-/// source: `style.css` reads them rather than repeating the numbers.
-///
-/// `CARD_H` is a *minimum*, not a fixed height — the card grows with its text.
-/// A minimum is what the connection lines need: they anchor half a `CARD_H`
-/// down, and a card shorter than that (an unrevealed node is barely a header
-/// tall) would leave its lines ending below it in empty space.
-const CARD_W: u16 = 200;
-const CARD_H: u16 = 130;
+/// The grid's size in cells, `(columns, rows)`, spanning every placed node.
+fn grid_size(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
+    let cols = positions.values().map(|(c, _)| *c).max().unwrap_or(0) + 1;
+    let rows = positions.values().map(|(_, r)| *r).max().unwrap_or(0) + 1;
+    (cols, rows)
+}
 
-/// Anchor pixel for a node's connection lines: the middle of its *card*, not of
-/// the node. The node spans card + token rail, so its own center falls in the
-/// gap between the two and every line would end in empty space.
-fn node_center((col, row): (u16, u16)) -> (u16, u16) {
-    (col * CELL_W + CARD_W / 2, row * CELL_H + CARD_H / 2)
+/// The centre of cell `(col, row)` in a `(cols, rows)` grid, as percentages of
+/// the map's width and height.
+///
+/// The map fills its box, and each cell takes an equal share of it, so a
+/// taller or wider box spreads the nodes rather than leaving dead space. A
+/// node's *card* sits centred on its cell's centre (`style.css` shifts the
+/// node left by half the card and the token rail, and the line layer with it),
+/// so this is also where the connection lines anchor: the middle of the card,
+/// not of the node, whose own centre falls between card and rail. Below the
+/// map's minimum size the box pans instead.
+fn cell_centre((col, row): (u16, u16), (cols, rows): (u16, u16)) -> (f32, f32) {
+    let pct = |i: u16, n: u16| (f32::from(i) + 0.5) * 100.0 / f32::from(n);
+    (pct(col, cols), pct(row, rows))
 }
 
 /// One numeral in a location's header: the class that gives it its shape and
 /// colour, the numeral itself, and the words it carries only as a tooltip.
 ///
-/// The header is `[shroud] Name ★victory [clues]` on a fixed three-column grid,
+/// The header is `[shroud] Name [clues]` on a fixed three-column grid,
 /// so each quantity is read by its position and its colour; the words "shroud"
 /// and "clues" are gone from the face of the card and survive only in `title`.
 struct Badge {
@@ -176,12 +175,14 @@ impl Badge {
 }
 
 /// One `<line>` per undirected pair of connected, in-play locations, between
-/// node centers. A peer not in `positions` (set-aside, not yet in play) is
-/// skipped. Dedups by ordered `LocationId` pair so each edge draws once.
+/// card centres ([`cell_centre`]). A peer not in `positions` (set-aside, not yet
+/// in play) is skipped. Dedups by ordered `LocationId` pair so each edge draws
+/// once.
 fn connection_lines(
     game: &GameState,
     positions: &BTreeMap<LocationId, (u16, u16)>,
 ) -> Vec<impl IntoView> {
+    let grid = grid_size(positions);
     let mut seen: BTreeSet<(u32, u32)> = BTreeSet::new();
     let mut lines = Vec::new();
     for loc in game.locations.values() {
@@ -196,21 +197,20 @@ fn connection_lines(
             if !seen.insert(key) {
                 continue;
             }
-            let (x1, y1) = node_center(a);
-            let (x2, y2) = node_center(b);
+            let (x1, y1) = cell_centre(a, grid);
+            let (x2, y2) = cell_centre(b, grid);
             lines.push(view! {
-                <line class="map-line" x1=x1 y1=y1 x2=x2 y2=y2 />
+                <line
+                    class="map-line"
+                    x1=format!("{x1}%")
+                    y1=format!("{y1}%")
+                    x2=format!("{x2}%")
+                    y2=format!("{y2}%")
+                />
             });
         }
     }
     lines
-}
-
-/// Pixel `(width, height)` spanning all placed nodes (one extra cell of slack).
-fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
-    let max_col = positions.values().map(|(c, _)| *c).max().unwrap_or(0);
-    let max_row = positions.values().map(|(_, r)| *r).max().unwrap_or(0);
-    ((max_col + 1) * CELL_W, (max_row + 1) * CELL_H)
 }
 
 /// One rail token for a [`CardInPlay`] sitting at a location — an uncontrolled
@@ -256,6 +256,42 @@ fn card_token(
     }
 }
 
+/// A location's popover: its name and, on a revealed location, the printed
+/// text its header leaves out (traits, ability text, victory). An unrevealed
+/// location says so and withholds the rest, which is hidden information; the
+/// caller passes no `meta` for it.
+fn location_popover(
+    name: &str,
+    revealed: bool,
+    meta: Option<&'static CardMetadata>,
+) -> impl IntoView {
+    let traits = meta
+        .filter(|m| !m.traits.is_empty())
+        .map(|m| format!("{}.", m.traits.join(". ")));
+    let text = meta
+        .and_then(|m| m.text.as_deref())
+        .map(|t| card::render_segments(card::parse_card_text(t)));
+    let victory = meta.and_then(|m| match &m.kind {
+        CardKind::Location { victory, .. } => *victory,
+        _ => None,
+    });
+    view! {
+        <div class="popover-title">
+            {name.to_owned()}
+            {victory.map(|n| {
+                view! {
+                    <span class="victory-pip" title=format!("victory {n}")>
+                        {format!("\u{2605}{n}")}
+                    </span>
+                }
+            })}
+        </div>
+        {(!revealed).then(|| view! { <div class="card-traits">"Unrevealed"</div> })}
+        {traits.map(|t| view! { <div class="card-traits">{t}</div> })}
+        {text.map(|t| view! { <div class="card-text">{t}</div> })}
+    }
+}
+
 /// Whether any option is anchored to a card in `loc`'s rail — the predicate the
 /// node's `has-menu` lift reads. Pure.
 fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
@@ -285,6 +321,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .map(|l| (l.id, l.code.clone()))
         .collect();
     let positions = layout_positions(&locs);
+    let grid = grid_size(&positions);
     let cards = registry::use_cards();
 
     // The live prompt's options, for glow + per-node context menus.
@@ -292,22 +329,43 @@ pub fn location_map(game: &GameState) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
+    let open_tab_signal = use_context::<OpenTabSignal>();
 
     let nodes: Vec<_> = game
         .locations
         .values()
         .map(|loc| {
-            let (col, row) = positions[&loc.id];
-            let (left, top) = (col * CELL_W, row * CELL_H);
+            let (x, y) = cell_centre(positions[&loc.id], grid);
             let invs: Vec<_> = game
                 .investigators
                 .values()
                 .filter(|i| i.current_location == Some(loc.id))
                 .map(|i| {
+                    // Name only: in a row this short, three tokens of stats
+                    // would push the node into the row below. The stats are
+                    // the investigator's panel's, and the title's.
+                    let stats = format!(
+                        "{}/{} hp · {}/{} san · clues {}",
+                        i.damage(),
+                        i.max_health(cards),
+                        i.horror(),
+                        i.max_sanity(cards),
+                        i.clues
+                    );
+                    // A click opens their tab. Mounted without the board's
+                    // contexts, the token opens nothing.
+                    let investigator = i.id;
                     view! {
-                        <div class="inv-token">
-                            {i.name.clone()} " " {i.damage()} "/" {i.max_health(cards)} " hp · "
-                            {i.horror()} "/" {i.max_sanity(cards)} " san · clues " {i.clues}
+                        <div
+                            class="inv-token"
+                            title=stats
+                            on:click=move |_| {
+                                if let Some(signal) = open_tab_signal {
+                                    signal.click(investigator);
+                                }
+                            }
+                        >
+                            <span class="token-name">{i.name.clone()}</span>
                         </div>
                     }
                 })
@@ -341,16 +399,9 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .iter()
                 .map(|c| card_token(cards, c, "attachment-token", " (attached)", &pending))
                 .collect();
-            let style = format!(
-                "left:{left}px;top:{top}px;width:{NODE_W}px;\
-                 --loc-card-w:{CARD_W}px;--loc-card-h:{CARD_H}px;"
-            );
-            let menu_opts = interaction::options_for(
-                &pending,
-                &OptionTarget::Location(loc.id),
-            );
+            let style = format!("--x:{x}%;--y:{y}%;");
+            let menu_opts = interaction::options_for(&pending, &OptionTarget::Location(loc.id));
             let actionable = !menu_opts.is_empty();
-            #[cfg(target_arch = "wasm32")]
             let open = RwSignal::new(None::<(i32, i32)>);
             let base = if loc.revealed {
                 "map-location"
@@ -376,48 +427,35 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .revealed
                 .then(|| (cards.metadata_for)(&loc.code))
                 .flatten();
-            let traits = meta
-                .map(|m| {
-                    if m.traits.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{}.", m.traits.join(". "))
-                    }
-                })
-                .unwrap_or_default();
-            let text_view = meta
-                .and_then(|m| m.text.as_deref())
-                .map(|t| card::render_segments(card::parse_card_text(t)));
-            let victory_pip = meta
-                .and_then(|m| match &m.kind {
-                    CardKind::Location { victory, .. } => *victory,
-                    _ => None,
-                })
-                .map(|n| {
-                    view! {
-                        <span class="victory-pip" title=format!("victory {n}")>
-                            {format!("\u{2605}{n}")}
-                        </span>
-                    }
-                });
+            let popover_name = loc.name.clone();
+            let revealed = loc.revealed;
+            // The pointer enters the *node*, not the card: when the location is
+            // actionable its `.menu-hit` lies over the card and takes the
+            // events. The popover closes while the node's menu is open.
+            let hover = Hover::beside_menu(open);
             view! {
-                <div class=node_class data-loc=loc.name.clone() style=style>
+                <div
+                    class=node_class
+                    class:popover-open=move || hover.is_open()
+                    data-loc=loc.name.clone()
+                    style={style}
+                    {..hover.handlers()}
+                >
+                    // Header only: shroud, name and clues, the three things a
+                    // player acts on every turn. The printed text is in the
+                    // popover.
                     <div class="loc-card">
                         <div class="loc-head">
                             {Badge::shroud(loc).into_view()}
                             // The name is the one part of the header that may
-                            // truncate, so it carries its full text as a title
-                            // and the victory pip sits outside it — an ellipsis
-                            // must never eat the star.
-                            <span class="loc-title">
-                                <span class="loc-name" title=loc.name.clone()>{loc.name.clone()}</span>
-                                {victory_pip}
-                            </span>
+                            // truncate, so it carries its full text as a title.
+                            <span class="loc-name" title=loc.name.clone()>{loc.name.clone()}</span>
                             {Badge::clues(loc).into_view()}
                         </div>
-                        <div class="card-traits">{traits}</div>
-                        <div class="card-text">{text_view}</div>
                     </div>
+                    <Popover hover=hover>
+                        {location_popover(&popover_name, revealed, meta)}
+                    </Popover>
                     // The satellite rail: one bordered box per occupant, laid
                     // out beside the card rather than inside it, so a long
                     // printed text can never push a token out of view.
@@ -440,10 +478,10 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .collect();
 
     let lines = connection_lines(game, &positions);
-    let (w, h) = map_extent(&positions);
+    let (cols, rows) = grid;
     view! {
-        <section class="map" style=format!("width:{w}px;height:{h}px;")>
-            <svg class="map-lines" width=w height=h>{lines}</svg>
+        <section class="map" style=format!("--cols:{cols};--rows:{rows};")>
+            <svg class="map-lines">{lines}</svg>
             {nodes}
         </section>
     }

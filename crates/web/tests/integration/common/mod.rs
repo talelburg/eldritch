@@ -17,7 +17,7 @@ use web::delete_game::DeleteGame;
 use web::registry;
 use web::store::{self, ClientState, ConnStatus};
 use web::transport::OutboundTx;
-use web_sys::{Element, HtmlElement};
+use web_sys::{Element, HtmlElement, MouseEvent};
 
 /// The last element matching `sel`: the browser tests share one page and
 /// nothing unmounts, so a test reads the last match.
@@ -31,6 +31,23 @@ pub(crate) fn last_mounted(sel: &str) -> Element {
         .unwrap_or_else(|| panic!("at least one {sel}"))
 }
 
+/// The first element under `within` matching `sel`.
+pub(crate) fn one(within: &Element, sel: &str) -> Element {
+    within
+        .query_selector(sel)
+        .expect("query")
+        .unwrap_or_else(|| panic!("no {sel} under the element"))
+}
+
+/// The text of the first element under `within` matching `sel`.
+///
+/// Read as `text_content` rather than `inner_html`, which escapes: the
+/// apostrophe in "What's Going On?!" arrives as an entity, and a substring test
+/// against it would be testing the escaper.
+pub(crate) fn text_of(within: &Element, sel: &str) -> String {
+    one(within, sel).text_content().unwrap_or_default()
+}
+
 /// The text of every element `sel` matches inside `within`, in document order.
 pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
     let nodes = within.query_selector_all(sel).expect("query");
@@ -38,6 +55,100 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
         .filter_map(|i| nodes.item(i))
         .map(|node| node.text_content().unwrap_or_default())
         .collect()
+}
+
+/// Inject `style.css` once per browser session, so measurements are taken
+/// against the stylesheet the app ships rather than an unstyled DOM.
+///
+/// Every browser test shares one page, so the stylesheet stays in force for
+/// every test that runs after this one. A test that measures layout calls this
+/// itself rather than depend on whether another test ran first.
+pub(crate) fn inject_style() {
+    let doc = document();
+    if doc
+        .query_selector("style[data-app-css]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    let style = doc.create_element("style").expect("create style");
+    style.set_attribute("data-app-css", "1").expect("attr");
+    style.set_text_content(Some(include_str!("../../../style.css")));
+    doc.head()
+        .expect("head")
+        .append_child(&style)
+        .expect("append");
+}
+
+/// The computed value of `el`'s CSS `property`.
+pub(crate) fn computed(el: &Element, property: &str) -> String {
+    window()
+        .get_computed_style(el)
+        .expect("computed style")
+        .expect("a style declaration")
+        .get_property_value(property)
+        .expect("the property")
+}
+
+/// Point at `host` and let the popover it carries render.
+///
+/// CSS `:hover` can't be driven headless, so the popover is signal-driven and
+/// this dispatches the `mouseenter` that opens it, then ticks.
+pub(crate) async fn hover(host: &Element) {
+    pointer(host, "mouseenter").await;
+}
+
+/// Move the pointer off `host`, closing its popover.
+pub(crate) async fn unhover(host: &Element) {
+    pointer(host, "mouseleave").await;
+}
+
+/// Dispatch the mouse event `kind` on `host`, and let the page react.
+async fn pointer(host: &Element, kind: &str) {
+    let event = MouseEvent::new(kind).expect("a mouse event");
+    host.dispatch_event(&event)
+        .expect("dispatch the mouse event");
+    task::tick().await;
+}
+
+/// Hover `host` and return the text of the popover that opens.
+pub(crate) async fn hovered_popover(host: &Element) -> String {
+    hover(host).await;
+    popover_text(host).expect("hovering it opens its popover")
+}
+
+/// Click the investigator tab under `root` named `name`, and let the board
+/// react.
+pub(crate) async fn click_tab(root: &Element, name: &str) {
+    click_named(root, ".inv-tab", ".tab-name", name);
+    task::tick().await;
+}
+
+/// Click the one `sel` under `root` whose `name_sel` reads `name`.
+pub(crate) fn click_named(root: &Element, sel: &str, name_sel: &str, name: &str) {
+    let all = root.query_selector_all(sel).expect("query");
+    let el = (0..all.length())
+        .filter_map(|i| all.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .find(|el| {
+            el.query_selector(name_sel)
+                .expect("query")
+                .and_then(|n| n.text_content())
+                .is_some_and(|text| text == name)
+        })
+        .unwrap_or_else(|| panic!("a {sel} named {name}"));
+    el.dyn_into::<HtmlElement>()
+        .expect("an HTML element")
+        .click();
+}
+
+/// The text of the open popover inside `host`, `None` while none is open.
+pub(crate) fn popover_text(host: &Element) -> Option<String> {
+    host.query_selector(".popover")
+        .expect("query")
+        .map(|el| el.text_content().unwrap_or_default())
 }
 
 /// Mount `view` into a container of its own over a fresh store; return the

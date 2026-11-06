@@ -128,9 +128,9 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
 /// True iff the skill-test result modal is up: the store is holding a resolution
 /// *and* the live prompt is the un-anchored `Confirm` acknowledge pause.
 ///
-/// Public because the prompt banner needs it — the modal carries that pause's only
-/// Confirm, so the banner must not render a second one. The rule lives here,
-/// with the view it governs, rather than being re-derived by the banner. Pure.
+/// Public because the prompt strip needs it — the modal carries that pause's only
+/// Confirm, so the strip must not render a second one. The rule lives here,
+/// with the view it governs, rather than being re-derived by the strip. Pure.
 #[must_use]
 pub fn modal_is_live(state: &ClientState) -> bool {
     summarize(state).is_some()

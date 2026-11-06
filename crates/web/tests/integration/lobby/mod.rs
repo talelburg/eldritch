@@ -22,7 +22,7 @@ use protocol::lobby::{Lobby, LobbyView, Member};
 use protocol::{AccountId, ClientMessage, GameId, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use web::store::{self, ClientState};
-use web_sys::{Element, HtmlElement};
+use web_sys::HtmlElement;
 
 use crate::common::{self, BoardHandle, YOU};
 
@@ -83,7 +83,7 @@ pub(crate) const HEADER: &str = ".lobby-header";
 
 /// Click the one `sel` under `handle`'s root.
 pub(crate) fn click(handle: &BoardHandle, sel: &str) {
-    one(handle, sel)
+    common::one(&handle.root, sel)
         .dyn_into::<HtmlElement>()
         .expect("an HTML element")
         .click();
@@ -114,15 +114,6 @@ pub(crate) async fn mount_lobby(view: LobbyView, you: AccountId, joined: bool) -
     let handle = common::mount_board(client, &cards::TEST_REGISTRY).await;
     task::tick().await;
     handle
-}
-
-/// The one `sel` under `handle`'s root.
-pub(crate) fn one(handle: &BoardHandle, sel: &str) -> Element {
-    handle
-        .root
-        .query_selector(sel)
-        .expect("query")
-        .unwrap_or_else(|| panic!("the lobby renders {sel}"))
 }
 
 /// The text of every `sel` under `handle`'s root, in document order.

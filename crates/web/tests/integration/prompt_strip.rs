@@ -1,7 +1,8 @@
-//! Headless tests for `PromptBanner`, the prompt bar.
+//! Headless tests for `PromptStrip`, one investigator's prompt strip, mounted
+//! on its own: the dock renders it while their tab is open.
 //!
-//! The bar is the **floor**: one strip per investigator of yours the live
-//! prompt asks, each headed with their name, names the prompt and homes
+//! The strips are the **floor**: the strip of an investigator of yours the
+//! live prompt asks, headed with their name, names the prompt and homes
 //! whatever has no board surface — un-anchored options, a `PickMultiple`
 //! commit's Confirm, a skippable window's Pass, and a fallback Confirm. Its one
 //! silence is the open-turn menu, recognised by its `TurnControl` anchor rather
@@ -24,27 +25,33 @@ use protocol::{Assignment, ClientMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;
-use web::prompt_banner::PromptBanner;
+use web::prompt_strip::PromptStrip;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
 use crate::common;
 
-/// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
-/// `selected` starts as `preselected`, and a capturing channel.
+/// Investigator 1, whom the `test_support` prompts ask.
+const SEAT_ONE: InvestigatorId = InvestigatorId(1);
+
+/// Mount [`SEAT_ONE`]'s `PromptStrip` with a store carrying `outcome`, a
+/// `MultiSelect` whose `selected` starts as `preselected`, and a capturing
+/// channel.
 async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {
-    mount_with(None, outcome, preselected, None).await
+    mount_with(None, outcome, preselected, None, SEAT_ONE).await
 }
 
-/// [`mount`], with the store also holding `game`, so the banner can name
-/// investigators, and signed in as an account holding only `held` when it is
-/// `Some`, or every investigator when it is `None`.
+/// [`mount`], for the strip of `investigator`, with the store also holding
+/// `game`, so the strip can name investigators, and signed in as an account
+/// holding only `held` when it is `Some`, or every investigator when it is
+/// `None`.
 async fn mount_with(
     game: Option<GameState>,
     outcome: EngineOutcome,
     preselected: &[u32],
     held: Option<&[InvestigatorId]>,
+    investigator: InvestigatorId,
 ) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     store.update(|s| {
@@ -63,32 +70,32 @@ async fn mount_with(
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
         provide_context(MultiSelect { active, selected });
-        view! { <div class="pb-root"><PromptBanner/></div> }
+        view! { <div class="strip-root"><PromptStrip investigator=investigator/></div> }
     });
     task::tick().await;
     rx
 }
 
-/// The last-mounted `.pb-root` wrapper — scopes queries to this test's mount so
+/// The last-mounted `.strip-root` wrapper — scopes queries to this test's mount so
 /// DOM accumulation across tests can't shadow an "absence" assertion.
 fn last_root() -> Element {
-    let roots = document().query_selector_all(".pb-root").expect("query");
+    let roots = document().query_selector_all(".strip-root").expect("query");
     roots
         .item(roots.length() - 1)
         .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .pb-root")
+        .expect("a .strip-root")
 }
 
-fn last_banner() -> Element {
+fn last_strip() -> Element {
     last_root()
-        .query_selector(".prompt-banner")
+        .query_selector(".prompt-strip")
         .expect("query")
         .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .prompt-banner")
+        .expect("a .prompt-strip")
 }
 
 fn click(sel: &str) {
-    last_banner()
+    last_strip()
         .query_selector(sel)
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
@@ -170,7 +177,7 @@ fn discard_exactly_one() -> EngineOutcome {
 }
 
 fn confirm_disabled() -> bool {
-    last_banner()
+    last_strip()
         .query_selector(".confirm")
         .expect("query")
         .expect("a Confirm")
@@ -216,17 +223,17 @@ async fn renders_the_prompt_text() {
     )
     .await;
     assert!(
-        last_banner()
+        last_strip()
             .text_content()
             .unwrap_or_default()
             .contains("Redraw your opening hand"),
-        "banner shows the prompt text"
+        "strip shows the prompt text"
     );
 }
 
 #[wasm_bindgen_test]
 async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
-    // The banner is the floor, so a prompt the
+    // The strip is the floor, so a prompt the
     // client does not specifically home still tells the player the engine is
     // waiting — and an un-anchored `Confirm` the result modal is not carrying gets
     // a Confirm here rather than being unreachable.
@@ -235,7 +242,7 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
         &[],
     )
     .await;
-    assert!(last_banner()
+    assert!(last_strip()
         .text_content()
         .unwrap_or_default()
         .contains("Something happened"));
@@ -251,8 +258,8 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
 }
 
 #[wasm_bindgen_test]
-async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
-    // The Mythos draw's button lives on the encounter deck. The banner still
+async fn an_anchored_confirm_gets_text_but_no_strip_confirm() {
+    // The Mythos draw's button lives on the encounter deck. The strip still
     // names the prompt — the floor — but must not render a second Confirm, which
     // is the duplication the bar retirement exists to end.
     let mut outcome = test_support::awaiting_confirm_input("Draw");
@@ -260,25 +267,25 @@ async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
         request.target = Some(OptionTarget::EncounterDeck);
     }
     let _rx = mount(outcome, &[]).await;
-    let banner = last_banner();
-    assert!(banner.text_content().unwrap_or_default().contains("Draw"));
+    let strip = last_strip();
+    assert!(strip.text_content().unwrap_or_default().contains("Draw"));
     assert!(
-        banner.query_selector(".confirm").expect("query").is_none(),
+        strip.query_selector(".confirm").expect("query").is_none(),
         "the encounter deck carries this prompt's only Confirm"
     );
 }
 
 #[wasm_bindgen_test]
 async fn skippable_window_shows_prompt_and_pass_submits_skip() {
-    // A skippable PickSingle (reaction/Fast window) → banner with prompt + Pass.
+    // A skippable PickSingle (reaction/Fast window) → strip with prompt + Pass.
     let outcome = test_support::awaiting_skippable_pick_single_input("You may trigger");
     let mut rx = mount(outcome, &[]).await;
     assert!(
-        last_banner()
+        last_strip()
             .text_content()
             .unwrap_or_default()
             .contains("You may trigger"),
-        "window prompt shows in the banner"
+        "window prompt shows in the strip"
     );
     click(".pass");
     task::tick().await;
@@ -294,7 +301,7 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
 
 #[wasm_bindgen_test]
 async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
-    // The one prompt the banner stays silent about. It is identified by the
+    // The one prompt the strip stays silent about. It is identified by the
     // `TurnControl` anchor the engine attaches, never by matching "Choose an
     // action" — the string coupling ADR 0011 exists to prevent. Reserving the one
     // persistent surface means not spending it on every ordinary turn.
@@ -309,10 +316,10 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
     let _rx = mount(outcome, &[]).await;
     assert!(
         last_root()
-            .query_selector(".prompt-banner")
+            .query_selector(".prompt-strip")
             .expect("query")
             .is_none(),
-        "an ordinary turn — every option on a board surface — renders no bar at all"
+        "an ordinary turn — every option on a board surface — renders no strip at all"
     );
 }
 
@@ -320,7 +327,7 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
 async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
     // Only the text. An open-turn action whose own anchor is `None` — Investigate
     // with no current location, EndTurn off-frame, both pinned by engine tests —
-    // has no board home, so suppressing the whole banner would make it
+    // has no board home, so suppressing the whole strip would make it
     // unreachable rather than merely misplaced (ADR 0011's floor).
     let mut outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
@@ -334,18 +341,18 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
         request.target = Some(OptionTarget::TurnControl(InvestigatorId(1)));
     }
     let mut rx = mount(outcome, &[]).await;
-    let banner = last_banner();
+    let strip = last_strip();
     assert!(
-        banner.query_selector(".prompt").expect("query").is_none(),
+        strip.query_selector(".prompt").expect("query").is_none(),
         "no 'Choose an action' noise on an ordinary turn"
     );
-    let btns = banner.query_selector_all(".banner-option").expect("query");
+    let btns = strip.query_selector_all(".strip-option").expect("query");
     assert_eq!(
         btns.length(),
         1,
         "the un-anchored option keeps its only home; the anchored one is on its surface"
     );
-    click(".banner-option");
+    click(".strip-option");
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
@@ -357,25 +364,25 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
 }
 
 #[wasm_bindgen_test]
-async fn an_unanchored_pick_single_still_reaches_the_banner() {
-    // Not skippable, not multi, no board home: the banner
+async fn an_unanchored_pick_single_still_reaches_the_strip() {
+    // Not skippable, not multi, no board home: the strip
     // is the only thing between this option and being unreachable. The
     // fixture's two options are un-anchored.
     let outcome = test_support::awaiting_pick_single_input("Choose one");
     let mut rx = mount(outcome, &[]).await;
-    let banner = last_banner();
-    assert!(banner
+    let strip = last_strip();
+    assert!(strip
         .text_content()
         .unwrap_or_default()
         .contains("Choose one"));
     assert_eq!(
-        banner
-            .query_selector_all(".banner-option")
+        strip
+            .query_selector_all(".strip-option")
             .expect("query")
             .length(),
         2
     );
-    click(".banner-option");
+    click(".strip-option");
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
@@ -386,7 +393,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     }
 }
 
-/// Regression for #549: a skippable window's options render as banner buttons
+/// Regression for #549: a skippable window's options render as strip buttons
 /// (not only Pass), so a Board/Global option such as the round-end advance is
 /// reachable.
 #[wasm_bindgen_test]
@@ -396,8 +403,8 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
         &[],
     )
     .await;
-    let btn = last_banner()
-        .query_selector(".banner-option")
+    let btn = last_strip()
+        .query_selector(".strip-option")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("an option button");
@@ -415,8 +422,8 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
 }
 
 #[wasm_bindgen_test]
-async fn banner_renders_only_unanchored_options() {
-    // With the round-end advance anchored to the act card, the banner does not
+async fn strip_renders_only_unanchored_options() {
+    // With the round-end advance anchored to the act card, the strip does not
     // duplicate anchored options — it renders only un-anchored ones.
     let outcome = test_support::awaiting_skippable_pick_single_with(
         "You may advance",
@@ -426,8 +433,8 @@ async fn banner_renders_only_unanchored_options() {
         ],
     );
     let mut rx = mount(outcome, &[]).await;
-    let banner = last_banner();
-    let btns = banner.query_selector_all(".banner-option").expect("query");
+    let strip = last_strip();
+    let btns = strip.query_selector_all(".strip-option").expect("query");
     assert_eq!(
         btns.length(),
         1,
@@ -436,7 +443,7 @@ async fn banner_renders_only_unanchored_options() {
     let btn = btns
         .item(0)
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("the one banner button");
+        .expect("the one strip button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Some global");
     btn.click();
     task::tick().await;
@@ -451,15 +458,15 @@ async fn banner_renders_only_unanchored_options() {
 }
 
 /// The ST.7 result-order prompt anchors a committed card's result to its place
-/// in the committed list, which no board surface renders yet, so the banner
+/// in the committed list, which no board surface renders yet, so the strip
 /// homes it, labelled with the card's name, rather than leave it unreachable
 /// (ADR 0011's committed-card stopgap).
 #[wasm_bindgen_test]
-async fn a_committed_cards_option_renders_on_the_banner() {
+async fn a_committed_cards_option_renders_on_the_strip() {
     let outcome = test_support::awaiting_pick_single_with(
         "Choose which result of the skill test to apply next.",
         vec![
-            // Anchored to a board surface, so not the banner's.
+            // Anchored to a board surface, so not the strip's.
             ChoiceOption::new(OptionId(0), "Result of the act").at(OptionTarget::Act),
             ChoiceOption::new(OptionId(1), "Result of Overpower").at(OptionTarget::CommittedCard {
                 index: CommittedIndex(0),
@@ -467,14 +474,14 @@ async fn a_committed_cards_option_renders_on_the_banner() {
         ],
     );
     let mut rx = mount(outcome, &[]).await;
-    let btns = last_banner()
-        .query_selector_all(".banner-option")
+    let btns = last_strip()
+        .query_selector_all(".strip-option")
         .expect("query");
     assert_eq!(btns.length(), 1, "only the committed card's option");
     let btn = btns
         .item(0)
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("the one banner button");
+        .expect("the one strip button");
     assert_eq!(
         btn.text_content().unwrap_or_default(),
         "Result of Overpower"
@@ -525,20 +532,19 @@ fn answering(rx: &mut UnboundedReceiver<ClientMessage>) -> (InvestigatorId, Inpu
 /// offered to.
 #[wasm_bindgen_test]
 async fn a_pick_in_a_window_several_answer_names_its_options_investigator() {
-    let mut rx = mount(offered_to_two_and_three(), &[]).await;
-    let btns = last_banner()
-        .query_selector_all(".banner-option")
-        .expect("query");
-    btns.item(1)
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("investigator 3's option")
-        .click();
+    let mut rx = mount_with(None, offered_to_two_and_three(), &[], None, THREE).await;
+    click(".strip-option");
     task::tick().await;
     assert_eq!(
         answering(&mut rx),
-        (InvestigatorId(3), InputResponse::PickSingle(OptionId(1)))
+        (THREE, InputResponse::PickSingle(OptionId(1)))
     );
 }
+
+/// Investigator 2, asked first in [`offered_to_two_and_three`].
+const TWO: InvestigatorId = InvestigatorId(2);
+/// Investigator 3, asked second in [`offered_to_two_and_three`].
+const THREE: InvestigatorId = InvestigatorId(3);
 
 /// The game [`offered_to_two_and_three`] is asked in: investigators 2 and 3
 /// seated.
@@ -546,27 +552,16 @@ fn two_and_three_seated() -> GameState {
     GameStateBuilder::new()
         .with_seat(seat(2))
         .with_seat(seat(3))
-        .with_seating([InvestigatorId(2), InvestigatorId(3)])
+        .with_seating([TWO, THREE])
         .build()
 }
 
-/// The `.pass` buttons the last banner renders, in order.
+/// The `.pass` buttons the last strip renders, in order.
 fn pass_buttons() -> Vec<HtmlElement> {
-    let btns = last_banner().query_selector_all(".pass").expect("query");
+    let btns = last_strip().query_selector_all(".pass").expect("query");
     (0..btns.length())
         .filter_map(|i| btns.item(i))
         .filter_map(|n| n.dyn_into::<HtmlElement>().ok())
-        .collect()
-}
-
-/// The `.prompt-strip`s the last banner renders, in order.
-fn strips() -> Vec<Element> {
-    let nodes = last_banner()
-        .query_selector_all(".prompt-strip")
-        .expect("query");
-    (0..nodes.length())
-        .filter_map(|i| nodes.item(i))
-        .filter_map(|n| n.dyn_into::<Element>().ok())
         .collect()
 }
 
@@ -576,37 +571,25 @@ fn strips() -> Vec<Element> {
 #[wasm_bindgen_test]
 async fn a_window_two_answer_shows_a_strip_with_a_plain_pass_for_each() {
     let game = two_and_three_seated();
-    let names = vec![
-        game.name_of(InvestigatorId(2)),
-        game.name_of(InvestigatorId(3)),
-    ];
-    let mut rx = mount_with(Some(game), offered_to_two_and_three(), &[], None).await;
-    let strips = strips();
-    let headings: Vec<String> = strips
-        .iter()
-        .flat_map(|strip| common::texts_in(strip, ".strip-name"))
-        .collect();
-    assert_eq!(headings, names);
-    assert_eq!(
-        common::texts_in(&strips[0], ".banner-option"),
-        ["Two's reaction"]
-    );
-    assert_eq!(
-        common::texts_in(&strips[1], ".banner-option"),
-        ["Three's reaction"]
-    );
-    for strip in &strips {
-        assert_eq!(common::texts_in(strip, ".prompt"), ["You may trigger"]);
-        assert_eq!(common::texts_in(strip, ".pass"), ["Pass"]);
+    for (investigator, option) in [(TWO, "Two's reaction"), (THREE, "Three's reaction")] {
+        let name = game.name_of(investigator);
+        let mut rx = mount_with(
+            Some(game.clone()),
+            offered_to_two_and_three(),
+            &[],
+            None,
+            investigator,
+        )
+        .await;
+        let strip = last_strip();
+        assert_eq!(common::texts_in(&strip, ".strip-name"), [name]);
+        assert_eq!(common::texts_in(&strip, ".strip-option"), [option]);
+        assert_eq!(common::texts_in(&strip, ".prompt"), ["You may trigger"]);
+        assert_eq!(common::texts_in(&strip, ".pass"), ["Pass"]);
+        click(".pass");
+        task::tick().await;
+        assert_eq!(answering(&mut rx), (investigator, InputResponse::Skip));
     }
-    strips[1]
-        .query_selector(".pass")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("investigator 3's Pass")
-        .click();
-    task::tick().await;
-    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
 }
 
 /// An option naming no investigator goes on the strip of the first of this
@@ -617,22 +600,23 @@ async fn an_option_naming_no_investigator_goes_on_the_first_strip() {
         InputRequest::pick_single(
             "You may trigger",
             vec![
-                ChoiceOption::new(OptionId(0), "Two's reaction").offered_to(InvestigatorId(2)),
-                ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3)),
+                ChoiceOption::new(OptionId(0), "Two's reaction").offered_to(TWO),
+                ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(THREE),
                 ChoiceOption::new(OptionId(2), "No one's option"),
             ],
         )
         .skippable()
         .answered_by(Responder::Several),
     );
-    let _rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
-    let strips = strips();
+    let game = two_and_three_seated();
+    let _rx = mount_with(Some(game.clone()), outcome.clone(), &[], None, TWO).await;
     assert_eq!(
-        common::texts_in(&strips[0], ".banner-option"),
+        common::texts_in(&last_strip(), ".strip-option"),
         ["Two's reaction", "No one's option"]
     );
+    let _rx = mount_with(Some(game), outcome, &[], None, THREE).await;
     assert_eq!(
-        common::texts_in(&strips[1], ".banner-option"),
+        common::texts_in(&last_strip(), ".strip-option"),
         ["Three's reaction"]
     );
 }
@@ -655,26 +639,26 @@ async fn a_strip_is_headed_with_its_investigators_name() {
         )
         .answered_by(Responder::Investigator(agnes)),
     );
-    let _rx = mount_with(Some(game), discard, &[], None).await;
+    let _rx = mount_with(Some(game), discard, &[], None, agnes).await;
     assert_eq!(
-        common::texts_in(&last_banner(), ".strip-name"),
+        common::texts_in(&last_strip(), ".strip-name"),
         ["Agnes Baker"]
     );
 }
 
 /// When only one investigator in a window several answer still holds an
-/// option, the banner shows a single plain Pass, which passes for them.
+/// option, the strip shows a single plain Pass, which passes for them.
 #[wasm_bindgen_test]
 async fn a_window_one_still_answers_shows_one_plain_pass() {
     let outcome = test_support::awaiting_request(
         InputRequest::pick_single(
             "You may trigger",
-            vec![ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(InvestigatorId(3))],
+            vec![ChoiceOption::new(OptionId(1), "Three's reaction").offered_to(THREE)],
         )
         .skippable()
         .answered_by(Responder::Several),
     );
-    let mut rx = mount_with(Some(two_and_three_seated()), outcome, &[], None).await;
+    let mut rx = mount_with(Some(two_and_three_seated()), outcome, &[], None, THREE).await;
     let labels: Vec<String> = pass_buttons()
         .iter()
         .map(|b| b.text_content().unwrap_or_default())
@@ -682,28 +666,32 @@ async fn a_window_one_still_answers_shows_one_plain_pass() {
     assert_eq!(labels, ["Pass"]);
     click(".pass");
     task::tick().await;
-    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+    assert_eq!(answering(&mut rx), (THREE, InputResponse::Skip));
 }
 
 /// A viewer's account holds nobody in the window investigators 2 and 3
-/// answer: the banner offers it no option and no Pass, and says nothing.
+/// answer: neither strip offers it an option or a Pass, and neither says
+/// anything.
 #[wasm_bindgen_test]
 async fn a_viewer_is_offered_no_option_and_no_pass() {
-    let _rx = mount_with(
-        Some(two_and_three_seated()),
-        offered_to_two_and_three(),
-        &[],
-        Some(&[]),
-    )
-    .await;
-    assert!(
-        last_root()
-            .query_selector(".prompt-banner")
-            .expect("query")
-            .is_none(),
-        "a viewer's banner renders nothing: {}",
-        last_root().inner_html()
-    );
+    for investigator in [TWO, THREE] {
+        let _rx = mount_with(
+            Some(two_and_three_seated()),
+            offered_to_two_and_three(),
+            &[],
+            Some(&[]),
+            investigator,
+        )
+        .await;
+        assert!(
+            last_root()
+                .query_selector(".prompt-strip")
+                .expect("query")
+                .is_none(),
+            "a viewer's strip renders nothing: {}",
+            last_root().inner_html()
+        );
+    }
 }
 
 /// An account holding investigator 3, but not 2, in a window both answer gets
@@ -714,19 +702,14 @@ async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_th
         Some(two_and_three_seated()),
         offered_to_two_and_three(),
         &[],
-        Some(&[InvestigatorId(3)]),
+        Some(&[THREE]),
+        THREE,
     )
     .await;
-    let options: Vec<String> = {
-        let btns = last_banner()
-            .query_selector_all(".banner-option")
-            .expect("query");
-        (0..btns.length())
-            .filter_map(|i| btns.item(i))
-            .map(|n| n.text_content().unwrap_or_default())
-            .collect()
-    };
-    assert_eq!(options, ["Three's reaction"]);
+    assert_eq!(
+        common::texts_in(&last_strip(), ".strip-option"),
+        ["Three's reaction"]
+    );
     let labels: Vec<String> = pass_buttons()
         .iter()
         .map(|b| b.text_content().unwrap_or_default())
@@ -734,5 +717,5 @@ async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_th
     assert_eq!(labels, ["Pass"]);
     click(".pass");
     task::tick().await;
-    assert_eq!(answering(&mut rx), (InvestigatorId(3), InputResponse::Skip));
+    assert_eq!(answering(&mut rx), (THREE, InputResponse::Skip));
 }

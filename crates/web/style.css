@@ -1,78 +1,215 @@
 /* P6.5 board — minimal functional layout. */
-.board { font-family: system-ui, sans-serif; margin: 1rem; }
-/* Compact header: the title and the status strip share one horizontal row. */
-.app-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; margin: 1rem; }
+/* One screen: the page never scrolls. The header and the main column
+   share the left, the round band runs down the whole right edge, and whatever
+   doesn't fit scrolls inside its own box: the map pans in `.map-box`, the
+   dock's card rows scroll sideways, and the log is a drawer over the board. */
+html, body { margin: 0; height: 100%; overflow: hidden; }
+/* The screen is divided by proportion and everything sizes off the window:
+   the root font follows its width and height, between a floor that keeps text
+   readable and a ceiling, and every `rem` and `em` below follows the root.
+   Nothing is scaled with a `transform` or `zoom`, which would misplace the
+   popovers and context menus opened at the pointer. */
+html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
+.app-shell { height: 100vh; display: flex; overflow: hidden; }
+.app-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.board {
+    font-family: system-ui, sans-serif; margin: 0 1rem 0.5rem;
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+}
+/* Compact header: the title, the log's toggle and the status strip share one
+   horizontal row. */
+.app-header { flex: none; display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; margin: 0.5rem 1rem; }
 .app-header h1 { margin: 0; font-size: 1.4rem; }
 .status-bar { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; }
 .status, .rejection { font-size: 0.85rem; color: #555; }
 /* Center the board content (act/agenda, map, investigators) horizontally in the
    center column rather than hugging the left edge. */
-.game { display: flex; flex-direction: column; gap: 1rem; align-items: center; }
-.investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
-/* Full-width so the heading wraps onto its own line ABOVE the panels rather
-   than sitting beside them as a flex sibling. */
-.investigators h2 { flex-basis: 100%; margin: 0 0 0.25rem; }
-.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 30rem; }
-.investigator span { font-size: 0.9rem; }
-/* Top row: in-play (left) and threat (right), each boxed for clear separation. */
-.inv-zones-top { display: flex; gap: 1rem; align-items: flex-start; }
-.inv-zones-top > div { flex: 1; border: 1px solid #e3e3e3; border-radius: 4px; padding: 0.4rem; min-width: 0; }
-/* Bottom row: the stat block (left) beside the hand (right). */
-.inv-zones-bottom { display: flex; gap: 1rem; align-items: flex-start; }
-.investigator-block { flex: 0 0 auto; display: flex; gap: 0.6rem; align-items: flex-start; }
-.inv-vitals {
-    display: flex; flex-direction: column; gap: 0.1rem;
-    font-size: 0.8rem; padding: 0.25rem 0.4rem;
-    border: 1px solid #ccc; border-top: none; border-radius: 0 0 6px 6px;
+.game { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
+/* The dock: one tab per investigator over the open tab's panel, in a fixed
+   share of the window's height, so a long hand never grows it into the map.
+   Its text and tiles size off its own height (`cqh`), within a floor and a
+   ceiling, so a taller window gets larger cards rather than empty space. */
+.dock {
+    flex: none; height: 40vh; min-height: 0; align-self: stretch;
+    display: flex; flex-direction: column; container-type: size;
 }
-.inv-skills { font-weight: bold; letter-spacing: 0.05rem; }
-.inv-meta { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.dock > * { font-size: clamp(0.9rem, 5cqh, 1.4rem); }
+.inv-tabs { display: flex; flex-wrap: wrap; gap: 0.25em; flex: none; }
+.inv-tab {
+    display: inline-flex; align-items: center; gap: 0.3em; font: inherit; font-size: 0.85em;
+    border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0;
+    background: #f3f3f3; color: #444; padding: 0.25em 0.7em; cursor: pointer;
+}
+/* The investigators this account holds. */
+.inv-tab.held { background: #e3efe6; color: #13502a; }
+.inv-tab.open { background: #fff; font-weight: 600; position: relative; top: 1px; }
+/* Their investigator card carries an option (the lead's next-turn choice):
+   the card's own glow, on the tab, since only the open tab's card shows. */
+.inv-tab.actionable { box-shadow: 0 0 0 2px #e0b84c; }
+.tab-active { color: #157a3a; }
+.tab-lead { color: #b8860b; }
+/* A prompt asks one of yours whose tab isn't open. */
+.tab-needs-you {
+    background: #e8a23d; color: #1a1a1a; border-radius: 3px;
+    padding: 0 0.3em; font-size: 0.8em; font-weight: 600;
+}
+/* The open tab's investigator, in two rows under their prompt strip: the
+   investigator, in play and the threat area on top, the hand below. The hand
+   row is one row of tiles tall, and the top row takes the rest of the panel,
+   scrolling its zones when they overflow, so neither ever pushes the other out
+   of view. */
+.investigator {
+    flex: 1 1 auto; min-height: 0; box-sizing: border-box; overflow: hidden;
+    display: flex; flex-direction: column; gap: 0.35em; padding: 0.4em;
+    border: 1px solid #ccc; border-radius: 0 4px 4px 4px; background: #fff;
+}
+.investigator > .prompt-strip { flex: none; }
+.inv-zones-top, .inv-zones-bottom { min-height: 0; display: flex; gap: 0.5em; }
+.inv-zones-top { flex: 1 1 0; }
+.inv-zones-bottom { flex: none; }
+.investigator-block { flex: none; display: flex; gap: 0.5em; align-items: flex-start; }
+.investigator-card .tile { width: auto; }
+.inv-meta { display: flex; flex-direction: column; gap: 0.05em; font-size: 0.8em; }
 .inv-actions .pip { color: #c8a020; margin-right: 1px; }
-.inv-zones-bottom .hand { flex: 1; min-width: 0; }
+.inv-piles { display: flex; flex-direction: column; gap: 0.3em; font-size: 0.85em; }
+/* A zone is a label over its tiles. In play and the threat area are boxed and
+   wrap their tiles, scrolling down when they overflow; the hand is one row
+   that scrolls sideways. */
+.zone { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.2em; }
+.zone-label {
+    font-size: 0.68em; text-transform: uppercase; letter-spacing: 0.04em;
+    color: #777; font-weight: 600;
+}
+.inv-zones-top .zone { border: 1px solid #e3e3e3; border-radius: 4px; padding: 0.3em; overflow-y: auto; }
+/* Room for the glow and the selection ring, which the row would clip. */
+.dock .card-row { display: flex; gap: 0.4em; padding: 3px; align-items: flex-start; }
+.inv-zones-top .card-row { flex-wrap: wrap; }
+.hand .card-row { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+.dock .card-row > * { flex: none; }
+/* A hand this account does not hold: a face-down back and a count, nothing more. */
+.hand-hidden { display: flex; align-items: center; gap: 0.4em; }
+.discard { display: flex; align-items: baseline; gap: 0.4em; }
+
+/* A tile: a card in the dock, compact. Its name, cost and skill icons in its
+   class colour, a red corner when it is a weakness, and in play the uses and
+   tokens on it. The whole card is in the slot's hover popover. Sized in its
+   own `em`, which follows the dock. */
+.tile {
+    flex: none; width: 10.75em; box-sizing: border-box; position: relative; overflow: hidden;
+    border: 2px solid #888; border-radius: 6px; background: #faf9f6; color: #1a1a1a;
+    padding: 0.25em 0.4em; font-size: 0.8em; display: flex; flex-direction: column; gap: 0.2em;
+}
+.tile-head { display: flex; align-items: center; gap: 0.35em; min-width: 0; }
+.tile-cost {
+    flex: none; min-width: 1.35em; height: 1.35em; box-sizing: border-box; font-size: 0.9em;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: bold; border: 1px solid currentColor; border-radius: 50%;
+}
+.tile-cost.none { border-style: dotted; color: #999; }
+.tile-name { font-weight: bold; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-icons { display: flex; flex-wrap: wrap; gap: 0.15em; align-items: center; min-height: 1.2em; }
+.tile .chip { font-size: 0.85em; }
+.tile.weakness::after {
+    content: ""; position: absolute; top: 0; right: 0;
+    border: 0.55em solid #c0392b; border-left-color: transparent; border-bottom-color: transparent;
+}
+.tile-weakness { color: #c0392b; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
+.tile-exhausted { color: #b06f00; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
+/* A skill icon's stand-in: its letter on the skill's colour. */
+.skill-icon {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 1.15em; height: 1.15em; border-radius: 3px; vertical-align: middle;
+    color: #fff; font-size: 0.78em; font-weight: 800; font-style: normal;
+}
+.skill-icon--willpower { background: #4f5aa8; }
+.skill-icon--intellect { background: #c77c1e; }
+.skill-icon--combat { background: #a33a2a; }
+.skill-icon--agility { background: #2f8a4c; }
+.skill-icon--wild { background: #777; }
+.inv-skills { display: inline-flex; align-items: center; gap: 0.1em; }
+.skill-value { font-weight: 700; margin: 0 0.3em 0 0.1em; }
+/* The whole card, in a tile's popover: the popover is its frame. */
+.popover .card { width: auto; border: none; padding: 0; background: none; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
-/* Spatial board map (#497). Nodes are absolutely positioned at computed
-   left/top (set inline); the SVG line layer sits behind them. */
-.map { position: relative; margin: 1rem 0; }
-.map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
+/* Spatial board map (#497). The map fills its box, which it divides into
+   `--cols` x `--rows` equal cells (set inline by `map.rs`), and each node's
+   card is centred on its cell's centre, `--x` / `--y` (set inline too). So a
+   bigger box spreads the nodes rather than leaving dead space. The nodes grow
+   with the box too: the box is a size container, and the map's font size, which
+   every node, its text and its badges are sized in, is a share of the box's
+   width and height per cell (`cqw`, `cqh`), never below a `rem` floor. The SVG
+   line layer sits behind them.
+   The node is the card plus the token rail beside it, so it is shifted left by
+   half of what lies right of the card's centre, and the line layer with it:
+   the lines are drawn between cell centres and land on the cards. */
+/* The map pans by scrolling inside its box, never by scaling: a `transform`
+   would misplace the fixed context menu and popover inside it. Below its
+   minimum size, room for every node in its cell, the map overflows the box,
+   whose grid stretches it to fill otherwise. */
+.map-box {
+    flex: 1 1 auto; min-height: 0; align-self: stretch; display: grid; overflow: auto;
+    container-type: size;
+}
+.map {
+    --card-w: 11em; --card-h: 2.6em; --rail-w: 8em; --node-gap: 0.4em;
+    --node-w: calc(var(--card-w) + var(--node-gap) + var(--rail-w));
+    position: relative;
+    /* 4/5 of the largest size at which the minimum below still fits the box
+       (20.9em is a node and its margin), so the nodes fill their cells with
+       room for the lines between them. */
+    font-size: max(
+        0.85rem,
+        0.8 * min(100cqw / (var(--cols) * 20.9), 100cqh / (var(--rows) * 6.5))
+    );
+    min-width: calc(var(--cols) * (var(--node-w) + 1.5em));
+    min-height: calc(var(--rows) * 6.5em);
+    /* A box far wider than its nodes need gathers its columns in the middle
+       rather than spreading them to its edges, so the space between two nodes
+       is never most of the map. */
+    width: 100%; max-width: calc(var(--cols) * (var(--node-w) + 6em)); justify-self: center;
+}
+.map-lines {
+    position: absolute; top: 0; left: calc((var(--card-w) - var(--node-w)) / 2);
+    width: 100%; height: 100%; overflow: visible; z-index: 0; pointer-events: none;
+}
 .map-line { stroke: #999; stroke-width: 2; }
 /* The node itself is a transparent, borderless ROW: the location card on the
    left, the token rail on its right (#848). It has no height of its own and
    does not clip — before this, a fixed-height `overflow: hidden` node silently
    ate the tokens of any location whose printed text ran long (the Parlor). */
 .map-location {
-    position: absolute; z-index: 1; box-sizing: border-box; font-size: 0.8rem;
-    display: flex; flex-direction: row; align-items: flex-start; gap: 0.4rem;
+    position: absolute; z-index: 1; box-sizing: border-box; width: var(--node-w);
+    left: calc(var(--x) - var(--node-w) / 2); top: calc(var(--y) - var(--card-h) / 2);
+    display: flex; flex-direction: row; align-items: flex-start; gap: var(--node-gap);
 }
-/* The card is the bordered surface, and the only sized part. Its box comes from
-   `map.rs` as `--loc-card-w` / `--loc-card-h` (its `CARD_W` / `CARD_H`), which
-   is also where the connection lines anchor — the min-height keeps a short card
-   (an unrevealed node is barely a header tall) reaching its own anchor. */
+/* The card is the bordered surface, and the only sized part. Its centre is
+   where the connection lines anchor — the min-height keeps a short card (an
+   unrevealed node is barely a header tall) reaching its own anchor. */
 .loc-card {
-    flex: none; width: var(--loc-card-w); min-height: var(--loc-card-h); box-sizing: border-box;
-    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem;
-    display: flex; flex-direction: column; gap: 0.2rem;
+    flex: none; width: var(--card-w); min-height: var(--card-h); box-sizing: border-box;
+    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.4em;
+    display: flex; flex-direction: column; gap: 0.25em;
 }
 /* Unrevealed locations read as dimmed/face-down WITHOUT element opacity —
    opacity would let the connection lines behind the node bleed through. A muted
    opaque background + greyed text + dashed border keep the card solid. */
 .map-location.unrevealed .loc-card { background: #ececec; color: #888; border-style: dashed; }
 
-/* Header: `[shroud] Name ★victory [clues]` on three fixed columns, so both
-   numerals sit at the same x in every node and are read by position and colour
-   instead of by a label. */
+/* Header: `[shroud] Name [clues]` on three fixed columns, so both numerals sit
+   at the same x in every node and are read by position and colour instead of
+   by a label. The card is only this header; its printed text is in the
+   popover. */
 .loc-head {
-    display: grid; grid-template-columns: 1.35rem 1fr 1.35rem;
-    align-items: center; gap: 0.3rem; margin-bottom: 0.15rem;
+    display: grid; grid-template-columns: 1.6em 1fr 1.6em;
+    align-items: center; gap: 0.35em; margin-bottom: 0.18em;
 }
-/* The name yields first when the header is tight; the victory pip is its
-   sibling, not its content, so an ellipsis can never swallow the star. */
-.loc-title { display: flex; align-items: baseline; min-width: 0; }
+/* The name yields when the header is tight; its full text is its title. */
 .loc-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge {
-    width: 1.35rem; height: 1.35rem; box-sizing: border-box;
+    width: 1.8em; height: 1.8em; box-sizing: border-box;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    font-size: 0.88em; font-weight: 700; font-variant-numeric: tabular-nums;
     border-radius: 3px; border: 1px solid transparent;
 }
 /* Shroud — dark slate, hexagonal (the shape of the printed icon). Always left. */
@@ -87,14 +224,15 @@
 /* Unrevealed: the side with no shroud/clue value at all — a dashed placeholder,
    never a numeral. */
 .badge--unknown { background: #fff; color: #aaa; border: 1px dashed #bbb; border-radius: 3px; }
-.victory-pip { color: #b8860b; font-size: 0.72rem; font-weight: 700; margin-left: 0.25rem; }
+.victory-pip { color: #b8860b; font-size: 0.85em; font-weight: 700; margin-left: 0.35em; }
 
 /* The satellite rail beside the card. Each occupant is its own bordered box, so
    each can carry its own glow and its own context menu. */
-.node-tokens { flex: none; width: 150px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
-.node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1rem 0.25rem; }
+.node-tokens { flex: none; width: var(--rail-w); display: flex; flex-direction: column; gap: 0.2em; font-size: 0.92em; }
+.node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1em 0.25em; }
 .node-tokens:empty { display: none; }
-.inv-token { color: #157a3a; }
+/* A click opens the investigator's tab. */
+.inv-token { color: #157a3a; cursor: pointer; }
 .enemy-token { color: #a3261b; }
 /* A card put into play at a location, controlled by nobody (Lita Chantler
    01117 in the Parlor). They are in play, but in no investigator's play area. */
@@ -112,15 +250,14 @@
    location nodes are absolutely positioned, so a flex *row* would let a shrunk
    map overflow them onto the panel. The map reserves its inline height; the
    panel flows below it. (Children are centered via align-items: center.) */
-.board-main { display: flex; flex-direction: column; gap: 1rem; align-items: center; }
+.board-main {
+    flex: 1 1 auto; min-height: 0; align-self: stretch;
+    display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
+}
 
-/* Event log panel (#505): fixed-width column left of the board, scrolls with
-   the newest entry pinned to the bottom. Monospace so raw Debug lines align. */
-.layout { display: flex; gap: 1rem; align-items: flex-start; }
-/* Right of the event log: the board (the full-width header stays above the whole
-   row). min-width:0 lets the column shrink within the flex row instead of
-   overflowing. */
-.main-column { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+/* Below the header: the board. min-height:0 lets the column shrink to the
+   screen instead of overflowing it. */
+.main-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 /* The input-lockout wrapper around the board and its in-game modals. It adds no
    box, so the board stays a flex child of .main-column, and no stacking context,
    so the modals inside it stack against the screens outside it by z-index. */
@@ -133,30 +270,47 @@
     padding: 0.5rem 1rem; font-weight: bold;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
-.event-log { flex: 0 0 auto; width: 22rem; }
-/* Collapsed: shrink to a thin strip (just the expand toggle) so the log frees
-   the left side when hidden, instead of leaving a 22rem empty column. */
-.event-log.collapsed { width: auto; }
-.event-log.collapsed h2 { display: none; }
-.event-log h2 { font-size: 1rem; margin: 0 0 0.25rem; }
-.event-log-head { display: flex; align-items: baseline; justify-content: space-between; }
+/* The event log is a drawer. Closed, it is only its toggle, in the
+   header. Open, it lies over the board's left side, full height, scrolling with
+   the newest entry pinned to the bottom. Monospace so raw Debug lines align.
+   Toggle and drawer alike sit above the in-game modals' scrims and cards
+   (28/29), so the log can be read while a decision waits, and below the lock
+   banner (35) and the terminal overlays. */
+.event-log { position: relative; z-index: 30; }
+.event-log:not(.open) h2 { display: none; }
+.event-log.open {
+    position: fixed; top: 0; bottom: 0; left: 0; width: 24rem;
+    display: flex; flex-direction: column; gap: 0.25rem; box-sizing: border-box; padding: 0.5rem;
+    background: #fff; border-right: 1px solid #ccc; box-shadow: 4px 0 14px rgba(0, 0, 0, 0.2);
+}
+.event-log h2 { font-size: 1rem; margin: 0; }
+.event-log-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .log-toggle { font-size: 0.75rem; }
 .hidden { display: none; }
-.log-scroll { max-height: 80vh; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
+.log-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
 .log-batch { border-top: 1px solid #eee; padding: 0.25rem 0; }
 .log-batch:first-child { border-top: none; }
 .log-action { font-weight: 600; color: #2a4d69; }
 .log-event { white-space: pre-wrap; word-break: break-word; color: #333; }
 
-.turn-tracker { flex: 0 0 auto; width: 18rem; font-size: 0.8rem; }
-.turn-tracker h2 { font-size: 1rem; margin: 0 0 0.25rem; }
-.tracker-round { font-weight: 600; margin-bottom: 0.4rem; }
-.tracker-phase { border-left: 3px solid transparent; padding: 0.15rem 0 0.15rem 0.4rem; margin-bottom: 0.3rem; }
-.tracker-phase.current { border-left-color: #2f6fb3; background: #eef4fb; }
-.tracker-phase-label { font-weight: 600; }
-.tracker-phase ul { list-style: none; padding-left: 0.5rem; margin: 0.1rem 0; }
-.tracker-step { color: #444; }
-.tracker-window { color: #8a5a00; font-style: italic; }
+/* The round band: the round, then each phase's letter over its step numbers,
+   down the whole right edge. The phases stack one after another from the top,
+   each as tall as its steps, so no phase is stretched to a share of the band. */
+.turn-tracker {
+    flex: 0 0 3rem; display: flex; flex-direction: column; justify-content: flex-start;
+    overflow: hidden; padding: 0.4em 0; box-sizing: border-box;
+    border-left: 1px solid #ddd; background: #fafafa; line-height: 1.4;
+    font-family: system-ui, sans-serif; font-size: 0.72rem; text-align: center;
+}
+.tracker-round { font-weight: 700; font-size: 1.15em; padding-bottom: 0.3em; }
+.tracker-phase { border-top: 1px solid #ddd; }
+.tracker-phase.current { background: #fff4d0; }
+.tracker-phase ul { list-style: none; padding: 0.15em 0 0.3em; margin: 0; }
+.tracker-phase-label { font-weight: 600; color: #444; }
+.tracker-phase.current .tracker-phase-label { color: #000; }
+.tracker-step { color: #777; }
+.tracker-window { color: #bbb; }
+.tracker-phase.current :is(.tracker-step, .tracker-window) { color: #000; }
 
 /* --- Cards (hand slice) ------------------------------------------------ */
 .card-row {
@@ -243,13 +397,16 @@
 /* Interactivity S1/S2 (#536/#537): actionable glow + cursor-anchored menu. */
 /* `.map-location` sets `z-index:1` (a stacking context), so its fixed menu is
    confined to that band. The sticky `.action-bar` that used to overpaint it is
-   gone (#541), but the `z-index:20` lift stays: the banner (25) and the result
+   gone (#541), but the `z-index:20` lift stays: the log drawer (30) and the result
    modal still sit above the board, and removing layout code on a reasoning chain
    is how the map band breaks silently. Cards (`.card.actionable`) set no
    z-index, so their menu escapes to the root context. The lift is keyed on
    `.has-menu` rather than on `.actionable`, because a rail token can be the
    node's only actionable surface and its menu needs the same band (#847). */
 .map-location.has-menu { z-index: 20; }
+/* The same lift for a node whose popover is open: the popover is fixed, but it
+   still paints inside its node's band, under every later node. */
+.map-location.popover-open { z-index: 21; }
 /* Glow and cursor go on the card and its hit-layer, never on the node: the node
    also spans the token rail, and a rail token that shows a pointer while the
    hit-layer doesn't reach it is advertising a click that does nothing. Rail
@@ -257,11 +414,11 @@
 .map-location.actionable > .loc-card { box-shadow: 0 0 0 2px #e0b84c; }
 .map-location.actionable > .loc-card,
 .map-location.actionable > .menu-hit { cursor: pointer; }
-.card.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
+.card.actionable, .tile.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
 /* A map node's own hit-layer covers only its card: the token rail beside it
    holds separate surfaces, which carry their own menus. */
-.map-location > .menu-hit { right: auto; width: var(--loc-card-w); }
+.map-location > .menu-hit { right: auto; width: var(--card-w); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 15; }
 .context-menu {
     position: fixed; z-index: 20;
@@ -269,57 +426,66 @@
     background: #1b1b1b; border: 1px solid #666; padding: 4px;
 }
 .context-menu .menu-item { display: block; width: 100%; text-align: left; cursor: pointer; }
+/* The hover popover (`popover.rs`): a card's full printed text beside the
+   pointer. Fixed, so no overflow ancestor clips it; no pointer events, so it
+   never takes the hover from the card it describes. */
+.popover {
+    position: fixed; z-index: 30; pointer-events: none;
+    width: 20rem; box-sizing: border-box; padding: 0.4rem 0.6rem;
+    background: #fff; color: #222; border: 1px solid #333; border-radius: 4px;
+    box-shadow: 0 3px 12px #0004; font-size: 0.8rem; font-style: normal; font-weight: normal;
+    display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
+}
+.popover-title { font-weight: 600; }
+/* A popover opens away from the window's nearer edges (`popover.rs` picks the
+   direction from where the pointer is), so it stays on screen: its inline
+   corner is the one nearest the pointer, and these move the box to that
+   corner's far side. A transform on the popover itself moves nothing else. */
+.popover.opens-left { transform: translateX(-100%); }
+.popover.opens-up { transform: translateY(-100%); }
+.popover.opens-left.opens-up { transform: translate(-100%, -100%); }
 
 /* Interactivity S3 (#538): hand-card wrapper — glow (Play) / ring (select). */
-.hand-slot { position: relative; }
+.hand-slot, .card-slot { position: relative; border-radius: 6px; }
 .hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }
 .hand-slot.selectable { cursor: pointer; }
-/* The multi-select prompt banner is a required decision, so it's styled to be
-   hard to miss: a warm amber bar that slides up with a one-shot glow pulse, a
-   bold prompt, and a high-contrast primary Confirm. */
-@keyframes prompt-banner-in {
-    0%   { transform: translateY(100%); opacity: 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
-    60%  { transform: translateY(0); opacity: 1; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
-    72%  { box-shadow: 0 -4px 26px 4px rgba(232, 162, 61, 0.85); }
-    100% { transform: translateY(0); opacity: 1; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
+/* A prompt strip is a required decision, so it's styled to be hard to miss: a
+   warm amber box with a one-shot glow pulse, a bold prompt, and a
+   high-contrast primary Confirm. The open tab's strip sits in the dock, under
+   the investigator's name; the lead's strip sits above the tabs, in flow, in
+   the same colours. */
+@keyframes prompt-strip-in {
+    0%   { box-shadow: 0 0 0 0 rgba(232, 162, 61, 0); }
+    50%  { box-shadow: 0 0 18px 4px rgba(232, 162, 61, 0.85); }
+    100% { box-shadow: 0 0 0 0 rgba(232, 162, 61, 0); }
 }
-.prompt-banner {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 25;
-    display: flex; flex-direction: column; gap: 0.5rem;
-    background: #e8a23d; color: #1a1a1a;
-    padding: 0.75rem 1rem;
-    border-top: 2px solid #b06f00;
-    box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3);
-    animation: prompt-banner-in 0.4s ease-out;
-}
-/* One strip per investigator the prompt asks; the lead's strip sits above the
-   board, in flow, in the same colours. */
-.prompt-strip, .lead-strip { display: flex; align-items: center; gap: 0.75rem; }
-.prompt-strip + .prompt-strip { border-top: 1px solid #b06f00; padding-top: 0.5rem; }
-.lead-strip {
+.prompt-strip, .lead-strip {
+    display: flex; align-items: center; gap: 0.75rem;
     background: #e8a23d; color: #1a1a1a; border: 2px solid #b06f00; border-radius: 4px;
-    padding: 0.5rem 1rem; margin: 0.25rem 0;
+    padding: 0.5rem 1rem;
 }
+.prompt-strip { animation: prompt-strip-in 0.6s ease-out; }
+.lead-strip { margin: 0.25rem 0; }
 .strip-name { font-weight: bold; white-space: nowrap; }
 .strip-name::after { content: ":"; }
-:is(.prompt-banner, .lead-strip) .prompt { font-weight: bold; font-size: 1.05rem; margin-right: auto; }
-:is(.prompt-banner, .lead-strip) .provisional-verdict { font-style: italic; }
-:is(.prompt-banner, .lead-strip) .confirm {
+:is(.prompt-strip, .lead-strip) .prompt { font-weight: bold; font-size: 1.05rem; margin-right: auto; }
+:is(.prompt-strip, .lead-strip) .provisional-verdict { font-style: italic; }
+:is(.prompt-strip, .lead-strip) .confirm {
     background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
     padding: 0.4rem 1.1rem; font-weight: bold; cursor: pointer;
 }
-:is(.prompt-banner, .lead-strip) .pass {
+:is(.prompt-strip, .lead-strip) .pass {
     background: transparent; color: #1a1a1a; border: 1px solid #1a1a1a;
     border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer;
 }
-:is(.prompt-banner, .lead-strip) .banner-option {
+:is(.prompt-strip, .lead-strip) .strip-option {
     background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
     padding: 0.4rem 0.9rem; cursor: pointer;
 }
 
 /* Interactivity S4 (#539): in-play/threat card wrapper glow. */
-.card-slot { position: relative; }
+
 .card-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 
 /* Interactivity S6 (#541): the board is the whole input surface. The three named
@@ -489,7 +655,7 @@
     padding: 0.4rem 1rem; margin: 0.25rem 0;
 }
 
-/* On an investigator's heading while another account decides for them. */
+/* On an investigator's tab while another account decides for them. */
 @keyframes spinner-turn { to { transform: rotate(360deg); } }
 .spinner {
     display: inline-block; width: 0.8em; height: 0.8em; margin-left: 0.4em;

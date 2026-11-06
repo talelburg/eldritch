@@ -7,7 +7,7 @@
 //!
 //! It is offered in `SkillTestResolved`'s `when` cell, and the
 //! `SkillTestFailed` line is logged only after that cell, so the result modal
-//! has nothing to render yet. The banner reads the provisional verdict off the
+//! has nothing to render yet. The prompt strip reads the provisional verdict off the
 //! live test frame instead, and the engine keeps that frame current between
 //! two Lucky!s.
 //!

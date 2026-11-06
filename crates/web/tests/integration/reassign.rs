@@ -192,15 +192,22 @@ async fn picking_a_member_sends_the_reassignment() {
 async fn assigned_says_who_gave_whom_to_whom_and_moves_the_prompt_to_the_new_holder() {
     let handle = mount_as(YOU, None).await;
     assert!(
-        texts(&handle, ".prompt-banner").is_empty(),
+        texts(&handle, ".prompt-strip").is_empty(),
         "Wendy's mulligan is Sam's to answer"
     );
 
     arrives(&handle, sam_gave_wendy_to_tal()).await;
 
     assert_eq!(texts(&handle, ".toast"), ["Sam gave Wendy Adams to Tal"]);
+    // The prompt is unchanged, so Tal stays on Roland's tab, and Wendy's says
+    // he is needed there.
     assert_eq!(
-        texts(&handle, ".prompt-banner .confirm").len(),
+        texts(&handle, ".inv-tab.needs-you .tab-name"),
+        ["Wendy Adams"]
+    );
+    common::click_tab(&handle.root, "Wendy Adams").await;
+    assert_eq!(
+        texts(&handle, ".dock .prompt-strip .confirm").len(),
         1,
         "Tal answers Wendy's mulligan"
     );
@@ -210,7 +217,7 @@ async fn assigned_says_who_gave_whom_to_whom_and_moves_the_prompt_to_the_new_hol
 async fn a_not_yours_after_the_reassignment_that_caused_it_stays_quiet() {
     let mut handle = mount_as(SAM, None).await;
     // Sam keeps Wendy's opening hand as Wendy goes to Tal.
-    click(&handle, ".prompt-banner .confirm");
+    click(&handle, ".dock .prompt-strip .confirm");
     task::tick().await;
     assert!(matches!(sent(&mut handle), ClientMessage::Submit { .. }));
 
@@ -226,7 +233,7 @@ async fn a_not_yours_after_the_reassignment_that_caused_it_stays_quiet() {
 #[wasm_bindgen_test]
 async fn a_not_yours_for_an_investigator_still_held_is_still_a_client_bug() {
     let mut handle = mount_as(SAM, None).await;
-    click(&handle, ".prompt-banner .confirm");
+    click(&handle, ".dock .prompt-strip .confirm");
     task::tick().await;
     let _ = sent(&mut handle);
 

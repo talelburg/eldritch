@@ -8,6 +8,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, enemy, location};
+use leptos::prelude::Update as _;
 use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -49,6 +50,54 @@ fn line_count(root: &Element) -> u32 {
         .query_selector_all("line.map-line")
         .expect("query ok")
         .length()
+}
+
+/// The map pans inside its own box, and a store update, which re-renders the
+/// whole board, leaves the pan where it was put. The re-render rebuilds
+/// the box in place rather than replacing it; this pins that, since a
+/// replaced box would snap the map back to its corner on every update.
+#[wasm_bindgen_test]
+async fn the_map_keeps_its_pan_across_a_store_update() {
+    let state = GameStateBuilder::new()
+        .with_location(location(10).name("Hallway").connections([LocationId(11)]))
+        .with_location(location(11).name("Attic").connections([LocationId(10)]))
+        .with_investigator(test_support::test_investigator(1))
+        .build();
+    let handle = common::mount_board(
+        common::hello(state, EngineOutcome::Done),
+        &test_support::TEST_REGISTRY,
+    )
+    .await;
+    // A box far smaller than the map, scoped to this board alone, so the map
+    // overflows it whatever the page's own CSS.
+    handle.root.class_list().add_1("pan-test").expect("class");
+    let style = leptos::prelude::document()
+        .create_element("style")
+        .expect("create style");
+    style.set_text_content(Some(
+        ".pan-test .map-box { height: 20px; width: 20px; overflow: auto; }",
+    ));
+    handle.root.append_child(&style).expect("append style");
+    let map_box = |root: &Element| {
+        root.query_selector(".map-box")
+            .expect("query ok")
+            .expect("a .map-box")
+    };
+    let panned = map_box(&handle.root);
+    panned.set_scroll_top(15);
+    panned.set_scroll_left(12);
+    assert_eq!(panned.scroll_top(), 15, "the map overflows its box");
+
+    handle.store.update(|s| {
+        s.game.as_mut().expect("a game").round += 1;
+    });
+    task::tick().await;
+    let rerendered = map_box(&handle.root);
+    assert_eq!(
+        (rerendered.scroll_left(), rerendered.scroll_top()),
+        (12, 15),
+        "the pan survives the re-render"
+    );
 }
 
 #[wasm_bindgen_test]
@@ -113,9 +162,9 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
         "engaged enemy must NOT render in the location node; node = {:?}",
         node_text(&root, "Study"),
     );
-    // …but present in the investigator detail panel.
+    // …but present in the docked investigator panel.
     let panel = root
-        .query_selector(".investigators")
+        .query_selector(".dock")
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default();
@@ -293,6 +342,56 @@ fn node_class(root: &Element, loc_name: &str) -> String {
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
         .unwrap_or_default()
+}
+
+/// A location's popover sits above every menu, so clicking the Study for
+/// "Investigate" closes the Study's popover while the menu is open. It stays
+/// closed while the pointer moves about with the menu open, and comes back once
+/// the menu is dismissed.
+#[wasm_bindgen_test]
+async fn a_locations_popover_closes_while_its_menu_is_open() {
+    let outcome = test_support::awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(OptionId(0), "Investigate")
+            .at(OptionTarget::Location(LocationId(10)))],
+    );
+    let root = mount_interactive(study_game(), outcome).await.root;
+    let node = map_in(&root)
+        .query_selector(".map-location[data-loc=\"Study\"]")
+        .expect("query")
+        .expect("the Study node");
+    let find = |sel: &str| -> HtmlElement {
+        node.query_selector(sel)
+            .expect("query")
+            .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+            .unwrap_or_else(|| panic!("a {sel} in the Study node"))
+    };
+    common::hover(&node).await;
+    assert!(common::popover_text(&node).is_some(), "hovering opens it");
+
+    find(".menu-hit").click();
+    task::tick().await;
+    assert!(
+        node.query_selector(".context-menu")
+            .expect("query")
+            .is_some(),
+        "the click opens the menu"
+    );
+    assert_eq!(common::popover_text(&node), None, "the popover closes");
+    common::hover(&node).await;
+    assert_eq!(
+        common::popover_text(&node),
+        None,
+        "and stays closed while the menu is open"
+    );
+
+    find(".menu-backdrop").click();
+    task::tick().await;
+    common::hover(&node).await;
+    assert!(
+        common::popover_text(&node).is_some(),
+        "with the menu dismissed, hovering opens it again"
+    );
 }
 
 #[wasm_bindgen_test]

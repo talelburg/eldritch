@@ -28,7 +28,7 @@ async fn mount(state: GameState) -> Element {
     .root
 }
 
-/// The `.deck-count` text of each `.player-deck`, in panel order.
+/// The `.deck-count` text of each `.player-deck`: the docked investigator's.
 fn deck_counts(root: &Element) -> Vec<String> {
     let decks = root.query_selector_all(".player-deck").expect("query");
     (0..decks.length())
@@ -58,7 +58,10 @@ async fn each_panel_shows_its_own_deck_count() {
         .build();
 
     let root = mount(state).await;
-    assert_eq!(deck_counts(&root), vec!["3".to_string(), "1".to_string()]);
+    assert_eq!(deck_counts(&root), vec!["3".to_string()]);
+
+    common::click_tab(&root, "Test Investigator 2").await;
+    assert_eq!(deck_counts(&root), vec!["1".to_string()]);
 }
 
 #[wasm_bindgen_test]

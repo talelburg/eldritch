@@ -2,18 +2,20 @@
 //!
 //! Pure helpers (`parse_card_text`, field formatters, `card_face`) are
 //! native-testable, and the `Card` component assembles them into a faithful
-//! mini-card rectangle. `Card` itself is display-only: the wrappers
-//! [`HandCardView`] and [`InPlayCardView`] add the click handling and the
-//! action menus.
+//! mini-card rectangle. `Card` itself is display-only. The dock shows a card
+//! as a compact tile instead: the wrappers [`HandCardView`] and
+//! [`InPlayCardView`] render the tile, add the click handling and the action
+//! menus, and show the whole `Card` in a hover popover.
 
 use std::mem;
 
-use card_dsl::card_data::{CardKind, Class, SkillIcons, Slot};
+use card_dsl::card_data::{CardKind, Class, SkillIcons, SkillKind, Skills, Slot};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
 
 use crate::interaction::{self, MultiSelect, PendingOptions};
+use crate::popover::{Hover, Popover};
 use crate::registry;
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
@@ -231,6 +233,8 @@ pub struct CardFace {
     pub cost_corner: Option<String>,
     pub slot_chips: Vec<String>,
     pub skill_chips: Vec<(String, u8)>,
+    /// The icons `skill_chips` names, for a tile's icon stand-ins.
+    pub skill_icons: SkillIcons,
     pub is_fast: bool,
 }
 
@@ -251,6 +255,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: Some(cost_label(*cost)),
             slot_chips: slot_chips(slots),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
         CardKind::Event {
@@ -264,6 +269,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: Some(cost_label(*cost)),
             slot_chips: Vec::new(),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
         CardKind::Skill {
@@ -273,6 +279,7 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             cost_corner: None,
             slot_chips: Vec::new(),
             skill_chips: skill_chips(skill_icons),
+            skill_icons: *skill_icons,
             is_fast: false,
         }),
         _ => None,
@@ -384,17 +391,14 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
                 slot_chips,
                 skill_chips,
                 is_fast,
+                ..
             } = face;
             let cost_view = if is_in_play {
                 None
             } else {
                 cost_corner.map(|c| view! { <span class="card-cost">{c}</span> })
             };
-            let root_class = if exhausted {
-                format!("card {class_css} card--exhausted")
-            } else {
-                format!("card {class_css}")
-            };
+            let root_class = exhaustible_class(&format!("card {class_css}"), exhausted);
             let fast_view = is_fast.then(|| view! { <span class="card-fast">"Fast"</span> });
             let slot_views: Vec<_> = slot_chips
                 .into_iter()
@@ -455,9 +459,159 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
     }
 }
 
-/// Interactive wrapper for a hand card. Keeps [`Card`] display-only:
-/// reads `PendingOptions` + `MultiSelect` and either takes part in a live
-/// `PickMultiple` or offers a "Play …"
+/// A card's root class: `base`, dimmed by `card--exhausted` while it is
+/// `exhausted`.
+pub(crate) fn exhaustible_class(base: &str, exhausted: bool) -> String {
+    if exhausted {
+        format!("{base} card--exhausted")
+    } else {
+        base.to_owned()
+    }
+}
+
+/// The four skills, in the order a card prints their icons.
+const SKILLS: [SkillKind; 4] = [
+    SkillKind::Willpower,
+    SkillKind::Intellect,
+    SkillKind::Combat,
+    SkillKind::Agility,
+];
+
+/// A skill's name, as its icon's `title` and colour class, and the one-letter
+/// stand-in a tile shows for its icon until the game's own glyphs replace it.
+fn skill_label(skill: SkillKind) -> (&'static str, &'static str) {
+    match skill {
+        SkillKind::Willpower => ("willpower", "W"),
+        SkillKind::Intellect => ("intellect", "I"),
+        SkillKind::Combat => ("combat", "C"),
+        SkillKind::Agility => ("agility", "A"),
+    }
+}
+
+/// One icon's stand-in: `letter` on the colour of the icon `name`, named in
+/// its `title`.
+fn icon_view(name: &'static str, letter: &'static str) -> AnyView {
+    let class = format!("skill-icon skill-icon--{name}");
+    view! { <span class=class title=name>{letter}</span> }.into_any()
+}
+
+/// One skill icon's stand-in.
+fn skill_icon(skill: SkillKind) -> AnyView {
+    let (name, letter) = skill_label(skill);
+    icon_view(name, letter)
+}
+
+/// The stand-ins for every icon in `icons`, wild last, in printed order.
+fn icon_views(icons: SkillIcons) -> Vec<AnyView> {
+    SKILLS
+        .into_iter()
+        .flat_map(|skill| (0..icons.matching(skill)).map(move |_| skill_icon(skill)))
+        .chain((0..icons.wild).map(|_| icon_view("wild", "?")))
+        .collect()
+}
+
+/// A card as a compact tile: its name, its cost, its skill icons, a border in
+/// its class colour, a mark when it is a weakness, and, in play, its uses and
+/// the damage, horror and tokens on it. Its printed text is left to the hover
+/// popover the slot around it hosts, which shows the whole [`Card`].
+///
+/// `skills` replaces the icons with the investigator's skill values, for the
+/// investigator card. A code the registry can't resolve is a `card--unknown`
+/// tile showing the raw code, as the full card is.
+fn card_tile(code: &CardCode, in_play: Option<&CardInPlay>, skills: Option<Skills>) -> AnyView {
+    let Some(meta) = (registry::use_cards().metadata_for)(code) else {
+        return view! {
+            <div class="tile card--unknown">
+                <div class="tile-head"><span class="tile-name">{code.to_string()}</span></div>
+            </div>
+        }
+        .into_any();
+    };
+    let face = card_face(&meta.kind);
+    let class = match (&face, &meta.kind) {
+        (Some(face), _) => face.class_css,
+        (None, CardKind::Investigator { class, .. }) => class_css(*class),
+        // A treachery's metadata carries no class: a weakness is a neutral
+        // player card, and any other is an encounter card, a Mythos one.
+        (None, CardKind::Treachery { .. }) if meta.is_weakness() => class_css(Class::Neutral),
+        (None, CardKind::Treachery { .. }) => class_css(Class::Mythos),
+        (None, _) => "card--generic",
+    };
+    let is_investigator = matches!(meta.kind, CardKind::Investigator { .. });
+    // A skill, a treachery and anything else with no cost shows a dash, so
+    // the name sits at the same place on every tile.
+    let cost =
+        (!is_investigator).then(|| match face.as_ref().and_then(|f| f.cost_corner.clone()) {
+            Some(cost) => view! { <span class="tile-cost">{cost}</span> }.into_any(),
+            None => view! { <span class="tile-cost none">"–"</span> }.into_any(),
+        });
+    let icons: Vec<AnyView> = match skills {
+        None => face.map(|f| icon_views(f.skill_icons)).unwrap_or_default(),
+        Some(s) => {
+            let values: Vec<_> = SKILLS
+                .into_iter()
+                .map(|skill| {
+                    view! { {skill_icon(skill)}<span class="skill-value">{s.value(skill)}</span> }
+                })
+                .collect();
+            vec![view! { <span class="inv-skills">{values}</span> }.into_any()]
+        }
+    };
+    let weakness = meta.is_weakness();
+    let exhausted = in_play.is_some_and(|c| c.exhausted);
+    let live: Vec<_> = in_play
+        .map(|inst| live_state_chips(inst, &meta.kind))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| view! { <span class="chip chip--live">{s}</span> })
+        .collect();
+    let mut root = exhaustible_class(&format!("tile {class}"), exhausted);
+    if weakness {
+        root.push_str(" weakness");
+    }
+    view! {
+        <div class=root>
+            <div class="tile-head">
+                {cost}
+                <span class="tile-name">{meta.name.clone()}</span>
+            </div>
+            <div class="tile-icons">
+                {icons}
+                {weakness.then(|| view! { <span class="tile-weakness">"Weakness"</span> })}
+                {exhausted.then(|| view! { <span class="tile-exhausted">"Exhausted"</span> })}
+                {live}
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
+/// A card's tile and, while `hover` is open, the whole [`Card`] in a popover:
+/// the inside of a hand or in-play slot, which hosts the hover.
+fn tile_with_popover(
+    code: CardCode,
+    in_play: Option<CardInPlay>,
+    skills: Option<Skills>,
+    hover: Hover,
+) -> impl IntoView {
+    let tile = card_tile(&code, in_play.as_ref(), skills);
+    view! {
+        {tile}
+        <Popover hover=hover>
+            {
+                let code = code.clone();
+                match in_play.clone() {
+                    Some(instance) => view! { <Card code=code in_play=instance/> }.into_any(),
+                    None => view! { <Card code=code/> }.into_any(),
+                }
+            }
+        </Popover>
+    }
+}
+
+/// Interactive wrapper for a hand card, shown as a tile with the whole card in
+/// its hover popover. Reads `PendingOptions` + `MultiSelect` and either takes
+/// part in a live `PickMultiple` or offers a "Play …"
 /// [`menu_layer`](crate::interaction::menu_layer) via the card's `HandCard`
 /// anchor. The two modes are mutually exclusive.
 ///
@@ -473,8 +627,14 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
     let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     if let Some(ms) = use_context::<MultiSelect>() {
         if ms.active.get() {
+            let hover = Hover::new();
             let Some(id) = menu_opts.first().map(|opt| opt.id.0) else {
-                return view! { <div class="hand-slot"><Card code=code/></div> }.into_any();
+                return view! {
+                    <div class="hand-slot" {..hover.handlers()}>
+                        {tile_with_popover(code, None, None, hover)}
+                    </div>
+                }
+                .into_any();
             };
             let selected = ms.selected;
             return view! {
@@ -486,19 +646,20 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
                             s.insert(id);
                         }
                     })
+                    {..hover.handlers()}
                 >
-                    <Card code=code/>
+                    {tile_with_popover(code, None, None, hover)}
                 </div>
             }
             .into_any();
         }
     }
     let actionable = !menu_opts.is_empty();
-    #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
+    let hover = Hover::beside_menu(open);
     view! {
-        <div class="hand-slot" class:actionable=actionable>
-            <Card code=code/>
+        <div class="hand-slot" class:actionable={actionable} {..hover.handlers()}>
+            {tile_with_popover(code, None, None, hover)}
             {
                 // wasm-only Play trigger + menu (web_sys / OutboundTx).
                 #[cfg(target_arch = "wasm32")]
@@ -509,12 +670,18 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
     .into_any()
 }
 
-/// Interactive wrapper for an in-play / threat-area card. Keeps [`Card`]
-/// display-only: reads `PendingOptions` and, via the card's `CardInstance` anchor,
-/// offers an Activate (open-turn) / Trigger (reaction-window) menu. No selection
-/// mode — that is hand-only.
+/// Interactive wrapper for an in-play / threat-area card, shown as a tile with
+/// the whole card in its hover popover. Reads `PendingOptions` and, via the
+/// card's `CardInstance` anchor, offers an Activate (open-turn) / Trigger
+/// (reaction-window) menu. No selection mode — that is hand-only.
+///
+/// `skills`, for the investigator card, puts the investigator's skill values on
+/// the tile.
 #[component]
-pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
+pub fn InPlayCardView(
+    instance: CardInPlay,
+    #[prop(optional)] skills: Option<Skills>,
+) -> impl IntoView {
     let code = instance.code.clone();
     let instance_id = instance.instance_id;
     let pending = use_context::<PendingOptions>()
@@ -522,11 +689,11 @@ pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
         .unwrap_or_default();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::CardInstance(instance_id));
     let actionable = !menu_opts.is_empty();
-    #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
+    let hover = Hover::beside_menu(open);
     view! {
-        <div class="card-slot" class:actionable=actionable>
-            <Card code=code in_play=instance/>
+        <div class="card-slot" class:actionable={actionable} {..hover.handlers()}>
+            {tile_with_popover(code, Some(instance), skills, hover)}
             {
                 // wasm-only Activate/Trigger trigger + menu (web_sys / OutboundTx).
                 #[cfg(target_arch = "wasm32")]

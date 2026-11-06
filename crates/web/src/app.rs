@@ -16,9 +16,9 @@ use crate::home::HomeView;
 use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 #[cfg(target_arch = "wasm32")]
 use crate::lobby::LobbyScreen;
+use crate::prompt_layout::{OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
-use crate::prompt_banner::{LeadStrip, PromptBanner};
-use crate::prompt_layout::WaitingAboveBoard;
+use crate::prompt_strip::LeadStrip;
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]
@@ -50,17 +50,20 @@ pub fn App() -> impl IntoView {
         transport::start(store);
     }
 
+    // One screen, which never scrolls: the header and the main column on the
+    // left, the round band down the whole right edge. The event log is a
+    // drawer, so it takes no column: closed, it is a toggle in the header.
     view! {
-        <main>
-            <header class="app-header">
-                <h1>"Eldritch"</h1>
-                <StatusBarView/>
-            </header>
-            <div class="layout">
-                <EventLogView/>
+        <main class="app-shell">
+            <div class="app-column">
+                <header class="app-header">
+                    <h1>"Eldritch"</h1>
+                    <EventLogView/>
+                    <StatusBarView/>
+                </header>
                 <MainColumn/>
-                <TurnTrackerView/>
             </div>
+            <TurnTrackerView/>
         </main>
     }
 }
@@ -68,8 +71,9 @@ pub fn App() -> impl IntoView {
 /// Provide the board's derived contexts from `store`.
 ///
 /// They are the live prompt's options, the confirm anchor, whether a decision
-/// modal is up, and the multi-select state with the effect that clears it. The
-/// store, the card registry and the outbound channel are the caller's.
+/// modal is up, the multi-select state with the effect that clears it, and the
+/// open tab with the effect that settles it. The store, the card registry and
+/// the outbound channel are the caller's.
 ///
 /// `App` calls it, and so does the web tests' `mount_board`, so a context the
 /// app adds here reaches every board test without a test being edited.
@@ -92,7 +96,7 @@ pub fn provide_board_contexts(store: StoreSignal) {
     provide_context(DecisionLive(decision_live));
 
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
-    // the prompt banner; cleared whenever a PickMultiple isn't live.
+    // the prompt strips; cleared whenever a PickMultiple isn't live.
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let multi_active = Signal::derive(move || store.with(interaction::is_multi_select));
     Effect::new(move |_| {
@@ -104,6 +108,21 @@ pub fn provide_board_contexts(store: StoreSignal) {
         active: multi_active,
         selected,
     });
+
+    // The open tab, which a tab or a map token opens with a click. The effect
+    // records what `layout` opens on each store change: an account holding
+    // investigators settles there when the board first has a game, a viewer
+    // follows the active investigator until a click, and a new prompt for one
+    // of this account's investigators opens the first it asks.
+    let open_tab = RwSignal::new(OpenTab::default());
+    Effect::new(move |_| {
+        let current = open_tab.get_untracked();
+        let next = store.with(|s| current.settle(s));
+        if next != current {
+            open_tab.set(next);
+        }
+    });
+    provide_context(OpenTabSignal(open_tab));
 }
 
 /// The main column: the board and its in-game modals inside the lockout
@@ -160,8 +179,8 @@ fn BoardStrip() -> impl IntoView {
     }
 }
 
-/// The board's in-game modals: the skill-test result, the decision modal and
-/// the prompt banner. Each is its own viewport-fixed overlay, and all of them
+/// The board's in-game modals: the skill-test result and
+/// the decision modal. Each is its own viewport-fixed overlay, and all of them
 /// sit inside the lockout wrapper with the board.
 #[component]
 fn BoardOverlays() -> impl IntoView {
@@ -171,7 +190,6 @@ fn BoardOverlays() -> impl IntoView {
             { view! {
                 <SkillTestResultView/>
                 <DecisionView/>
-                <PromptBanner/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }
