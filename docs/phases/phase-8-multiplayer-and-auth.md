@@ -130,7 +130,8 @@ landed, before phase 9 is scoped.
 #65 (✅ PR #1321), which records each card's committer. #1360 (the round band
 lights Investigation during the setup mulligan), #1361 (activated abilities
 labelled by index, not by card) and #1362 (untracked signal reads in the card
-views and the event log) are standalone.
+views and the event log) are standalone. #1364, the game's symbols as glyphs
+from the `arkhamicons` font, follows #863 (✅ PR #1359).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
