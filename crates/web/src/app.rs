@@ -16,9 +16,9 @@ use crate::home::HomeView;
 use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 #[cfg(target_arch = "wasm32")]
 use crate::lobby::LobbyScreen;
+use crate::prompt_layout::{OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
 use crate::prompt_strip::LeadStrip;
-use crate::prompt_layout::{OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
 #[cfg(target_arch = "wasm32")]

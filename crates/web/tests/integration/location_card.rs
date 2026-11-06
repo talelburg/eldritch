@@ -77,11 +77,7 @@ fn node(name: &str) -> Element {
 }
 
 /// Mount `game`'s map over `cards`, and return the `name` node.
-async fn mount_node(
-    game: GameState,
-    cards: &'static CardRegistry,
-    name: &str,
-) -> Element {
+async fn mount_node(game: GameState, cards: &'static CardRegistry, name: &str) -> Element {
     mount::mount_to_body(move || {
         provide_cards(cards);
         map::location_map(&game)

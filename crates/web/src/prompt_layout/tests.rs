@@ -495,7 +495,11 @@ fn a_window_asking_roland_and_agnes_keeps_rolands_tab_and_leaves_daisys() {
     assert_eq!(needing_you(&from_roland), vec![AGNES]);
 
     let from_daisy = layout(&tal, open_before(&tal, DAISY));
-    assert_eq!(from_daisy.open_investigator, Some(ROLAND), "Roland sits first of Tal's");
+    assert_eq!(
+        from_daisy.open_investigator,
+        Some(ROLAND),
+        "Roland sits first of Tal's"
+    );
     assert_eq!(from_daisy.dock_strip, Some(ROLAND));
     assert_eq!(needing_you(&from_daisy), vec![AGNES]);
 }
@@ -545,7 +549,11 @@ fn a_lead_decision_stays_above_the_tabs_whichever_is_open() {
     let tal = seen_by(TAL, rats_move());
     for open in [ROLAND, DAISY] {
         let placed = layout(&tal, open_before(&tal, open));
-        assert_eq!(placed.open_investigator, Some(open), "a lead decision switches nothing");
+        assert_eq!(
+            placed.open_investigator,
+            Some(open),
+            "a lead decision switches nothing"
+        );
         assert_eq!(placed.above_board, Some(AboveBoard::LeadStrip(ROLAND)));
         assert_eq!(needing_you(&placed), vec![]);
         assert_eq!(placed.dock_strip, None);

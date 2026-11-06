@@ -56,7 +56,8 @@ pub(crate) async fn unhover(host: &Element) {
 /// Dispatch the mouse event `kind` on `host`, and let the page react.
 async fn pointer(host: &Element, kind: &str) {
     let event = MouseEvent::new(kind).expect("a mouse event");
-    host.dispatch_event(&event).expect("dispatch the mouse event");
+    host.dispatch_event(&event)
+        .expect("dispatch the mouse event");
     task::tick().await;
 }
 
