@@ -4,14 +4,13 @@
 //! games" listing. Neither is a ban: opening the link again rejoins.
 
 use protocol::lobby::LobbyRefusal;
-use protocol::{AccountId, ClientMessage, ServerMessage, CLOSE_NO_LONGER_A_MEMBER};
+use protocol::{AccountId, ClientMessage, CLOSE_NO_LONGER_A_MEMBER};
 
 use super::{
-    daisy_roland_agnes, lead, member_names, recv_lobby, recv_refusal, seating, tal_and_sam,
-    TwoMembers, AGNES, DAISY, ROLAND,
+    assert_still_open, daisy_roland_agnes, lead, listed_for, member_names, recv_lobby,
+    recv_refusal, seating, tal_and_sam, TwoMembers, AGNES, DAISY, ROLAND,
 };
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
-use crate::your_games;
 
 /// [`tal_and_sam`] with Sam's Daisy leading, then Tal's Roland and Agnes, and
 /// a second socket of Sam's open on the lobby, which has read its `Lobby`.
@@ -22,15 +21,6 @@ async fn sam_in_two_tabs() -> (TwoMembers, Client) {
     let (_, _, joined) = recv_lobby(&mut sam_second).await;
     assert!(!joined, "Sam is already a member");
     (members, sam_second)
-}
-
-/// Whether the account named `name`'s "Your games" listing has the game
-/// `game_id`.
-async fn listed_for(members: &TwoMembers, name: &str) -> bool {
-    your_games::listing_for(members.addr, name)
-        .await
-        .iter()
-        .any(|entry| entry.game_id.as_str() == members.game_id)
 }
 
 /// What Tal sees once Sam has gone, by either route: Sam's Daisy is free, the
@@ -50,8 +40,14 @@ async fn assert_sam_is_gone(mut members: TwoMembers, mut sam_second: Client) {
     common::assert_closed_with(&mut members.sam_ws, CLOSE_NO_LONGER_A_MEMBER).await;
     common::assert_closed_with(&mut sam_second, CLOSE_NO_LONGER_A_MEMBER).await;
 
-    assert!(!listed_for(&members, OTHER_ACCOUNT).await, "off Sam's list");
-    assert!(listed_for(&members, TEST_ACCOUNT).await, "still on Tal's");
+    assert!(
+        !listed_for(members.addr, &members.game_id, OTHER_ACCOUNT).await,
+        "off Sam's list"
+    );
+    assert!(
+        listed_for(members.addr, &members.game_id, TEST_ACCOUNT).await,
+        "still on Tal's"
+    );
 
     let mut sam_again = common::connect_as(members.addr, &members.game_id, OTHER_ACCOUNT).await;
     let (you, view, joined) = recv_lobby(&mut sam_again).await;
@@ -68,7 +64,7 @@ async fn assert_sam_is_gone(mut members: TwoMembers, mut sam_second: Client) {
     let (_, view, _) = recv_lobby(&mut members.tal_ws).await;
     assert_eq!(member_names(&view), [TEST_ACCOUNT, OTHER_ACCOUNT]);
     assert!(
-        listed_for(&members, OTHER_ACCOUNT).await,
+        listed_for(members.addr, &members.game_id, OTHER_ACCOUNT).await,
         "back on Sam's list"
     );
 }
@@ -142,11 +138,7 @@ async fn a_members_remove_and_the_creators_leave_are_refused_and_change_nothing(
     );
 
     // Nothing was broadcast, and a fresh socket reads the lobby as it was.
-    common::send(&mut sam_second, &ClientMessage::Ping).await;
-    match common::recv_within(&mut sam_second).await {
-        ServerMessage::Pong => {}
-        other => panic!("no Lobby reaches Sam's other socket first, got {other:?}"),
-    }
+    assert_still_open(&mut sam_second).await;
     let mut tal_again = common::connect(members.addr, &members.game_id).await;
     let (_, view, _) = recv_lobby(&mut tal_again).await;
     assert_eq!(member_names(&view), [TEST_ACCOUNT, OTHER_ACCOUNT]);
@@ -159,5 +151,5 @@ async fn a_members_remove_and_the_creators_leave_are_refused_and_change_nothing(
         ]
     );
     assert_eq!(lead(&view), Some(DAISY));
-    assert!(listed_for(&members, OTHER_ACCOUNT).await);
+    assert!(listed_for(members.addr, &members.game_id, OTHER_ACCOUNT).await);
 }

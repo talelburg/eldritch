@@ -9,15 +9,15 @@
 use game_core::state::investigator::InvestigatorId;
 use protocol::{AccountId, Assignment, ClientMessage, ReassignRefusal, Refusal, ServerMessage};
 
-use super::start::{keep_opening_hand, recv_hello, started_by_tal_and_sam, JO};
+use super::{keep_opening_hand, recv_hello, started_by_tal_and_sam, JO};
 use crate::common::{self, Client, OTHER_ACCOUNT};
 
 /// Daisy Walker, Sam's investigator, whose mulligan the game awaits.
-const DAISY: InvestigatorId = InvestigatorId(1);
+const DAISY_ID: InvestigatorId = InvestigatorId(1);
 /// Roland Banks, Tal's.
-const ROLAND: InvestigatorId = InvestigatorId(2);
+const ROLAND_ID: InvestigatorId = InvestigatorId(2);
 /// Agnes Baker, Tal's.
-const AGNES: InvestigatorId = InvestigatorId(3);
+const AGNES_ID: InvestigatorId = InvestigatorId(3);
 
 /// Send a reassignment of `investigator` to `to` on `ws`.
 async fn reassign(ws: &mut Client, investigator: InvestigatorId, to: AccountId) {
@@ -47,16 +47,16 @@ async fn recv_reassign_refusal(ws: &mut Client) -> ReassignRefusal {
 
 /// Every investigator held by `tal`, as reassigning Daisy to Tal leaves them.
 fn all_to(tal: AccountId) -> Assignment {
-    Assignment::all_to(tal, [DAISY, ROLAND, AGNES])
+    Assignment::all_to(tal, [DAISY_ID, ROLAND_ID, AGNES_ID])
 }
 
 #[tokio::test]
 async fn sam_reassigns_daisy_to_tal_who_answers_the_mulligan_already_waiting() {
     let mut members = started_by_tal_and_sam().await;
 
-    reassign(&mut members.sam_ws, DAISY, members.tal).await;
+    reassign(&mut members.sam_ws, DAISY_ID, members.tal).await;
 
-    let told = (members.sam, DAISY, all_to(members.tal));
+    let told = (members.sam, DAISY_ID, all_to(members.tal));
     assert_eq!(recv_assigned(&mut members.sam_ws).await, told);
     assert_eq!(recv_assigned(&mut members.tal_ws).await, told);
 
@@ -68,7 +68,7 @@ async fn sam_reassigns_daisy_to_tal_who_answers_the_mulligan_already_waiting() {
 
     common::send(&mut members.tal_ws, &keep_opening_hand(1)).await;
     match common::recv_within(&mut members.tal_ws).await {
-        ServerMessage::Applied(applied) => assert_eq!(applied.by, DAISY),
+        ServerMessage::Applied(applied) => assert_eq!(applied.by, DAISY_ID),
         other => panic!("expected Tal's answer for Daisy applied, got {other:?}"),
     }
 }
@@ -81,7 +81,7 @@ async fn sam_reassigns_daisy_to_tal_who_answers_the_mulligan_already_waiting() {
 async fn an_answer_racing_the_reassignment_is_refused_only_after_assigned() {
     let mut members = started_by_tal_and_sam().await;
 
-    reassign(&mut members.tal_ws, DAISY, members.tal).await;
+    reassign(&mut members.tal_ws, DAISY_ID, members.tal).await;
     common::send(&mut members.sam_ws, &keep_opening_hand(1)).await;
 
     let first = common::recv_within(&mut members.sam_ws).await;
@@ -97,9 +97,9 @@ async fn an_answer_racing_the_reassignment_is_refused_only_after_assigned() {
 async fn the_creator_reassigns_an_investigator_another_account_holds() {
     let mut members = started_by_tal_and_sam().await;
 
-    reassign(&mut members.tal_ws, DAISY, members.tal).await;
+    reassign(&mut members.tal_ws, DAISY_ID, members.tal).await;
 
-    let told = (members.tal, DAISY, all_to(members.tal));
+    let told = (members.tal, DAISY_ID, all_to(members.tal));
     assert_eq!(recv_assigned(&mut members.tal_ws).await, told);
     assert_eq!(recv_assigned(&mut members.sam_ws).await, told);
 }
@@ -108,7 +108,7 @@ async fn the_creator_reassigns_an_investigator_another_account_holds() {
 async fn a_holder_may_not_reassign_another_accounts_investigator() {
     let mut members = started_by_tal_and_sam().await;
 
-    reassign(&mut members.sam_ws, ROLAND, members.sam).await;
+    reassign(&mut members.sam_ws, ROLAND_ID, members.sam).await;
 
     assert_eq!(
         recv_reassign_refusal(&mut members.sam_ws).await,
@@ -123,7 +123,7 @@ async fn a_member_holding_no_investigator_is_refused() {
     let mut jo_ws = common::connect_as(members.addr, &members.game_id, JO).await;
     let _ = recv_hello(&mut jo_ws).await;
 
-    reassign(&mut jo_ws, DAISY, jo).await;
+    reassign(&mut jo_ws, DAISY_ID, jo).await;
 
     assert_eq!(
         recv_reassign_refusal(&mut jo_ws).await,
@@ -137,7 +137,7 @@ async fn a_reassignment_to_an_account_that_is_not_a_member_is_refused() {
     // Jo is on the allowlist but never opened the game's link.
     let jo = common::add_account(&members.pool, JO).await;
 
-    reassign(&mut members.tal_ws, AGNES, jo).await;
+    reassign(&mut members.tal_ws, AGNES_ID, jo).await;
 
     assert_eq!(
         recv_reassign_refusal(&mut members.tal_ws).await,
@@ -149,7 +149,7 @@ async fn a_reassignment_to_an_account_that_is_not_a_member_is_refused() {
 async fn a_reassignment_to_the_current_holder_is_refused() {
     let mut members = started_by_tal_and_sam().await;
 
-    reassign(&mut members.tal_ws, DAISY, members.sam).await;
+    reassign(&mut members.tal_ws, DAISY_ID, members.sam).await;
 
     assert_eq!(
         recv_reassign_refusal(&mut members.tal_ws).await,
@@ -160,7 +160,7 @@ async fn a_reassignment_to_the_current_holder_is_refused() {
 #[tokio::test]
 async fn a_reassignment_survives_a_restart() {
     let mut members = started_by_tal_and_sam().await;
-    reassign(&mut members.sam_ws, DAISY, members.tal).await;
+    reassign(&mut members.sam_ws, DAISY_ID, members.tal).await;
     let _ = recv_assigned(&mut members.sam_ws).await;
 
     // A second server on the same database loads the game from its rows.
@@ -182,13 +182,16 @@ async fn jo_who_opened_the_link_after_start_can_be_reassigned_to() {
     // The Members naming Jo.
     let _ = common::recv_within(&mut members.tal_ws).await;
 
-    reassign(&mut members.tal_ws, AGNES, jo).await;
+    reassign(&mut members.tal_ws, AGNES_ID, jo).await;
 
-    let assigned =
-        Assignment::from_iter([(DAISY, members.sam), (ROLAND, members.tal), (AGNES, jo)]);
+    let assigned = Assignment::from_iter([
+        (DAISY_ID, members.sam),
+        (ROLAND_ID, members.tal),
+        (AGNES_ID, jo),
+    ]);
     assert_eq!(
         recv_assigned(&mut jo_ws).await,
-        (members.tal, AGNES, assigned)
+        (members.tal, AGNES_ID, assigned)
     );
 }
 
@@ -196,7 +199,7 @@ async fn jo_who_opened_the_link_after_start_can_be_reassigned_to() {
 async fn a_reassignment_in_the_lobby_is_refused_as_not_started() {
     let mut members = super::tal_and_sam().await;
 
-    reassign(&mut members.tal_ws, DAISY, members.sam).await;
+    reassign(&mut members.tal_ws, DAISY_ID, members.sam).await;
 
     match common::recv_within(&mut members.tal_ws).await {
         ServerMessage::Rejected(Refusal::NotStarted) => {}

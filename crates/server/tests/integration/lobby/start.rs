@@ -5,20 +5,20 @@
 //! Start seats real investigators with their default decks.
 
 use cards::decks::WeaknessChoice;
-use game_core::action::{InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::Registries;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::CardCode;
 use protocol::lobby::{Direction, LobbyRefusal, Member};
-use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, Refusal, ServerMessage};
-use scenarios::the_gathering::ID as GATHERING;
+use protocol::{AccountId, Assignment, ClientMessage, GameId, Refusal, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
 
 use super::{
-    daisy_roland_agnes, move_in_seating, recv_lobby, recv_refusal, set_lead, take,
-    take_seen_by_both, tal_and_sam_at, TwoMembers, AGNES, DAISY, ROLAND, WENDY,
+    daisy_roland_agnes, keep_opening_hand, move_in_seating, recv_hello, recv_lobby, recv_refusal,
+    set_lead, started_by_tal_and_sam, take, take_seen_by_both, tal_and_sam_at_the_gathering, AGNES,
+    DAISY, JO, ROLAND, WENDY,
 };
 use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
 
@@ -35,11 +35,6 @@ const NO_RANDOM_WEAKNESS: Registries = Registries {
     ..server::REGISTRIES
 };
 
-/// Tal and Sam's lobby of The Gathering, served `registries`.
-async fn tal_and_sam_at_the_gathering(registries: Registries) -> TwoMembers {
-    tal_and_sam_at(registries, GATHERING).await
-}
-
 /// The roster and lead index stored as the creation inputs of the game
 /// `game_id`.
 async fn stored_inputs(pool: &SqlitePool, game_id: &str) -> (Vec<RosterEntry>, i64) {
@@ -53,26 +48,6 @@ async fn stored_inputs(pool: &SqlitePool, game_id: &str) -> (Vec<RosterEntry>, i
         serde_json::from_str(&roster).expect("the stored roster parses"),
         lead,
     )
-}
-
-/// The next frame on `ws`, which must be a `Hello`: its `you` and assignment.
-pub(super) async fn recv_hello(ws: &mut Client) -> (AccountId, Assignment) {
-    match common::recv_within(ws).await {
-        ServerMessage::Hello { you, assigned, .. } => (you, assigned),
-        other => panic!("expected a Hello, got {other:?}"),
-    }
-}
-
-/// Keep the opening hand of `investigator`, answering the mulligan prompt at
-/// the start of the log.
-pub(super) fn keep_opening_hand(investigator: u32) -> ClientMessage {
-    ClientMessage::Submit {
-        prompt: LogPosition(0),
-        action: PlayerAction::ResolveInput {
-            investigator: InvestigatorId(investigator),
-            response: InputResponse::PickMultiple { selected: vec![] },
-        },
-    }
 }
 
 #[tokio::test]
@@ -248,20 +223,6 @@ async fn a_start_the_engine_rejects_is_refused_and_the_lobby_is_unchanged() {
     let (_, after, _) = recv_lobby(&mut members.sam_ws).await;
     assert_eq!(after.picks, before.picks[..2]);
     assert_eq!(after.lead, before.lead);
-}
-
-/// A third account, which opens the game's link only after Start.
-pub(super) const JO: &str = "Jo";
-
-/// Tal and Sam's game of The Gathering, started from Sam's Daisy and Tal's
-/// Roland and Agnes, with each socket's `Hello` read.
-pub(super) async fn started_by_tal_and_sam() -> TwoMembers {
-    let mut members = tal_and_sam_at_the_gathering(server::REGISTRIES).await;
-    daisy_roland_agnes(&mut members).await;
-    common::send(&mut members.tal_ws, &ClientMessage::Start).await;
-    let _ = recv_hello(&mut members.tal_ws).await;
-    let _ = recv_hello(&mut members.sam_ws).await;
-    members
 }
 
 /// The next frame on `ws`, which must be a `Hello`: the creator it names and

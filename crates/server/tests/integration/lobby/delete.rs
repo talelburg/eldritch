@@ -5,12 +5,14 @@
 
 use std::net::SocketAddr;
 
-use protocol::{ClientMessage, ServerMessage, CLOSE_GAME_DELETED, CLOSE_GAME_NOT_FOUND};
+use protocol::{CLOSE_GAME_DELETED, CLOSE_GAME_NOT_FOUND};
 use reqwest::StatusCode;
 
-use super::start::{keep_opening_hand, started_by_tal_and_sam};
-use super::{daisy_roland_agnes, recv_lobby, tal_and_sam, TwoMembers};
-use crate::common::{self, Client, OTHER_ACCOUNT, TEST_ACCOUNT};
+use super::{
+    assert_still_open, daisy_roland_agnes, keep_opening_hand, listed_for, recv_lobby,
+    started_by_tal_and_sam, tal_and_sam, TwoMembers,
+};
+use crate::common::{self, OTHER_ACCOUNT, TEST_ACCOUNT};
 use crate::your_games;
 
 /// `DELETE /games/{game_id}` at `addr`, signed in as the account named
@@ -28,14 +30,6 @@ async fn delete_as(addr: SocketAddr, game_id: &str, name: Option<&str>) -> Statu
     .status()
 }
 
-/// Whether the account named `name`'s "Your games" lists `game_id`.
-async fn listed_for(addr: SocketAddr, game_id: &str, name: &str) -> bool {
-    your_games::listing_for(addr, name)
-        .await
-        .iter()
-        .any(|entry| entry.game_id.as_str() == game_id)
-}
-
 /// What every successful delete comes to: both sockets close as deleted, the
 /// game is on neither member's list, and opening the link again finds no
 /// game.
@@ -48,16 +42,6 @@ async fn assert_deleted(mut members: TwoMembers) {
 
     let mut again = common::connect_as(members.addr, &members.game_id, OTHER_ACCOUNT).await;
     common::assert_closed_with(&mut again, CLOSE_GAME_NOT_FOUND).await;
-}
-
-/// `ws` is still open and served: a `Ping` is answered with a `Pong`, and
-/// nothing reached it first.
-async fn assert_still_open(ws: &mut Client) {
-    common::send(ws, &ClientMessage::Ping).await;
-    match common::recv_within(ws).await {
-        ServerMessage::Pong => {}
-        other => panic!("expected a Pong, got {other:?}"),
-    }
 }
 
 #[tokio::test]
