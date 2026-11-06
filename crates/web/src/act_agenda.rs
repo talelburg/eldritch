@@ -142,10 +142,8 @@ pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView
     let popover_name = name.clone();
     view! {
         <article
-            class=root_class
-            on:mouseenter=move |ev| hover.track(&ev)
-            on:mousemove=move |ev| hover.track(&ev)
-            on:mouseleave=move |_| hover.clear()
+            class={root_class}
+            {..hover.handlers()}
         >
             <div class="card-head">
                 <span class="card-kind">"Act"</span>
@@ -204,10 +202,8 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     let popover_name = name.clone();
     view! {
         <article
-            class=root_class
-            on:mouseenter=move |ev| hover.track(&ev)
-            on:mousemove=move |ev| hover.track(&ev)
-            on:mouseleave=move |_| hover.clear()
+            class={root_class}
+            {..hover.handlers()}
         >
             <div class="card-head">
                 <span class="card-kind">"Agenda"</span>

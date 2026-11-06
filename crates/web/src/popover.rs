@@ -6,9 +6,8 @@
 //! renders whatever its host gives it, card text included (through
 //! `card::render_segments`), the moment the pointer enters the host.
 //!
-//! The host owns the hover: it creates a [`Hover`], wires its own
-//! `mouseenter` / `mousemove` / `mouseleave` to [`Hover::track`] and
-//! [`Hover::clear`], and places a [`Popover`] inside itself. The host, not the
+//! The host owns the hover: it creates a [`Hover`], spreads
+//! [`Hover::handlers`] onto itself, and places a [`Popover`] inside itself. The host, not the
 //! popover, is what the pointer enters, because a host can be covered by a
 //! layer of its own (a map node's `.menu-hit` lies over its card). The popover
 //! is `position: fixed` at the pointer, so no `overflow` ancestor clips it, and
@@ -17,7 +16,8 @@
 //! It needs no context, so a component mounted on its own in a test can host
 //! one.
 
-use leptos::ev::MouseEvent;
+use leptos::attr::Attribute;
+use leptos::ev::{self, MouseEvent};
 use leptos::prelude::*;
 
 /// How far below and right of the pointer the popover's corner sits, in pixels,
@@ -50,6 +50,17 @@ impl Hover {
     /// The pointer left the host: close the popover.
     pub fn clear(self) {
         self.0.set(None);
+    }
+
+    /// The host's pointer handlers, spread onto it as `{..hover.handlers()}`:
+    /// entering or moving over it [`track`](Self::track)s the pointer, and
+    /// leaving it [`clear`](Self::clear)s it.
+    pub fn handlers(self) -> impl Attribute {
+        (
+            ev::on(ev::mouseenter, move |e: MouseEvent| self.track(&e)),
+            ev::on(ev::mousemove, move |e: MouseEvent| self.track(&e)),
+            ev::on(ev::mouseleave, move |_| self.clear()),
+        )
     }
 }
 

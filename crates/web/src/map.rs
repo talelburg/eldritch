@@ -447,10 +447,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                     class=node_class
                     class:popover-open=move || hover.is_open()
                     data-loc=loc.name.clone()
-                    style=style
-                    on:mouseenter=move |ev| hover.track(&ev)
-                    on:mousemove=move |ev| hover.track(&ev)
-                    on:mouseleave=move |_| hover.clear()
+                    style={style}
+                    {..hover.handlers()}
                 >
                     // Header only: shroud, name and clues, the three things a
                     // player acts on every turn. The printed text is in the

@@ -144,10 +144,8 @@ fn hover_entry(class: &'static str, shown: &str, text: &str) -> AnyView {
     let text = text.to_owned();
     view! {
         <li
-            class=class
-            on:mouseenter=move |ev| hover.track(&ev)
-            on:mousemove=move |ev| hover.track(&ev)
-            on:mouseleave=move |_| hover.clear()
+            class={class}
+            {..hover.handlers()}
         >
             {shown.to_owned()}
             <Popover hover=hover>
