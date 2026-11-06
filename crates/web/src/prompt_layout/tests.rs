@@ -64,6 +64,23 @@ fn daisys_horror() -> InputRequest {
     InputRequest::confirm("Assign the horror").answered_by(Responder::Investigator(DAISY))
 }
 
+/// Tal giving Agnes to Sam.
+fn gave_agnes_to_sam() -> ServerMessage {
+    ServerMessage::Assigned {
+        by: TAL,
+        investigator: AGNES,
+        assigned: Assignment::from_iter([(ROLAND, TAL), (AGNES, SAM), (DAISY, SAM), (WENDY, JO)]),
+    }
+}
+
+/// `investigator`'s tab, settled on without a click and with no prompt seen.
+fn settled_on(investigator: InvestigatorId) -> OpenTab {
+    OpenTab {
+        tab: TabPick::Settled(investigator),
+        prompt: None,
+    }
+}
+
 /// The layout of `state` before any tab is open.
 fn layout_of(state: &ClientState) -> PromptLayout {
     layout(state, OpenTab::default())
@@ -86,9 +103,9 @@ fn tab_order(state: &ClientState) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// The tab `state` opens when `open` is what this client settled so far.
-fn opens(state: &ClientState, open: OpenTab) -> Option<InvestigatorId> {
-    layout(state, open).open
+/// The tab `state` opens when `open_tab` is what this client settled so far.
+fn opens(state: &ClientState, open_tab: OpenTab) -> Option<InvestigatorId> {
+    layout(state, open_tab).open_investigator
 }
 
 #[test]
@@ -142,7 +159,7 @@ fn tal_sees_a_spinner_on_daisys_tab_while_sam_decides() {
 }
 
 #[test]
-fn a_player_opens_on_their_active_investigator_else_their_first_in_seating() {
+fn an_account_opens_on_its_active_investigator_else_its_first_in_seating() {
     // Daisy's horror is Sam's to answer, so no prompt is Tal's.
     let agnes_turn = with_active(seen_by(TAL, daisys_horror()), AGNES);
     assert_eq!(opens(&agnes_turn, OpenTab::default()), Some(AGNES));
@@ -150,21 +167,14 @@ fn a_player_opens_on_their_active_investigator_else_their_first_in_seating() {
     let daisys_turn = with_active(seen_by(TAL, daisys_horror()), DAISY);
     assert_eq!(opens(&daisys_turn, OpenTab::default()), Some(ROLAND));
 
-    // Once settled, a player's tab stays put as the turn moves on.
+    // Once settled, an account's tab stays put as the turn moves on.
     let rolands_turn = with_active(seen_by(TAL, daisys_horror()), ROLAND);
-    let settled = OpenTab {
-        investigator: Some(AGNES),
-        clicked: false,
-        ..OpenTab::default()
-    };
-    assert_eq!(opens(&rolands_turn, settled), Some(AGNES));
+    assert_eq!(opens(&rolands_turn, settled_on(AGNES)), Some(AGNES));
 }
 
 #[test]
-fn a_player_with_a_prompt_theirs_at_load_opens_the_first_investigator_it_asks() {
-    let agness_discard = InputRequest::pick_single("Choose a card to discard", vec![])
-        .answered_by(Responder::Investigator(AGNES));
-    let tal = with_active(seen_by(TAL, agness_discard), ROLAND);
+fn an_account_with_a_prompt_its_own_at_load_opens_the_first_investigator_it_asks() {
+    let tal = with_active(seen_by(TAL, agness_discard()), ROLAND);
     assert_eq!(opens(&tal, OpenTab::default()), Some(AGNES));
 
     // Roland, Agnes and Daisy are asked: Roland sits first of Tal's.
@@ -177,11 +187,7 @@ fn a_viewer_follows_the_active_investigator_until_they_click_a_tab() {
     let daisys_turn = with_active(seen_by(ALEX, daisys_horror()), DAISY);
     assert_eq!(opens(&daisys_turn, OpenTab::default()), Some(DAISY));
 
-    let followed = OpenTab {
-        investigator: Some(DAISY),
-        clicked: false,
-        ..OpenTab::default()
-    };
+    let followed = settled_on(DAISY);
     let agness_turn = with_active(seen_by(ALEX, daisys_horror()), AGNES);
     assert_eq!(opens(&agness_turn, followed), Some(AGNES));
 
@@ -196,16 +202,11 @@ fn a_viewer_with_no_one_taking_a_turn_stays_put_or_opens_the_first_seat() {
     let no_turn = seen_by(ALEX, daisys_horror());
     assert_eq!(opens(&no_turn, OpenTab::default()), Some(ROLAND));
 
-    let followed = OpenTab {
-        investigator: Some(DAISY),
-        clicked: false,
-        ..OpenTab::default()
-    };
-    assert_eq!(opens(&no_turn, followed), Some(DAISY));
+    assert_eq!(opens(&no_turn, settled_on(DAISY)), Some(DAISY));
 }
 
 #[test]
-fn a_player_clicking_a_tab_opens_it() {
+fn an_account_clicking_a_tab_opens_it() {
     let tal = with_active(seen_by(TAL, daisys_horror()), AGNES);
     assert_eq!(opens(&tal, OpenTab::clicked(DAISY)), Some(DAISY));
 }
@@ -403,25 +404,13 @@ fn with_no_prompt_live_nothing_is_placed() {
 
 #[test]
 fn a_reassignment_moves_agness_strip_from_tal_to_sam() {
-    let discard = InputRequest::pick_single("Choose a card to discard", vec![])
-        .answered_by(Responder::Investigator(AGNES));
-    let mut tal = seen_by(TAL, discard.clone());
-    let mut sam = seen_by(SAM, discard);
+    let mut tal = seen_by(TAL, agness_discard());
+    let mut sam = seen_by(SAM, agness_discard());
     assert_eq!(layout_of(&tal).strips(), vec![AGNES]);
     assert_eq!(layout_of(&sam).spinners(), vec![AGNES]);
 
-    let gave_agnes_to_sam = ServerMessage::Assigned {
-        by: TAL,
-        investigator: AGNES,
-        assigned: Assignment::from_iter([
-            (ROLAND, TAL),
-            (AGNES, SAM),
-            (DAISY, SAM),
-            (WENDY, JO),
-        ]),
-    };
-    store::reduce(&mut tal, gave_agnes_to_sam.clone());
-    store::reduce(&mut sam, gave_agnes_to_sam);
+    store::reduce(&mut tal, gave_agnes_to_sam());
+    store::reduce(&mut sam, gave_agnes_to_sam());
 
     let tal = layout_of(&tal);
     assert_eq!(tal.spinners(), vec![AGNES]);
@@ -455,9 +444,8 @@ fn clicked_after(state: &ClientState, investigator: InvestigatorId) -> OpenTab {
 /// arrived: the prompt is new.
 fn open_before(state: &ClientState, investigator: InvestigatorId) -> OpenTab {
     OpenTab {
-        investigator: Some(investigator),
-        clicked: false,
         prompt: Some(LogPosition(state.prompt.0 - 1)),
+        ..settled_on(investigator)
     }
 }
 
@@ -475,7 +463,7 @@ fn needing_you(placed: &PromptLayout) -> Vec<InvestigatorId> {
 fn agness_tab_needs_tal_while_he_reads_rolands() {
     let tal = seen_by(TAL, agness_discard());
     let placed = layout(&tal, clicked_after(&tal, ROLAND));
-    assert_eq!(placed.open, Some(ROLAND));
+    assert_eq!(placed.open_investigator, Some(ROLAND));
     assert_eq!(needing_you(&placed), vec![AGNES]);
     assert_eq!(placed.dock_strip, None, "Roland isn't asked");
 
@@ -502,12 +490,12 @@ fn a_window_asking_roland_and_agnes_keeps_rolands_tab_and_leaves_daisys() {
     let tal = seen_by(TAL, roland_and_agnes());
 
     let from_roland = layout(&tal, open_before(&tal, ROLAND));
-    assert_eq!(from_roland.open, Some(ROLAND));
+    assert_eq!(from_roland.open_investigator, Some(ROLAND));
     assert_eq!(from_roland.dock_strip, Some(ROLAND));
     assert_eq!(needing_you(&from_roland), vec![AGNES]);
 
     let from_daisy = layout(&tal, open_before(&tal, DAISY));
-    assert_eq!(from_daisy.open, Some(ROLAND), "Roland sits first of Tal's");
+    assert_eq!(from_daisy.open_investigator, Some(ROLAND), "Roland sits first of Tal's");
     assert_eq!(from_daisy.dock_strip, Some(ROLAND));
     assert_eq!(needing_you(&from_daisy), vec![AGNES]);
 }
@@ -526,7 +514,7 @@ fn a_new_prompt_for_agnes_opens_her_tab_even_from_one_clicked() {
 fn a_tab_clicked_while_the_prompt_waits_stays_open() {
     let tal = seen_by(TAL, agness_discard());
     let placed = layout(&tal, clicked_after(&tal, DAISY));
-    assert_eq!(placed.open, Some(DAISY));
+    assert_eq!(placed.open_investigator, Some(DAISY));
     assert_eq!(needing_you(&placed), vec![AGNES]);
 }
 
@@ -557,7 +545,7 @@ fn a_lead_decision_stays_above_the_tabs_whichever_is_open() {
     let tal = seen_by(TAL, rats_move());
     for open in [ROLAND, DAISY] {
         let placed = layout(&tal, open_before(&tal, open));
-        assert_eq!(placed.open, Some(open), "a lead decision switches nothing");
+        assert_eq!(placed.open_investigator, Some(open), "a lead decision switches nothing");
         assert_eq!(placed.above_board, Some(AboveBoard::LeadStrip(ROLAND)));
         assert_eq!(needing_you(&placed), vec![]);
         assert_eq!(placed.dock_strip, None);
@@ -568,18 +556,8 @@ fn a_lead_decision_stays_above_the_tabs_whichever_is_open() {
 fn a_reassignment_of_agnes_to_sam_moves_needs_you_and_the_strip() {
     let mut tal = seen_by(TAL, agness_discard());
     let mut sam = seen_by(SAM, agness_discard());
-    let gave_agnes_to_sam = ServerMessage::Assigned {
-        by: TAL,
-        investigator: AGNES,
-        assigned: Assignment::from_iter([
-            (ROLAND, TAL),
-            (AGNES, SAM),
-            (DAISY, SAM),
-            (WENDY, JO),
-        ]),
-    };
-    store::reduce(&mut tal, gave_agnes_to_sam.clone());
-    store::reduce(&mut sam, gave_agnes_to_sam);
+    store::reduce(&mut tal, gave_agnes_to_sam());
+    store::reduce(&mut sam, gave_agnes_to_sam());
 
     let tal = layout(&tal, clicked_after(&tal, ROLAND));
     assert_eq!(needing_you(&tal), vec![]);
@@ -587,7 +565,7 @@ fn a_reassignment_of_agnes_to_sam_moves_needs_you_and_the_strip() {
     let sams_open_tab = clicked_after(&sam, DAISY);
     let on_daisy = layout(&sam, sams_open_tab);
     assert_eq!(
-        on_daisy.open,
+        on_daisy.open_investigator,
         Some(DAISY),
         "a reassignment switches nothing"
     );

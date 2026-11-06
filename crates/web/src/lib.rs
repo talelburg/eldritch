@@ -32,7 +32,7 @@ pub mod url;
 pub mod transport;
 
 #[cfg(target_arch = "wasm32")]
-pub mod prompt_banner;
+pub mod prompt_strip;
 
 #[cfg(target_arch = "wasm32")]
 pub mod board_menu;

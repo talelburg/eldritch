@@ -198,7 +198,7 @@ fn strip_contents(
         .map(|opt: ChoiceOption| {
             let ChoiceOption { id, label, .. } = opt;
             let pick = move |_| controls::submit(InputResponse::PickSingle(id));
-            view! { <button class="banner-option" on:click=pick>{label}</button> }
+            view! { <button class="strip-option" on:click=pick>{label}</button> }
         })
         .collect();
 

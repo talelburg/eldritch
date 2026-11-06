@@ -15,8 +15,8 @@ use leptos::prelude::*;
 use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
-use crate::prompt_layout::{OpenTabSignal, Placement, PromptLayout};
-use crate::{act_agenda, map, prompt_layout, registry, store};
+use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
+use crate::{act_agenda, map, registry, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the map and the dock when a game is present, else
@@ -59,7 +59,7 @@ pub fn BoardView() -> impl IntoView {
 fn prompt_strip(investigator: InvestigatorId) -> AnyView {
     #[cfg(target_arch = "wasm32")]
     {
-        view! { <crate::prompt_banner::PromptStrip investigator=investigator/> }.into_any()
+        view! { <crate::prompt_strip::PromptStrip investigator=investigator/> }.into_any()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -86,7 +86,7 @@ fn board_menu() -> impl IntoView {
 /// you" while the prompt asks one of yours whose tab isn't open), and below
 /// them the open tab's investigator. A tab click opens it.
 fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
-    let open_tab = use_context::<OpenTabSignal>();
+    let open_tab_signal = use_context::<OpenTabSignal>();
     let tabs: Vec<_> = placed
         .tabs
         .iter()
@@ -107,10 +107,10 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
                     class="inv-tab"
                     class:held=tab.held
                     class:needs-you=needs_you
-                    class:open=placed.open == Some(investigator)
+                    class:open=placed.open_investigator == Some(investigator)
                     on:click=move |_| {
-                        if let Some(open) = open_tab {
-                            open.click(investigator);
+                        if let Some(signal) = open_tab_signal {
+                            signal.click(investigator);
                         }
                     }
                 >
@@ -123,11 +123,8 @@ fn dock(game: &GameState, placed: &PromptLayout) -> impl IntoView {
             }
         })
         .collect();
-    let docked = placed.open.and_then(|open| {
-        let held = placed
-            .tabs
-            .iter()
-            .any(|tab| tab.investigator == open && tab.held);
+    let docked = placed.open_investigator.and_then(|open| {
+        let held = placed.holds(open);
         let strip = placed.dock_strip == Some(open);
         game.investigators
             .get(&open)

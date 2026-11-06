@@ -326,7 +326,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
         "but opens no context menu: the modal is the sole surface",
     );
     assert!(
-        h.absent(".dock .prompt-strip .banner-option") && h.absent(".dock .prompt-strip .prompt"),
+        h.absent(".dock .prompt-strip .strip-option") && h.absent(".dock .prompt-strip .prompt"),
         "the strip renders neither the branches nor the prompt text",
     );
 

@@ -17,7 +17,7 @@ use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
 #[cfg(target_arch = "wasm32")]
 use crate::lobby::LobbyScreen;
 #[cfg(target_arch = "wasm32")]
-use crate::prompt_banner::LeadStrip;
+use crate::prompt_strip::LeadStrip;
 use crate::prompt_layout::{OpenTab, OpenTabSignal, WaitingAboveBoard};
 #[cfg(target_arch = "wasm32")]
 use crate::sign_in::SignInView;
@@ -110,19 +110,19 @@ pub fn provide_board_contexts(store: StoreSignal) {
     });
 
     // The open tab, which a tab or a map token opens with a click. The effect
-    // records what `layout` opens on each store change: a player's settles
-    // there when the board first has a game, a viewer's follows the active
-    // investigator until a click, and a new prompt for one of this account's
-    // investigators opens the first it asks.
-    let open = RwSignal::new(OpenTab::default());
+    // records what `layout` opens on each store change: an account holding
+    // investigators settles there when the board first has a game, a viewer
+    // follows the active investigator until a click, and a new prompt for one
+    // of this account's investigators opens the first it asks.
+    let open_tab = RwSignal::new(OpenTab::default());
     Effect::new(move |_| {
-        let current = open.get_untracked();
+        let current = open_tab.get_untracked();
         let next = store.with(|s| current.settle(s));
         if next != current {
-            open.set(next);
+            open_tab.set(next);
         }
     });
-    provide_context(OpenTabSignal(open));
+    provide_context(OpenTabSignal(open_tab));
 }
 
 /// The main column: the board and its in-game modals inside the lockout

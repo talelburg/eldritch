@@ -26,7 +26,7 @@ pub struct PromptLayout {
     pub tabs: Vec<Tab>,
     /// The investigator whose tab is open, and so is docked. `None` with no
     /// game.
-    pub open: Option<InvestigatorId>,
+    pub open_investigator: Option<InvestigatorId>,
     /// The investigator whose strip goes in the dock: the open tab's, when the
     /// prompt asks them and this account holds them.
     pub dock_strip: Option<InvestigatorId>,
@@ -57,13 +57,24 @@ pub struct Tab {
 /// is already one it asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OpenTab {
-    /// The investigator whose tab is open, once one is settled.
-    pub investigator: Option<InvestigatorId>,
-    /// Whether this account picked it with a click.
-    pub clicked: bool,
+    /// Whose tab is open, and how it came to be.
+    pub tab: TabPick,
     /// The [`ClientState::prompt`] this tab was last settled on, so a prompt
     /// at any other position is new. `None` before the board has a game.
     pub prompt: Option<LogPosition>,
+}
+
+/// How the open tab was picked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TabPick {
+    /// No tab is settled yet.
+    #[default]
+    Unsettled,
+    /// [`layout`] settled on this investigator's tab, which a viewer's moves
+    /// off as the turn does.
+    Settled(InvestigatorId),
+    /// This account clicked this investigator's tab.
+    Clicked(InvestigatorId),
 }
 
 impl OpenTab {
@@ -71,10 +82,24 @@ impl OpenTab {
     #[must_use]
     pub fn clicked(investigator: InvestigatorId) -> Self {
         Self {
-            investigator: Some(investigator),
-            clicked: true,
+            tab: TabPick::Clicked(investigator),
             prompt: None,
         }
+    }
+
+    /// The investigator whose tab is open, once one is settled.
+    #[must_use]
+    pub fn investigator(self) -> Option<InvestigatorId> {
+        match self.tab {
+            TabPick::Unsettled => None,
+            TabPick::Settled(id) | TabPick::Clicked(id) => Some(id),
+        }
+    }
+
+    /// Whether this account picked the open tab with a click.
+    #[must_use]
+    pub fn is_clicked(self) -> bool {
+        matches!(self.tab, TabPick::Clicked(_))
     }
 
     /// What this client settles on next for `state`: [`layout`]'s open tab,
@@ -82,10 +107,13 @@ impl OpenTab {
     /// moves the tab.
     #[must_use]
     pub fn settle(self, state: &ClientState) -> Self {
-        let investigator = layout(state, self).open;
+        let tab = match layout(state, self).open_investigator {
+            None => TabPick::Unsettled,
+            Some(id) if self.tab == TabPick::Clicked(id) => TabPick::Clicked(id),
+            Some(id) => TabPick::Settled(id),
+        };
         Self {
-            investigator,
-            clicked: self.clicked && investigator == self.investigator,
+            tab,
             prompt: state.game.as_ref().map(|_| state.prompt),
         }
     }
@@ -100,9 +128,9 @@ impl OpenTabSignal {
     /// Open `investigator`'s tab, as a click does. The prompt it was settled
     /// on stays, so the live prompt doesn't count as new.
     pub fn click(self, investigator: InvestigatorId) {
-        self.0.update(|open| {
-            *open = OpenTab {
-                prompt: open.prompt,
+        self.0.update(|open_tab| {
+            *open_tab = OpenTab {
+                prompt: open_tab.prompt,
                 ..OpenTab::clicked(investigator)
             };
         });
@@ -114,7 +142,7 @@ impl OpenTabSignal {
 #[must_use]
 pub fn use_open_tab() -> OpenTab {
     use_context::<OpenTabSignal>()
-        .map(|open| open.0.get())
+        .map(|signal| signal.0.get())
         .unwrap_or_default()
 }
 
@@ -161,7 +189,16 @@ impl PromptLayout {
     /// this account holds them, and their tab isn't the open one.
     #[must_use]
     pub fn needs_you(&self, investigator: InvestigatorId) -> bool {
-        self.open != Some(investigator) && self.strips().contains(&investigator)
+        self.open_investigator != Some(investigator) && self.strips().contains(&investigator)
+    }
+
+    /// Whether this account holds `investigator`, whose tab is then tinted
+    /// and whose hand shows.
+    #[must_use]
+    pub fn holds(&self, investigator: InvestigatorId) -> bool {
+        self.tabs
+            .iter()
+            .any(|tab| tab.investigator == investigator && tab.held)
     }
 
     fn placed(&self, placement: Placement) -> Vec<InvestigatorId> {
@@ -178,10 +215,12 @@ impl PromptLayout {
 #[component]
 pub fn WaitingAboveBoard() -> impl IntoView {
     let store = store::use_store();
-    let open_tab = use_context::<OpenTabSignal>();
+    let open_tab_signal = use_context::<OpenTabSignal>();
     let above_board = Memo::new(move |_| {
-        let open = open_tab.map(|open| open.0.get()).unwrap_or_default();
-        store.with(|s| layout(s, open).above_board)
+        let open_tab = open_tab_signal
+            .map(|signal| signal.0.get())
+            .unwrap_or_default();
+        store.with(|s| layout(s, open_tab).above_board)
     });
     move || match above_board.get() {
         Some(AboveBoard::WaitingStrip(text)) => {
@@ -190,14 +229,14 @@ pub fn WaitingAboveBoard() -> impl IntoView {
         Some(AboveBoard::LeadWaitingLine(text)) => {
             Some(view! { <div class="lead-waiting" role="status">{text}</div> })
         }
-        // The lead's strip has controls, so `prompt_banner::LeadStrip`
+        // The lead's strip has controls, so `prompt_strip::LeadStrip`
         // renders it.
         Some(AboveBoard::LeadStrip(_)) | None => None,
     }
 }
 
 /// Where the live prompt goes for this client's account, and the tabs over the
-/// dock with `open` as what this client has settled so far. Pure.
+/// dock with `open_tab` as what this client has settled so far. Pure.
 ///
 /// An investigator the prompt asks gets a [`Strip`](Placement::Strip) if this account holds them
 /// and a [`Spinner`](Placement::Spinner) if not. The strip goes in the dock
@@ -209,16 +248,16 @@ pub fn WaitingAboveBoard() -> impl IntoView {
 /// The open tab is the first of yours a new prompt asks, in seating order,
 /// unless the open tab is already one of yours it asks. Otherwise it is the
 /// one clicked. Until a click, a viewer's follows the active investigator,
-/// staying put while no one takes a turn. A player's is the one settled, and
-/// before that, at load, their active investigator, else their first in
-/// seating order. A prompt is new when it sits at a position other than
-/// [`OpenTab::prompt`].
+/// staying put while no one takes a turn. An account holding investigators
+/// keeps the one settled, and before that, at load, opens its active
+/// investigator, else its first in seating order. A prompt is new when it sits
+/// at a position other than [`OpenTab::prompt`].
 #[must_use]
-pub fn layout(state: &ClientState, open: OpenTab) -> PromptLayout {
+pub fn layout(state: &ClientState, open_tab: OpenTab) -> PromptLayout {
     let mut placed = placements(state);
     placed.tabs = tabs(state, &placed);
-    let opened = open_tab(state, &placed, open);
-    placed.open = opened;
+    let opened = next_open(state, &placed, open_tab);
+    placed.open_investigator = opened;
     let asks_open = |tab: &Tab| Some(tab.investigator) == opened && tab.asked.is_some();
     // The open tab's spinner already says what the waiting strip would.
     if placed.tabs.iter().any(asks_open)
@@ -226,7 +265,7 @@ pub fn layout(state: &ClientState, open: OpenTab) -> PromptLayout {
     {
         placed.above_board = None;
     }
-    placed.dock_strip = opened.filter(|open| placed.strips().contains(open));
+    placed.dock_strip = opened.filter(|id| placed.strips().contains(id));
     placed
 }
 
@@ -254,14 +293,18 @@ fn tabs(state: &ClientState, placed: &PromptLayout) -> Vec<Tab> {
         .collect()
 }
 
-/// The open tab: see [`layout`].
-fn open_tab(state: &ClientState, placed: &PromptLayout, open: OpenTab) -> Option<InvestigatorId> {
+/// The investigator whose tab opens next, from `open_tab`: see [`layout`].
+fn next_open(
+    state: &ClientState,
+    placed: &PromptLayout,
+    open_tab: OpenTab,
+) -> Option<InvestigatorId> {
     let tabs = &placed.tabs;
     let has_tab = |id: &InvestigatorId| tabs.iter().any(|tab| tab.investigator == *id);
-    let settled = open.investigator.filter(has_tab);
+    let settled = open_tab.investigator().filter(has_tab);
     // A new prompt for one of yours opens the first it asks, in seating
     // order, unless the open tab is one it asks.
-    let new_prompt = open.prompt != Some(state.prompt);
+    let new_prompt = open_tab.prompt != Some(state.prompt);
     let first_yours_asked = tabs
         .iter()
         .find(|tab| tab.asked == Some(Placement::Strip))
@@ -274,7 +317,7 @@ fn open_tab(state: &ClientState, placed: &PromptLayout, open: OpenTab) -> Option
     if new_prompt && first_yours_asked.is_some() && !open_is_asked {
         return first_yours_asked;
     }
-    if open.clicked && settled.is_some() {
+    if open_tab.is_clicked() && settled.is_some() {
         return settled;
     }
     let active = state

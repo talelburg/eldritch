@@ -35,7 +35,7 @@ mod map;
 mod map_node_layout;
 mod more_menu;
 mod panel_controls;
-mod prompt_banner;
+mod prompt_strip;
 mod prompt_layout;
 mod provisional_verdict;
 mod reassign;

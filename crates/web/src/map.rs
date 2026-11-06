@@ -333,7 +333,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let open_tab = use_context::<OpenTabSignal>();
+    let open_tab_signal = use_context::<OpenTabSignal>();
 
     let nodes: Vec<_> = game
         .locations
@@ -365,8 +365,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                             class="inv-token"
                             title=stats
                             on:click=move |_| {
-                                if let Some(open) = open_tab {
-                                    open.click(investigator);
+                                if let Some(signal) = open_tab_signal {
+                                    signal.click(investigator);
                                 }
                             }
                         >

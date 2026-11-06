@@ -25,7 +25,7 @@ use protocol::{Assignment, ClientMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;
-use web::prompt_banner::PromptStrip;
+use web::prompt_strip::PromptStrip;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -70,20 +70,20 @@ async fn mount_with(
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
         provide_context(MultiSelect { active, selected });
-        view! { <div class="pb-root"><PromptStrip investigator=investigator/></div> }
+        view! { <div class="strip-root"><PromptStrip investigator=investigator/></div> }
     });
     task::tick().await;
     rx
 }
 
-/// The last-mounted `.pb-root` wrapper — scopes queries to this test's mount so
+/// The last-mounted `.strip-root` wrapper — scopes queries to this test's mount so
 /// DOM accumulation across tests can't shadow an "absence" assertion.
 fn last_root() -> Element {
-    let roots = document().query_selector_all(".pb-root").expect("query");
+    let roots = document().query_selector_all(".strip-root").expect("query");
     roots
         .item(roots.length() - 1)
         .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("a .pb-root")
+        .expect("a .strip-root")
 }
 
 fn last_strip() -> Element {
@@ -258,7 +258,7 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
 }
 
 #[wasm_bindgen_test]
-async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
+async fn an_anchored_confirm_gets_text_but_no_strip_confirm() {
     // The Mythos draw's button lives on the encounter deck. The strip still
     // names the prompt — the floor — but must not render a second Confirm, which
     // is the duplication the bar retirement exists to end.
@@ -346,13 +346,13 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
         strip.query_selector(".prompt").expect("query").is_none(),
         "no 'Choose an action' noise on an ordinary turn"
     );
-    let btns = strip.query_selector_all(".banner-option").expect("query");
+    let btns = strip.query_selector_all(".strip-option").expect("query");
     assert_eq!(
         btns.length(),
         1,
         "the un-anchored option keeps its only home; the anchored one is on its surface"
     );
-    click(".banner-option");
+    click(".strip-option");
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
@@ -377,12 +377,12 @@ async fn an_unanchored_pick_single_still_reaches_the_strip() {
         .contains("Choose one"));
     assert_eq!(
         strip
-            .query_selector_all(".banner-option")
+            .query_selector_all(".strip-option")
             .expect("query")
             .length(),
         2
     );
-    click(".banner-option");
+    click(".strip-option");
     task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
@@ -404,7 +404,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
     )
     .await;
     let btn = last_strip()
-        .query_selector(".banner-option")
+        .query_selector(".strip-option")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("an option button");
@@ -434,7 +434,7 @@ async fn strip_renders_only_unanchored_options() {
     );
     let mut rx = mount(outcome, &[]).await;
     let strip = last_strip();
-    let btns = strip.query_selector_all(".banner-option").expect("query");
+    let btns = strip.query_selector_all(".strip-option").expect("query");
     assert_eq!(
         btns.length(),
         1,
@@ -475,7 +475,7 @@ async fn a_committed_cards_option_renders_on_the_strip() {
     );
     let mut rx = mount(outcome, &[]).await;
     let btns = last_strip()
-        .query_selector_all(".banner-option")
+        .query_selector_all(".strip-option")
         .expect("query");
     assert_eq!(btns.length(), 1, "only the committed card's option");
     let btn = btns
@@ -533,7 +533,7 @@ fn answering(rx: &mut UnboundedReceiver<ClientMessage>) -> (InvestigatorId, Inpu
 #[wasm_bindgen_test]
 async fn a_pick_in_a_window_several_answer_names_its_options_investigator() {
     let mut rx = mount_with(None, offered_to_two_and_three(), &[], None, THREE).await;
-    click(".banner-option");
+    click(".strip-option");
     task::tick().await;
     assert_eq!(
         answering(&mut rx),
@@ -583,7 +583,7 @@ async fn a_window_two_answer_shows_a_strip_with_a_plain_pass_for_each() {
         .await;
         let strip = last_strip();
         assert_eq!(common::texts_in(&strip, ".strip-name"), [name]);
-        assert_eq!(common::texts_in(&strip, ".banner-option"), [option]);
+        assert_eq!(common::texts_in(&strip, ".strip-option"), [option]);
         assert_eq!(common::texts_in(&strip, ".prompt"), ["You may trigger"]);
         assert_eq!(common::texts_in(&strip, ".pass"), ["Pass"]);
         click(".pass");
@@ -611,12 +611,12 @@ async fn an_option_naming_no_investigator_goes_on_the_first_strip() {
     let game = two_and_three_seated();
     let _rx = mount_with(Some(game.clone()), outcome.clone(), &[], None, TWO).await;
     assert_eq!(
-        common::texts_in(&last_strip(), ".banner-option"),
+        common::texts_in(&last_strip(), ".strip-option"),
         ["Two's reaction", "No one's option"]
     );
     let _rx = mount_with(Some(game), outcome, &[], None, THREE).await;
     assert_eq!(
-        common::texts_in(&last_strip(), ".banner-option"),
+        common::texts_in(&last_strip(), ".strip-option"),
         ["Three's reaction"]
     );
 }
@@ -707,7 +707,7 @@ async fn an_account_holding_one_answerer_gets_its_option_and_a_plain_pass_for_th
     )
     .await;
     assert_eq!(
-        common::texts_in(&last_strip(), ".banner-option"),
+        common::texts_in(&last_strip(), ".strip-option"),
         ["Three's reaction"]
     );
     let labels: Vec<String> = pass_buttons()
