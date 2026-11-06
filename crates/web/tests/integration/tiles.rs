@@ -110,6 +110,56 @@ async fn an_in_play_card_is_a_tile_showing_its_uses() {
     common::unhover(&slot).await;
 }
 
+/// The hand is the bottom row of the window, so a popover opened below and
+/// right of the pointer, as on the map, ran off the screen and cut the card's
+/// text. A popover opens away from the window's nearer edges, so it stays on
+/// screen wherever the pointer is.
+#[wasm_bindgen_test]
+async fn a_tiles_popover_stays_on_screen_at_the_windows_corner() {
+    common::inject_style();
+    let root = rolands_dock().await;
+    let slot = one(&root, ".dock .hand .hand-slot");
+    let (width, height) = (
+        leptos::prelude::window()
+            .inner_width()
+            .expect("width")
+            .as_f64()
+            .expect("a number"),
+        leptos::prelude::window()
+            .inner_height()
+            .expect("height")
+            .as_f64()
+            .expect("a number"),
+    );
+    let init = web_sys::MouseEventInit::new();
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a window's size in CSS pixels fits an i32"
+    )]
+    {
+        init.set_client_x(width as i32 - 5);
+        init.set_client_y(height as i32 - 5);
+    }
+    let enter =
+        web_sys::MouseEvent::new_with_mouse_event_init_dict("mouseenter", &init).expect("event");
+    slot.dispatch_event(&enter).expect("dispatch");
+    leptos::task::tick().await;
+
+    let popover = one(&slot, ".popover").get_bounding_client_rect();
+    assert!(
+        popover.left() >= 0.0
+            && popover.top() >= 0.0
+            && popover.right() <= width
+            && popover.bottom() <= height,
+        "the popover ({}, {})-({}, {}) leaves the {width}x{height} window",
+        popover.left(),
+        popover.top(),
+        popover.right(),
+        popover.bottom(),
+    );
+    common::unhover(&slot).await;
+}
+
 #[wasm_bindgen_test]
 async fn a_weakness_tile_is_marked_as_one() {
     let root = rolands_dock().await;

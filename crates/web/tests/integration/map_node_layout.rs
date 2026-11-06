@@ -202,52 +202,45 @@ async fn every_connection_line_ends_inside_a_card() {
         .build();
     let root = mount(state).await;
 
-    // Card boxes, in the coordinate space the SVG lines are drawn in (the `.map`
-    // section): a card is positioned inside its node, and the node inside `.map`.
-    let nodes = root.query_selector_all(".map-location").expect("query");
-    let mut cards = Vec::new();
-    for i in 0..nodes.length() {
-        let node: HtmlElement = nodes
-            .item(i)
-            .and_then(|n| n.dyn_into().ok())
-            .expect("HtmlElement node");
-        let card: HtmlElement = node
-            .query_selector(".loc-card")
-            .expect("query")
-            .expect("every node has a card")
-            .dyn_into()
-            .expect("HtmlElement");
-        let (left, top) = (
-            node.offset_left() + card.offset_left(),
-            node.offset_top() + card.offset_top(),
-        );
-        cards.push((
-            left,
-            top,
-            left + card.offset_width(),
-            top + card.offset_height(),
-        ));
-    }
+    // Card boxes and the line, both in viewport coordinates: the line's
+    // endpoints are given as percentages of the map, so they are measured
+    // rather than read.
+    let cards: Vec<(f64, f64, f64, f64)> = {
+        let all = root
+            .query_selector_all(".map-location .loc-card")
+            .expect("query");
+        (0..all.length())
+            .filter_map(|i| all.item(i))
+            .filter_map(|n| n.dyn_into::<Element>().ok())
+            .map(|card| {
+                let r = card.get_bounding_client_rect();
+                (r.left(), r.top(), r.right(), r.bottom())
+            })
+            .collect()
+    };
+    assert_eq!(cards.len(), 2, "two nodes, two cards");
 
     let lines = root.query_selector_all("line.map-line").expect("query");
     assert_eq!(lines.length(), 1, "the connected pair draws one line");
-    let line = lines.item(0).expect("the line");
-    let coord = |name: &str| -> i32 {
-        line.dyn_ref::<Element>()
-            .expect("Element")
-            .get_attribute(name)
-            .expect("the attribute")
-            .parse()
-            .expect("a number")
+    let line = lines
+        .item(0)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("the line")
+        .get_bounding_client_rect();
+    // A line's box has its endpoints at two opposite corners; which two
+    // depends on its direction, so either diagonal will do.
+    let (l, t, r, b) = (line.left(), line.top(), line.right(), line.bottom());
+    let in_a_card = |(x, y): (f64, f64)| {
+        cards
+            .iter()
+            .any(|&(cl, ct, cr, cb)| x >= cl && x <= cr && y >= ct && y <= cb)
     };
-    for (x, y) in [(coord("x1"), coord("y1")), (coord("x2"), coord("y2"))] {
-        assert!(
-            cards
-                .iter()
-                .any(|&(l, t, r, b)| x >= l && x <= r && y >= t && y <= b),
-            "line endpoint ({x}, {y}) lands outside every card; cards = {cards:?}",
-        );
-    }
+    assert!(
+        [[(l, t), (r, b)], [(l, b), (r, t)]]
+            .iter()
+            .any(|ends| ends.iter().all(|&end| in_a_card(end))),
+        "the line from ({l}, {t}) to ({r}, {b}) ends outside a card; cards = {cards:?}",
+    );
 }
 
 /// Reported live: a token in the rail showed the pointer cursor but did nothing

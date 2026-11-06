@@ -4,6 +4,12 @@
    doesn't fit scrolls inside its own box: the map pans in `.map-box`, the
    dock's card rows scroll sideways, and the log is a drawer over the board. */
 html, body { margin: 0; height: 100%; overflow: hidden; }
+/* The screen is divided by proportion and everything sizes off the window:
+   the root font follows its width and height, between a floor that keeps text
+   readable and a ceiling, and every `rem` and `em` below follows the root.
+   Nothing is scaled with a `transform` or `zoom`, which would misplace the
+   popovers and context menus opened at the pointer. */
+html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 .app-shell { height: 100vh; display: flex; overflow: hidden; }
 .app-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .board {
@@ -122,30 +128,45 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .popover .card { width: auto; border: none; padding: 0; background: none; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
-/* Spatial board map (#497). Nodes are absolutely positioned at computed
-   left/top (set inline); the SVG line layer sits behind them. */
+/* Spatial board map (#497). The map fills its box, which it divides into
+   `--cols` x `--rows` equal cells (set inline by `map.rs`), and each node's
+   card is centred on its cell's centre, `--x` / `--y` (set inline too). So a
+   bigger box spreads the nodes rather than leaving dead space, and the nodes
+   themselves grow with the window's text. The SVG line layer sits behind them.
+   The node is the card plus the token rail beside it, so it is shifted left by
+   half of what lies right of the card's centre, and the line layer with it:
+   the lines are drawn between cell centres and land on the cards. */
 /* The map pans by scrolling inside its box, never by scaling: a `transform`
-   would misplace the fixed context menu and popover inside it. `margin: auto`
-   centres a map smaller than the box, and drops to 0 for a larger one, so the
-   whole of it stays reachable by scrolling. */
-.map-box { flex: 1 1 auto; min-height: 0; align-self: stretch; display: flex; overflow: auto; }
-.map { position: relative; margin: auto; flex: none; }
-.map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
+   would misplace the fixed context menu and popover inside it. Below its
+   minimum size, room for every node in its cell, the map overflows the box,
+   whose grid stretches it to fill otherwise. */
+.map-box { flex: 1 1 auto; min-height: 0; align-self: stretch; display: grid; overflow: auto; }
+.map {
+    --card-w: 11em; --card-h: 2.6em; --rail-w: 8em; --node-gap: 0.4em;
+    --node-w: calc(var(--card-w) + var(--node-gap) + var(--rail-w));
+    position: relative; font-size: 0.85rem;
+    min-width: calc(var(--cols) * (var(--node-w) + 1.5em));
+    min-height: calc(var(--rows) * 6.5em);
+}
+.map-lines {
+    position: absolute; top: 0; left: calc((var(--card-w) - var(--node-w)) / 2);
+    width: 100%; height: 100%; overflow: visible; z-index: 0; pointer-events: none;
+}
 .map-line { stroke: #999; stroke-width: 2; }
 /* The node itself is a transparent, borderless ROW: the location card on the
    left, the token rail on its right (#848). It has no height of its own and
    does not clip — before this, a fixed-height `overflow: hidden` node silently
    ate the tokens of any location whose printed text ran long (the Parlor). */
 .map-location {
-    position: absolute; z-index: 1; box-sizing: border-box; font-size: 0.8rem;
-    display: flex; flex-direction: row; align-items: flex-start; gap: 0.4rem;
+    position: absolute; z-index: 1; box-sizing: border-box; width: var(--node-w);
+    left: calc(var(--x) - var(--node-w) / 2); top: calc(var(--y) - var(--card-h) / 2);
+    display: flex; flex-direction: row; align-items: flex-start; gap: var(--node-gap);
 }
-/* The card is the bordered surface, and the only sized part. Its box comes from
-   `map.rs` as `--loc-card-w` / `--loc-card-h` (its `CARD_W` / `CARD_H`), which
-   is also where the connection lines anchor — the min-height keeps a short card
-   (an unrevealed node is barely a header tall) reaching its own anchor. */
+/* The card is the bordered surface, and the only sized part. Its centre is
+   where the connection lines anchor — the min-height keeps a short card (an
+   unrevealed node is barely a header tall) reaching its own anchor. */
 .loc-card {
-    flex: none; width: var(--loc-card-w); min-height: var(--loc-card-h); box-sizing: border-box;
+    flex: none; width: var(--card-w); min-height: var(--card-h); box-sizing: border-box;
     border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem;
     display: flex; flex-direction: column; gap: 0.2rem;
 }
@@ -186,8 +207,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 
 /* The satellite rail beside the card. Each occupant is its own bordered box, so
    each can carry its own glow and its own context menu. */
-.node-tokens { flex: none; width: 110px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
-.node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1rem 0.25rem; }
+.node-tokens { flex: none; width: var(--rail-w); display: flex; flex-direction: column; gap: 0.2em; font-size: 0.92em; }
+.node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1em 0.25em; }
 .node-tokens:empty { display: none; }
 /* A click opens the investigator's tab. */
 .inv-token { color: #157a3a; cursor: pointer; }
@@ -252,26 +273,23 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .log-event { white-space: pre-wrap; word-break: break-word; color: #333; }
 
 /* The round band: the round, then each phase's letter over its step numbers,
-   down the whole right edge. Its rows share the height evenly, so it never
-   scrolls. */
+   down the whole right edge. The phases stack one after another from the top,
+   each as tall as its steps, so no phase is stretched to a share of the band. */
 .turn-tracker {
-    flex: 0 0 3rem; display: flex; flex-direction: column; justify-content: space-evenly;
-    overflow: hidden; padding: 0.2rem 0; box-sizing: border-box;
-    border-left: 1px solid #ddd; background: #fafafa;
-    font-family: system-ui, sans-serif; font-size: 0.68rem; text-align: center;
+    flex: 0 0 3rem; display: flex; flex-direction: column; justify-content: flex-start;
+    overflow: hidden; padding: 0.4em 0; box-sizing: border-box;
+    border-left: 1px solid #ddd; background: #fafafa; line-height: 1.4;
+    font-family: system-ui, sans-serif; font-size: 0.72rem; text-align: center;
 }
-.tracker-round { font-weight: 600; }
+.tracker-round { font-weight: 700; font-size: 1.15em; padding-bottom: 0.3em; }
 .tracker-phase { border-top: 1px solid #ddd; }
 .tracker-phase.current { background: #fff4d0; }
-.tracker-phase ul { list-style: none; padding: 0; margin: 0; }
+.tracker-phase ul { list-style: none; padding: 0.15em 0 0.3em; margin: 0; }
 .tracker-phase-label { font-weight: 600; color: #444; }
 .tracker-phase.current .tracker-phase-label { color: #000; }
 .tracker-step { color: #777; }
 .tracker-window { color: #bbb; }
 .tracker-phase.current :is(.tracker-step, .tracker-window) { color: #000; }
-/* The band sits at the right edge, so its popover opens left of the pointer,
-   centred on it, rather than off the screen. */
-.turn-tracker .popover { transform: translate(calc(-100% - 28px), calc(-50% - 14px)); }
 
 /* --- Cards (hand slice) ------------------------------------------------ */
 .card-row {
@@ -379,7 +397,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
 /* A map node's own hit-layer covers only its card: the token rail beside it
    holds separate surfaces, which carry their own menus. */
-.map-location > .menu-hit { right: auto; width: var(--loc-card-w); }
+.map-location > .menu-hit { right: auto; width: var(--card-w); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 15; }
 .context-menu {
     position: fixed; z-index: 20;
@@ -398,6 +416,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
     display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
 }
 .popover-title { font-weight: 600; }
+/* A popover opens away from the window's nearer edges (`popover.rs` picks the
+   direction from where the pointer is), so it stays on screen: its inline
+   corner is the one nearest the pointer, and these move the box to that
+   corner's far side. A transform on the popover itself moves nothing else. */
+.popover.opens-left { transform: translateX(-100%); }
+.popover.opens-up { transform: translateY(-100%); }
+.popover.opens-left.opens-up { transform: translate(-100%, -100%); }
 
 /* Interactivity S3 (#538): hand-card wrapper — glow (Play) / ring (select). */
 .hand-slot, .card-slot { position: relative; border-radius: 6px; }

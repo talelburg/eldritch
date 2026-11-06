@@ -88,32 +88,26 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
     }
 }
 
-/// Pixel geometry for the grid. A node is `CARD_W` of location card plus a
-/// token rail beside it, `NODE_W` wide in total; cells are larger again to
-/// leave gaps for the connection lines. Node *height* is deliberately absent:
-/// the node grows with its tokens rather than clipping them.
-///
-/// The card is header-only (its printed text is in the popover), so with
-/// smaller cells it is the token rail, not the card, that sets a node's height.
-const CELL_W: u16 = 290;
-const CELL_H: u16 = 100;
-const NODE_W: u16 = 266;
-/// The card's box inside a node. Both are emitted onto the node as the CSS
-/// custom properties `--loc-card-w` / `--loc-card-h`, so this is their single
-/// source: `style.css` reads them rather than repeating the numbers.
-///
-/// `CARD_H` is a *minimum*, not a fixed height. A minimum is what the
-/// connection lines need: they anchor half a `CARD_H` down, and a card shorter
-/// than that (a header is barely 2rem tall) would leave its lines ending below
-/// it in empty space.
-const CARD_W: u16 = 150;
-const CARD_H: u16 = 60;
+/// The grid's size in cells, `(columns, rows)`, spanning every placed node.
+fn grid_size(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
+    let cols = positions.values().map(|(c, _)| *c).max().unwrap_or(0) + 1;
+    let rows = positions.values().map(|(_, r)| *r).max().unwrap_or(0) + 1;
+    (cols, rows)
+}
 
-/// Anchor pixel for a node's connection lines: the middle of its *card*, not of
-/// the node. The node spans card + token rail, so its own center falls in the
-/// gap between the two and every line would end in empty space.
-fn node_center((col, row): (u16, u16)) -> (u16, u16) {
-    (col * CELL_W + CARD_W / 2, row * CELL_H + CARD_H / 2)
+/// The centre of cell `(col, row)` in a `(cols, rows)` grid, as percentages of
+/// the map's width and height.
+///
+/// The map fills its box, and each cell takes an equal share of it, so a
+/// taller or wider box spreads the nodes rather than leaving dead space. A
+/// node's *card* sits centred on its cell's centre (`style.css` shifts the
+/// node left by half the card and the token rail, and the line layer with it),
+/// so this is also where the connection lines anchor: the middle of the card,
+/// not of the node, whose own centre falls between card and rail. Below the
+/// map's minimum size the box pans instead.
+fn cell_centre((col, row): (u16, u16), (cols, rows): (u16, u16)) -> (f32, f32) {
+    let pct = |i: u16, n: u16| (f32::from(i) + 0.5) * 100.0 / f32::from(n);
+    (pct(col, cols), pct(row, rows))
 }
 
 /// One numeral in a location's header: the class that gives it its shape and
@@ -181,12 +175,13 @@ impl Badge {
 }
 
 /// One `<line>` per undirected pair of connected, in-play locations, between
-/// node centers. A peer not in `positions` (set-aside, not yet in play) is
+/// card centres ([`cell_centre`]). A peer not in `positions` (set-aside, not yet in play) is
 /// skipped. Dedups by ordered `LocationId` pair so each edge draws once.
 fn connection_lines(
     game: &GameState,
     positions: &BTreeMap<LocationId, (u16, u16)>,
 ) -> Vec<impl IntoView> {
+    let grid = grid_size(positions);
     let mut seen: BTreeSet<(u32, u32)> = BTreeSet::new();
     let mut lines = Vec::new();
     for loc in game.locations.values() {
@@ -201,21 +196,20 @@ fn connection_lines(
             if !seen.insert(key) {
                 continue;
             }
-            let (x1, y1) = node_center(a);
-            let (x2, y2) = node_center(b);
+            let (x1, y1) = cell_centre(a, grid);
+            let (x2, y2) = cell_centre(b, grid);
             lines.push(view! {
-                <line class="map-line" x1=x1 y1=y1 x2=x2 y2=y2 />
+                <line
+                    class="map-line"
+                    x1=format!("{x1}%")
+                    y1=format!("{y1}%")
+                    x2=format!("{x2}%")
+                    y2=format!("{y2}%")
+                />
             });
         }
     }
     lines
-}
-
-/// Pixel `(width, height)` spanning all placed nodes (one extra cell of slack).
-fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
-    let max_col = positions.values().map(|(c, _)| *c).max().unwrap_or(0);
-    let max_row = positions.values().map(|(_, r)| *r).max().unwrap_or(0);
-    ((max_col + 1) * CELL_W, (max_row + 1) * CELL_H)
 }
 
 /// One rail token for a [`CardInPlay`] sitting at a location — an uncontrolled
@@ -326,6 +320,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .map(|l| (l.id, l.code.clone()))
         .collect();
     let positions = layout_positions(&locs);
+    let grid = grid_size(&positions);
     let cards = registry::use_cards();
 
     // The live prompt's options, for glow + per-node context menus.
@@ -339,8 +334,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .locations
         .values()
         .map(|loc| {
-            let (col, row) = positions[&loc.id];
-            let (left, top) = (col * CELL_W, row * CELL_H);
+            let (x, y) = cell_centre(positions[&loc.id], grid);
             let invs: Vec<_> = game
                 .investigators
                 .values()
@@ -404,10 +398,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .iter()
                 .map(|c| card_token(cards, c, "attachment-token", " (attached)", &pending))
                 .collect();
-            let style = format!(
-                "left:{left}px;top:{top}px;width:{NODE_W}px;\
-                 --loc-card-w:{CARD_W}px;--loc-card-h:{CARD_H}px;"
-            );
+            let style = format!("--x:{x}%;--y:{y}%;");
             let menu_opts = interaction::options_for(&pending, &OptionTarget::Location(loc.id));
             let actionable = !menu_opts.is_empty();
             let open = RwSignal::new(None::<(i32, i32)>);
@@ -486,10 +477,10 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .collect();
 
     let lines = connection_lines(game, &positions);
-    let (w, h) = map_extent(&positions);
+    let (cols, rows) = grid;
     view! {
-        <section class="map" style=format!("width:{w}px;height:{h}px;")>
-            <svg class="map-lines" width=w height=h>{lines}</svg>
+        <section class="map" style=format!("--cols:{cols};--rows:{rows};")>
+            <svg class="map-lines">{lines}</svg>
             {nodes}
         </section>
     }
