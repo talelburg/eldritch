@@ -80,6 +80,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1240 | "Your games" lists the account's lobbies, the started games under "Needs you" and "In progress", the unresumable and the finished, each finished one opening on its final board, PR #1344; slices #1340–#1343 |
 | #1241 | A member leaves a lobby or the creator removes one; the creator deletes a game, and reassigns an investigator mid-game; the board knows the creator and the members, PR #1349; slices #1345–#1348 |
 | #1242 | One pure `layout` decides where the live prompt goes for each account: a strip headed with the name of each investigator of yours it asks, each with its own options and Pass in a window several answer; a spinner on the panel of one another account answers for; the lead's strip, the lead-waiting line, or the waiting strip above the board; the status bar's "Waiting on" is gone, PR #1353; slices #1351, #1352 |
+| #1243 | A choice among cards off the board renders as the cards, in a modal for the account answering, with Draw, Take or Place next; the investigator whose deck is searched answers the search; every other account sees the cards on the chooser's tab with no controls, face down for a search or a look and face up for a discard pile, PR #1380; slices #1375–#1379 |
 | #1245 | `wasm-test` runs locally by default, engine diffs included, PR #1250 |
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
@@ -129,14 +130,14 @@ landed, before phase 9 is scoped.
 (✅ PR #1277) and #1239 (✅ PR #1339).
 
 **5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) →
-#534 (✅ PR #1367) and #1101. #1242 (✅ PR #1353) → #1243 and #1322.** #1322, the
+#534 (✅ PR #1367) and #1101. #1242 (✅ PR #1353) → #1243 (✅ PR #1380) and #1322.** #1322, the
 board surface for committed cards, also follows #65 (✅ PR #1321), which records
 each card's committer. #1360 (✅ PR #1367, the round band lit Investigation
 during the setup mulligan), #1361 (activated abilities labelled by index, not by
 card) and #1362 (untracked signal reads in the card views and the event log) are
 standalone. #1364 (✅ PR #1374), the game's symbols as glyphs from the
 `arkhamicons` font, follows #863 (✅ PR #1359). #1381 (the event log hides a
-searched card from the other accounts) follows #1243.
+searched card from the other accounts) follows #1243 (✅ PR #1380).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
