@@ -725,6 +725,17 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
         .collect()
 }
 
+/// A header card's popover: the name and printed text of the face it is
+/// showing. The act, the agenda and a pile's cards show only their name on
+/// the board, so this is where their text is read.
+pub(crate) fn card_popover(name: &str, text: Option<&str>) -> impl IntoView {
+    let text = text.map(|t| render_segments(parse_card_text(t)));
+    view! {
+        <div class="popover-title">{name.to_owned()}</div>
+        {text.map(|t| view! { <div class="card-text">{t}</div> })}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId, Owner as CardOwner};

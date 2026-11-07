@@ -84,16 +84,6 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<String>) {
     name_and_text_src(registry::use_cards(), code, face)
 }
 
-/// An act or agenda card's popover: the name and printed text of the face the
-/// card is showing. The card itself shows only its header and thresholds.
-fn card_popover(name: &str, text: Option<&str>) -> impl IntoView {
-    let text = text.map(|t| card::render_segments(card::parse_card_text(t)));
-    view! {
-        <div class="popover-title">{name.to_owned()}</div>
-        {text.map(|t| view! { <div class="card-text">{t}</div> })}
-    }
-}
-
 /// The act's front-face clue line, `None` for an act that advances on a
 /// non-clue objective.
 ///
@@ -149,7 +139,7 @@ pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView
                 <span class="card-kind">"Act"</span>
                 <span class="card-name">{name}</span>
             </div>
-            <Popover hover=hover>{card_popover(&popover_name, text.as_deref())}</Popover>
+            <Popover hover=hover>{card::card_popover(&popover_name, text.as_deref())}</Popover>
             {
                 // Thresholds belong to the front face only — the reverse ("1b")
                 // side prints the on-advance effect, not the advance cost.
@@ -209,7 +199,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 <span class="card-kind">"Agenda"</span>
                 <span class="card-name">{name}</span>
             </div>
-            <Popover hover=hover>{card_popover(&popover_name, text.as_deref())}</Popover>
+            <Popover hover=hover>{card::card_popover(&popover_name, text.as_deref())}</Popover>
             {
                 // Doom belongs to the front face only — the reverse ("1b") side
                 // prints the on-advance effect, not the doom track.
