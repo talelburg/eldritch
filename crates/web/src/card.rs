@@ -304,11 +304,6 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     clippy::needless_pass_by_value,
     reason = "Leptos `#[component]` takes `code` and `in_play` by value into its owned props struct"
 )]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one inline `view!` fragment per card part (head, traits, text, footer) and per \
-              in-play overlay"
-)]
 #[component]
 pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
     let Some(meta) = (registry::use_cards().metadata_for)(&code) else {
