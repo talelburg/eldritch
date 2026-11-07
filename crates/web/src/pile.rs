@@ -30,11 +30,11 @@ use game_core::state::CardCode;
 use leptos::ev::{self, MouseEvent};
 use leptos::prelude::*;
 
-use crate::act_agenda::{self, Face};
 use crate::card;
 use crate::interaction::{self, PendingOptions};
 use crate::popover::{Hover, Popover, Spot};
 use crate::registry;
+use crate::scenario_row::{self, Face};
 
 /// A pile: `label`, then its top card and a count that opens the pile list,
 /// or `empty_text` when it holds no card. With an `anchor`, the top card
@@ -124,7 +124,7 @@ fn pile_card(code: &CardCode, tile_class: &'static str) -> impl IntoView {
 /// What a header tile holds: `code`'s printed name, and its printed text in a
 /// [`Popover`] that `hover` opens.
 fn card_face(code: &CardCode, hover: Hover) -> impl IntoView {
-    let (name, text) = act_agenda::name_and_text_src(registry::use_cards(), code, Face::Front);
+    let (name, text) = scenario_row::name_and_text_src(registry::use_cards(), code, Face::Front);
     let popover_name = name.clone();
     view! {
         <span class="pile-card-name">{name}</span>

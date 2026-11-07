@@ -230,7 +230,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
 /// pile, the encounter deck, and the current agenda and act as cards. The act
 /// and agenda are each omitted when their deck is empty (fixtures may carry
 /// neither); the piles always keep their place.
-pub fn act_agenda_view(game: &GameState) -> impl IntoView {
+pub fn scenario_row_view(game: &GameState) -> impl IntoView {
     let act_face = deck_face(game, AdvanceDeck::Act);
     let act = game.act_deck.get(game.act_index).cloned().map(|act| {
         let clue_text = clue_line(&act, game);
@@ -253,7 +253,7 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     let victory_display: Vec<CardCode> = game.victory_display.iter().rev().cloned().collect();
     let victory_points = victory_total(registry::use_cards(), &victory_display);
     view! {
-        <section class="act-agenda">
+        <section class="scenario-row">
             <Pile
                 cards=victory_display
                 label="Victory display"

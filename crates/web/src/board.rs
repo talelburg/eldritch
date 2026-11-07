@@ -18,7 +18,7 @@ use crate::enemy_card::EnemyCard;
 use crate::interaction::{self, PendingOptions};
 use crate::pile::Pile;
 use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
-use crate::{act_agenda, map, registry, store};
+use crate::{map, registry, scenario_row, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the map and the dock when a game is present, else
@@ -43,7 +43,7 @@ pub fn BoardView() -> impl IntoView {
                     view! {
                         {board_menu()}
                         {resolution_banner(game)}
-                        {act_agenda::act_agenda_view(game)}
+                        {scenario_row::scenario_row_view(game)}
                     }
                 })
             })
