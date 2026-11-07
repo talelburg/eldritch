@@ -37,7 +37,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | Issue | Work |
 |---|---|
 | #65 | Each other investigator at the performer's location may commit one card to their skill test, asked in player order before the performer; a committed card's result addition is its committer's, a modifier the performer's, PR #1321; slices #1316, #1317, #1318, #1319, #1320 |
-| #146 | The turn's player window reopens after each action (Appendix II 2.2.1), answered by every investigator holding an eligible fast play; a fast play, a 0-action ability, the act advance and End Turn open none, PR #1332; slices #1330, #1331 |
+| #146 | The turn's player window reopens after each action (Appendix II 2.2.1), answered by every investigator holding an eligible fast play; a fast play, a 0-action ability, the act advance and End Turn open none, PR #1332; spec #1329; slices #1330, #1331 |
 | #153 | An act's group clue spend asks each contributor with a choice for their share, in player order with the investigator who started the advance last and covering the rest; both `AdvanceAct` and The Barrier 01109's round-end spend, PR #1327 |
 | #151 | An engagement tie is the lead's to answer, wherever an enemy comes to stand ready beside several investigators its prey can't tell apart, PR #1310; slices #1306, #1307, #1308, #1309 |
 | #359 | Medical Texts 01035 chooses an investigator at your location before its test, and the result heals or damages that investigator; the pick crosses the skill test beside the ability source, PR #1326; slice #1325 |
@@ -59,6 +59,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #975 | Co-location reach into another investigator's threat area, PR #984 |
 | #1061 | Scrying 01061 reorders any investigator's deck, chosen once and kept for its placements; an eliminated investigator is never offered by a choice of investigator, PR #1326; slice #1324 |
 | #1086 | A committed skill's ST.7 ability says whether it modifies the test's consequence or adds one; modifiers apply before the follow-up, both gated on the outcome, PR #1311 |
+| #1101 | Every discard pile and the victory display on the board, each one pile that opens a list of its cards top first; Wendy's Amulet plays from her discard pile, anchored on the pile, PR #1371; slices #1368, #1369, #1370 |
 | #1132 | An eliminated investigator's card that later leaves play is removed from the game into their own pile, PR #1302 |
 | #1139 | The Barrier advances on a two-seat combat tie, PR #1195 |
 | #1140 | WebSocket liveness: heartbeat, explicit close codes, graceful shutdown and input lockout, PR #1290; slices #1286, #1287, #1288, #1289 |
@@ -99,7 +100,8 @@ tracker, and the tracker's dependency view is authoritative.
 - **Glossary:** Account, Lobby, Creator, Member and viewer, landed with this
   plan.
 - **Tests:** #1233 (✅ PR #1249) → #1234 (✅ PR #1259). #1179 (✅ PR #1260) follows
-  #1233. The two-investigator engine tests of lane 3 copy #1234's fixtures.
+  #1233 (✅ PR #1249). The two-investigator engine tests of lane 3 copy the
+  fixtures of #1234 (✅ PR #1259).
 - **Hosting:** #1225 (✅ PR #1261) and #1224 (✅ PR #1264) → #1226 (✅ PR #1267) →
   #1227 (✅ PR #1268).
 - **Accounts:** #1236 (✅ PR #1271) → #1237 (✅ PR #1277).
@@ -107,22 +109,25 @@ tracker, and the tracker's dependency view is authoritative.
   (✅ PR #1285).
 - **Liveness:** #1140 (✅ PR #1290).
 
-**2. The wire break: #1229 + #1234 → #1230 (✅ PR #1297).** One change to the
-wire format. #458, #581, #583 and #1194 close with it.
+**2. The wire break: #1229 (✅ PR #1280) + #1234 (✅ PR #1259) → #1230
+(✅ PR #1297).** One change to the wire format. #458, #581, #583 and #1194 close
+with it (all ✅ PR #1297).
 
-**→ The next architecture review** (#1145 step 5) is due now that #1230 has
-landed, before phase 9 is scoped.
+**→ The next architecture review** (#1145 step 5) is due now that #1230
+(✅ PR #1297) has landed, before phase 9 is scoped.
 
-**3. Rules fixes, after #1234.**
+**3. Rules fixes, after #1234 (✅ PR #1259).**
 
 - Standalone: #573 (✅ PR #1298), #662 (✅ PR #1299), #795 (✅ PR #1300), #409
   (✅ PR #1301), #1132 (✅ PR #1302), #1185 (✅ PR #1305).
 - Engagement: #151 (✅ PR #1310), card 07's tie frame.
 - ST.7: #1086 (✅ PR #1311) → #642 (✅ PR #1315) → #65 (✅ PR #1321). #359
-  (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 and pair on one
-  choose-and-keep primitive, specced in #1323 (✅ PR #1326).
-- After the wire break: #153 (✅ PR #1327, also after #573) and #146
-  (✅ PR #1332).
+  (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 (✅ PR #1311) and pair
+  on one choose-and-keep primitive, specced in #1323 (✅ PR #1326).
+- After the wire break: #153 (✅ PR #1327) and #146 (✅ PR #1332). #153 also
+  follows #573 (✅ PR #1298). #1328, any investigator starting the act advance
+  in the player window during a turn, follows #146 (✅ PR #1332) and #153
+  (✅ PR #1327).
 
 **4. The lobby: #1236 (✅ PR #1271) + #1224 (✅ PR #1264) + #1230 (✅ PR #1297) →
 #1239 (✅ PR #1339) → #1240 (✅ PR #1344) and #1241 (✅ PR #1349).** #1274
@@ -130,14 +135,16 @@ landed, before phase 9 is scoped.
 (✅ PR #1277) and #1239 (✅ PR #1339).
 
 **5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) →
-#534 (✅ PR #1367) and #1101. #1242 (✅ PR #1353) → #1243 (✅ PR #1380) and #1322.** #1322, the
-board surface for committed cards, also follows #65 (✅ PR #1321), which records
-each card's committer. #1360 (✅ PR #1367, the round band lit Investigation
-during the setup mulligan), #1361 (activated abilities labelled by index, not by
-card) and #1362 (untracked signal reads in the card views and the event log) are
-standalone. #1364 (✅ PR #1374), the game's symbols as glyphs from the
-`arkhamicons` font, follows #863 (✅ PR #1359). #1381 (the event log hides a
-searched card from the other accounts) follows #1243 (✅ PR #1380).
+#534 (✅ PR #1367) and #1101 (✅ PR #1371). #1242 (✅ PR #1353) → #1243
+(✅ PR #1380) and #1322.** #1322, the board surface for committed cards, also
+follows #65 (✅ PR #1321), which records each card's committer. #1360
+(✅ PR #1367, the round band lit Investigation during the setup mulligan), #1361
+(activated abilities labelled by index, not by card) and #1362 (untracked signal
+reads in the card views and the event log) are standalone. #1364 (✅ PR #1374),
+the game's symbols as glyphs from the `arkhamicons` font, follows #863
+(✅ PR #1359). #1381 (the event log hides a searched card from the other
+accounts) follows #1243 (✅ PR #1380). #1354 (prompts stop prefixing the
+investigator's name) follows #1242 (✅ PR #1353).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
