@@ -6,7 +6,7 @@
 //! as their names, read from the registry provided at mount
 //! ([`registry::use_cards`]).
 
-use game_core::engine::{self, EngineOutcome, OptionTarget};
+use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
 use game_core::state::investigator::{Investigator, InvestigatorId};
 use game_core::state::GameState;
@@ -126,17 +126,10 @@ fn Dock() -> impl IntoView {
                 (
                     p.holds(investigator),
                     p.dock_strip == Some(investigator),
-                    p.choice_row_on(investigator),
+                    p.choice_row_on(investigator).cloned(),
                 )
             });
-            let live = match &state.outcome {
-                Some(EngineOutcome::AwaitingInput { request, .. }) => Some(request),
-                _ => None,
-            };
             state.game.as_ref().and_then(|game| {
-                let row = row
-                    .zip(live)
-                    .map(|(area, request)| ChoiceRow::of(area, request, game));
                 game.investigators
                     .get(&investigator)
                     .map(|inv| investigator_panel(game, inv, held, strip, row))

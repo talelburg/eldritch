@@ -13,6 +13,7 @@ use game_core::state::{
 use game_core::test_support::{
     self, location, seat, uses, BoardLookup as _, Printed, Seat, TestSession,
 };
+use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web_sys::Element;
@@ -45,14 +46,17 @@ fn roland(deck: &[&str]) -> Seat<Printed> {
     seat(1).as_card(ROLAND).at(HERE).deck(deck.iter().copied())
 }
 
-/// `investigator`'s turn, alone at `HERE`, as a session.
-fn turn(investigator: Seat<Printed>) -> TestSession {
+/// `investigator`, alone at `HERE`.
+fn table(investigator: Seat<Printed>) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(investigator)
-        .open_turn(INV)
-        .session()
+}
+
+/// `investigator`'s turn, alone at `HERE`, as a session.
+fn turn(investigator: Seat<Printed>) -> TestSession {
+    table(investigator).open_turn(INV).session()
 }
 
 /// Activate printed ability `ability` of `code`, in play.
@@ -122,6 +126,38 @@ async fn old_book_of_lore_shows_the_top_three_with_draw_and_draws_the_one_clicke
     let inv = &h.state().investigators[&INV];
     assert_eq!(inv.hand, vec![CardCode::new(MAGNIFYING_GLASS)]);
     assert_eq!(inv.deck.len(), 3);
+}
+
+/// The card modal is dismissed only by choosing a card, since every exit is
+/// engine input: it has no button but its verbs, and a click on its backdrop
+/// submits nothing and leaves it up.
+#[wasm_bindgen_test]
+async fn the_card_modal_has_no_close_control_and_its_backdrop_does_not_dismiss_it() {
+    let session = turn(
+        roland(&[BEAT_COP, MAGNIFYING_GLASS, EMERGENCY_CACHE, GUTS]).in_play([OLD_BOOK_OF_LORE]),
+    );
+    let mut h = mount(activate(session, OLD_BOOK_OF_LORE, 0)).await;
+
+    assert_eq!(
+        common::count(&h.board.root, ".card-modal button"),
+        common::count(&h.board.root, ".card-modal .card-modal-verb"),
+        "every button in the modal is a card's verb: there is no close control",
+    );
+
+    h.find(".card-modal-backdrop").click();
+    task::tick().await;
+
+    assert!(
+        h.board.rx.try_recv().is_err(),
+        "a backdrop click submits nothing"
+    );
+    assert!(!h.absent(".card-modal"), "the modal is still up");
+    assert_eq!(
+        shown_names(&h),
+        common::names(&["Beat Cop", "Magnifying Glass", "Emergency Cache"]),
+        "the prompt is still unanswered",
+    );
+    assert!(h.state().investigators[&INV].hand.is_empty());
 }
 
 /// Arcane Initiate 01063: *"Search the top 3 cards of your deck for a
@@ -259,12 +295,10 @@ async fn scrying_a_deck_places_each_card_next_and_shows_those_placed() {
 /// text, through the card component's generic face.
 #[wasm_bindgen_test]
 async fn scrying_the_encounter_deck_shows_encounter_cards_by_name_and_text() {
-    let session =
-        turn(roland(&[GUTS]).in_play([(SCRYING, uses(UseKind::Charges, 3))])).edit_state(|state| {
-            state.encounter_deck = [ANCIENT_EVILS, CRYPT_CHILL, OBSCURING_FOG, ROTTING_REMAINS]
-                .map(CardCode::new)
-                .into();
-        });
+    let session = table(roland(&[GUTS]).in_play([(SCRYING, uses(UseKind::Charges, 3))]))
+        .with_encounter_deck([ANCIENT_EVILS, CRYPT_CHILL, OBSCURING_FOG, ROTTING_REMAINS])
+        .open_turn(INV)
+        .session();
     let mut h = mount(activate(session, SCRYING, 0).pick_nth(ENCOUNTER_DECK)).await;
 
     assert_eq!(

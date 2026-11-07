@@ -501,10 +501,6 @@ impl Harness {
 
     /// True iff nothing under the mounted root matches `sel`.
     pub(crate) fn absent(&self, sel: &str) -> bool {
-        self.board
-            .root
-            .query_selector(sel)
-            .expect("query")
-            .is_none()
+        absent(&self.board.root, sel)
     }
 }

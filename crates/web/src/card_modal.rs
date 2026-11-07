@@ -3,17 +3,19 @@
 //! prompt strip.
 //!
 //! The engine anchors each offered card by its position, and the prompt by
-//! the area the choice is made among: the top 3 of a deck being searched, a
-//! whole deck, or a discard pile (ADR 0011). This module reads those two
-//! anchors and the cards at them from the client's own state. It never parses
-//! the prompt's text or an option's label.
+//! the area the choice is made among (ADR 0011), one of the [`CardArea`]s: the
+//! searched top N of a deck, a whole deck being searched, the top N of a deck
+//! or of the encounter deck being looked at, or a discard pile. This module
+//! reads those two anchors and the cards at them from the client's own state.
+//! It never parses the prompt's text or an option's label.
 //!
 //! The modal is the **sole** surface for the choice, as the decision modal is
 //! for a decision: while it is up, the prompt strip renders neither the prompt
 //! text nor these options.
 //!
-//! Scrying 01061's looked-at cards are recognised too, with Place next, and the
-//! cards already placed shown apart in a row labelled "top".
+//! The verb on each offered card's button comes from the area: Draw for a
+//! search, Take for a discard pile, and Place next for looked-at cards, whose
+//! cards already placed are shown apart in a row labelled "top".
 //!
 //! [`live_card_modal`] and [`CardArea`] are pure and native-tested; the view's
 //! submit is wasm-only.
@@ -95,8 +97,9 @@ impl Verb {
 
 impl CardArea {
     /// The area `request` makes its choice among, when it is a card choice
-    /// this module renders: a search area, and every option anchored to a card
-    /// in it. `None` for any other prompt, which keeps its own surface.
+    /// this module renders: the request's anchor names one of the five areas,
+    /// and every option is anchored to a card in it. `None` for any other
+    /// prompt, which keeps its own surface.
     #[must_use]
     pub fn of(request: &InputRequest) -> Option<Self> {
         let area = match request.target.as_ref()? {
@@ -156,12 +159,6 @@ impl CardArea {
             }
             CardArea::DiscardPile(_) => Verb::Take,
         }
-    }
-
-    /// The area's cards in `game`, top first.
-    #[must_use]
-    pub fn cards(self, game: &GameState) -> Vec<CardCode> {
-        self.slots(game).into_iter().map(|(_, code)| code).collect()
     }
 
     /// The cards `request` offers from this area in `game`, top first: what

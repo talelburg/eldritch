@@ -13,7 +13,7 @@
 //! Scrying 01061's looked-at cards are hidden the same way, though looking at
 //! is not a search (FAQ 2.13, *"if an investigator "looks at" the top 3 cards
 //! of their deck, this is not a search effect"*): a product choice, to play as
-//! the table does in person (#1243).
+//! the table does in person.
 //!
 //! [`ChoiceRow`] is pure and native-tested.
 

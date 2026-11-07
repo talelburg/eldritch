@@ -17,6 +17,7 @@ use leptos::prelude::*;
 use protocol::{AccountId, LogPosition};
 
 use crate::card_modal::{self, CardArea};
+use crate::choice_row::ChoiceRow;
 use crate::decision;
 use crate::store::{self, ClientState};
 
@@ -46,17 +47,17 @@ pub struct PromptLayout {
 /// cards in the searched area without revealing those cards to the other
 /// players."* Every client holds the full state, so the hiding is the
 /// client's: only the account answering sees the cards in the modal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CardChoice {
     /// The card modal: this account answers the choice.
     Modal,
     /// A row on the chooser's tab, with no controls: every other account,
-    /// viewers included. The [`area`](CardArea) says what the row shows.
+    /// viewers included.
     Row {
         /// The chooser: the investigator answering the prompt.
         tab: InvestigatorId,
-        /// The cards the choice is made among.
-        area: CardArea,
+        /// What the row shows, built from the choice's [`CardArea`].
+        row: ChoiceRow,
     },
 }
 
@@ -229,12 +230,12 @@ impl PromptLayout {
             .any(|tab| tab.investigator == investigator && tab.held)
     }
 
-    /// The area whose row goes on `investigator`'s tab, when the live card
-    /// choice is theirs and another account answers it.
+    /// The row that goes on `investigator`'s tab, when the live card choice
+    /// is theirs and another account answers it.
     #[must_use]
-    pub fn choice_row_on(&self, investigator: InvestigatorId) -> Option<CardArea> {
-        match self.card_choice {
-            Some(CardChoice::Row { tab, area }) if tab == investigator => Some(area),
+    pub fn choice_row_on(&self, investigator: InvestigatorId) -> Option<&ChoiceRow> {
+        match &self.card_choice {
+            Some(CardChoice::Row { tab, row }) if *tab == investigator => Some(row),
             _ => None,
         }
     }
@@ -431,11 +432,15 @@ fn card_choice(state: &ClientState) -> Option<CardChoice> {
     let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
         return None;
     };
+    let Responder::Investigator(tab) = request.responder else {
+        return None;
+    };
     let area = CardArea::of(request)?;
-    match request.responder {
-        Responder::Investigator(tab) => Some(CardChoice::Row { tab, area }),
-        _ => None,
-    }
+    let game = state.game.as_ref()?;
+    Some(CardChoice::Row {
+        tab,
+        row: ChoiceRow::of(area, request, game),
+    })
 }
 
 /// The placement of a prompt the lead answers, for `lead`, the investigator

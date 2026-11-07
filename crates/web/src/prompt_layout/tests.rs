@@ -5,6 +5,8 @@ use game_core::test_support::{self, seat};
 use protocol::lobby::Member;
 use protocol::{Assignment, ServerMessage};
 
+use crate::choice_row::{Back, RowCards};
+
 use super::*;
 
 // The table: Tal holds Roland Banks, the lead, and Agnes Baker. Sam holds
@@ -424,21 +426,24 @@ fn the_account_answering_a_search_gets_the_card_modal() {
 /// `glossary/Search.md`: *"that player is permitted to look at all of the
 /// cards in the searched area without revealing those cards to the other
 /// players."* Every other account, viewers included, gets the searched area
-/// as a row on the searcher's tab, and no modal.
+/// as a row on the searcher's tab, face down, and no modal.
 #[test]
 fn every_other_account_gets_the_searched_area_as_a_row_on_the_searchers_tab() {
-    let area = CardArea::SearchedTopOfDeck {
-        investigator: ROLAND,
-        count: 2,
+    let row = ChoiceRow {
+        caption: "being searched".to_owned(),
+        cards: RowCards::FaceDown(2, Back::Player),
     };
     for you in [SAM, ALEX] {
         let placed = layout_of(&seen_by(you, rolands_search()));
         assert_eq!(
             placed.card_choice,
-            Some(CardChoice::Row { tab: ROLAND, area }),
+            Some(CardChoice::Row {
+                tab: ROLAND,
+                row: row.clone(),
+            }),
             "{you:?}",
         );
-        assert_eq!(placed.choice_row_on(ROLAND), Some(area), "{you:?}");
+        assert_eq!(placed.choice_row_on(ROLAND), Some(&row), "{you:?}");
         assert_eq!(placed.choice_row_on(DAISY), None, "{you:?}");
     }
 }

@@ -6,8 +6,8 @@
 //! Return them to the top of that deck in any order."* Looking at is not a
 //! search (FAQ 2.13, `glossary/Search.md`: *"if an investigator "looks at" the
 //! top 3 cards of their deck, this is not a search effect"*), and only a search
-//! carries the no-reveal clause. Hiding the cards anyway is a product choice
-//! (#1243), to play as the table does in person.
+//! carries the no-reveal clause. Hiding the cards anyway is a product choice,
+//! to play as the table does in person.
 //!
 //! Each game is seated as [`tabs::mount_table`]'s: Tal, [`YOU`], holds Roland
 //! Banks and Agnes Baker, Sam holds Daisy Walker, and Alex is a viewer. Daisy
@@ -16,9 +16,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::engine::enumerate::TurnAction;
-use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, GameStateBuilder, LocationId, UseKind,
-};
+use game_core::state::{AbilityAddress, AbilitySource, GameStateBuilder, LocationId, UseKind};
 use game_core::test_support::{location, seat, uses, BoardLookup as _, TestSession};
 use wasm_bindgen_test::*;
 
@@ -58,11 +56,9 @@ fn daisys_turn() -> TestSession {
                 .in_play([(SCRYING, uses(UseKind::Charges, 3))]),
         )
         .with_seating([ROLAND, DAISY, AGNES])
+        .with_encounter_deck(["01166", "01167", "01168"])
         .open_turn(DAISY)
         .session()
-        .edit_state(|state| {
-            state.encounter_deck = ["01166", "01167", "01168"].map(CardCode::new).into();
-        })
 }
 
 /// Daisy activates Scrying and picks a deck branch.
