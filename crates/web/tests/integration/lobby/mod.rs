@@ -20,9 +20,7 @@ use game_core::state::CardCode;
 use leptos::task;
 use protocol::lobby::{Lobby, LobbyView, Member};
 use protocol::{AccountId, ClientMessage, GameId, ServerMessage};
-use wasm_bindgen::JsCast as _;
 use web::store::{self, ClientState};
-use web_sys::HtmlElement;
 
 use crate::common::{self, BoardHandle, YOU};
 
@@ -83,10 +81,7 @@ pub(crate) const HEADER: &str = ".lobby-header";
 
 /// Click the one `sel` under `handle`'s root.
 pub(crate) fn click(handle: &BoardHandle, sel: &str) {
-    common::one(&handle.root, sel)
-        .dyn_into::<HtmlElement>()
-        .expect("an HTML element")
-        .click();
+    common::click(&common::one(&handle.root, sel));
 }
 
 /// The frame the lobby sent, which must be the only one.

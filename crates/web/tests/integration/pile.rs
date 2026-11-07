@@ -18,16 +18,17 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::pile::Pile;
 use web::registry::provide_cards;
-use web_sys::{Element, HtmlElement, KeyboardEvent, KeyboardEventInit};
+use web_sys::{Element, KeyboardEvent, KeyboardEventInit};
 
 use crate::common::{self, YOU};
-use crate::lobby;
 use crate::tabs::{self, AGNES, ALEX, DAISY, ROLAND};
 
 /// Knife: a Neutral asset, bottom of the pile.
 const KNIFE: &str = "01086";
 /// Emergency Cache: a Neutral event, on top.
 const EMERGENCY_CACHE: &str = "01088";
+/// The Study 01111.
+const STUDY: LocationId = LocationId(10);
 
 /// Mount a pile of `bottom_first` labelled "Discard", and return it.
 async fn mount_pile(bottom_first: &[&str]) -> Element {
@@ -47,21 +48,25 @@ async fn wendys_pile() -> Element {
 
 /// Click the pile's count control, and let the list open.
 async fn open_list(pile: &Element) {
-    click(&common::one(pile, ".pile-count")).await;
-}
-
-/// Click `el`, and let the page react.
-async fn click(el: &Element) {
-    el.clone()
-        .dyn_into::<HtmlElement>()
-        .expect("an HTML element")
-        .click();
+    common::click(&common::one(pile, ".pile-count"));
     task::tick().await;
 }
 
 /// Whether `pile`'s list is open.
 fn list_open(pile: &Element) -> bool {
     pile.query_selector(".pile-list").expect("query").is_some()
+}
+
+/// Press `key` with the focus inside `pile`: the keydown bubbles up to the
+/// window, as a real key press would.
+async fn press(pile: &Element, key: &str) {
+    let init = KeyboardEventInit::new();
+    init.set_key(key);
+    init.set_bubbles(true);
+    let event = KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init)
+        .expect("a keyboard event");
+    pile.dispatch_event(&event).expect("dispatch the key");
+    task::tick().await;
 }
 
 #[wasm_bindgen_test]
@@ -134,7 +139,8 @@ async fn a_click_outside_closes_the_pile_list() {
     open_list(&pile).await;
     assert!(list_open(&pile));
 
-    click(&common::one(&pile, ".menu-backdrop")).await;
+    common::click(&common::one(&pile, ".menu-backdrop"));
+    task::tick().await;
     assert!(!list_open(&pile), "the list stayed open");
 }
 
@@ -157,18 +163,6 @@ async fn another_key_leaves_the_pile_list_open() {
     assert!(list_open(&pile), "a key other than Escape closed the list");
 }
 
-/// Press `key` with the focus inside `pile`: the keydown bubbles up to the
-/// window, as a real key press would.
-async fn press(pile: &Element, key: &str) {
-    let init = KeyboardEventInit::new();
-    init.set_key(key);
-    init.set_bubbles(true);
-    let event = KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init)
-        .expect("a keyboard event");
-    pile.dispatch_event(&event).expect("dispatch the key");
-    task::tick().await;
-}
-
 #[wasm_bindgen_test]
 async fn an_empty_pile_reads_empty_and_cannot_be_opened() {
     let pile = mount_pile(&[]).await;
@@ -180,9 +174,6 @@ async fn an_empty_pile_reads_empty_and_cannot_be_opened() {
     );
     assert!(pile.query_selector(".pile-top").expect("query").is_none());
 }
-
-/// The Study 01111.
-const STUDY: LocationId = LocationId(10);
 
 #[wasm_bindgen_test]
 async fn every_investigators_tab_shows_their_discard_pile_to_every_account() {
@@ -211,17 +202,20 @@ async fn every_investigators_tab_shows_their_discard_pile_to_every_account() {
         ] {
             common::click_tab(&handle.root, name).await;
             assert_eq!(
-                lobby::texts(&handle, ".dock .pile-top .pile-card-name"),
+                common::texts_in(&handle.root, ".dock .pile-top .pile-card-name"),
                 top.into_iter().map(String::from).collect::<Vec<_>>(),
                 "{name}'s top card, as account {you:?} sees it"
             );
             assert_eq!(
-                lobby::texts(&handle, ".dock .pile-count"),
+                common::texts_in(&handle.root, ".dock .pile-count"),
                 count.into_iter().map(String::from).collect::<Vec<_>>(),
                 "{name}'s count, as account {you:?} sees it"
             );
             if top.is_none() {
-                assert_eq!(lobby::texts(&handle, ".dock .pile-empty"), vec!["empty"]);
+                assert_eq!(
+                    common::texts_in(&handle.root, ".dock .pile-empty"),
+                    vec!["empty"]
+                );
             }
         }
     }
@@ -274,11 +268,13 @@ async fn the_amulet_play_is_chosen_on_wendys_top_card() {
         top.class_name().contains("actionable"),
         "the top card glows"
     );
-    click(&common::one(&top, ".menu-hit")).await;
+    common::click(&common::one(&top, ".menu-hit"));
+    task::tick().await;
     let items = common::texts_in(&top, ".context-menu .menu-item");
     assert_eq!(items, vec!["Play Emergency Cache (Wendy's Amulet)"]);
 
-    click(&common::one(&top, ".context-menu .menu-item")).await;
+    common::click(&common::one(&top, ".context-menu .menu-item"));
+    task::tick().await;
     match handle.rx.try_recv().expect("the choice submitted a frame") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response, .. },

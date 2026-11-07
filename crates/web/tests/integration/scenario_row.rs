@@ -1,7 +1,7 @@
 //! Headless render test for the scenario row (the victory display, the
-//! encounter discard, the encounter deck, and the Act/Agenda cards), against the real corpus
-//! (`cards::TEST_REGISTRY`); mounts `scenario_row_view` directly (no investigator
-//! panel → no `TEST_INV` lookup).
+//! encounter discard, the encounter deck, and the Act/Agenda cards), against
+//! the real corpus (`cards::TEST_REGISTRY`); mounts `scenario_row_view`
+//! directly (no investigator panel → no `TEST_INV` lookup).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
@@ -22,7 +22,7 @@ use web::registry::provide_cards;
 use web::scenario_row;
 use web::store::ClientState;
 use web::transport::OutboundTx;
-use web_sys::{Element, HtmlElement};
+use web_sys::Element;
 
 use crate::common;
 
@@ -148,6 +148,17 @@ async fn the_victory_display_holding_the_ghoul_priest_reads_vp_2() {
     assert_eq!(common::text_of(&victory, ".pile-total"), "VP 2");
     let discard = pile_named(&row, "Encounter discard");
     assert_eq!(common::text_of(&discard, ".pile-top"), "Ghoul Minion");
+    assert_eq!(common::text_of(&discard, ".pile-count"), "1");
+    // The engine anchors nothing on the encounter discard, so it offers nothing.
+    let top = common::one(&discard, ".pile-top");
+    assert!(
+        !top.class_name().contains("actionable"),
+        "the encounter discard's top card glows"
+    );
+    assert!(
+        top.query_selector(".menu-hit").expect("query").is_none(),
+        "the encounter discard's top card opens a menu"
+    );
 }
 
 #[wasm_bindgen_test]
@@ -185,12 +196,7 @@ async fn mount_row(state: GameState) -> Element {
 
 /// The pile in `row` labelled `label`.
 fn pile_named(row: &Element, label: &str) -> Element {
-    let piles = row.query_selector_all(".pile").expect("query");
-    (0..piles.length())
-        .filter_map(|i| piles.item(i))
-        .filter_map(|n| n.dyn_into::<Element>().ok())
-        .find(|pile| common::text_of(pile, ".zone-label") == label)
-        .unwrap_or_else(|| panic!("no pile labelled {label}"))
+    common::named(row, ".pile", ".zone-label", label)
 }
 
 /// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda
@@ -247,19 +253,11 @@ async fn act_card_glows_and_advances_via_menu() {
     let mut rx = mount_with_prompt(outcome).await;
     let card = act_card();
     assert!(card.class_name().contains("actionable"), "act card glows");
-    card.query_selector(".menu-hit")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a .menu-hit")
-        .click();
+    common::click(&common::one(&card, ".menu-hit"));
     task::tick().await;
-    let item = card
-        .query_selector(".context-menu .menu-item")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a menu item");
+    let item = common::one(&card, ".context-menu .menu-item");
     assert_eq!(item.text_content().unwrap_or_default(), "Advance act");
-    item.click();
+    common::click(&item);
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
@@ -307,19 +305,11 @@ async fn agenda_card_glows_and_resolves_via_menu() {
         card.class_name().contains("actionable"),
         "agenda card glows"
     );
-    card.query_selector(".menu-hit")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a .menu-hit")
-        .click();
+    common::click(&common::one(&card, ".menu-hit"));
     task::tick().await;
-    let item = card
-        .query_selector(".context-menu .menu-item")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a menu item");
+    let item = common::one(&card, ".context-menu .menu-item");
     assert_eq!(item.text_content().unwrap_or_default(), "Resolve");
-    item.click();
+    common::click(&item);
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
