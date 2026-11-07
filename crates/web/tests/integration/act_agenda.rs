@@ -1,4 +1,5 @@
-//! Headless render test for the Act/Agenda cards, against the real corpus
+//! Headless render test for the scenario row (the victory display, the
+//! encounter discard, the encounter deck, and the Act/Agenda cards), against the real corpus
 //! (`cards::TEST_REGISTRY`); mounts `act_agenda_view` directly (no investigator
 //! panel → no `TEST_INV` lookup).
 #![cfg(target_arch = "wasm32")]
@@ -122,6 +123,74 @@ async fn an_objective_act_shows_no_clue_line() {
     // What Have You Done? (01110) advances when the Ghoul Priest is defeated.
     let text = clue_line_of_act("01110").await;
     assert!(!text.contains("clues to advance"), "{text}");
+}
+
+#[wasm_bindgen_test]
+async fn the_row_reads_victory_display_encounter_discard_encounter_deck_agenda_act() {
+    let row = mount_row(ghoul_priest_defeated()).await;
+    assert_eq!(
+        common::texts_in(&row, ".zone-label, .deck-label, .card-kind"),
+        [
+            "Victory display",
+            "Encounter discard",
+            "Encounter",
+            "Agenda",
+            "Act"
+        ],
+    );
+}
+
+#[wasm_bindgen_test]
+async fn the_victory_display_holding_the_ghoul_priest_reads_vp_2() {
+    let row = mount_row(ghoul_priest_defeated()).await;
+    let victory = pile_named(&row, "Victory display");
+    assert_eq!(common::text_of(&victory, ".pile-top"), "Ghoul Priest");
+    assert_eq!(common::text_of(&victory, ".pile-total"), "VP 2");
+    let discard = pile_named(&row, "Encounter discard");
+    assert_eq!(common::text_of(&discard, ".pile-top"), "Ghoul Minion");
+}
+
+#[wasm_bindgen_test]
+async fn an_empty_victory_display_reads_a_dash() {
+    let row = mount_row(barrier_and_getting_out()).await;
+    let victory = pile_named(&row, "Victory display");
+    assert_eq!(common::text_of(&victory, ".pile-empty"), "—");
+    assert!(
+        victory
+            .query_selector(".pile-total")
+            .expect("query")
+            .is_none(),
+        "an empty victory display shows no total"
+    );
+}
+
+/// [`barrier_and_getting_out`] after the Ghoul Priest 01116 (Victory 2) has
+/// been defeated, with a Ghoul Minion 01160 on top of the encounter discard.
+fn ghoul_priest_defeated() -> GameState {
+    let mut state = barrier_and_getting_out();
+    state.encounter_discard = vec![CardCode::new("01160")];
+    state.victory_display = vec![CardCode::new("01116")];
+    state
+}
+
+/// Mount the scenario row for `state` and return it.
+async fn mount_row(state: GameState) -> Element {
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        act_agenda::act_agenda_view(&state)
+    });
+    task::tick().await;
+    common::last_mounted(".act-agenda")
+}
+
+/// The pile in `row` labelled `label`.
+fn pile_named(row: &Element, label: &str) -> Element {
+    let piles = row.query_selector_all(".pile").expect("query");
+    (0..piles.length())
+        .filter_map(|i| piles.item(i))
+        .filter_map(|n| n.dyn_into::<Element>().ok())
+        .find(|pile| common::text_of(pile, ".zone-label") == label)
+        .unwrap_or_else(|| panic!("no pile labelled {label}"))
 }
 
 /// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda

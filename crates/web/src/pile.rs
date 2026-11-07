@@ -1,7 +1,8 @@
 //! A pile of cards on the board, drawn the same way wherever it sits.
 //!
-//! An investigator's discard pile sits in the dock today, and the encounter
-//! discard pile and the victory display join the encounter deck (#1101).
+//! An investigator's discard pile sits in the dock, and the encounter discard
+//! pile and the victory display sit beside the encounter deck in the scenario
+//! row. The victory display also shows its victory-point total.
 //!
 //! Collapsed, a pile is its label, its top card as a header tile (the name
 //! only, its printed text in a hover [`Popover`], as the act and agenda show
@@ -37,7 +38,8 @@ use crate::registry;
 
 /// A pile: `label`, then its top card and a count that opens the pile list,
 /// or `empty_text` when it holds no card. With an `anchor`, the top card
-/// offers the options anchored there.
+/// offers the options anchored there; with `victory_points`, a non-empty pile
+/// shows its total after the count.
 #[component]
 pub fn Pile(
     /// The pile's cards, top first.
@@ -51,6 +53,10 @@ pub fn Pile(
     /// The anchor options on this pile carry, if the engine names one for it.
     #[prop(optional)]
     anchor: Option<OptionTarget>,
+    /// The victory points the pile's cards are worth, shown as "VP N" after
+    /// the count: the victory display passes its total.
+    #[prop(optional)]
+    victory_points: Option<u32>,
 ) -> impl IntoView {
     let body = match cards.first().cloned() {
         None => view! { <span class="pile-empty">{empty_text}</span> }.into_any(),
@@ -70,6 +76,7 @@ pub fn Pile(
                 >
                     {count}
                 </button>
+                {victory_points.map(|vp| view! { <span class="pile-total">{format!("VP {vp}")}</span> })}
                 {pile_list(cards, open)}
             }
             .into_any()

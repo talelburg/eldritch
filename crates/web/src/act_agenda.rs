@@ -1,4 +1,6 @@
-//! Act + Agenda cards atop the board (above the map).
+//! The scenario row atop the board (above the map): the victory display and
+//! the encounter discard pile, drawn as [`Pile`]s, then the encounter deck,
+//! the agenda and the act.
 //!
 //! A pure render of `GameState` (mirrors `map::location_map`): the current act
 //! and agenda render as header-only cards — the name from the corpus by `code`,
@@ -18,6 +20,7 @@ use game_core::state::{
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
+use crate::pile::Pile;
 use crate::popover::{Hover, Popover};
 use crate::{card, controls, registry};
 
@@ -221,8 +224,10 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     }
 }
 
-/// The current act + agenda as cards. Each is omitted when its deck is empty
-/// (fixtures may carry neither).
+/// The scenario row, left to right: the victory display (with its total), the
+/// encounter discard pile, the encounter deck, and the current agenda and act
+/// as cards. The act and agenda are each omitted when their deck is empty
+/// (fixtures may carry neither); the piles always keep their place.
 pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     let act_face = deck_face(game, AdvanceDeck::Act);
     let act = game.act_deck.get(game.act_index).cloned().map(|act| {
@@ -240,7 +245,25 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     // not per-investigator, and the Mythos draw is an act on the board rather
     // than a "Confirm" with no referent.
     let encounter = controls::encounter_deck_view(game);
-    view! { <section class="act-agenda">{act}{agenda}{encounter}</section> }
+    // The scenario's out-of-play areas sit together on the left, its progress
+    // on the right. Both piles are stored bottom first, so the top is last.
+    let encounter_discard: Vec<CardCode> = game.encounter_discard.iter().rev().cloned().collect();
+    let victory_display: Vec<CardCode> = game.victory_display.iter().rev().cloned().collect();
+    let victory_points = victory_total(registry::use_cards(), &victory_display);
+    view! {
+        <section class="act-agenda">
+            <Pile
+                cards=victory_display
+                label="Victory display"
+                empty_text="—"
+                victory_points=victory_points
+            />
+            <Pile cards=encounter_discard label="Encounter discard" empty_text="empty"/>
+            {encounter}
+            {agenda}
+            {act}
+        </section>
+    }
 }
 
 /// The victory points of the cards in a victory display: the sum of each
