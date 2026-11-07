@@ -1,6 +1,8 @@
 //! The round band down the right edge: the round number, then the round's four
 //! phases as their Rules-Reference step numbers, with ◇ for each structural
-//! player window. The entry the round stands at is lit, and so is its phase.
+//! player window.
+//!
+//! The entry the round stands at is lit, and so is its phase.
 //!
 //! The band is a few characters wide, so it shows only the numbers. Hovering
 //! one shows its step's text in the hover popover, and hovering a phase's

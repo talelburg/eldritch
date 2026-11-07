@@ -295,6 +295,8 @@ fn the_encounter_draw_is_1_4_and_the_window_after_it() {
 
 #[test]
 fn each_phase_boundarys_forced_abilities_resolve_at_its_own_step() {
+    use RoundPosition as P;
+
     // A prompt raised by a phase's start or end forced abilities sits at that
     // step: 2.3, 3.1, 3.4, 4.1, 4.6, 1.1, then 1.5 and 2.1 of round 2.
     let session = at_the_first_turn();
@@ -306,7 +308,6 @@ fn each_phase_boundarys_forced_abilities_resolve_at_its_own_step() {
     let _ = session.skip();
     let round_two = observed();
 
-    use RoundPosition as P;
     assert_eq!(
         round_one,
         [
