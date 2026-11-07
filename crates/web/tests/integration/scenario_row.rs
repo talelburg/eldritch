@@ -82,7 +82,6 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     );
 }
 
-/// Hover `card` and return its popover's text, failing if none opens.
 /// The act card's clue line for `act`, staged by code under two seated
 /// investigators.
 async fn clue_line_of_act(act: &'static str) -> String {
