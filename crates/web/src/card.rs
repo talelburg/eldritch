@@ -15,19 +15,19 @@ use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
 
-use crate::glyph;
+use crate::glyph::{self, Glyph};
 use crate::interaction::{self, MultiSelect, PendingOptions};
 use crate::popover::{Hover, Popover};
 use crate::registry;
 
-/// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
-/// brackets; the renderer re-adds brackets for `Unknown` so unmapped tokens are
-/// visible.
+/// A parsed run of card text. `Symbol` carries the glyph its token maps to;
+/// `Unknown` carries the bare token without brackets, which the renderer
+/// re-adds so unmapped tokens are visible.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextSegment {
     Text(String),
     LineBreak,
-    Symbol(String),
+    Symbol(&'static Glyph),
     Trait(String),
     Bold(String),
     Italic(String),
@@ -130,10 +130,9 @@ fn read_until(chars: &[char], start: usize, pat: &str) -> Option<(String, usize)
 /// otherwise an `Unknown`, left to render with its brackets so it pops out for
 /// us to add a mapping.
 fn symbol_or_unknown(inner: String) -> TextSegment {
-    if glyph::for_token(&inner).is_some() {
-        TextSegment::Symbol(inner)
-    } else {
-        TextSegment::Unknown(inner)
+    match glyph::for_token(&inner) {
+        Some(g) => TextSegment::Symbol(g),
+        None => TextSegment::Unknown(inner),
     }
 }
 
@@ -423,27 +422,16 @@ const SKILLS: [SkillKind; 4] = [
     SkillKind::Agility,
 ];
 
-/// The markup token naming a skill's icon, which is also its colour class.
-fn skill_token(skill: SkillKind) -> &'static str {
-    match skill {
-        SkillKind::Willpower => "willpower",
-        SkillKind::Intellect => "intellect",
-        SkillKind::Combat => "combat",
-        SkillKind::Agility => "agility",
-    }
-}
-
-/// One icon: the white glyph of `token` inside its `skill-icon--<token>`
-/// colour circle, named in the circle's `title`.
-fn icon_view(token: &'static str) -> AnyView {
-    let glyph = glyph::for_token(token).expect("the glyph table maps every skill icon");
-    let class = format!("skill-icon skill-icon--{token}");
+/// One icon: the white `glyph` inside its `skill-icon--<token>` colour circle,
+/// named in the circle's `title`.
+fn icon_view(glyph: &'static Glyph) -> AnyView {
+    let class = format!("skill-icon skill-icon--{}", glyph.token);
     view! { <span class=class title=glyph.name>{glyph::view(glyph)}</span> }.into_any()
 }
 
 /// One skill's icon.
 fn skill_icon(skill: SkillKind) -> AnyView {
-    icon_view(skill_token(skill))
+    icon_view(glyph::for_skill(skill))
 }
 
 /// Every icon in `icons`, one per icon printed (so two `[intellect]` are two
@@ -452,7 +440,7 @@ fn icon_views(icons: SkillIcons) -> Vec<AnyView> {
     SKILLS
         .into_iter()
         .flat_map(|skill| (0..icons.matching(skill)).map(move |_| skill_icon(skill)))
-        .chain((0..icons.wild).map(|_| icon_view("wild")))
+        .chain((0..icons.wild).map(|_| icon_view(glyph::wild())))
         .collect()
 }
 
@@ -658,10 +646,7 @@ pub fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
         .map(|seg| match seg {
             TextSegment::Text(s) => view! { {s} }.into_any(),
             TextSegment::LineBreak => view! { <br/> }.into_any(),
-            TextSegment::Symbol(tok) => match glyph::for_token(&tok) {
-                Some(g) => glyph::view(g).into_any(),
-                None => unknown_token(&tok),
-            },
+            TextSegment::Symbol(g) => glyph::view(g).into_any(),
             TextSegment::Trait(t) => view! { <span class="card-trait-ref">{t}</span> }.into_any(),
             TextSegment::Bold(s) => view! { <b>{s}</b> }.into_any(),
             TextSegment::Italic(s) => view! { <i>{s}</i> }.into_any(),
@@ -837,7 +822,7 @@ mod tests {
             parse_card_text("+1 [combat]"),
             vec![
                 TextSegment::Text("+1 ".into()),
-                TextSegment::Symbol("combat".into()),
+                TextSegment::Symbol(glyph::for_skill(SkillKind::Combat)),
             ]
         );
     }

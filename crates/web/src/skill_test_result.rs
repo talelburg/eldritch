@@ -40,15 +40,18 @@ pub enum DrawnToken {
     /// A numeric token, shown as its signed value (`+1`, `-2`): it has no
     /// glyph.
     Numeric(i8),
-    /// A symbol token, drawn as its glyph, and how it resolved: its modifier
-    /// (`-2`), `auto-fail` or `elder sign`.
+    /// A symbol token, drawn as its glyph, and how it resolved, shown as its
+    /// modifier (`-2`), `auto-fail` or `elder sign`.
     Symbol {
         glyph: &'static Glyph,
-        resolution: String,
+        resolution: TokenResolution,
     },
     /// A symbol token the glyph table doesn't map (a `ChaosToken` variant added
     /// after this client), shown by its name as text.
-    Named { name: String, resolution: String },
+    Named {
+        name: String,
+        resolution: TokenResolution,
+    },
 }
 
 /// Build a [`SkillTestSummary`] from the store's latched skill-test state, or
@@ -131,14 +134,7 @@ fn drawn_token(token: ChaosToken, resolution: TokenResolution) -> DrawnToken {
     if let ChaosToken::Numeric(n) = token {
         return DrawnToken::Numeric(n);
     }
-    let resolution = match resolution {
-        TokenResolution::Modifier(n) => format!("{n:+}"),
-        TokenResolution::AutoFail => "auto-fail".to_string(),
-        TokenResolution::ElderSign => "elder sign".to_string(),
-        // `TokenResolution` is #[non_exhaustive]; a future kind gets a placeholder.
-        _ => "?".to_string(),
-    };
-    match token_glyph(token) {
+    match glyph::for_chaos_token(token) {
         Some(glyph) => DrawnToken::Symbol { glyph, resolution },
         None => DrawnToken::Named {
             name: format!("{token:?}"),
@@ -147,26 +143,24 @@ fn drawn_token(token: ChaosToken, resolution: TokenResolution) -> DrawnToken {
     }
 }
 
-/// The glyph a symbol token is drawn as, or `None` for a numeric token and for
-/// a `ChaosToken` variant the table doesn't map yet.
-fn token_glyph(token: ChaosToken) -> Option<&'static Glyph> {
-    let markup = match token {
-        ChaosToken::Skull => "skull",
-        ChaosToken::Cultist => "cultist",
-        ChaosToken::Tablet => "tablet",
-        ChaosToken::ElderThing => "elder_thing",
-        ChaosToken::AutoFail => "auto_fail",
-        ChaosToken::ElderSign => "elder_sign",
-        // `ChaosToken` is #[non_exhaustive]: a future variant has no glyph.
-        _ => return None,
-    };
-    glyph::for_token(markup)
+/// How a symbol token resolved, as the modal words it: its modifier (`-2`),
+/// `auto-fail` or `elder sign`.
+fn resolution_text(resolution: TokenResolution) -> String {
+    match resolution {
+        TokenResolution::Modifier(n) => format!("{n:+}"),
+        TokenResolution::AutoFail => "auto-fail".to_string(),
+        TokenResolution::ElderSign => "elder sign".to_string(),
+        // `TokenResolution` is #[non_exhaustive]; a future kind gets a placeholder.
+        _ => "?".to_string(),
+    }
 }
 
 /// The token line's content: a numeric token's signed value, a symbol's glyph
 /// then its resolution, or the em dash when no token was drawn.
 fn token_view(token: Option<DrawnToken>) -> AnyView {
-    let resolution = |r: String| view! { <span class="str-resolution">{r}</span> };
+    let resolution = |r: TokenResolution| {
+        view! { <span class="str-resolution">{resolution_text(r)}</span> }
+    };
     match token {
         None => "—".into_any(),
         Some(DrawnToken::Numeric(n)) => format!("{n:+}").into_any(),
@@ -370,7 +364,7 @@ mod tests {
             panic!("the auto-fail token is a symbol: {:?}", s.token);
         };
         assert_eq!((glyph.token, glyph.codepoint), ("auto_fail", 'q'));
-        assert_eq!(resolution, "auto-fail");
+        assert_eq!(resolution, TokenResolution::AutoFail);
         assert!(
             s.outcome.contains("auto-fail"),
             "notes the auto-fail: {}",
@@ -405,7 +399,7 @@ mod tests {
             panic!("names the latched token as a symbol: {:?}", s.token);
         };
         assert_eq!((glyph.token, glyph.codepoint), ("tablet", 'o'));
-        assert_eq!(resolution, "-2");
+        assert_eq!(resolution, TokenResolution::Modifier(-2));
     }
 
     /// Regression for #853: at this seam, the resolution came in a batch of its own —

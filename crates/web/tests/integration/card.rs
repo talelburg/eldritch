@@ -59,7 +59,7 @@ async fn asset_renders_cost_name_traits_text_icons() {
     assert!(html.contains("Weapon"), "traits missing: {html}");
     assert!(html.contains("Fight."), "bold text missing: {html}");
     // `[action]` and `[combat]` in the text become glyphs. Scoped to
-    // `.card-text`, since the footer's skill chip also names combat.
+    // `.card-text`, since the footer's skill icon also draws the combat glyph.
     let text = common::one(&common::last_mounted(".card"), ".card-text");
     let glyph = |token: &str| {
         let span = common::one(&text, &format!(".glyph.glyph--{token}"));

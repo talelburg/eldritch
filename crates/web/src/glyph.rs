@@ -5,6 +5,8 @@
 //! upstream commit and the config the codepoints were checked against are in
 //! `crates/web/assets/fonts/SOURCE.md`; `style.css` loads it with `@font-face`.
 
+use card_dsl::card_data::SkillKind;
+use game_core::state::ChaosToken;
 use leptos::prelude::*;
 
 /// One game symbol: the token card markup writes it as (`combat` for
@@ -25,21 +27,21 @@ pub struct Glyph {
 /// `fast` and `free` are one icon: card text writes it `[fast]`, and the rules
 /// write it both ways (`GLOSSARY.md` → **Fast**).
 pub const GLYPHS: &[Glyph] = &[
-    glyph("willpower", 'f', "willpower"),
-    glyph("intellect", 'g', "intellect"),
-    glyph("combat", 'h', "combat"),
-    glyph("agility", 'i', "agility"),
-    glyph("wild", 'j', "wild"),
+    WILLPOWER,
+    INTELLECT,
+    COMBAT,
+    AGILITY,
+    WILD,
     glyph("action", 't', "action"),
     glyph("reaction", 'u', "reaction"),
     glyph("fast", 'v', "free triggered ability"),
     glyph("free", 'v', "free triggered ability"),
-    glyph("elder_sign", 'k', "elder sign"),
-    glyph("skull", 'm', "skull"),
-    glyph("cultist", 'n', "cultist"),
-    glyph("tablet", 'o', "tablet"),
-    glyph("elder_thing", 'p', "elder thing"),
-    glyph("auto_fail", 'q', "auto-fail"),
+    ELDER_SIGN,
+    SKULL,
+    CULTIST,
+    TABLET,
+    ELDER_THING,
+    AUTO_FAIL,
     glyph("per_investigator", 'r', "per investigator"),
     glyph("guardian", ')', "guardian"),
     glyph("seeker", 'b', "seeker"),
@@ -50,6 +52,20 @@ pub const GLYPHS: &[Glyph] = &[
     glyph("bless", 'z', "bless"),
     glyph("codex", '\u{e901}', "codex"),
 ];
+
+// The rows an engine enum maps to, named so [`for_skill`] and
+// [`for_chaos_token`] reach them without a lookup that could miss.
+const WILLPOWER: Glyph = glyph("willpower", 'f', "willpower");
+const INTELLECT: Glyph = glyph("intellect", 'g', "intellect");
+const COMBAT: Glyph = glyph("combat", 'h', "combat");
+const AGILITY: Glyph = glyph("agility", 'i', "agility");
+const WILD: Glyph = glyph("wild", 'j', "wild");
+const ELDER_SIGN: Glyph = glyph("elder_sign", 'k', "elder sign");
+const SKULL: Glyph = glyph("skull", 'm', "skull");
+const CULTIST: Glyph = glyph("cultist", 'n', "cultist");
+const TABLET: Glyph = glyph("tablet", 'o', "tablet");
+const ELDER_THING: Glyph = glyph("elder_thing", 'p', "elder thing");
+const AUTO_FAIL: Glyph = glyph("auto_fail", 'q', "auto-fail");
 
 /// A [`Glyph`] row, so the table reads one symbol per line.
 const fn glyph(token: &'static str, codepoint: char, name: &'static str) -> Glyph {
@@ -64,6 +80,39 @@ const fn glyph(token: &'static str, codepoint: char, name: &'static str) -> Glyp
 #[must_use]
 pub fn for_token(token: &str) -> Option<&'static Glyph> {
     GLYPHS.iter().find(|g| g.token == token)
+}
+
+/// The glyph of a skill's icon.
+#[must_use]
+pub fn for_skill(skill: SkillKind) -> &'static Glyph {
+    match skill {
+        SkillKind::Willpower => &WILLPOWER,
+        SkillKind::Intellect => &INTELLECT,
+        SkillKind::Combat => &COMBAT,
+        SkillKind::Agility => &AGILITY,
+    }
+}
+
+/// The glyph of the wild skill icon, which no [`SkillKind`] names.
+#[must_use]
+pub fn wild() -> &'static Glyph {
+    &WILD
+}
+
+/// The glyph a chaos token is drawn as, or `None` for a numeric token and for
+/// a `ChaosToken` variant this table doesn't map yet.
+#[must_use]
+pub fn for_chaos_token(token: ChaosToken) -> Option<&'static Glyph> {
+    match token {
+        ChaosToken::Skull => Some(&SKULL),
+        ChaosToken::Cultist => Some(&CULTIST),
+        ChaosToken::Tablet => Some(&TABLET),
+        ChaosToken::ElderThing => Some(&ELDER_THING),
+        ChaosToken::AutoFail => Some(&AUTO_FAIL),
+        ChaosToken::ElderSign => Some(&ELDER_SIGN),
+        // `ChaosToken` is #[non_exhaustive]: a future variant has no glyph.
+        _ => None,
+    }
 }
 
 /// A glyph as a `glyph glyph--<token>` span drawing its codepoint, titled and

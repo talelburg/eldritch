@@ -213,6 +213,55 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
     assert!(text.contains("Failed by 2"), "shows outcome: {text}");
 }
 
+/// A test that drew no chaos token at all shows the em dash on the token line.
+#[wasm_bindgen_test]
+async fn shows_the_em_dash_when_no_token_was_drawn() {
+    let (store, _rx) = mount_modal();
+    store.update(|s| {
+        store::reduce(
+            s,
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(1),
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestStarted {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    difficulty: 3,
+                }],
+                outcome: EngineOutcome::Done,
+            }),
+        );
+        // The resolution, with no `ChaosTokenRevealed` before it.
+        store::reduce(
+            s,
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(2),
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestSucceeded {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    margin: 1,
+                }],
+                outcome: acknowledge_pause(),
+            }),
+        );
+    });
+    task::tick().await;
+
+    let section = last_section().expect("the result modal renders after resolution");
+    assert_eq!(
+        common::text_of(&section, ".str-token"),
+        "Chaos token: —",
+        "no token drawn shows the em dash"
+    );
+}
+
 #[wasm_bindgen_test]
 async fn renders_nothing_before_any_resolution() {
     // Other tests on the same page accumulate panels in the DOM, so assert on the
