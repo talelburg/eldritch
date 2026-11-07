@@ -161,19 +161,86 @@ fn one_card_left_over_is_counted_in_the_singular() {
     );
 }
 
-/// Scrying 01061 looks at the top 3, which is not a search (FAQ 2.13). Its
-/// picks stay on the prompt strip until their own modal lands (#1379).
+fn looked_at(count: u8) -> OptionTarget {
+    OptionTarget::LookedAtTopOfDeck {
+        investigator: ROLAND,
+        count,
+    }
+}
+
+/// Scrying 01061: *"Look at the top 3 cards of any investigator's deck or the
+/// encounter deck. Return them to the top of that deck in any order."* Looking
+/// at is not a search (FAQ 2.13), so the verb is Place next, not Draw. On the
+/// first pick every card is unplaced.
 #[test]
-fn looking_at_the_top_of_a_deck_is_not_a_search() {
+fn scrying_a_deck_shows_the_three_cards_with_place_next() {
     let state = holding_roland(search(
-        OptionTarget::LookedAtTopOfDeck {
-            investigator: ROLAND,
-            count: 3,
-        },
+        looked_at(3),
         vec![deck_card(0, 0), deck_card(1, 1), deck_card(2, 2)],
     ));
-    assert_eq!(live_card_modal(&state), None);
-    assert!(!modal_is_live(&state));
+    let modal = live_card_modal(&state).expect("the card modal is up");
+    assert_eq!(modal.verb(), Verb::PlaceNext);
+    assert_eq!(modal.verb().label(), "Place next");
+    assert_eq!(
+        modal.shown,
+        [
+            offered(GUTS, 0),
+            offered(OLD_BOOK_OF_LORE, 1),
+            offered("01088", 2)
+        ],
+    );
+    assert!(modal.placed.is_empty(), "nothing is placed yet");
+    assert!(modal.collapsed.is_empty());
+}
+
+/// Scrying's second pick: the engine has moved the first card placed to the
+/// top, and the area is still the 3 looked at. The top position, not offered,
+/// is the card placed so far; the 2 below it are still to place.
+#[test]
+fn scryings_second_pick_shows_the_placed_card_apart_from_the_two_left() {
+    let state = holding_roland(search(looked_at(3), vec![deck_card(0, 1), deck_card(1, 2)]));
+    let modal = live_card_modal(&state).expect("the card modal is up");
+    assert_eq!(modal.placed, [code(GUTS)]);
+    assert_eq!(
+        modal.shown,
+        [offered(OLD_BOOK_OF_LORE, 0), offered("01088", 1)],
+        "only the unplaced cards are shown, each with Place next",
+    );
+    assert!(modal.collapsed.is_empty());
+}
+
+/// Scrying on the encounter deck reads the encounter deck's top cards, which
+/// the modal shows by name and text.
+#[test]
+fn scrying_the_encounter_deck_reads_its_top_cards() {
+    let ancient_evils = "01166";
+    let crypt_chill = "01167";
+    let obscuring_fog = "01168";
+    let game = GameStateBuilder::new()
+        .with_seat(seat(1).deck(DECK))
+        .with_encounter_deck([ancient_evils, crypt_chill, obscuring_fog, "01163"])
+        .build();
+    let encounter_card = |id: u32, index: u8| {
+        ChoiceOption::new(OptionId(id), "a card").at(OptionTarget::EncounterDeckCard {
+            index: DeckIndex(index),
+        })
+    };
+    let state = ClientState {
+        game: Some(game),
+        outcome: Some(test_support::awaiting_request(search(
+            OptionTarget::LookedAtTopOfEncounterDeck { count: 3 },
+            vec![encounter_card(0, 1), encounter_card(1, 2)],
+        ))),
+        ..Default::default()
+    }
+    .you_hold_every_investigator();
+    let modal = live_card_modal(&state).expect("the card modal is up");
+    assert_eq!(modal.verb(), Verb::PlaceNext);
+    assert_eq!(modal.placed, [code(ancient_evils)]);
+    assert_eq!(
+        modal.shown,
+        [offered(crypt_chill, 0), offered(obscuring_fog, 1)],
+    );
 }
 
 /// An account that doesn't answer the search gets no modal: the searched cards

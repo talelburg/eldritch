@@ -12,9 +12,10 @@
 //! for a decision: while it is up, the prompt strip renders neither the prompt
 //! text nor these options.
 //!
-//! Only a search's areas are recognised so far. Scrying 01061's looked-at
-//! cards and Scavenging 01073's discard pile stay on the prompt strip until
-//! their modals land (#1379, #1378).
+//! Scrying 01061's looked-at cards are recognised too, with Place next, and the
+//! cards already placed shown apart in a row labelled "top". Scavenging
+//! 01073's discard pile stays on the prompt strip until its modal lands
+//! (#1378).
 //!
 //! [`live_card_modal`] and [`CardArea`] are pure and native-tested; the view's
 //! submit is wasm-only.
@@ -49,6 +50,22 @@ pub enum CardArea {
     },
     /// `investigator`'s whole deck, being searched (Research Librarian 01032).
     SearchedDeck(InvestigatorId),
+    /// The top `count` cards of `investigator`'s deck, being looked at and put
+    /// back in any order (Scrying 01061). Not a search (FAQ 2.13). `count` is
+    /// already cut to the cards the deck holds, and stays the whole region
+    /// looked at on every pick, the cards placed so far included.
+    LookedAtTopOfDeck {
+        /// The deck's owner.
+        investigator: InvestigatorId,
+        /// How many cards from the top.
+        count: usize,
+    },
+    /// The top `count` cards of the encounter deck, being looked at and put
+    /// back in any order (Scrying 01061), as [`CardArea::LookedAtTopOfDeck`].
+    LookedAtTopOfEncounterDeck {
+        /// How many cards from the top.
+        count: usize,
+    },
 }
 
 /// What clicking an offered card does, as its button names it.
@@ -56,6 +73,9 @@ pub enum CardArea {
 pub enum Verb {
     /// Take the searched card into hand.
     Draw,
+    /// Put the looked-at card next on top of the deck, under those placed
+    /// already.
+    PlaceNext,
 }
 
 impl Verb {
@@ -64,6 +84,7 @@ impl Verb {
     pub fn label(self) -> &'static str {
         match self {
             Verb::Draw => "Draw",
+            Verb::PlaceNext => "Place next",
         }
     }
 }
@@ -83,6 +104,18 @@ impl CardArea {
                 count: usize::from(*count),
             },
             OptionTarget::PlayerDeck(investigator) => CardArea::SearchedDeck(*investigator),
+            OptionTarget::LookedAtTopOfDeck {
+                investigator,
+                count,
+            } => CardArea::LookedAtTopOfDeck {
+                investigator: *investigator,
+                count: usize::from(*count),
+            },
+            OptionTarget::LookedAtTopOfEncounterDeck { count } => {
+                CardArea::LookedAtTopOfEncounterDeck {
+                    count: usize::from(*count),
+                }
+            }
             _ => return None,
         };
         let every_option_in_it = !request.options.is_empty()
@@ -96,12 +129,14 @@ impl CardArea {
         every_option_in_it.then_some(area)
     }
 
-    /// Whose deck it is.
+    /// Whose deck it is: `None` for the encounter deck.
     #[must_use]
-    pub fn investigator(self) -> InvestigatorId {
+    pub fn investigator(self) -> Option<InvestigatorId> {
         match self {
             CardArea::SearchedTopOfDeck { investigator, .. }
-            | CardArea::SearchedDeck(investigator) => investigator,
+            | CardArea::SearchedDeck(investigator)
+            | CardArea::LookedAtTopOfDeck { investigator, .. } => Some(investigator),
+            CardArea::LookedAtTopOfEncounterDeck { .. } => None,
         }
     }
 
@@ -110,19 +145,29 @@ impl CardArea {
     pub fn verb(self) -> Verb {
         match self {
             CardArea::SearchedTopOfDeck { .. } | CardArea::SearchedDeck(_) => Verb::Draw,
+            CardArea::LookedAtTopOfDeck { .. } | CardArea::LookedAtTopOfEncounterDeck { .. } => {
+                Verb::PlaceNext
+            }
         }
     }
 
     /// The area's cards in `game`, top first.
     #[must_use]
     pub fn cards(self, game: &GameState) -> Vec<CardCode> {
-        let deck = game
-            .investigators
-            .get(&self.investigator())
-            .map_or(&[][..], |inv| &inv.deck[..]);
+        let deck: Vec<CardCode> = match self.investigator() {
+            Some(investigator) => game
+                .investigators
+                .get(&investigator)
+                .map_or_else(Vec::new, |inv| inv.deck.clone()),
+            None => game.encounter_deck.iter().cloned().collect(),
+        };
         match self {
-            CardArea::SearchedTopOfDeck { count, .. } => deck.iter().take(count).cloned().collect(),
-            CardArea::SearchedDeck(_) => deck.to_vec(),
+            CardArea::SearchedTopOfDeck { count, .. }
+            | CardArea::LookedAtTopOfDeck { count, .. }
+            | CardArea::LookedAtTopOfEncounterDeck { count } => {
+                deck.into_iter().take(count).collect()
+            }
+            CardArea::SearchedDeck(_) => deck,
         }
     }
 
@@ -134,22 +179,36 @@ impl CardArea {
         matches!(self, CardArea::SearchedDeck(_))
     }
 
+    /// Whether the cards not offered are the ones placed so far. Scrying offers
+    /// only the cards still to place, and the engine has already moved each
+    /// one placed to the top, so the area's top positions that aren't offered
+    /// are the order built so far.
+    #[must_use]
+    pub fn places_others(self) -> bool {
+        matches!(
+            self,
+            CardArea::LookedAtTopOfDeck { .. } | CardArea::LookedAtTopOfEncounterDeck { .. }
+        )
+    }
+
     /// The position in this area of the card `anchor` names, or `None` when it
     /// names no card here.
     fn position_of(self, anchor: &OptionTarget) -> Option<usize> {
-        let OptionTarget::DeckCard {
-            investigator,
-            index,
-        } = anchor
-        else {
-            return None;
+        let (deck, index) = match anchor {
+            OptionTarget::DeckCard {
+                investigator,
+                index,
+            } => (Some(*investigator), index.to_usize()),
+            OptionTarget::EncounterDeckCard { index } => (None, index.to_usize()),
+            _ => return None,
         };
-        let index = index.to_usize();
         let within = match self {
-            CardArea::SearchedTopOfDeck { count, .. } => index < count,
+            CardArea::SearchedTopOfDeck { count, .. }
+            | CardArea::LookedAtTopOfDeck { count, .. }
+            | CardArea::LookedAtTopOfEncounterDeck { count } => index < count,
             CardArea::SearchedDeck(_) => true,
         };
-        (*investigator == self.investigator() && within).then_some(index)
+        (deck == self.investigator() && within).then_some(index)
     }
 }
 
@@ -172,8 +231,12 @@ pub struct CardModal {
     /// The area the choice is made among.
     pub area: CardArea,
     /// The cards laid out in the modal, in the area's order: every offered
-    /// card, and for an area that doesn't collapse, the cards passed over too.
+    /// card, and for an area that neither collapses nor places, the cards
+    /// passed over too.
     pub shown: Vec<ModalCard>,
+    /// The cards placed so far, top first, shown apart in a row labelled
+    /// "top". Empty but for an area that places its cards (Scrying).
+    pub placed: Vec<CardCode>,
     /// The area's cards not offered, folded under a count. Empty for an area
     /// that doesn't collapse, whose other cards are in `shown`.
     pub collapsed: Vec<CardCode>,
@@ -221,10 +284,12 @@ pub fn live_card_modal(state: &ClientState) -> Option<CardModal> {
             .map(|option| option.id)
     };
     let mut shown = Vec::new();
+    let mut placed = Vec::new();
     let mut collapsed = Vec::new();
     for (position, code) in area.cards(game).into_iter().enumerate() {
         match option_at(position) {
             None if area.collapses_others() => collapsed.push(code),
+            None if area.places_others() => placed.push(code),
             option => shown.push(ModalCard { code, option }),
         }
     }
@@ -232,6 +297,7 @@ pub fn live_card_modal(state: &ClientState) -> Option<CardModal> {
         prompt: request.prompt,
         area,
         shown,
+        placed,
         collapsed,
     })
 }
@@ -272,6 +338,21 @@ pub fn CardModalView() -> impl IntoView {
             };
             let verb = modal.verb().label();
             let collapsed_label = modal.collapsed_label();
+            // Scrying's order built so far, top first, apart from the cards
+            // still to place and with no verb.
+            let placed = (!modal.placed.is_empty()).then(|| {
+                let cards: Vec<_> = modal
+                    .placed
+                    .into_iter()
+                    .map(|code| view! { <Card code=code/> })
+                    .collect();
+                view! {
+                    <div class="card-modal-placed">
+                        <span class="card-modal-placed-label">"top"</span>
+                        <div class="card-modal-row">{cards}</div>
+                    </div>
+                }
+            });
             let shown: Vec<_> = modal
                 .shown
                 .into_iter()
@@ -328,6 +409,7 @@ pub fn CardModalView() -> impl IntoView {
                     on:pointerup=move |ev| drag.up(&ev)
                 >
                     <p class="card-modal-prompt">{modal.prompt}</p>
+                    {placed}
                     <div class="card-modal-row">{shown}</div>
                     {collapsed}
                 </section>

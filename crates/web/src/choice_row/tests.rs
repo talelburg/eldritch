@@ -24,7 +24,7 @@ fn a_searched_top_shows_one_face_down_card_per_card_in_it() {
         ChoiceRow::of(area, &game(27)),
         ChoiceRow {
             caption: "being searched".to_owned(),
-            cards: RowCards::FaceDown(3),
+            cards: RowCards::FaceDown(3, Back::Player),
         },
     );
 }
@@ -44,5 +44,36 @@ fn a_searched_deck_shows_one_face_down_deck_with_its_count() {
     assert_eq!(
         ChoiceRow::of(area, &game(1)).caption,
         "being searched: 1 card"
+    );
+}
+
+/// Scrying 01061 *looks at* the top 3 of a deck: everyone else sees the 3
+/// face down, being looked at. Not a search (FAQ 2.13), and hidden anyway, as
+/// the table would play it.
+#[test]
+fn a_looked_at_top_shows_one_player_back_per_card_being_looked_at() {
+    let area = CardArea::LookedAtTopOfDeck {
+        investigator: ROLAND,
+        count: 2,
+    };
+    assert_eq!(
+        ChoiceRow::of(area, &game(2)),
+        ChoiceRow {
+            caption: "being looked at".to_owned(),
+            cards: RowCards::FaceDown(2, Back::Player),
+        },
+    );
+}
+
+/// Scrying on the encounter deck: the cards show encounter backs.
+#[test]
+fn the_encounter_decks_looked_at_top_shows_encounter_backs() {
+    let area = CardArea::LookedAtTopOfEncounterDeck { count: 3 };
+    assert_eq!(
+        ChoiceRow::of(area, &game(0)),
+        ChoiceRow {
+            caption: "being looked at".to_owned(),
+            cards: RowCards::FaceDown(3, Back::Encounter),
+        },
     );
 }

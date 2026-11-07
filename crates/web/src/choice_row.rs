@@ -9,6 +9,11 @@
 //! the other players."* So the row of a search carries no card code, and none
 //! reaches the DOM.
 //!
+//! Scrying 01061's looked-at cards are hidden the same way, though looking at
+//! is not a search (FAQ 2.13, *"if an investigator "looks at" the top 3 cards
+//! of their deck, this is not a search effect"*): a product choice, to play as
+//! the table does in person (#1243).
+//!
 //! [`ChoiceRow`] is pure and native-tested.
 
 use game_core::state::{GameState, InvestigatorId};
@@ -26,11 +31,31 @@ pub struct ChoiceRow {
     pub cards: RowCards,
 }
 
+/// Which back a face-down card shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Back {
+    /// A player card's back: an investigator's deck.
+    Player,
+    /// An encounter card's back: the encounter deck.
+    Encounter,
+}
+
+impl Back {
+    /// The face-down card's CSS classes.
+    #[must_use]
+    pub fn class(self) -> &'static str {
+        match self {
+            Back::Player => "deck-back",
+            Back::Encounter => "deck-back encounter-back",
+        }
+    }
+}
+
 /// How the row lays the area's cards out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowCards {
-    /// This many cards, each face down.
-    FaceDown(usize),
+    /// This many cards, each face down, showing `Back`.
+    FaceDown(usize, Back),
     /// One face-down deck, standing for the whole of one. The caption carries
     /// its count.
     Deck,
@@ -44,11 +69,19 @@ impl ChoiceRow {
         match area {
             CardArea::SearchedTopOfDeck { count, .. } => ChoiceRow {
                 caption: "being searched".to_owned(),
-                cards: RowCards::FaceDown(count),
+                cards: RowCards::FaceDown(count, Back::Player),
             },
             CardArea::SearchedDeck(investigator) => ChoiceRow {
                 caption: format!("being searched: {}", cards(deck_size(game, investigator))),
                 cards: RowCards::Deck,
+            },
+            CardArea::LookedAtTopOfDeck { count, .. } => ChoiceRow {
+                caption: "being looked at".to_owned(),
+                cards: RowCards::FaceDown(count, Back::Player),
+            },
+            CardArea::LookedAtTopOfEncounterDeck { count } => ChoiceRow {
+                caption: "being looked at".to_owned(),
+                cards: RowCards::FaceDown(count, Back::Encounter),
             },
         }
     }
@@ -72,12 +105,12 @@ fn cards(count: usize) -> String {
 /// The choice row: its caption over its cards, with no controls.
 ///
 /// A face-down card is a `.deck-back`, as a hidden hand's is, so it names no
-/// card.
+/// card; an encounter card's is also an `.encounter-back`.
 #[component]
 pub fn ChoiceRowView(row: ChoiceRow) -> impl IntoView {
     let cards = match row.cards {
-        RowCards::FaceDown(count) => (0..count)
-            .map(|_| view! { <div class="deck-back"></div> })
+        RowCards::FaceDown(count, back) => (0..count)
+            .map(|_| view! { <div class=back.class()></div> })
             .collect::<Vec<_>>()
             .into_any(),
         RowCards::Deck => view! { <div class="deck-back"></div> }.into_any(),

@@ -573,6 +573,12 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
     background: repeating-linear-gradient(45deg, #2a2a4a, #2a2a4a 4px, #3a3a5e 4px, #3a3a5e 8px);
     border: 1px solid #1a1a2e;
 }
+/* An encounter card's back (#1379): the same size as a player card's, in the
+   encounter deck's own colours, so a face-down card says which deck it is from. */
+.deck-back.encounter-back {
+    background: repeating-linear-gradient(45deg, #3a2a1e, #3a2a1e 4px, #5a4030 4px, #5a4030 8px);
+    border-color: #2a1a10;
+}
 .deck-count { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .deck-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; }
 
@@ -800,6 +806,15 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 .card-modal-verb:hover { background: #333; }
 .card-modal-others { margin-top: 0.75rem; }
 .card-modal-others > summary { cursor: pointer; margin-bottom: 0.5rem; }
+/* Scrying's cards placed so far (#1379), top first, above those still to place,
+   marked "top" so the order reads as the deck's. */
+.card-modal-placed {
+    display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem; border-bottom: 1px solid #ccc;
+}
+.card-modal-placed-label {
+    font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; flex: none;
+}
 
 /* Version-mismatch overlay (#770): the same scrim-and-card shape as the
    skill-test modal, stacked above every other overlay (including the pre-game

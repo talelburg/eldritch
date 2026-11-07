@@ -31,6 +31,7 @@ mod in_play_card;
 mod input_lockout;
 mod lobby;
 mod location_card;
+mod looked_at_face_down;
 mod map;
 mod map_node_layout;
 mod more_menu;
