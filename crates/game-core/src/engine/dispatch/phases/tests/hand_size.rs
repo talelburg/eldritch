@@ -284,3 +284,15 @@ fn resume_hand_size_discard_rejects_wrong_response_kind() {
     // Rejected: still pending.
     assert_at_hand_size_discard(&session);
 }
+
+/// Discarding down to hand size is step 4.5, *"Each investigator checks hand
+/// size."*
+#[test]
+fn the_hand_size_discard_stands_at_4_5() {
+    let session = ending_upkeep_with_hands(&[(1, hand("c", 10))]);
+    assert_at_hand_size_discard(&session);
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::CheckHandSize)
+    );
+}

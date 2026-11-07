@@ -45,6 +45,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #381 | Controller-scoped reaction windows; closed in #1145's 2026-10-20 triage |
 | #409 | A failed Fight deals the attack's damage to the investigator engaged with the attacked enemy, PR #1301 |
 | #458 | Deterministic prompt ids: a prompt is named by its log position, with #1230, PR #1297 |
+| #534 | The engine records the round position, the Appendix II step or player window the round stands at (`None` during setup); the round band lights that entry and the phase that holds it, with #1360, PR #1367 |
 | #570 | Replay integrity; not planned, superseded by #1224's label-matched replay |
 | #573 | Act clue thresholds scale per investigator; an act with no clue objective carries none, PR #1298 |
 | #580 | Room registry: each game loads once, off the global lock and the async workers, and is evicted after 10 idle minutes, PR #1285; slices #1282, #1283, #1284 |
@@ -83,6 +84,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
+| #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
 
 ## Ordering
@@ -125,10 +127,10 @@ landed, before phase 9 is scoped.
 (✅ PR #1350), returning to the page a sign-in started from, follows #1237
 (✅ PR #1277) and #1239 (✅ PR #1339).
 
-**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) → #534 and
+**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) → #534 (✅ PR #1367) and
 #1101. #1242 (✅ PR #1353) → #1243 and #1322.** #1322, the board surface for committed cards, also follows
-#65 (✅ PR #1321), which records each card's committer. #1360 (the round band
-lights Investigation during the setup mulligan), #1361 (activated abilities
+#65 (✅ PR #1321), which records each card's committer. #1360 (✅ PR #1367, the round band
+lit Investigation during the setup mulligan), #1361 (activated abilities
 labelled by index, not by card) and #1362 (untracked signal reads in the card
 views and the event log) are standalone. #1364, the game's symbols as glyphs
 from the `arkhamicons` font, follows #863 (✅ PR #1359).

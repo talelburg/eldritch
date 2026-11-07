@@ -297,3 +297,23 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         "the queue must skip the Defeated inv2 and land on Active inv3"
     );
 }
+
+/// The encounter-draw prompt is step 1.4, *"Each investigator draws 1 encounter
+/// card."*
+#[test]
+fn the_encounter_draw_prompt_stands_at_1_4() {
+    let session = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(test_support::seat(1))
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::Entry,
+        })
+        .with_seating([InvestigatorId(1)])
+        .session();
+    session.assert_at_encounter_draw();
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::EncounterDraws)
+    );
+}

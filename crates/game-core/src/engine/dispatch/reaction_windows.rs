@@ -26,8 +26,8 @@ use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
     CandidateSource, Continuation, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
-    InvestigatorTurnFrame, PhaseStep, PlayFromHandFrame, ResolutionCandidate, TimingMode,
-    TimingPointWindowFrame,
+    InvestigatorTurnFrame, PhaseStep, PlayFromHandFrame, ResolutionCandidate, RoundPosition,
+    TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -1122,6 +1122,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
                 .top_of::<InvestigatorTurnFrame>()
                 .is_some() =>
         {
+            // Back to the open turn: 2.2.1 again.
+            phases::enter(cx, RoundPosition::TakeAction);
             EngineOutcome::Done
         }
         FastWindowKind::Phase(_) => phases::anchor_on_child_pop(cx),
@@ -1191,6 +1193,9 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // pure Fast-gates (no `TimingEvent` reaction matches a framework window), so
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
+    if let FastWindowKind::Phase(step) = kind {
+        phases::enter(cx, RoundPosition::Window(step));
+    }
     let candidates = Vec::new();
     cx.state.continuations.push(FastWindowFrame {
         candidates,

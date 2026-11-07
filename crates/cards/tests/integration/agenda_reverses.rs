@@ -11,7 +11,8 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::PromptNature;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Zone,
+    CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    RoundPosition, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 
@@ -64,6 +65,28 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
         session.state().investigators[&LEAD].horror(),
         2,
         "branch 1 deals 2 horror to the lead investigator",
+    );
+}
+
+/// The lead answers 01105's reverse at step 1.3, *"Check doom threshold."*,
+/// where the agenda advanced, and the round moves to 1.4 only once it is
+/// answered: *"If the value of doom in play equals or exceeds the doom
+/// threshold of the current agenda, the agenda deck advances."*
+/// (`Appendix_II_Timing_and_Gameplay.md`).
+#[test]
+fn agenda_01105_reverse_is_answered_at_1_3_then_the_draw_is_at_1_4() {
+    let session = TestSession::new(ending_the_round_on(0, seat(1), &[]), TEST_REGISTRIES);
+    assert_eq!(session.prompt().nature, PromptNature::Decision);
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::CheckDoomThreshold)
+    );
+
+    let session = session.pick_nth(1);
+    session.assert_at_encounter_draw();
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::EncounterDraws)
     );
 }
 

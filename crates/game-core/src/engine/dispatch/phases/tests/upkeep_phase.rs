@@ -547,3 +547,15 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
         "drew 1"
     );
 }
+
+/// The lead answering an engagement tie from an enemy readied in Upkeep is at
+/// step 4.3, *"Ready each exhausted card."*
+#[test]
+fn an_engagement_tie_from_readying_stands_at_4_3() {
+    let session = exhausted_enemies_beside_two_in_upkeep(&[EnemyId(1)]);
+    session.assert_lead_asked_between(InvestigatorId(1), &[InvestigatorId(1), InvestigatorId(2)]);
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::ReadyExhausted)
+    );
+}
