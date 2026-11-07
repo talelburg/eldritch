@@ -1,4 +1,4 @@
-//! The round position (#534): where the round stands, as the round band lights
+//! The round position: where the round stands, as the round band lights
 //! it. See **Round position** in `GLOSSARY.md`.
 //!
 //! One game is walked from the setup mulligan through a full round and into the
@@ -149,6 +149,12 @@ fn roster() -> Vec<RosterEntry> {
 
 /// Seat the roster through `seat_and_open`, put the free-ability probe into
 /// play, and settle: the game rests at the setup mulligan.
+///
+/// Seated through `seat_and_open` rather than staged with `with_seat`, because
+/// the subject starts at setup: the position must still be unset at the
+/// mulligan that `start_scenario` opens, and the replay test re-drives from
+/// these creation inputs. The probe is pushed by hand since a roster seats
+/// decks, not cards in play.
 fn the_states_at_the_mulligan() -> GameState {
     let mut state = engine::seat_and_open(setup(), &roster(), 0, registries()).state;
     let id = state.card_instance_ids.mint();

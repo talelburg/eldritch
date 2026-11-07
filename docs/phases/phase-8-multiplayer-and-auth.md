@@ -84,8 +84,8 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1272 | Phase-doc sync with the closed milestone issues, PR #1273 |
 | #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
-| #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
+| #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 
 ## Ordering
 

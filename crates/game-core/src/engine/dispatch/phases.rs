@@ -330,7 +330,7 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
             new_count: 0,
         });
     }
-    enter(cx, RoundPosition::TurnEnds);
+    enter_round_position(cx, RoundPosition::TurnEnds);
     cx.events.push(Event::TurnEnded {
         investigator: active_id,
     });
@@ -385,7 +385,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     // EndOfTurn forced run resolves, the stranded-skill-test resume after the
     // SkillTest pops, and the forced-run continuation after its Resolution pops.
     let turn = cx.state.continuations.pop_expect::<InvestigatorTurnFrame>();
-    enter(cx, RoundPosition::TurnEnds);
+    enter_round_position(cx, RoundPosition::TurnEnds);
     debug_assert_eq!(
         turn.investigator, active_id,
         "resume_end_turn: the turn on top is not the active investigator's",
@@ -453,7 +453,7 @@ fn next_investigator_turn(cx: &mut Cx) -> EngineOutcome {
         [_, _, ..] => {
             // Appendix II 2.2: "making this choice begins that investigator's
             // turn", so the choice is part of 2.2.
-            enter(cx, RoundPosition::TurnBegins);
+            enter_round_position(cx, RoundPosition::TurnBegins);
             cx.state.continuations.push(TurnChoiceFrame::new(waiting));
             EngineOutcome::Done
         }
@@ -521,7 +521,7 @@ pub(super) fn resume_turn_choice(cx: &mut Cx, response: &InputResponse) -> Engin
 /// window's continuation.
 pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // 2.1 Investigation phase begins.
-    enter(cx, RoundPosition::InvestigationBegins);
+    enter_round_position(cx, RoundPosition::InvestigationBegins);
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Investigation,
     });
@@ -599,7 +599,7 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// `who` must be an `Active` investigator in `seating` who has not yet taken a
 /// turn this phase.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
-    enter(cx, RoundPosition::TurnBegins);
+    enter_round_position(cx, RoundPosition::TurnBegins);
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
     // De Luca 01048). Cleared ahead of the turn-begins window, which is already
@@ -678,7 +678,7 @@ pub(super) fn drive_open_turn(cx: &mut Cx) -> EngineOutcome {
 /// stack — phase anchors pop-and-push rather than drain.
 fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 2.3 Investigation phase ends.
-    enter(cx, RoundPosition::InvestigationEnds);
+    enter_round_position(cx, RoundPosition::InvestigationEnds);
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
@@ -735,7 +735,7 @@ fn drive_phase(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
 /// sites so the rule structure is grep-able.
 fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     // 1.1 Round begins. Mythos phase begins.
-    enter(cx, RoundPosition::MythosBegins);
+    enter_round_position(cx, RoundPosition::MythosBegins);
     //     Rules Reference p.24: "As this is the first framework event
     //     of the round, it [1.1] also formalizes the beginning of a new
     //     game round." The round-counter increment lives HERE (not in
@@ -783,13 +783,13 @@ fn mythos_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_mythos_resume(cx, MythosResume::Draws);
 
     // 1.2 Place 1 doom on the current agenda.
-    enter(cx, RoundPosition::PlaceDoom);
+    enter_round_position(cx, RoundPosition::PlaceDoom);
     act_agenda::place_doom_on_agenda(cx, 1);
 
     // 1.3 Check doom threshold (may push an AdvanceReverse frame above the anchor).
     //     An advance's reverse resolves at 1.3, even though the anchor already
     //     names 1.4 as what runs next.
-    enter(cx, RoundPosition::CheckDoomThreshold);
+    enter_round_position(cx, RoundPosition::CheckDoomThreshold);
     act_agenda::check_doom_threshold(cx);
 
     // 1.4 runs from the anchor's `Draws` resume, after any advance sub-process
@@ -836,6 +836,12 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
     dispatch::drive(cx, EngineOutcome::Done)
 }
 
+/// Enter `position`: the round now stands there, and stays until the next step
+/// or player window is entered (see [`RoundPosition`]).
+pub(super) fn enter_round_position(cx: &mut Cx, position: RoundPosition) {
+    cx.state.round_position = Some(position);
+}
+
 /// Set `active_investigator` to `id`. Does NOT refresh actions —
 /// actions are reset at Upkeep step 4.2 (`reset_actions`) for the whole
 /// next round, and seeded for round 1 by `start_scenario`. By the time
@@ -844,12 +850,6 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
 ///
 /// `id` must refer to an investigator in `state.investigators` (a
 /// whole-program invariant for ids drawn from `seating`).
-/// Enter `position`: the round now stands there, and stays until the next step
-/// or player window is entered (see [`RoundPosition`]).
-pub(super) fn enter(cx: &mut Cx, position: RoundPosition) {
-    cx.state.round_position = Some(position);
-}
-
 fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
     debug_assert!(
         cx.state.investigators.contains_key(&id),
@@ -925,7 +925,7 @@ pub(super) fn set_enemy_anchor(cx: &mut Cx, resume: EnemyResume) {
 /// run from [`enemy_hunters_after`] once they have resolved.
 fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // 3.1 Enemy phase begins.
-    enter(cx, RoundPosition::EnemyBegins);
+    enter_round_position(cx, RoundPosition::EnemyBegins);
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Enemy,
     });
@@ -961,7 +961,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 fn enemy_hunters_after(cx: &mut Cx, after: Option<EnemyId>) -> EngineOutcome {
     // 3.2 Hunter enemies move. A choice pushes its prompt and returns `Done`,
     //     so the frame on top, not the outcome, says whether movement finished.
-    enter(cx, RoundPosition::HuntersMove);
+    enter_round_position(cx, RoundPosition::HuntersMove);
     let outcome = hunters::drive_hunter_moves(cx, after);
     if let EngineOutcome::Rejected { reason } = outcome {
         unreachable!("enemy_hunters_after: hunter movement rejected unexpectedly: {reason}")
@@ -991,7 +991,7 @@ fn enemy_hunters_after(cx: &mut Cx, after: Option<EnemyId>) -> EngineOutcome {
 /// Ghoul would never move.
 pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 3.4 Enemy phase ends.
-    enter(cx, RoundPosition::EnemyEnds);
+    enter_round_position(cx, RoundPosition::EnemyEnds);
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
@@ -1041,7 +1041,7 @@ fn enemy_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// bury whatever it queues at the bottom of the stack.
 pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 1.5 Mythos phase ends.
-    enter(cx, RoundPosition::MythosEnds);
+    enter_round_position(cx, RoundPosition::MythosEnds);
     //     The PhaseEnded(Mythos) emit lives HERE rather than in
     //     the transition so step 1.5 has explicit ownership in the
     //     driver — mirror of step 1.1's PhaseStarted ownership in
@@ -1123,7 +1123,7 @@ fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<Eng
 /// any encounter is drawn (RR order).
 fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     // 1.4 Each investigator draws 1 encounter card.
-    enter(cx, RoundPosition::EncounterDraws);
+    enter_round_position(cx, RoundPosition::EncounterDraws);
     set_mythos_resume(cx, MythosResume::AfterDraws);
     // Per Rules Reference p.10 (Elimination), eliminated investigators (Defeated,
     // Resigned) do not draw — seed Active only.
@@ -1236,7 +1236,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                 "BeforeInvestigatorAttacked advanced with a skill test in flight",
             );
             // 3.3 Next investigator resolves engaged enemy attacks.
-            enter(cx, RoundPosition::EnemyAttacks);
+            enter_round_position(cx, RoundPosition::EnemyAttacks);
             // Tail position (see `emit::queue_event`): the attack loop parks
             // itself on a `Continuation::AttackLoop` frame and hands each attack
             // to the timing coordinator, so a `Done` here does not mean the
@@ -1304,7 +1304,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      begin_investigator_turn always sets it"
                 )
             });
-            enter(cx, RoundPosition::TakeAction);
+            enter_round_position(cx, RoundPosition::TakeAction);
             cx.state
                 .continuations
                 .push(InvestigatorTurnFrame::open(investigator));
@@ -1351,7 +1351,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
 /// content is the continuation.
 fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     // 4.1 Upkeep phase begins.
-    enter(cx, RoundPosition::UpkeepBegins);
+    enter_round_position(cx, RoundPosition::UpkeepBegins);
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
@@ -1395,13 +1395,13 @@ fn upkeep_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 /// discard resolves — else it hands to [`upkeep_phase_end`] for 4.6 +
 /// transition.
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
-    enter(cx, RoundPosition::ResetActions);
+    enter_round_position(cx, RoundPosition::ResetActions);
     reset_actions(cx); // 4.2
                        // Park before 4.3 can push its ties (ADR 0003): the frame resolves above
                        // the anchor, which then runs 4.4 on re-exposure. With no tie, the 4.4
                        // draws below re-park it at once.
     set_upkeep_resume(cx, UpkeepResume::AfterReady);
-    enter(cx, RoundPosition::ReadyExhausted);
+    enter_round_position(cx, RoundPosition::ReadyExhausted);
     if ready_exhausted_cards(cx) {
         return EngineOutcome::Done; // 4.3 pushed engagement ties
     }
@@ -1424,7 +1424,7 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
 /// investigator. Once every draw has resolved, each active investigator gains
 /// 1 resource and 4.5/4.6 run.
 fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcome {
-    enter(cx, RoundPosition::UpkeepDraws);
+    enter_round_position(cx, RoundPosition::UpkeepDraws);
     let mut next = match drew {
         None => cursor::player_order(cx.state).first().copied(),
         Some(prev) => cursor::next_in_player_order(cx.state, prev),
@@ -1454,7 +1454,7 @@ fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcom
 /// Steps 4.5 (hand size; may suspend) + 4.6 (phase end + round-end transition),
 /// once step 4.4 is complete.
 fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
-    enter(cx, RoundPosition::CheckHandSize);
+    enter_round_position(cx, RoundPosition::CheckHandSize);
     if let outcome @ EngineOutcome::AwaitingInput { .. } = check_hand_size(cx) {
         return outcome; // 4.5 parked for discard; 4.6 runs on resume
     }
@@ -1474,7 +1474,7 @@ fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
 /// the loop re-exposes it when they are done.
 pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 4.6 Upkeep phase ends.
-    enter(cx, RoundPosition::UpkeepEnds);
+    enter_round_position(cx, RoundPosition::UpkeepEnds);
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });

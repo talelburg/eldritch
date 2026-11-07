@@ -1123,7 +1123,7 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
                 .is_some() =>
         {
             // Back to the open turn: 2.2.1 again.
-            phases::enter(cx, RoundPosition::TakeAction);
+            phases::enter_round_position(cx, RoundPosition::TakeAction);
             EngineOutcome::Done
         }
         FastWindowKind::Phase(_) => phases::anchor_on_child_pop(cx),
@@ -1194,7 +1194,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     if let FastWindowKind::Phase(step) = kind {
-        phases::enter(cx, RoundPosition::Window(step));
+        phases::enter_round_position(cx, RoundPosition::Window(step));
     }
     let candidates = Vec::new();
     cx.state.continuations.push(FastWindowFrame {

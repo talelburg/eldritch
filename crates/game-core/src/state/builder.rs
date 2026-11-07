@@ -55,6 +55,14 @@ use crate::state::{
 /// [`open_turn`](GameStateBuilder::open_turn): it stages the Investigation
 /// phase anchor and the turn frame together, so no caller can build a turn
 /// without the anchor beneath it.
+///
+/// The [round position](GameState::round_position) is set only by `open_turn`,
+/// the one helper that stages a paused state. Every other state is built with
+/// none, and the engine sets it as it drives: the phase helpers
+/// ([`beginning_investigation_phase`](GameStateBuilder::beginning_investigation_phase)
+/// and the like) stage a state about to drive, and a state staged with
+/// [`with_open_window`](GameStateBuilder::with_open_window) reads as unset until
+/// the next step or window is entered.
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
