@@ -127,13 +127,14 @@ landed, before phase 9 is scoped.
 (✅ PR #1350), returning to the page a sign-in started from, follows #1237
 (✅ PR #1277) and #1239 (✅ PR #1339).
 
-**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) → #534 (✅ PR #1367) and
-#1101. #1242 (✅ PR #1353) → #1243 and #1322.** #1322, the board surface for committed cards, also follows
-#65 (✅ PR #1321), which records each card's committer. #1360 (✅ PR #1367, the round band
-lit Investigation during the setup mulligan), #1361 (activated abilities
-labelled by index, not by card) and #1362 (untracked signal reads in the card
-views and the event log) are standalone. #1364, the game's symbols as glyphs
-from the `arkhamicons` font, follows #863 (✅ PR #1359).
+**5. The table: #1230 (✅ PR #1297) → #1242 (✅ PR #1353) → #863 (✅ PR #1359) →
+#534 (✅ PR #1367) and #1101. #1242 (✅ PR #1353) → #1243 and #1322.** #1322, the
+board surface for committed cards, also follows #65 (✅ PR #1321), which records
+each card's committer. #1360 (✅ PR #1367, the round band lit Investigation
+during the setup mulligan), #1361 (activated abilities labelled by index, not by
+card) and #1362 (untracked signal reads in the card views and the event log) are
+standalone. #1364, the game's symbols as glyphs from the `arkhamicons` font,
+follows #863 (✅ PR #1359).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)
