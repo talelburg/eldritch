@@ -14,7 +14,7 @@ use crate::state::continuation::{
 };
 use crate::state::{
     CardCode, CardInstanceId, ChaosBag, Counter, Enemy, EnemyId, Investigator, InvestigatorId,
-    Location, LocationId, Phase, TokenModifiers,
+    Location, LocationId, Phase, RoundPosition, TokenModifiers,
 };
 
 /// The full state of a scenario at a single point in time.
@@ -78,6 +78,10 @@ pub struct GameState {
     pub phase: Phase,
     /// 1-based round counter, incremented on each Mythos phase entry.
     pub round: u32,
+    /// Where the round stands, for display: the Appendix II step or player
+    /// window the game is in. `None` during setup, before the round begins.
+    /// See [`RoundPosition`].
+    pub round_position: Option<RoundPosition>,
     /// Whose turn it is during the [`Investigation`] phase, if any.
     /// `None` outside of Investigation.
     ///
