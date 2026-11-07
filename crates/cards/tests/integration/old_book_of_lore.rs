@@ -12,14 +12,13 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget, Responder};
+use game_core::engine::{OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
-    LocationId,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, DeckIndex, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
 use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 
@@ -80,19 +79,6 @@ fn activate_book(book: CardInstanceId) -> TurnAction {
     }
 }
 
-/// Take the `position`th card of the searched top 3.
-///
-/// Exempt from the anchor-pick rule, and sent raw: a deck search's options
-/// are cards **in a deck**, with no board anchor and neither of ADR 0015's
-/// natures, which that ADR knowingly excludes and defers. No session step can
-/// name one, so the pick is positional.
-fn take_searched(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: INV,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
-}
-
 #[test]
 fn action_searches_top_three_into_hand_then_shuffles() {
     // Activate: exhaust paid, target auto-binds (solo), top 3 give 3 eligible
@@ -101,10 +87,20 @@ fn action_searches_top_three_into_hand_then_shuffles() {
     let book = book(&session);
     let s = session.take(&activate_book(book));
     assert_eq!(
-        s.prompt().options.len(),
-        3,
-        "top 3 ⇒ a card choice suspends: {:?}",
-        s.prompt(),
+        s.offered_targets(),
+        [0, 1, 2].map(|i| Some(OptionTarget::DeckCard {
+            investigator: INV,
+            index: DeckIndex(i),
+        })),
+        "top 3 ⇒ a card choice suspends, each card anchored by its position",
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::SearchedTopOfDeck {
+            investigator: INV,
+            count: 3,
+        }),
+        "the prompt names the top 3 as the area searched",
     );
     assert!(
         s.state().investigators[&INV]
@@ -114,8 +110,9 @@ fn action_searches_top_three_into_hand_then_shuffles() {
         "exhaust cost paid before the effect",
     );
 
-    // Pick option 1 → the second card of the top 3 ("90002").
-    let s = s.apply(take_searched(1));
+    // Pick the second card of the top 3 ("90002").
+    let card = s.state().deck_card(INV, "90002");
+    let s = s.pick(card);
     s.assert_at_turn_menu(INV);
     let inv = &s.state().investigators[&INV];
     assert!(
@@ -186,7 +183,9 @@ fn a_weakness_found_resolves_as_if_drawn() {
             .deck([COVER_UP, "90002", "90003", "90004"]),
     );
     let book = book(&session);
-    let s = session.take(&activate_book(book)).apply(take_searched(0));
+    let s = session.take(&activate_book(book));
+    let card = s.state().deck_card(INV, COVER_UP);
+    let s = s.pick(card);
 
     s.assert_at_turn_menu(INV);
     let inv = &s.state().investigators[&INV];
@@ -222,7 +221,18 @@ fn a_search_of_another_investigators_deck_is_answered_by_that_investigator() {
         s.prompt(),
     );
 
-    let s = s.pick_unanchored("Magnifying Glass");
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::SearchedTopOfDeck {
+            investigator: ROLAND,
+            count: 3,
+        }),
+        "Roland's top 3 are searched",
+    );
+
+    let card = s.state().deck_card(ROLAND, MAGNIFYING_GLASS);
+
+    let s = s.pick(card);
     s.assert_at_turn_menu(INV);
     let roland = &s.state().investigators[&ROLAND];
     assert!(

@@ -11,12 +11,11 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::state::{CardCode, DeckIndex, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 
 const LIBRARIAN: &str = "01032";
@@ -53,19 +52,6 @@ fn play(session: TestSession) -> TestSession {
 /// instance it entered play as.
 fn librarian(session: &TestSession) -> OptionTarget {
     session.state().card(INV, LIBRARIAN)
-}
-
-/// Take the `position`th eligible card from the search.
-///
-/// Exempt from the anchor-pick rule, and sent raw: a deck search's options
-/// are cards **in a deck**, with no board anchor and neither of ADR 0015's
-/// natures, which that ADR knowingly excludes and defers. No session step can
-/// name one, so the pick is positional.
-fn take_searched(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: INV,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
 }
 
 #[test]
@@ -145,14 +131,24 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // card pick.
     let target = librarian(&s);
     let s = s.pick(target);
-    assert!(
-        s.prompt().target != Some(OptionTarget::TurnControl(INV)) && !s.prompt().skippable,
-        "2 eligible Tomes ⇒ the search suspends for a pick",
+    assert_eq!(
+        s.offered_targets(),
+        [0, 2].map(|i| Some(OptionTarget::DeckCard {
+            investigator: INV,
+            index: DeckIndex(i),
+        })),
+        "2 eligible Tomes ⇒ the search suspends for a pick, each anchored by its position",
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::PlayerDeck(INV)),
+        "the whole deck is searched",
     );
 
     // Pick the second eligible Tome (Medical Texts). On Done, resume_choice
     // re-drives the still-open reaction window so it closes (Task 4).
-    let s = s.apply(take_searched(1));
+    let card = s.state().deck_card(INV, MEDICAL_TEXTS);
+    let s = s.pick(card);
     let inv = &s.state().investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(MEDICAL_TEXTS)),

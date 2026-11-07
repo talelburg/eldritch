@@ -2,8 +2,8 @@
 
 use crate::engine::OptionTarget;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, InvestigatorId, Location,
-    LocationId,
+    CardCode, CardInPlay, CardInstanceId, DeckIndex, Enemy, EnemyId, GameState, InvestigatorId,
+    Location, LocationId,
 };
 
 /// Find a piece of the board by what it is: a seated card by its code, an
@@ -50,6 +50,17 @@ pub trait BoardLookup {
     ///
     /// If `investigator` is not seated.
     fn investigator_card(&self, investigator: InvestigatorId) -> OptionTarget;
+
+    /// The [`DeckCard`](OptionTarget::DeckCard) anchor of the one card with
+    /// `code` in `investigator`'s deck, at its position now: what
+    /// [`pick`](super::TestSession::pick) takes to choose a searched or
+    /// looked-at card.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless exactly one card in the deck matches, listing the deck.
+    /// Name a duplicated card by its position, as an `OptionTarget::DeckCard`.
+    fn deck_card(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> OptionTarget;
 
     /// The name `investigator` is shown by, as their investigator card prints
     /// it.
@@ -102,6 +113,32 @@ impl BoardLookup for GameState {
             .get(&investigator)
             .unwrap_or_else(|| panic!("investigator_card: no investigator {investigator:?}"))
             .card_anchor()
+    }
+
+    fn deck_card(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> OptionTarget {
+        let code = code.into();
+        let deck = &self
+            .investigators
+            .get(&investigator)
+            .unwrap_or_else(|| panic!("deck_card: no investigator {investigator:?}"))
+            .deck;
+        let matches: Vec<usize> = deck
+            .iter()
+            .enumerate()
+            .filter(|(_, card)| **card == code)
+            .map(|(i, _)| i)
+            .collect();
+        let [index] = matches[..] else {
+            panic!(
+                "deck_card: {investigator:?}'s deck holds {} cards {code}, not exactly one; \
+                 the deck, top first: {deck:?}",
+                matches.len(),
+            );
+        };
+        OptionTarget::DeckCard {
+            investigator,
+            index: DeckIndex::new(index),
+        }
     }
 
     fn name_of(&self, investigator: InvestigatorId) -> String {

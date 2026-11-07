@@ -63,6 +63,58 @@ pub enum Deck {
     Encounter,
 }
 
+/// A card's zero-based position in a [`Deck`], counted from the top: index 0
+/// is the top card.
+///
+/// Its own type so a deck position cannot be mixed up with a
+/// [`DiscardIndex`], which counts from the other end of a different pile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DeckIndex(pub u8);
+
+impl DeckIndex {
+    /// The position of the card `index` cards below the top.
+    ///
+    /// # Panics
+    ///
+    /// When `index` doesn't fit a `u8`. No deck holds 256 cards.
+    #[must_use]
+    pub fn new(index: usize) -> Self {
+        Self(u8::try_from(index).expect("a deck holds fewer than 256 cards"))
+    }
+
+    /// The position as a `usize`, to index the deck with.
+    #[must_use]
+    pub fn to_usize(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
+/// A card's zero-based position in an investigator's discard pile, as the
+/// pile is stored: index 0 is the bottom (the first card discarded), and the
+/// last index is the top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DiscardIndex(pub u8);
+
+impl DiscardIndex {
+    /// The position of the card `index` cards above the bottom.
+    ///
+    /// # Panics
+    ///
+    /// When `index` doesn't fit a `u8`. No discard pile holds 256 cards.
+    #[must_use]
+    pub fn new(index: usize) -> Self {
+        Self(u8::try_from(index).expect("a discard pile holds fewer than 256 cards"))
+    }
+
+    /// The position as a `usize`, to index the pile with.
+    #[must_use]
+    pub fn to_usize(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
 /// A card-bearing zone, used as the `from` field on movement events
 /// (e.g. [`Event::CardDiscarded`](crate::event::Event::CardDiscarded)).
 ///

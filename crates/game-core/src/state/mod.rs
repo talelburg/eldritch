@@ -21,8 +21,8 @@ pub(crate) mod staged;
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;
 pub use card::{
-    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UsageClock,
-    UseKind, Zone,
+    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DeckIndex, DiscardIndex,
+    DiscardPile, Owner, UsageClock, UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{

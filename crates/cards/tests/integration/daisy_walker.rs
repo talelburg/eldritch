@@ -17,12 +17,11 @@
 //! have 1 normal action and Daisy’s special additional action left."*
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
-use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, DeckIndex, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{
@@ -80,14 +79,13 @@ fn activate(session: TestSession, code: &str) -> TestSession {
     session
 }
 
-/// Take the first card of Old Book of Lore's searched top 3, which ends its
-/// ability. Sent raw: a deck search's options are cards in a deck, with no
-/// board anchor a session step can name (see `old_book_of_lore.rs`).
+/// Take the top card of Old Book of Lore's searched top 3, which ends its
+/// ability.
 fn take_first_searched(session: TestSession) -> TestSession {
-    session.apply(Action::Player(PlayerAction::ResolveInput {
+    session.pick(OptionTarget::DeckCard {
         investigator: INV,
-        response: InputResponse::PickSingle(OptionId(0)),
-    }))
+        index: DeckIndex(0),
+    })
 }
 
 fn standard_actions(state: &GameState) -> u8 {

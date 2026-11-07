@@ -24,10 +24,10 @@
 //! condition says so instead, as Cover Up 01007's does. Otherwise the player
 //! could exhaust Scavenging for nothing.
 //!
-//! **The choice** is [`resolve_card_choice`](engine::resolve_card_choice),
-//! labelled by card name and un-anchored: no per-card discard anchor exists
-//! (the discard pile anchors only as a whole), so the choice stays on the
-//! prompt strip. The native asks before it writes, then
+//! **The choice** is [`resolve_card_choice`](engine::resolve_card_choice):
+//! each Item is anchored by its position in the pile
+//! ([`OptionTarget::DiscardCard`]), and the prompt by the whole pile
+//! ([`OptionTarget::DiscardPile`]). The native asks before it writes, then
 //! moves the chosen card with
 //! [`NativeCx::add_discarded_card_to_hand`]. A lone Item is taken without a
 //! prompt.
@@ -37,8 +37,8 @@ use card_dsl::dsl::{
     TestedLocationScope,
 };
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, Grounded, NativeCx};
-use game_core::state::{CardCode, GameState, InvestigatorId};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::state::{CardCode, DiscardIndex, GameState, InvestigatorId};
 
 use crate::generated::traits::ITEM;
 use crate::impls::CardRecord;
@@ -98,12 +98,19 @@ fn has_item(state: &GameState, ctx: &EvalContext) -> bool {
 
 fn take_item(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let items = items_in_discard(cx.state(), ctx.controller);
-    let codes: Vec<CardCode> = items.iter().map(|(_, code)| code.clone()).collect();
+    let anchors: Vec<OptionTarget> = items
+        .iter()
+        .map(|(i, _)| OptionTarget::DiscardCard {
+            investigator: ctx.controller,
+            index: DiscardIndex::new(*i),
+        })
+        .collect();
     match engine::resolve_card_choice(
         cx.state(),
         cx.cards(),
         ctx,
-        &codes,
+        &anchors,
+        OptionTarget::DiscardPile(ctx.controller),
         "Scavenging: choose an Item to add to your hand",
     ) {
         Grounded::Picked(i) => {

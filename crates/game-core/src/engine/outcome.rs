@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::action::InputResponse;
 use crate::engine::ability_source;
 use crate::state::{
-    AbilitySource, CardCode, CardInstanceId, CommittedIndex, EnemyId, GameState, InvestigatorId,
-    LocationId,
+    AbilitySource, CardCode, CardInstanceId, CommittedIndex, Deck, DeckIndex, DiscardIndex,
+    EnemyId, GameState, InvestigatorId, LocationId,
 };
 
 /// The terminal status of an [`apply`](crate::engine::apply) call.
@@ -101,14 +101,71 @@ pub enum OptionTarget {
     TurnControl(InvestigatorId),
     /// An investigator's resource pool (Gain resource).
     ResourcePool(InvestigatorId),
-    /// An investigator's own player deck (Draw).
+    /// An investigator's own player deck (Draw). As a prompt's area, the
+    /// whole deck a search looks through (Research Librarian 01032).
     PlayerDeck(InvestigatorId),
     /// An investigator's own discard pile, as a whole: a play from the top of
-    /// the pile (Wendy's Amulet 01014) sits here. No per-card discard anchor
-    /// exists.
+    /// the pile (Wendy's Amulet 01014) sits here. As a prompt's area, the
+    /// whole pile a choice looks through (Scavenging 01073), whose cards are
+    /// anchored one by one as [`DiscardCard`](Self::DiscardCard)s.
     DiscardPile(InvestigatorId),
     /// The scenario's encounter deck (the Mythos step-1.4 draw).
     EncounterDeck,
+    /// A card in an investigator's deck, by its position from the top. Anchors
+    /// a card offered by a search or looked at on top of a deck; the host reads
+    /// the card's code from its own state at that position (ADR 0011).
+    DeckCard {
+        /// The deck's owner.
+        investigator: InvestigatorId,
+        /// Its position, 0 being the top card.
+        index: DeckIndex,
+    },
+    /// A card in the encounter deck, by its position from the top (Scrying
+    /// 01061 on the encounter deck).
+    EncounterDeckCard {
+        /// Its position, 0 being the top card.
+        index: DeckIndex,
+    },
+    /// A card in an investigator's discard pile, by its position in the pile
+    /// (Scavenging 01073's Item).
+    DiscardCard {
+        /// The pile's owner.
+        investigator: InvestigatorId,
+        /// Its position, 0 being the bottom of the pile.
+        index: DiscardIndex,
+    },
+    /// The top cards of an investigator's deck **being searched**: a prompt's
+    /// area, never an option's (Old Book of Lore 01031, Arcane Initiate
+    /// 01063). The searcher may look at every card in it
+    /// (`glossary/Search.md`).
+    ///
+    /// Apart from [`LookedAtTopOfDeck`](Self::LookedAtTopOfDeck) because the
+    /// two are otherwise the same cards on the wire, and the host's verb and
+    /// what it shows other players follow from which one it is.
+    SearchedTopOfDeck {
+        /// The deck's owner.
+        investigator: InvestigatorId,
+        /// How many cards from the top: the number printed, cut to the
+        /// number the deck holds.
+        count: u8,
+    },
+    /// The top cards of an investigator's deck **being looked at**, which is
+    /// not a search (FAQ 2.13 in `glossary/Search.md`): a prompt's area, never
+    /// an option's (Scrying 01061).
+    LookedAtTopOfDeck {
+        /// The deck's owner.
+        investigator: InvestigatorId,
+        /// How many cards from the top: the number printed, cut to the
+        /// number the deck holds.
+        count: u8,
+    },
+    /// The top cards of the encounter deck being looked at: a prompt's area,
+    /// never an option's (Scrying 01061).
+    LookedAtTopOfEncounterDeck {
+        /// How many cards from the top: the number printed, cut to the
+        /// number the deck holds.
+        count: u8,
+    },
     /// A card committed to the in-flight skill test, by its zero-based position
     /// in the test's committed list
     /// ([`committed`](crate::state::InFlightSkillTest::committed)).
@@ -176,6 +233,34 @@ impl OptionTarget {
     pub(crate) fn for_live_source(source: AbilitySource, state: &GameState) -> Option<Self> {
         ability_source::source_card(state, source)?;
         Some(source.into())
+    }
+
+    /// The card `index` cards below the top of `deck`: a
+    /// [`DeckCard`](Self::DeckCard) or an
+    /// [`EncounterDeckCard`](Self::EncounterDeckCard).
+    #[must_use]
+    pub fn deck_card(deck: Deck, index: DeckIndex) -> Self {
+        match deck {
+            Deck::Investigator(investigator) => Self::DeckCard {
+                investigator,
+                index,
+            },
+            Deck::Encounter => Self::EncounterDeckCard { index },
+        }
+    }
+
+    /// The top `count` cards of `deck`, being looked at: a
+    /// [`LookedAtTopOfDeck`](Self::LookedAtTopOfDeck) or a
+    /// [`LookedAtTopOfEncounterDeck`](Self::LookedAtTopOfEncounterDeck).
+    #[must_use]
+    pub fn looked_at_top_of(deck: Deck, count: u8) -> Self {
+        match deck {
+            Deck::Investigator(investigator) => Self::LookedAtTopOfDeck {
+                investigator,
+                count,
+            },
+            Deck::Encounter => Self::LookedAtTopOfEncounterDeck { count },
+        }
     }
 }
 
