@@ -189,9 +189,8 @@ fn strip_contents(
     //
     // A card outside play, anchored by its position, homes here the same way
     // whenever the card modal isn't carrying it. The modal carries a search's
-    // cards and is then their sole surface, as the decision modal is. Scrying's
-    // looked-at cards and Scavenging's discarded Items have no modal yet.
-    // TODO(#1378): drop the `DiscardCard` arm once Scavenging's modal lands.
+    // cards and a discard pile's, and is then their sole surface, as the
+    // decision modal is. Scrying's looked-at cards have no modal yet.
     // TODO(#1379): drop the `DeckCard` and `EncounterDeckCard` arms once
     // Scrying's modal lands.
     let card_modal_is_live = card_modal::modal_is_live(state);
@@ -208,7 +207,6 @@ fn strip_contents(
                         OptionTarget::CommittedCard { .. }
                             | OptionTarget::DeckCard { .. }
                             | OptionTarget::EncounterDeckCard { .. }
-                            | OptionTarget::DiscardCard { .. }
                     )
                 )
         })

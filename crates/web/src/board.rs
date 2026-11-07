@@ -6,14 +6,13 @@
 //! as their names, read from the registry provided at mount
 //! ([`registry::use_cards`]).
 
-use game_core::engine::{self, OptionTarget};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::scenario::ScenarioEnding;
 use game_core::state::investigator::{Investigator, InvestigatorId};
 use game_core::state::GameState;
 use leptos::prelude::*;
 
 use crate::card::{HandCardView, InPlayCardView};
-use crate::card_modal::CardArea;
 use crate::choice_row::{ChoiceRow, ChoiceRowView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
@@ -130,7 +129,14 @@ fn Dock() -> impl IntoView {
                     p.choice_row_on(investigator),
                 )
             });
+            let live = match &state.outcome {
+                Some(EngineOutcome::AwaitingInput { request, .. }) => Some(request),
+                _ => None,
+            };
             state.game.as_ref().and_then(|game| {
+                let row = row
+                    .zip(live)
+                    .map(|(area, request)| ChoiceRow::of(area, request, game));
                 game.investigators
                     .get(&investigator)
                     .map(|inv| investigator_panel(game, inv, held, strip, row))
@@ -192,20 +198,19 @@ fn tabs_view(game: &GameState, placed: &PromptLayout) -> impl IntoView {
 
 /// One investigator's panel in the dock, in two rows. Their prompt strip, when
 /// it is docked, heads it, then the row of a card choice they make that
-/// another account answers (`row`, the area the choice is made among). The top
-/// row is the investigator: their card (which, with the tab, names them), their
-/// stats, deck, discard and End turn, then their cards in play, then their
-/// threat area with engaged enemies. The bottom row is their hand. Cards are
-/// tiles.
+/// another account answers (`row`). The top row is the investigator: their
+/// card (which, with the tab, names them), their stats, deck, discard and End
+/// turn, then their cards in play, then their threat area with engaged
+/// enemies. The bottom row is their hand. Cards are tiles.
 fn investigator_panel(
     game: &GameState,
     inv: &Investigator,
     held: bool,
     strip: bool,
-    row: Option<CardArea>,
+    row: Option<ChoiceRow>,
 ) -> impl IntoView {
     let strip = strip.then(|| prompt_strip(inv.id));
-    let row = row.map(|area| view! { <ChoiceRowView row=ChoiceRow::of(area, game)/> });
+    let row = row.map(|row| view! { <ChoiceRowView row=row/> });
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();

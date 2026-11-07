@@ -3,18 +3,18 @@
 //! prompt strip.
 //!
 //! The engine anchors each offered card by its position, and the prompt by
-//! the area the choice is made among: the top 3 of a deck being searched, or a
-//! whole deck (ADR 0011). This module reads those two anchors and the cards at
-//! them from the client's own state. It never parses the prompt's text or an
-//! option's label.
+//! the area the choice is made among: the top 3 of a deck being searched, a
+//! whole deck, or a discard pile (ADR 0011). This module reads those two
+//! anchors and the cards at them from the client's own state. It never parses
+//! the prompt's text or an option's label.
 //!
 //! The modal is the **sole** surface for the choice, as the decision modal is
 //! for a decision: while it is up, the prompt strip renders neither the prompt
 //! text nor these options.
 //!
-//! Only a search's areas are recognised so far. Scrying 01061's looked-at
-//! cards and Scavenging 01073's discard pile stay on the prompt strip until
-//! their modals land (#1379, #1378).
+//! Only a search's areas and a discard pile are recognised so far. Scrying
+//! 01061's looked-at cards stay on the prompt strip until their modal lands
+//! (#1379).
 //!
 //! [`live_card_modal`] and [`CardArea`] are pure and native-tested; the view's
 //! submit is wasm-only.
@@ -49,6 +49,9 @@ pub enum CardArea {
     },
     /// `investigator`'s whole deck, being searched (Research Librarian 01032).
     SearchedDeck(InvestigatorId),
+    /// `investigator`'s discard pile, chosen from (Scavenging 01073). A
+    /// discard pile is open information, so its cards are face up to all.
+    DiscardPile(InvestigatorId),
 }
 
 /// What clicking an offered card does, as its button names it.
@@ -56,6 +59,8 @@ pub enum CardArea {
 pub enum Verb {
     /// Take the searched card into hand.
     Draw,
+    /// Take the chosen card from the discard pile into hand.
+    Take,
 }
 
 impl Verb {
@@ -64,6 +69,7 @@ impl Verb {
     pub fn label(self) -> &'static str {
         match self {
             Verb::Draw => "Draw",
+            Verb::Take => "Take",
         }
     }
 }
@@ -83,6 +89,7 @@ impl CardArea {
                 count: usize::from(*count),
             },
             OptionTarget::PlayerDeck(investigator) => CardArea::SearchedDeck(*investigator),
+            OptionTarget::DiscardPile(investigator) => CardArea::DiscardPile(*investigator),
             _ => return None,
         };
         let every_option_in_it = !request.options.is_empty()
@@ -101,7 +108,8 @@ impl CardArea {
     pub fn investigator(self) -> InvestigatorId {
         match self {
             CardArea::SearchedTopOfDeck { investigator, .. }
-            | CardArea::SearchedDeck(investigator) => investigator,
+            | CardArea::SearchedDeck(investigator)
+            | CardArea::DiscardPile(investigator) => investigator,
         }
     }
 
@@ -110,33 +118,64 @@ impl CardArea {
     pub fn verb(self) -> Verb {
         match self {
             CardArea::SearchedTopOfDeck { .. } | CardArea::SearchedDeck(_) => Verb::Draw,
+            CardArea::DiscardPile(_) => Verb::Take,
         }
     }
 
     /// The area's cards in `game`, top first.
     #[must_use]
     pub fn cards(self, game: &GameState) -> Vec<CardCode> {
-        let deck = game
-            .investigators
-            .get(&self.investigator())
-            .map_or(&[][..], |inv| &inv.deck[..]);
+        self.slots(game).into_iter().map(|(_, code)| code).collect()
+    }
+
+    /// The cards `request` offers from this area in `game`, top first: what
+    /// the modal shows with a verb.
+    #[must_use]
+    pub fn offered(self, request: &InputRequest, game: &GameState) -> Vec<CardCode> {
+        self.slots(game)
+            .into_iter()
+            .filter(|(position, _)| option_at(request, self, *position).is_some())
+            .map(|(_, code)| code)
+            .collect()
+    }
+
+    /// The area's cards in `game`, top first, each with its position as an
+    /// anchor names it: from the top of a deck, from the bottom of a discard
+    /// pile.
+    fn slots(self, game: &GameState) -> Vec<(usize, CardCode)> {
+        let Some(inv) = game.investigators.get(&self.investigator()) else {
+            return Vec::new();
+        };
         match self {
-            CardArea::SearchedTopOfDeck { count, .. } => deck.iter().take(count).cloned().collect(),
-            CardArea::SearchedDeck(_) => deck.to_vec(),
+            CardArea::SearchedTopOfDeck { count, .. } => {
+                inv.deck.iter().take(count).cloned().enumerate().collect()
+            }
+            CardArea::SearchedDeck(_) => inv.deck.iter().cloned().enumerate().collect(),
+            CardArea::DiscardPile(_) => inv.discard.iter().cloned().enumerate().rev().collect(),
         }
     }
 
-    /// Whether the cards not offered fold away under a count. A whole deck is
-    /// too many to lay out; the top few are shown alongside the offered ones,
-    /// so a player sees what they passed over.
+    /// Whether the cards not offered fold away under a count. A whole deck or
+    /// pile is too many to lay out; the top few are shown alongside the
+    /// offered ones, so a player sees what they passed over.
     #[must_use]
     pub fn collapses_others(self) -> bool {
-        matches!(self, CardArea::SearchedDeck(_))
+        matches!(self, CardArea::SearchedDeck(_) | CardArea::DiscardPile(_))
     }
 
     /// The position in this area of the card `anchor` names, or `None` when it
     /// names no card here.
     fn position_of(self, anchor: &OptionTarget) -> Option<usize> {
+        if let (
+            CardArea::DiscardPile(pile),
+            OptionTarget::DiscardCard {
+                investigator,
+                index,
+            },
+        ) = (self, anchor)
+        {
+            return (investigator == &pile).then_some(index.to_usize());
+        }
         let OptionTarget::DeckCard {
             investigator,
             index,
@@ -148,6 +187,7 @@ impl CardArea {
         let within = match self {
             CardArea::SearchedTopOfDeck { count, .. } => index < count,
             CardArea::SearchedDeck(_) => true,
+            CardArea::DiscardPile(_) => false,
         };
         (*investigator == self.investigator() && within).then_some(index)
     }
@@ -189,12 +229,29 @@ impl CardModal {
     /// The heading over the collapsed cards, `None` when nothing is collapsed.
     #[must_use]
     pub fn collapsed_label(&self) -> Option<String> {
-        match self.collapsed.len() {
-            0 => None,
-            1 => Some("1 other card searched".to_owned()),
-            n => Some(format!("{n} other cards searched")),
-        }
+        let others = match self.collapsed.len() {
+            0 => return None,
+            1 => "1 other card".to_owned(),
+            n => format!("{n} other cards"),
+        };
+        Some(match self.area {
+            // A discard pile is chosen from, not searched.
+            CardArea::DiscardPile(_) => others,
+            CardArea::SearchedTopOfDeck { .. } | CardArea::SearchedDeck(_) => {
+                format!("{others} searched")
+            }
+        })
     }
+}
+
+/// The option of `request` that takes the card at `position` in `area`, if
+/// one does.
+fn option_at(request: &InputRequest, area: CardArea, position: usize) -> Option<OptionId> {
+    request
+        .options
+        .iter()
+        .find(|option| option.target.as_ref().and_then(|t| area.position_of(t)) == Some(position))
+        .map(|option| option.id)
 }
 
 /// The live prompt and its area, when it is a card choice this account
@@ -211,19 +268,10 @@ fn live_request(state: &ClientState) -> Option<(InputRequest, CardArea)> {
 pub fn live_card_modal(state: &ClientState) -> Option<CardModal> {
     let (request, area) = live_request(state)?;
     let game = state.game.as_ref()?;
-    let option_at = |position: usize| {
-        request
-            .options
-            .iter()
-            .find(|option| {
-                option.target.as_ref().and_then(|t| area.position_of(t)) == Some(position)
-            })
-            .map(|option| option.id)
-    };
     let mut shown = Vec::new();
     let mut collapsed = Vec::new();
-    for (position, code) in area.cards(game).into_iter().enumerate() {
-        match option_at(position) {
+    for (position, code) in area.slots(game) {
+        match option_at(&request, area, position) {
             None if area.collapses_others() => collapsed.push(code),
             option => shown.push(ModalCard { code, option }),
         }
