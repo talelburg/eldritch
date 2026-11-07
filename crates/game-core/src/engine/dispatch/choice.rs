@@ -149,6 +149,10 @@ pub fn resolve_grounded_choice<T: Clone>(
 /// Offer the controller a choice among cards **in a deck** or a discard pile,
 /// and hand back the picked card's index into `codes`.
 ///
+/// A caller whose pick is someone else's, such as a search of another
+/// investigator's deck, names them in the prompt's
+/// [`answered_by`](EffectPrompt::answered_by).
+///
 /// It is the one way an evaluator arm or a card-local native picks a card that
 /// has no board surface to anchor on, such as a searched card, a card looked at
 /// on top of a deck, or Scavenging 01073's Item in the discard pile.
@@ -212,6 +216,7 @@ fn selection_prompt(
             .collect(),
         target: None,
         nature: PromptNature::Selection,
+        answered_by: None,
     }
 }
 
@@ -387,6 +392,7 @@ pub(crate) fn decision_prompt(
             .collect(),
         target: anchor,
         nature: PromptNature::Decision,
+        answered_by: None,
     }
 }
 
@@ -402,6 +408,7 @@ fn card_prompt(text: impl Into<String>, labels: Vec<String>) -> EffectPrompt {
         options: labels.into_iter().map(|label| (label, None)).collect(),
         target: None,
         nature: PromptNature::Selection,
+        answered_by: None,
     }
 }
 

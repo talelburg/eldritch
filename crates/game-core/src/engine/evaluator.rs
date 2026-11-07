@@ -1508,7 +1508,17 @@ fn apply_search_deck(
         Grounded::Picked(i) => Some(eligible[i].0),
         Grounded::Suspend(suspension) => {
             return match suspension.into_prompt() {
-                Ok(prompt) => suspend_leaf_in_place(cx, node, eval_ctx, prompt),
+                // The searcher answers (`glossary/Search.md`: "that player is
+                // permitted to look at all of the cards in the searched
+                // area"), who is not the controller when Old Book of Lore
+                // 01031 chooses another investigator.
+                Ok(prompt) => {
+                    let prompt = EffectPrompt {
+                        answered_by: Some(who),
+                        ..prompt
+                    };
+                    suspend_leaf_in_place(cx, node, eval_ctx, prompt)
+                }
                 Err(rejected) => rejected,
             };
         }

@@ -6,7 +6,8 @@
 //!
 //! Solo: the "choose an investigator at your location" target auto-binds (one
 //! co-located investigator), so the only suspend is the top-3 card pick. The
-//! exhaust cost is paid before the effect runs.
+//! exhaust cost is paid before the effect runs. With Roland beside the reader,
+//! the investigator is chosen first, and the searcher answers the card pick.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -14,7 +15,7 @@ use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::{OptionId, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
@@ -25,6 +26,11 @@ use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSessio
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
+/// A second investigator at `HERE`, for a search of someone else's deck.
+const ROLAND: InvestigatorId = InvestigatorId(2);
+const BEAT_COP: &str = "01018";
+const MAGNIFYING_GLASS: &str = "01030";
+const EMERGENCY_CACHE: &str = "01088";
 
 /// Investigator 1 at `HERE` with Old Book of Lore in play and a known 4-card
 /// deck (top 3 distinct, plus a 4th below the searched region).
@@ -41,6 +47,23 @@ fn board(investigator: Seat) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
         .with_seat(investigator)
+        .open_turn(INV)
+        .session()
+}
+
+/// `reader()`'s turn at `HERE`, with Roland beside her holding a known deck:
+/// Beat Cop, Magnifying Glass and Emergency Cache on top, then a 4th card.
+fn reader_beside_roland() -> TestSession {
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(location(HERE))
+        .with_seat(reader())
+        .with_seat(
+            seat(2)
+                .at(HERE)
+                .deck([BEAT_COP, MAGNIFYING_GLASS, EMERGENCY_CACHE, "90004"]),
+        )
+        .with_seating([INV, ROLAND])
         .open_turn(INV)
         .session()
 }
@@ -177,4 +200,48 @@ fn a_weakness_found_resolves_as_if_drawn() {
         .find(|c| c.code == CardCode::new(COVER_UP))
         .expect("Cover Up resolved its Revelation into the threat area");
     assert_eq!(placed.clues, 3);
+}
+
+/// The searcher answers the search. Old Book of Lore: *"Choose an investigator
+/// at your location. That investigator searches the top 3 cards of his or her
+/// deck for a card, draws it…"* `glossary/Search.md`: *"When a player is
+/// instructed to search for a card, that player is permitted to look at all of
+/// the cards in the searched area without revealing those cards to the other
+/// players."* So when the reader chooses Roland, the pick among his top 3 is
+/// Roland's, and the card he picks is drawn into his hand.
+#[test]
+fn a_search_of_another_investigators_deck_is_answered_by_that_investigator() {
+    let session = reader_beside_roland();
+    let book = book(&session);
+    let roland_card = session.state().investigator_card(ROLAND);
+    let s = session.take(&activate_book(book)).pick(roland_card);
+    assert_eq!(
+        s.prompt().responder,
+        Responder::Investigator(ROLAND),
+        "the search of Roland's deck is Roland's to answer: {:?}",
+        s.prompt(),
+    );
+
+    let s = s.pick_unanchored("Magnifying Glass");
+    s.assert_at_turn_menu(INV);
+    let roland = &s.state().investigators[&ROLAND];
+    assert!(
+        roland.hand.contains(&CardCode::new(MAGNIFYING_GLASS)),
+        "Roland drew the card he picked",
+    );
+    assert_eq!(roland.deck.len(), 3, "one card left Roland's deck");
+    assert!(
+        s.state().investigators[&INV].hand.is_empty(),
+        "the reader drew nothing",
+    );
+}
+
+/// The reader choosing herself searches her own deck, so the pick stays hers.
+#[test]
+fn a_search_of_the_readers_own_deck_is_answered_by_the_reader() {
+    let session = reader_beside_roland();
+    let book = book(&session);
+    let reader_card = session.state().investigator_card(INV);
+    let s = session.take(&activate_book(book)).pick(reader_card);
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
 }

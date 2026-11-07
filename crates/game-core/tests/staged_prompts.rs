@@ -602,6 +602,7 @@ fn a_staged_effect_choice_shows_its_stored_prompt_and_resolves_the_pick() {
                 ],
                 target: None,
                 nature: PromptNature::Decision,
+                answered_by: None,
             }),
         }))
         .session();

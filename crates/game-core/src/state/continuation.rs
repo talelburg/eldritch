@@ -532,6 +532,11 @@ pub struct EffectPrompt {
     /// Whether the options are board entities or alternatives printed on one
     /// card (ADR 0015).
     pub nature: PromptNature,
+    /// Who answers, when it is not the frame's controller; `None` means the
+    /// controller (ADR 0019). A search is answered by the investigator whose
+    /// deck it searches (`glossary/Search.md`), who may not be the controller:
+    /// Old Book of Lore 01031 lets its controller choose another investigator.
+    pub answered_by: Option<InvestigatorId>,
 }
 
 /// The rest of an action once its costs are paid.

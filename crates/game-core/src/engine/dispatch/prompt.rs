@@ -213,13 +213,14 @@ fn table(
             )),
             DealDamageStep::Announce | DealDamageStep::Finish => None,
         },
-        // An effect's choice is its controller's.
+        // An effect's choice is its controller's; a search's choice, the
+        // investigator whose deck it searches, which its prompt records.
         Continuation::Effect(
             EffectFrame::Leaf { prompt, ctx, .. } | EffectFrame::Designated { prompt, ctx, .. },
         ) => prompt.as_ref().map(|prompt| {
             (
                 choice::effect_request(prompt),
-                Responder::Investigator(ctx.controller),
+                Responder::Investigator(prompt.answered_by.unwrap_or(ctx.controller)),
             )
         }),
         Continuation::Effect(EffectFrame::Seq { .. } | EffectFrame::ForEach { .. })
