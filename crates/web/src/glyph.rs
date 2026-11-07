@@ -1,7 +1,7 @@
 //! The game's symbols as glyphs of the vendored `arkhamicons` font.
 //!
 //! [`GLYPHS`] maps a card-markup token to its codepoint in the font and its
-//! readable name, and [`view`] renders one as a span. The font file, its
+//! readable name, and [`view()`] renders one as a span. The font file, its
 //! upstream commit and the config the codepoints were checked against are in
 //! `crates/web/assets/fonts/SOURCE.md`; `style.css` loads it with `@font-face`.
 

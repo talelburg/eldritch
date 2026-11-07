@@ -687,7 +687,7 @@ pub fn InPlayCardView(
 }
 
 /// Render parsed card text to views: a mapped symbol becomes its
-/// [`glyph::view`] span, and an unknown token keeps its brackets in a
+/// [`glyph::view()`] span, and an unknown token keeps its brackets in a
 /// `.unknown-token` span so it pops out.
 pub fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
     segments
