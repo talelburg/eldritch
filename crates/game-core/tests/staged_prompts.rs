@@ -25,13 +25,13 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, AcknowledgeForcedFrame, AdditionalActionChoiceFrame,
-    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
-    AttackLoopFrame, AttackLoopStage, CandidateSource, CardCode, CardInPlay, CardInstanceId,
-    Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EffectPrompt,
-    EncounterDrawFrame, EnemyAttackSource, EnemyId, EngagementTieFrame, GameStateBuilder,
-    HandDiscardCostFrame, HunterChoice, InvestigatorId, LocationId, MulliganFrame, Owner,
-    ResolutionCandidate, SkillKind, SkillTestId, SlotDiscardFrame, Status, SubstitutionPromptFrame,
-    TiedEngagement, TimingMode, TimingPointWindowFrame,
+    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Answerer, AssetEntry,
+    Assignment, AttackLoopFrame, AttackLoopStage, CandidateSource, CardCode, CardInPlay,
+    CardInstanceId, Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame,
+    EffectPrompt, EncounterDrawFrame, EnemyAttackSource, EnemyId, EngagementTieFrame,
+    GameStateBuilder, HandDiscardCostFrame, HunterChoice, InvestigatorId, LocationId,
+    MulliganFrame, Owner, ResolutionCandidate, SkillKind, SkillTestId, SlotDiscardFrame, Status,
+    SubstitutionPromptFrame, TiedEngagement, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{
     self, act, enemy, location, seat, BoardLookup as _, MockRegistry, Seat, TestSession,
@@ -602,7 +602,7 @@ fn a_staged_effect_choice_shows_its_stored_prompt_and_resolves_the_pick() {
                 ],
                 target: None,
                 nature: PromptNature::Decision,
-                answered_by: None,
+                answered_by: Answerer::Controller,
             }),
         }))
         .session();

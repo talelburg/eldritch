@@ -38,7 +38,7 @@ use card_dsl::dsl::{
 };
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
-use game_core::state::{CardCode, DiscardIndex, GameState, InvestigatorId};
+use game_core::state::{Answerer, CardCode, DiscardIndex, GameState, InvestigatorId};
 
 use crate::generated::traits::ITEM;
 use crate::impls::CardRecord;
@@ -111,6 +111,7 @@ fn take_item(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         ctx,
         &anchors,
         OptionTarget::DiscardPile(ctx.controller),
+        Answerer::Controller,
         "Scavenging: choose an Item to add to your hand",
     ) {
         Grounded::Picked(i) => {

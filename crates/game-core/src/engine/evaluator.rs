@@ -58,9 +58,10 @@ use crate::engine::{Cx, NativeCx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
-    AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource, DeckIndex,
-    EffectBaseFrame, EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState, InvestigatorId,
-    Lifetime, LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
+    AbilitySource, AdvanceTrigger, Answerer, CardCode, CardInstanceId, Continuation, DamageSource,
+    DeckIndex, EffectBaseFrame, EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState,
+    InvestigatorId, Lifetime, LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest,
+    Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -1521,23 +1522,18 @@ fn apply_search_deck(
         &eval_ctx,
         &anchors,
         area,
+        // The searcher answers (`glossary/Search.md`: "that player is
+        // permitted to look at all of the cards in the searched area"), who is
+        // not the controller when Old Book of Lore 01031 chooses another
+        // investigator.
+        Answerer::Investigator(who),
         "Search: choose a card to take",
     ) {
         Grounded::Empty => None,
         Grounded::Picked(i) => Some(eligible[i].0),
         Grounded::Suspend(suspension) => {
             return match suspension.into_prompt() {
-                // The searcher answers (`glossary/Search.md`: "that player is
-                // permitted to look at all of the cards in the searched
-                // area"), who is not the controller when Old Book of Lore
-                // 01031 chooses another investigator.
-                Ok(prompt) => {
-                    let prompt = EffectPrompt {
-                        answered_by: Some(who),
-                        ..prompt
-                    };
-                    suspend_leaf_in_place(cx, node, eval_ctx, prompt)
-                }
+                Ok(prompt) => suspend_leaf_in_place(cx, node, eval_ctx, prompt),
                 Err(rejected) => rejected,
             };
         }

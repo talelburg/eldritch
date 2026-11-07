@@ -48,7 +48,7 @@ use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost, LocationSet};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
-use game_core::state::{Deck, DeckIndex, GameState};
+use game_core::state::{Answerer, Deck, DeckIndex, GameState};
 
 use crate::impls::CardRecord;
 
@@ -156,7 +156,15 @@ fn place_next(cx: &mut NativeCx, ctx: &EvalContext, deck: Deck, position: usize)
         0 => "Scrying: choose the card to put on top",
         _ => "Scrying: choose the card to put next",
     };
-    match engine::resolve_card_choice(cx.state(), cx.cards(), ctx, &unplaced, area, prompt) {
+    match engine::resolve_card_choice(
+        cx.state(),
+        cx.cards(),
+        ctx,
+        &unplaced,
+        area,
+        Answerer::Controller,
+        prompt,
+    ) {
         Grounded::Picked(i) => {
             cx.move_card_in_deck(deck, position + i, position);
             EngineOutcome::Done

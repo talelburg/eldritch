@@ -19,7 +19,7 @@ use crate::engine::outcome::{
 };
 use crate::engine::{board, Cx, EvalContext};
 use crate::state::{
-    CardCode, Continuation, EffectFrame, EffectPrompt, EnemyId, GameState, InvestigatorId,
+    Answerer, CardCode, Continuation, EffectFrame, EffectPrompt, EnemyId, GameState, InvestigatorId,
 };
 
 /// Outcome of applying the uniform resolve convention to a count of legal
@@ -146,7 +146,7 @@ pub fn resolve_grounded_choice<T: Clone>(
     }
 }
 
-/// Offer the controller a choice among cards **outside play**, in a deck or a
+/// Offer `answerer` a choice among cards **outside play**, in a deck or a
 /// discard pile, and hand back the index into `anchors` of the card picked.
 ///
 /// It is the one way an evaluator arm or a card-local native picks a card that
@@ -162,9 +162,9 @@ pub fn resolve_grounded_choice<T: Clone>(
 /// area's other cards from its own state (ADR 0011). The prompt stays a
 /// [`Selection`](PromptNature::Selection) (ADR 0015).
 ///
-/// A caller whose pick is someone else's, such as a search of another
-/// investigator's deck, names them in the prompt's
-/// [`answered_by`](EffectPrompt::answered_by).
+/// `answerer` is who picks: [`Answerer::Controller`] for the controller's own
+/// look or pile, and the searched investigator for a search, who may not be
+/// the controller.
 ///
 /// The rule is [`resolve_grounded_choice`]'s, so a threaded pick is checked
 /// first and a lone card is prompted only under
@@ -179,6 +179,7 @@ pub fn resolve_card_choice(
     ctx: &EvalContext,
     anchors: &[OptionTarget],
     area: OptionTarget,
+    answerer: Answerer,
     prompt: &str,
 ) -> Grounded<usize> {
     if let Some(OptionId(i)) = ctx.chosen_option() {
@@ -197,6 +198,7 @@ pub fn resolve_card_choice(
         ChoiceResolution::Auto(i) => Grounded::Picked(i),
         ChoiceResolution::Suspend => Grounded::Suspend(Suspension::ask(EffectPrompt {
             target: Some(area),
+            answered_by: answerer,
             ..selection_prompt(state, cards, prompt, anchors)
         })),
     }
@@ -223,7 +225,7 @@ fn selection_prompt(
             .collect(),
         target: None,
         nature: PromptNature::Selection,
-        answered_by: None,
+        answered_by: Answerer::Controller,
     }
 }
 
@@ -430,7 +432,7 @@ pub(crate) fn decision_prompt(
             .collect(),
         target: anchor,
         nature: PromptNature::Decision,
-        answered_by: None,
+        answered_by: Answerer::Controller,
     }
 }
 
