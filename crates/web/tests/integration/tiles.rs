@@ -66,6 +66,12 @@ async fn a_hand_card_is_a_tile_and_hovering_it_shows_the_whole_card() {
     assert_eq!(common::text_of(&tile, ".tile-name"), "Machete");
     assert_eq!(common::text_of(&tile, ".tile-cost"), "3");
     assert_eq!(icons(&tile), vec!["combat"]);
+    let circle = common::one(&tile, ".skill-icon.skill-icon--combat");
+    assert_eq!(
+        common::text_of(&circle, ".glyph.glyph--combat"),
+        "h",
+        "the combat glyph inside its colour circle"
+    );
     let rules = "If the attacked enemy is the only enemy engaged with you, \
                  this attack deals +1 damage.";
     assert!(

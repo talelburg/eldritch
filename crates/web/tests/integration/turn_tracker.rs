@@ -76,12 +76,12 @@ async fn lists_all_phases_substeps_and_round() {
     assert_eq!(
         band_entries(&tracker),
         [
-            "1.1", "1.2", "1.3", "1.4", "◇", "1.5", //
-            "2.1", "◇", "2.2", "◇", "2.2.1", "2.2.2", "2.3", //
-            "3.1", "3.2", "◇", "3.3", "◇", "3.4", //
-            "4.1", "◇", "4.2", "4.3", "4.4", "4.5", "4.6",
+            "1.1", "1.2", "1.3", "1.4", "v", "1.5", //
+            "2.1", "v", "2.2", "v", "2.2.1", "2.2.2", "2.3", //
+            "3.1", "3.2", "v", "3.3", "v", "3.4", //
+            "4.1", "v", "4.2", "4.3", "4.4", "4.5", "4.6",
         ],
-        "every step by number, ◇ for each player window"
+        "every step by number, the free-triggered-ability glyph `v` for each player window"
     );
     let t = tracker.text_content().unwrap_or_default();
     assert!(
@@ -122,6 +122,32 @@ async fn hovering_a_player_window_names_it() {
     common::hover(&window).await;
     let text = common::popover_text(&window).expect("the window's popover");
     assert!(text.contains("Player window"), "names the window: {text}");
+    // The entry is the RR timing chart's `[free]` icon, and the popover's quote
+    // draws the same icon inline: the glyph shares one block with the words
+    // around it rather than standing as its own popover row.
+    let mark = window
+        .query_selector(":scope > .glyph--free")
+        .expect("query ok")
+        .expect("the entry is the free-triggered-ability glyph");
+    assert_eq!(
+        mark.get_attribute("aria-label").as_deref(),
+        Some("free triggered ability")
+    );
+    let block = window
+        .query_selector(".popover .glyph--free")
+        .expect("query ok")
+        .expect("the quote's [free] is a glyph")
+        .parent_element()
+        .expect("the glyph's parent");
+    assert!(
+        !block.class_list().contains("popover"),
+        "the glyph is not a row of the popover's column flexbox"
+    );
+    let inline = block.text_content().unwrap_or_default();
+    assert!(
+        inline.contains("Players may use") && inline.contains("triggered abilities"),
+        "the glyph sits inline in the quote's text: {inline}"
+    );
 }
 
 #[wasm_bindgen_test]

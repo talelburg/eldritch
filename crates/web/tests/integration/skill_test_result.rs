@@ -113,6 +113,11 @@ async fn renders_token_total_and_outcome_after_resolution() {
     let section = last_section().expect("the result modal renders after resolution");
     let text = section.text_content().unwrap_or_default();
     assert!(text.contains("Chaos token"), "shows the token line: {text}");
+    assert_eq!(
+        common::text_of(&section, ".str-token"),
+        "Chaos token: +1",
+        "a numeric token shows its signed value"
+    );
     assert!(text.contains("Total 5"), "shows total: {text}");
     assert!(text.contains("difficulty 3"), "shows difficulty: {text}");
     assert!(text.contains("Succeeded by 2"), "shows outcome: {text}");
@@ -183,15 +188,22 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
     task::tick().await;
 
     let section = last_section().expect("the result modal renders after resolution");
-    let token_line = section
-        .query_selector(".str-token")
-        .expect("query")
-        .expect("the modal has a token line")
-        .text_content()
-        .unwrap_or_default();
-    assert!(
-        token_line.contains("Tablet (-2)"),
-        "names the token revealed two batches earlier: {token_line}"
+    let line = common::one(&section, ".str-token");
+    let token_line = line.text_content().unwrap_or_default();
+    let tablet = common::one(&line, ".glyph.glyph--tablet");
+    assert_eq!(
+        tablet.text_content().as_deref(),
+        Some("o"),
+        "draws the tablet revealed two batches earlier as its glyph: {token_line}"
+    );
+    assert_eq!(
+        tablet.get_attribute("aria-label").as_deref(),
+        Some("tablet")
+    );
+    assert_eq!(
+        common::text_of(&line, ".str-resolution"),
+        "-2",
+        "with its modifier"
     );
     assert!(
         !token_line.contains('—'),
@@ -199,6 +211,55 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
     );
     let text = section.text_content().unwrap_or_default();
     assert!(text.contains("Failed by 2"), "shows outcome: {text}");
+}
+
+/// A test that drew no chaos token at all shows the em dash on the token line.
+#[wasm_bindgen_test]
+async fn shows_the_em_dash_when_no_token_was_drawn() {
+    let (store, _rx) = mount_modal();
+    store.update(|s| {
+        store::reduce(
+            s,
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(0),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(1),
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestStarted {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    difficulty: 3,
+                }],
+                outcome: EngineOutcome::Done,
+            }),
+        );
+        // The resolution, with no `ChaosTokenRevealed` before it.
+        store::reduce(
+            s,
+            ServerMessage::Applied(Applied {
+                answered: LogPosition(1),
+                by: InvestigatorId(1),
+                response: LoggedResponse::Confirm,
+                prompt: LogPosition(2),
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestSucceeded {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    margin: 1,
+                }],
+                outcome: acknowledge_pause(),
+            }),
+        );
+    });
+    task::tick().await;
+
+    let section = last_section().expect("the result modal renders after resolution");
+    assert_eq!(
+        common::text_of(&section, ".str-token"),
+        "Chaos token: —",
+        "no token drawn shows the em dash"
+    );
 }
 
 #[wasm_bindgen_test]

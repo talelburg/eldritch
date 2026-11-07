@@ -20,16 +20,38 @@ use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
+use crate::glyph::{self, Glyph};
 use crate::store::{self, ClientState, RevealedToken};
 
-/// The data the result panel renders: a display string for the drawn token, the
-/// final total vs difficulty, and a player-facing outcome line.
+/// The data the result panel renders: the drawn token (`None` when none was
+/// drawn, shown as the em dash), the final total vs difficulty, and a
+/// player-facing outcome line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillTestSummary {
-    pub token: String,
+    pub token: Option<DrawnToken>,
     pub total: i8,
     pub difficulty: i8,
     pub outcome: String,
+}
+
+/// The chaos token a test drew, as the modal shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawnToken {
+    /// A numeric token, shown as its signed value (`+1`, `-2`): it has no
+    /// glyph.
+    Numeric(i8),
+    /// A symbol token, drawn as its glyph, and how it resolved, shown as its
+    /// modifier (`-2`), `auto-fail` or `elder sign`.
+    Symbol {
+        glyph: &'static Glyph,
+        resolution: TokenResolution,
+    },
+    /// A symbol token the glyph table doesn't map (a `ChaosToken` variant added
+    /// after this client), shown by its name as text.
+    Named {
+        name: String,
+        resolution: TokenResolution,
+    },
 }
 
 /// Build a [`SkillTestSummary`] from the store's latched skill-test state, or
@@ -54,10 +76,10 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
     let difficulty = state.last_skill_test_difficulty?;
     let token = state
         .last_revealed_token
-        .map(|RevealedToken { token, resolution }| token_display(token, resolution));
+        .map(|RevealedToken { token, resolution }| drawn_token(token, resolution));
     match state.last_skill_test_result.as_ref()? {
         Event::SkillTestSucceeded { margin, .. } => Some(SkillTestSummary {
-            token: token.unwrap_or_else(|| "—".to_string()),
+            token,
             total: difficulty.saturating_add(*margin),
             difficulty,
             outcome: format!("Succeeded by {margin}"),
@@ -69,7 +91,7 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
                 ""
             };
             Some(SkillTestSummary {
-                token: token.unwrap_or_else(|| "—".to_string()),
+                token,
                 total: difficulty.saturating_sub(*by),
                 difficulty,
                 outcome: format!("Failed by {by}{note}"),
@@ -107,21 +129,49 @@ pub fn provisional_verdict(state: &ClientState) -> Option<String> {
     })
 }
 
-/// A short display string for the drawn token and how it resolved (e.g.
-/// `"+1"`, `"Skull (-2)"`, `"AutoFail (auto-fail)"`).
-fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
-    let suffix = match resolution {
+/// The drawn token and how it resolved, as the modal shows it.
+fn drawn_token(token: ChaosToken, resolution: TokenResolution) -> DrawnToken {
+    if let ChaosToken::Numeric(n) = token {
+        return DrawnToken::Numeric(n);
+    }
+    match glyph::for_chaos_token(token) {
+        Some(glyph) => DrawnToken::Symbol { glyph, resolution },
+        None => DrawnToken::Named {
+            name: format!("{token:?}"),
+            resolution,
+        },
+    }
+}
+
+/// How a symbol token resolved, as the modal words it: its modifier (`-2`),
+/// `auto-fail` or `elder sign`.
+fn resolution_text(resolution: TokenResolution) -> String {
+    match resolution {
         TokenResolution::Modifier(n) => format!("{n:+}"),
         TokenResolution::AutoFail => "auto-fail".to_string(),
         TokenResolution::ElderSign => "elder sign".to_string(),
         // `TokenResolution` is #[non_exhaustive]; a future kind gets a placeholder.
         _ => "?".to_string(),
+    }
+}
+
+/// The token line's content: a numeric token's signed value, a symbol's glyph
+/// then its resolution, or the em dash when no token was drawn.
+fn token_view(token: Option<DrawnToken>) -> AnyView {
+    let resolution = |r: TokenResolution| {
+        view! { <span class="str-resolution">{resolution_text(r)}</span> }
     };
     match token {
-        // A numeric token reads cleanly as just its signed value.
-        ChaosToken::Numeric(n) => format!("{n:+}"),
-        // `ChaosToken` is #[non_exhaustive]; render the symbol via Debug + suffix.
-        other => format!("{other:?} ({suffix})"),
+        None => "—".into_any(),
+        Some(DrawnToken::Numeric(n)) => format!("{n:+}").into_any(),
+        Some(DrawnToken::Symbol {
+            glyph,
+            resolution: r,
+        }) => view! { {glyph::view(glyph)} " " {resolution(r)} }.into_any(),
+        Some(DrawnToken::Named {
+            name,
+            resolution: r,
+        }) => view! { {name} " " {resolution(r)} }.into_any(),
     }
 }
 
@@ -205,7 +255,7 @@ pub fn SkillTestResultView() -> impl IntoView {
                     on:pointermove=move |ev| drag.movement(&ev)
                     on:pointerup=move |ev| drag.up(&ev)
                 >
-                    <p class="str-token">"Chaos token: " {s.token}</p>
+                    <p class="str-token">"Chaos token: " {token_view(s.token)}</p>
                     <p class="str-total">
                         "Total " {s.total} " vs difficulty " {s.difficulty}
                     </p>
@@ -273,6 +323,11 @@ mod tests {
             .expect("a success summary");
         assert_eq!(s.difficulty, 3);
         assert_eq!(s.total, 5, "total = difficulty + margin");
+        assert_eq!(
+            s.token,
+            Some(DrawnToken::Numeric(1)),
+            "a numeric token is its signed value"
+        );
         assert!(s.outcome.contains("Succeeded by 2"), "{}", s.outcome);
     }
 
@@ -305,6 +360,11 @@ mod tests {
         ))
         .expect("an autofail summary");
         assert_eq!(s.total, 0, "auto-fail clamps total to 0");
+        let Some(DrawnToken::Symbol { glyph, resolution }) = s.token else {
+            panic!("the auto-fail token is a symbol: {:?}", s.token);
+        };
+        assert_eq!((glyph.token, glyph.codepoint), ("auto_fail", 'q'));
+        assert_eq!(resolution, TokenResolution::AutoFail);
         assert!(
             s.outcome.contains("auto-fail"),
             "notes the auto-fail: {}",
@@ -335,7 +395,11 @@ mod tests {
             Some(failed(FailureReason::Total, 1)),
         ))
         .expect("a failure summary");
-        assert_eq!(s.token, "Tablet (-2)", "names the latched token");
+        let Some(DrawnToken::Symbol { glyph, resolution }) = s.token else {
+            panic!("names the latched token as a symbol: {:?}", s.token);
+        };
+        assert_eq!((glyph.token, glyph.codepoint), ("tablet", 'o'));
+        assert_eq!(resolution, TokenResolution::Modifier(-2));
     }
 
     /// Regression for #853: at this seam, the resolution came in a batch of its own —
@@ -349,9 +413,10 @@ mod tests {
         assert!(s.outcome.contains("Succeeded by 0"), "{}", s.outcome);
     }
 
+    /// No token drawn at all is no token, which the modal shows as the em dash.
     #[test]
-    fn falls_back_to_the_em_dash_when_no_token_was_drawn() {
+    fn no_token_when_none_was_drawn() {
         let s = summarize(&holding(Some(3), None, Some(succeeded(1)))).expect("a success summary");
-        assert_eq!(s.token, "—", "no token drawn at all keeps the fallback");
+        assert_eq!(s.token, None, "no token drawn at all");
     }
 }

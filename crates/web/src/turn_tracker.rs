@@ -1,6 +1,9 @@
 //! The round band down the right edge: the round number, then the round's four
-//! phases as their Rules-Reference step numbers, with ◇ for each structural
-//! player window.
+//! phases as their Rules-Reference step numbers, with a mark for each
+//! structural player window.
+//!
+//! The mark is the free-triggered-ability glyph, as the RR Appendix II timing
+//! chart prints each window: `[free] PLAYER WINDOW`.
 //!
 //! The entry the round stands at is lit, and so is its phase.
 //!
@@ -22,6 +25,7 @@ use leptos::prelude::*;
 use Step::{Framework, Window};
 
 use crate::card;
+use crate::glyph;
 use crate::popover::{Hover, Popover};
 use crate::store;
 
@@ -167,9 +171,14 @@ pub fn TurnTrackerView() -> impl IntoView {
                         match s {
                             Framework(_, text) => {
                                 let number = text.split_once(' ').map_or(*text, |(n, _)| n);
-                                hover_entry("tracker-step", lit, number, text)
+                                hover_entry("tracker-step", lit, number.to_owned().into_any(), text)
                             }
-                            Window(_) => hover_entry("tracker-window", lit, "◇", WINDOW_TEXT),
+                            Window(_) => hover_entry(
+                                "tracker-window",
+                                lit,
+                                glyph::view(glyph::free()).into_any(),
+                                WINDOW_TEXT,
+                            ),
                         }
                     })
                     .collect();
@@ -180,7 +189,7 @@ pub fn TurnTrackerView() -> impl IntoView {
                         class="tracker-phase"
                         class:current=current.map(RoundPosition::phase) == Some(p.phase)
                     >
-                        <ul>{hover_entry("tracker-phase-label", false, letter, &name)}{steps}</ul>
+                        <ul>{hover_entry("tracker-phase-label", false, letter.to_owned().into_any(), &name)}{steps}</ul>
                     </div>
                 }
             })
@@ -197,7 +206,10 @@ pub fn TurnTrackerView() -> impl IntoView {
 
 /// One entry in the band: `shown`, lit when the round stands at it, and `text`
 /// in the hover popover while the pointer is over it.
-fn hover_entry(class: &'static str, lit: bool, shown: &str, text: &str) -> AnyView {
+///
+/// The text sits in one `<div>`: the popover is a column flexbox, so a glyph
+/// left as a direct child would stack on its own line between the text runs.
+fn hover_entry(class: &'static str, lit: bool, shown: AnyView, text: &str) -> AnyView {
     let hover = Hover::new();
     let text = text.to_owned();
     view! {
@@ -206,9 +218,9 @@ fn hover_entry(class: &'static str, lit: bool, shown: &str, text: &str) -> AnyVi
             class:current={lit}
             {..hover.handlers()}
         >
-            {shown.to_owned()}
+            {shown}
             <Popover hover=hover>
-                {card::render_segments(card::parse_card_text(&text))}
+                <div>{card::render_segments(card::parse_card_text(&text))}</div>
             </Popover>
         </li>
     }
