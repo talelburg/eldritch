@@ -16,6 +16,7 @@ use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
 use crate::interaction::{self, PendingOptions};
+use crate::pile::Pile;
 use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
 use crate::{act_agenda, map, registry, store};
 
@@ -197,6 +198,7 @@ fn investigator_panel(
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();
+    let discard_top_first: Vec<_> = inv.discard.iter().rev().cloned().collect();
     let hand = hand_view(inv, held);
     let in_play: Vec<_> = inv
         .cards_in_play
@@ -266,10 +268,13 @@ fn investigator_panel(
                             investigator=inv_id
                             remaining=deck_remaining
                         />
-                        <div class="discard">
-                            <span class="zone-label">"Discard"</span>
-                            <span class="discard-count">{inv.discard.len()}</span>
-                        </div>
+                        // Open information, so every account and every
+                        // viewer sees it. The top is the card discarded last.
+                        <Pile
+                            cards=discard_top_first
+                            label="Discard"
+                            empty_text="empty"
+                        />
                         // End turn lives on the investigator's own panel, in
                         // the same place all game — greyed out off-turn
                         // rather than vanishing.

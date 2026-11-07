@@ -88,7 +88,31 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 .dock .card-row > * { flex: none; }
 /* A hand this account does not hold: a face-down back and a count, nothing more. */
 .hand-hidden { display: flex; align-items: center; gap: 0.4em; }
-.discard { display: flex; align-items: baseline; gap: 0.4em; }
+/* A pile (`pile.rs`): its label, its top card as a header tile, and a count
+   that opens the pile list. The tile is name-only and capped in width, so a
+   long name ellipsizes rather than widening the dock's narrow pile column. */
+.pile { display: flex; align-items: center; gap: 0.35em; min-width: 0; }
+.pile-card {
+    min-width: 0; max-width: 9em; box-sizing: border-box; padding: 0.1em 0.35em;
+    border: 1px solid #888; border-radius: 4px; background: #faf9f6; color: #1a1a1a;
+}
+.pile-card-name { display: block; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pile-count { flex: none; cursor: pointer; }
+.pile-empty { color: #777; font-style: italic; }
+/* The pile list is fixed beside the click that opened it, so the dock's
+   `overflow: hidden` doesn't clip it; it stacks with the context menus, over
+   their backdrop and under the popovers its own cards open. It opens away from
+   the window's nearer edges, as a popover does, and scrolls a long pile. */
+.pile-list {
+    position: fixed; z-index: 20; max-height: 60vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 3px;
+    background: #fff; border: 1px solid #333; border-radius: 4px; padding: 4px;
+    box-shadow: 0 3px 12px #0004; font-size: 0.85rem;
+}
+.pile-list .pile-card { max-width: 14em; }
+.pile-list.opens-left { transform: translateX(-100%); }
+.pile-list.opens-up { transform: translateY(-100%); }
+.pile-list.opens-left.opens-up { transform: translate(-100%, -100%); }
 
 /* A tile: a card in the dock, compact. Its name, cost and skill icons in its
    class colour, a red corner when it is a weakness, and in play the uses and
