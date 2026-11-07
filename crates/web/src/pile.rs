@@ -1,6 +1,7 @@
-//! A pile of cards on the board, drawn the same way wherever it sits: an
-//! investigator's discard pile in the dock today, and the encounter discard
-//! pile and the victory display beside the encounter deck (#1101).
+//! A pile of cards on the board, drawn the same way wherever it sits.
+//!
+//! An investigator's discard pile sits in the dock today, and the encounter
+//! discard pile and the victory display join the encounter deck (#1101).
 //!
 //! Collapsed, a pile is its label, its top card as a header tile (the name
 //! only, its printed text in a hover [`Popover`], as the act and agenda show
