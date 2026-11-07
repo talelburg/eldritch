@@ -35,7 +35,7 @@ pub const GLYPHS: &[Glyph] = &[
     glyph("action", 't', "action"),
     glyph("reaction", 'u', "reaction"),
     glyph("fast", 'v', "free triggered ability"),
-    glyph("free", 'v', "free triggered ability"),
+    FREE,
     ELDER_SIGN,
     SKULL,
     CULTIST,
@@ -53,13 +53,14 @@ pub const GLYPHS: &[Glyph] = &[
     glyph("codex", '\u{e901}', "codex"),
 ];
 
-// The rows an engine enum maps to, named so [`for_skill`] and
+// The rows code reaches by name, so [`for_skill`], [`wild`], [`free`] and
 // [`for_chaos_token`] reach them without a lookup that could miss.
 const WILLPOWER: Glyph = glyph("willpower", 'f', "willpower");
 const INTELLECT: Glyph = glyph("intellect", 'g', "intellect");
 const COMBAT: Glyph = glyph("combat", 'h', "combat");
 const AGILITY: Glyph = glyph("agility", 'i', "agility");
 const WILD: Glyph = glyph("wild", 'j', "wild");
+const FREE: Glyph = glyph("free", 'v', "free triggered ability");
 const ELDER_SIGN: Glyph = glyph("elder_sign", 'k', "elder sign");
 const SKULL: Glyph = glyph("skull", 'm', "skull");
 const CULTIST: Glyph = glyph("cultist", 'n', "cultist");
@@ -97,6 +98,13 @@ pub fn for_skill(skill: SkillKind) -> &'static Glyph {
 #[must_use]
 pub fn wild() -> &'static Glyph {
     &WILD
+}
+
+/// The glyph of the free-triggered-ability icon, which the Rules Reference's
+/// timing chart prints on each player window.
+#[must_use]
+pub fn free() -> &'static Glyph {
+    &FREE
 }
 
 /// The glyph a chaos token is drawn as, or `None` for a numeric token and for
