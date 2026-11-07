@@ -35,7 +35,7 @@ use leptos::prelude::*;
 use crate::interaction::MultiSelect;
 use crate::prompt_layout::{self, AboveBoard, OpenTab};
 use crate::store::ClientState;
-use crate::{controls, decision, skill_test_result, store};
+use crate::{card_modal, controls, decision, skill_test_result, store};
 
 /// `investigator`'s strip, headed with their name: the dock renders it while
 /// their tab is open. It renders nothing unless the live prompt asks them and
@@ -186,13 +186,31 @@ fn strip_contents(
     // under the engine's label, which names the card.
     // TODO(#1322): drop the `CommittedCard` arm once a committed-card surface
     // renders the option on its card.
+    //
+    // A card outside play, anchored by its position, homes here the same way
+    // whenever the card modal isn't carrying it. The modal carries a search's
+    // cards and is then their sole surface, as the decision modal is. Scrying's
+    // looked-at cards and Scavenging's discarded Items have no modal yet.
+    // TODO(#1378): drop the `DiscardCard` arm once Scavenging's modal lands.
+    // TODO(#1379): drop the `DeckCard` and `EncounterDeckCard` arms once
+    // Scrying's modal lands.
+    let card_modal_is_live = card_modal::modal_is_live(state);
     let option_btns: Vec<_> = request
         .options
         .iter()
         .filter(|opt| {
             !decision_is_live
+                && !card_modal_is_live
                 && share.carries(opt)
-                && matches!(opt.target, None | Some(OptionTarget::CommittedCard { .. }))
+                && matches!(
+                    opt.target,
+                    None | Some(
+                        OptionTarget::CommittedCard { .. }
+                            | OptionTarget::DeckCard { .. }
+                            | OptionTarget::EncounterDeckCard { .. }
+                            | OptionTarget::DiscardCard { .. }
+                    )
+                )
         })
         .cloned()
         .map(|opt: ChoiceOption| {

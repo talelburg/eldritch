@@ -1,6 +1,6 @@
 use game_core::engine::{ChoiceOption, InputRequest, OptionId};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::{GameState, GameStateBuilder};
+use game_core::state::{DeckIndex, GameState, GameStateBuilder};
 use game_core::test_support::{self, seat};
 use protocol::lobby::Member;
 use protocol::{Assignment, ServerMessage};
@@ -383,6 +383,33 @@ fn the_open_turn_waits_without_its_prompt_text() {
         waiting_for(TAL, open_turn, ROLAND),
         "Waiting for Sam: Daisy Walker"
     );
+}
+
+/// A search of Roland's top 2, which Tal answers in the card modal.
+fn rolands_search() -> InputRequest {
+    let card = |id, index| {
+        ChoiceOption::new(OptionId(id), "a card").at(OptionTarget::DeckCard {
+            investigator: ROLAND,
+            index: DeckIndex(index),
+        })
+    };
+    InputRequest::pick_single(
+        "Search: choose a card to take",
+        vec![card(0, 0), card(1, 1)],
+    )
+    .at(OptionTarget::SearchedTopOfDeck {
+        investigator: ROLAND,
+        count: 2,
+    })
+    .answered_by(Responder::Investigator(ROLAND))
+}
+
+/// The card modal shows the prompt itself, so Tal's strip leaves it out, as it
+/// does for a decision.
+#[test]
+fn the_card_modal_keeps_the_prompt_text_off_the_answerers_strip() {
+    let search = rolands_search();
+    assert!(suppresses_text(&seen_by(TAL, search.clone()), &search));
 }
 
 #[test]

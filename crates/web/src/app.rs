@@ -6,6 +6,8 @@ use leptos::prelude::*;
 
 use crate::board::BoardView;
 #[cfg(target_arch = "wasm32")]
+use crate::card_modal::CardModalView;
+#[cfg(target_arch = "wasm32")]
 use crate::decision::DecisionView;
 use crate::decision::{self, DecisionLive};
 #[cfg(target_arch = "wasm32")]
@@ -179,8 +181,8 @@ fn BoardStrip() -> impl IntoView {
     }
 }
 
-/// The board's in-game modals: the skill-test result and
-/// the decision modal. Each is its own viewport-fixed overlay, and all of them
+/// The board's in-game modals: the skill-test result, the decision modal and
+/// the card modal. Each is its own viewport-fixed overlay, and all of them
 /// sit inside the lockout wrapper with the board.
 #[component]
 fn BoardOverlays() -> impl IntoView {
@@ -190,6 +192,7 @@ fn BoardOverlays() -> impl IntoView {
             { view! {
                 <SkillTestResultView/>
                 <DecisionView/>
+                <CardModalView/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }

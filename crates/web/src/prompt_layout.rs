@@ -12,8 +12,8 @@ use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 use protocol::{AccountId, LogPosition};
 
-use crate::decision;
 use crate::store::{self, ClientState};
+use crate::{card_modal, decision};
 
 /// Every placement the live prompt gets on this client.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -444,9 +444,11 @@ fn seat_rank(state: &ClientState, id: InvestigatorId) -> (usize, InvestigatorId)
 
 /// Whether the prompt's text stays off a strip: on the open turn, which the
 /// turn control on the board already offers (ADR 0011), and while a decision
-/// modal is up, which shows the text itself.
+/// modal or the card modal is up, which shows the text itself.
 pub(crate) fn suppresses_text(state: &ClientState, request: &InputRequest) -> bool {
-    matches!(request.target, Some(OptionTarget::TurnControl(_))) || decision::modal_is_live(state)
+    matches!(request.target, Some(OptionTarget::TurnControl(_)))
+        || decision::modal_is_live(state)
+        || card_modal::modal_is_live(state)
 }
 
 #[cfg(test)]
