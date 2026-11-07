@@ -198,7 +198,7 @@ fn investigator_panel(
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();
-    let discard_top_first: Vec<_> = inv.discard.iter().rev().cloned().collect();
+    let discard = inv.discard.clone();
     let hand = hand_view(inv, held);
     let in_play: Vec<_> = inv
         .cards_in_play
@@ -273,7 +273,7 @@ fn investigator_panel(
                         // and a play from it (Wendy's Amulet 01014) is offered
                         // there.
                         <Pile
-                            cards=discard_top_first
+                            cards=discard
                             label="Discard"
                             empty_text="empty"
                             anchor=OptionTarget::DiscardPile(inv_id)

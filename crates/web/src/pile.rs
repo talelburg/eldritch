@@ -16,8 +16,8 @@
 //! already the hover text: the list is opened by a click and stays open until
 //! closed, and the popovers of its cards open inside it.
 //!
-//! The top of a pile is the card placed on it last, so a caller holding a
-//! pile stored bottom first (as `Investigator::discard` is) reverses it.
+//! A pile takes its cards as the game stores them, bottom first, and draws
+//! them top first: the top of a pile is the card placed on it last.
 //!
 //! A pile the engine can anchor an option on is given that anchor: an
 //! investigator's discard pile is `OptionTarget::DiscardPile`, where Wendy's
@@ -30,11 +30,9 @@ use game_core::state::CardCode;
 use leptos::ev::{self, MouseEvent};
 use leptos::prelude::*;
 
-use crate::card;
+use crate::card::{self, Face};
 use crate::interaction::{self, PendingOptions};
 use crate::popover::{Hover, Popover, Spot};
-use crate::registry;
-use crate::scenario_row::{self, Face};
 
 /// A pile: `label`, then its top card and a count that opens the pile list,
 /// or `empty_text` when it holds no card. With an `anchor`, the top card
@@ -42,7 +40,7 @@ use crate::scenario_row::{self, Face};
 /// shows its total after the count.
 #[component]
 pub fn Pile(
-    /// The pile's cards, top first.
+    /// The pile's cards as stored, bottom first: the top card is the last.
     cards: Vec<CardCode>,
     /// What the pile is, e.g. "Discard".
     #[prop(into)]
@@ -58,6 +56,7 @@ pub fn Pile(
     #[prop(optional)]
     victory_points: Option<u32>,
 ) -> impl IntoView {
+    let cards: Vec<CardCode> = cards.into_iter().rev().collect();
     let body = match cards.first().cloned() {
         None => view! { <span class="pile-empty">{empty_text}</span> }.into_any(),
         Some(top) => {
@@ -115,16 +114,16 @@ fn top_card(code: &CardCode, anchor: Option<OptionTarget>) -> impl IntoView {
 }
 
 /// One card of a pile as a header tile: its printed name, and its printed text
-/// in a [`Popover`] while the pointer is over it. `tile_class` is the tile's.
-fn pile_card(code: &CardCode, tile_class: &'static str) -> impl IntoView {
+/// in a [`Popover`] while the pointer is over it.
+fn pile_card(code: &CardCode) -> impl IntoView {
     let hover = Hover::new();
-    view! { <div class={tile_class} {..hover.handlers()}>{card_face(code, hover)}</div> }
+    view! { <div class="pile-card" {..hover.handlers()}>{card_face(code, hover)}</div> }
 }
 
 /// What a header tile holds: `code`'s printed name, and its printed text in a
 /// [`Popover`] that `hover` opens.
 fn card_face(code: &CardCode, hover: Hover) -> impl IntoView {
-    let (name, text) = scenario_row::name_and_text_src(registry::use_cards(), code, Face::Front);
+    let (name, text) = card::name_and_text(code, Face::Front);
     let popover_name = name.clone();
     view! {
         <span class="pile-card-name">{name}</span>
@@ -145,10 +144,7 @@ fn pile_list(cards: Vec<CardCode>, open: RwSignal<Option<Spot>>) -> impl IntoVie
                 }
             });
             on_cleanup(move || escape.remove());
-            let tiles = cards
-                .iter()
-                .map(|code| pile_card(code, "pile-card"))
-                .collect_view();
+            let tiles = cards.iter().map(pile_card).collect_view();
             view! {
                 <div
                     class="menu-backdrop"

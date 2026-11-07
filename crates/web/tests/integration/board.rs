@@ -10,7 +10,7 @@
 //!
 //! Two of the three code→name paths the board can take are pinned here: the
 //! tiles' (hand / in play / threat area, `card::card_tile`) and
-//! `scenario_row::name_and_text_src`'s. The third — `names::card_name`, reached
+//! `card::name_and_text_src`'s. The third — `names::card_name`, reached
 //! only from the map's card-at-location token (`crates/web/src/map.rs`) — is
 //! *not*, because this file seeds no `cards_at_location` and no location
 //! attachments. `crates/web/tests/integration/card_at_location.rs` and the unit tests in
@@ -108,7 +108,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     let root = render_state(state).await;
     let html = root.inner_html();
 
-    // Names come from the corpus via `scenario_row::name_and_text_src`, which
+    // Names come from the corpus via `card::name_and_text_src`, which
     // `crates/web/tests/integration/scenario_row.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
     // earns its own name, rather than asserting only thresholds.

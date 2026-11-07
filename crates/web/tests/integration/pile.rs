@@ -29,9 +29,9 @@ const KNIFE: &str = "01086";
 /// Emergency Cache: a Neutral event, on top.
 const EMERGENCY_CACHE: &str = "01088";
 
-/// Mount a pile of `top_first` labelled "Discard", and return it.
-async fn mount_pile(top_first: &[&str]) -> Element {
-    let cards: Vec<CardCode> = top_first.iter().copied().map(CardCode::new).collect();
+/// Mount a pile of `bottom_first` labelled "Discard", and return it.
+async fn mount_pile(bottom_first: &[&str]) -> Element {
+    let cards: Vec<CardCode> = bottom_first.iter().copied().map(CardCode::new).collect();
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
         view! { <Pile cards=cards label="Discard" empty_text="empty"/> }
@@ -42,7 +42,7 @@ async fn mount_pile(top_first: &[&str]) -> Element {
 
 /// Wendy's pile: Emergency Cache on top of Knife.
 async fn wendys_pile() -> Element {
-    mount_pile(&[EMERGENCY_CACHE, KNIFE]).await
+    mount_pile(&[KNIFE, EMERGENCY_CACHE]).await
 }
 
 /// Click the pile's count control, and let the list open.

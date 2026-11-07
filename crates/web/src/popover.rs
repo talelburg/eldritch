@@ -27,8 +27,9 @@ use leptos::prelude::*;
 /// the pointer never covers its first line.
 const OFFSET: i32 = 14;
 
-/// Where a popover opens: the pointer, and which way from it. A pile list
-/// (`pile.rs`) opens the same way from the click that opened it.
+/// Where a popover opens: the pointer, and which way from it. Anything else
+/// opened beside the pointer can open the same way, from the click that
+/// opened it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Spot {
     x: i32,
