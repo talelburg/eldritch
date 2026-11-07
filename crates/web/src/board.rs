@@ -269,11 +269,14 @@ fn investigator_panel(
                             remaining=deck_remaining
                         />
                         // Open information, so every account and every
-                        // viewer sees it. The top is the card discarded last.
+                        // viewer sees it. The top is the card discarded last,
+                        // and a play from it (Wendy's Amulet 01014) is offered
+                        // there.
                         <Pile
                             cards=discard_top_first
                             label="Discard"
                             empty_text="empty"
+                            anchor=OptionTarget::DiscardPile(inv_id)
                         />
                         // End turn lives on the investigator's own panel, in
                         // the same place all game — greyed out off-turn

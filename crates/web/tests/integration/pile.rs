@@ -1,5 +1,5 @@
-//! A pile: its top card as a header tile with a count, and the pile list the
-//! count opens.
+//! A pile: its top card as a header tile with a count, the pile list the
+//! count opens, and the options anchored on Wendy's pile.
 //!
 //! Wendy Adams's discard pile is, bottom to top, Knife 01086 then Emergency
 //! Cache 01088, so Emergency Cache is on top. Real corpus cards, so every name
@@ -7,11 +7,13 @@
 //! `data/arkhamdb-snapshot/pack/core/core.json`.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::engine::EngineOutcome;
-use game_core::state::{CardCode, GameStateBuilder, LocationId};
-use game_core::test_support::{location, seat};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, location, seat};
 use leptos::prelude::*;
 use leptos::task;
+use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::pile::Pile;
@@ -223,4 +225,81 @@ async fn every_investigators_tab_shows_their_discard_pile_to_every_account() {
             }
         }
     }
+}
+
+/// Wendy Adams 01005.
+const WENDY: InvestigatorId = InvestigatorId(1);
+/// Wendy's Amulet 01014: *"You may play the topmost event in your discard pile
+/// as if it were in your hand."*
+const AMULET: &str = "01014";
+
+/// Mount the board on Wendy's open turn, the Amulet in play and her discard
+/// pile `bottom_first`, at the open-turn menu the engine builds for it. Return
+/// the board and the prompt's options.
+async fn wendys_turn(bottom_first: [&'static str; 2]) -> (common::BoardHandle, Vec<ChoiceOption>) {
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_location(location(STUDY).as_card("01111"))
+        .with_seat(
+            seat(WENDY.0)
+                .as_card("01005")
+                .at(STUDY)
+                .in_play([AMULET])
+                .discard(bottom_first),
+        )
+        .open_turn(WENDY)
+        .build();
+    // The engine's own prompt, so the anchor is the one it attaches.
+    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES);
+    let options = seeded.prompt().options.clone();
+    let outcome = test_support::awaiting_request(seeded.prompt().clone());
+    let handle = common::mount_board(
+        common::hello(seeded.state().clone(), outcome),
+        &cards::TEST_REGISTRY,
+    )
+    .await;
+    (handle, options)
+}
+
+#[wasm_bindgen_test]
+async fn the_amulet_play_is_chosen_on_wendys_top_card() {
+    let (mut handle, options) = wendys_turn([KNIFE, EMERGENCY_CACHE]).await;
+    let play = options
+        .iter()
+        .find(|o| o.target == Some(OptionTarget::DiscardPile(WENDY)))
+        .expect("the engine offers the play on her discard pile");
+
+    let top = common::one(&handle.root, ".dock .pile-top");
+    assert!(
+        top.class_name().contains("actionable"),
+        "the top card glows"
+    );
+    click(&common::one(&top, ".menu-hit")).await;
+    let items = common::texts_in(&top, ".context-menu .menu-item");
+    assert_eq!(items, vec!["Play Emergency Cache (Wendy's Amulet)"]);
+
+    click(&common::one(&top, ".context-menu .menu-item")).await;
+    match handle.rx.try_recv().expect("the choice submitted a frame") {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response, .. },
+            ..
+        } => assert_eq!(response, InputResponse::PickSingle(play.id)),
+        other => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn with_a_non_event_on_top_wendys_pile_offers_nothing() {
+    // Emergency Cache is an event, but Knife is on top of it.
+    let (handle, _) = wendys_turn([EMERGENCY_CACHE, KNIFE]).await;
+
+    let top = common::one(&handle.root, ".dock .pile-top");
+    assert!(
+        !top.class_name().contains("actionable"),
+        "the top card glows"
+    );
+    assert!(
+        top.query_selector(".menu-hit").expect("query").is_none(),
+        "the top card opens a menu"
+    );
 }

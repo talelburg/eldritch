@@ -17,18 +17,27 @@
 //!
 //! The top of a pile is the card placed on it last, so a caller holding a
 //! pile stored bottom first (as `Investigator::discard` is) reverses it.
+//!
+//! A pile the engine can anchor an option on is given that anchor: an
+//! investigator's discard pile is `OptionTarget::DiscardPile`, where Wendy's
+//! Amulet 01014's play of the topmost event sits. While an option is anchored
+//! there, the top card glows and a click on it opens the context menu, as an
+//! in-play card's does. The count still opens the pile list.
 
+use game_core::engine::OptionTarget;
 use game_core::state::CardCode;
 use leptos::ev::{self, MouseEvent};
 use leptos::prelude::*;
 
 use crate::act_agenda::{self, Face};
 use crate::card;
+use crate::interaction::{self, PendingOptions};
 use crate::popover::{Hover, Popover, Spot};
 use crate::registry;
 
 /// A pile: `label`, then its top card and a count that opens the pile list,
-/// or `empty_text` when it holds no card.
+/// or `empty_text` when it holds no card. With an `anchor`, the top card
+/// offers the options anchored there.
 #[component]
 pub fn Pile(
     /// The pile's cards, top first.
@@ -39,6 +48,9 @@ pub fn Pile(
     /// What the pile reads with no card in it, e.g. "empty".
     #[prop(into)]
     empty_text: String,
+    /// The anchor options on this pile carry, if the engine names one for it.
+    #[prop(optional)]
+    anchor: Option<OptionTarget>,
 ) -> impl IntoView {
     let body = match cards.first().cloned() {
         None => view! { <span class="pile-empty">{empty_text}</span> }.into_any(),
@@ -47,7 +59,7 @@ pub fn Pile(
             let count = cards.len();
             let control_label = format!("{label}: {count}, show every card");
             view! {
-                {pile_card(&top, "pile-card pile-top")}
+                {top_card(&top, anchor)}
                 <button
                     class="pile-count"
                     aria-label=control_label
@@ -71,17 +83,45 @@ pub fn Pile(
     }
 }
 
+/// The pile's top card, `code`: a header tile that, while options are
+/// anchored on `anchor`, glows and opens their context menu on a click.
+fn top_card(code: &CardCode, anchor: Option<OptionTarget>) -> impl IntoView {
+    let pending = use_context::<PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+    let menu_opts = anchor
+        .map(|anchor| interaction::options_for(&pending, &anchor))
+        .unwrap_or_default();
+    let actionable = !menu_opts.is_empty();
+    let open = RwSignal::new(None::<(i32, i32)>);
+    let hover = Hover::beside_menu(open);
+    view! {
+        <div class="pile-card pile-top" class:actionable={actionable} {..hover.handlers()}>
+            {card_face(code, hover)}
+            {
+                // wasm-only menu trigger + menu (web_sys / OutboundTx).
+                #[cfg(target_arch = "wasm32")]
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
+            }
+        </div>
+    }
+}
+
 /// One card of a pile as a header tile: its printed name, and its printed text
 /// in a [`Popover`] while the pointer is over it. `tile_class` is the tile's.
 fn pile_card(code: &CardCode, tile_class: &'static str) -> impl IntoView {
-    let (name, text) = act_agenda::name_and_text_src(registry::use_cards(), code, Face::Front);
     let hover = Hover::new();
+    view! { <div class={tile_class} {..hover.handlers()}>{card_face(code, hover)}</div> }
+}
+
+/// What a header tile holds: `code`'s printed name, and its printed text in a
+/// [`Popover`] that `hover` opens.
+fn card_face(code: &CardCode, hover: Hover) -> impl IntoView {
+    let (name, text) = act_agenda::name_and_text_src(registry::use_cards(), code, Face::Front);
     let popover_name = name.clone();
     view! {
-        <div class={tile_class} {..hover.handlers()}>
-            <span class="pile-card-name">{name}</span>
-            <Popover hover=hover>{card::card_popover(&popover_name, text.as_deref())}</Popover>
-        </div>
+        <span class="pile-card-name">{name}</span>
+        <Popover hover=hover>{card::card_popover(&popover_name, text.as_deref())}</Popover>
     }
 }
 

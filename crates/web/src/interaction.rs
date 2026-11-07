@@ -201,7 +201,7 @@ pub fn ContextMenu(
 ///
 /// **Renders nothing while a decision modal is up**. That modal is the
 /// sole surface for the choice it carries, and the rule belongs here rather than
-/// at each of the seven entities that embed a menu: an entity decides whether it
+/// at each of the eight entities that embed a menu: an entity decides whether it
 /// has options, not whether a menu is how they are offered. The glow is
 /// untouched — it stays on the anchor, and on the card the choice is printed on
 /// it is the provenance signal saying where the choice came from.
