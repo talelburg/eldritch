@@ -192,6 +192,7 @@ fn reordering_the_encounter_deck_works_the_same() {
         s.prompt().target,
         Some(OptionTarget::LookedAtTopOfEncounterDeck { count: 3 }),
     );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
 
     // Crypt Chill on top, then Obscuring Fog; Ancient Evils is left third.
     let s = s.pick(encounter_card(1));

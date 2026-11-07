@@ -20,7 +20,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{board, OptionTarget};
+use game_core::engine::{board, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, DeckIndex, GameStateBuilder,
@@ -222,6 +222,7 @@ fn two_spells_prompt_a_pick_that_cannot_be_declined() {
         }),
         "the top 3 are searched",
     );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
     assert!(!s.prompt().skippable, "finding is obligatory");
     let card = s.state().deck_card(INV, SHRIVELLING);
     let s = s.pick(card);
@@ -253,6 +254,7 @@ fn one_spell_in_interactive_play_is_offered_from_the_whole_top_three() {
             count: 3,
         }),
     );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
     let s = s.pick(deck_card(1));
     s.assert_at_turn_menu(INV);
     assert_eq!(

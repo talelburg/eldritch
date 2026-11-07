@@ -13,7 +13,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::OptionTarget;
+use game_core::engine::{OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{CardCode, DeckIndex, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
@@ -144,6 +144,7 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
         Some(OptionTarget::PlayerDeck(INV)),
         "the whole deck is searched",
     );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
 
     // Pick the second eligible Tome (Medical Texts). On Done, resume_choice
     // re-drives the still-open reaction window so it closes (Task 4).
