@@ -46,8 +46,8 @@
 //! its cost, keeps its timing, and provokes attacks of opportunity as a hand
 //! play does, and nothing else sees it as in hand. The option is offered on
 //! Wendy's discard pile, labelled *"Play \<event\> (Wendy's Amulet)"* so the
-//! label names the permitting card the pile does not show. Played that way, the event is then placed by the Forced, on the bottom of
-//! the deck.
+//! label names the permitting card the pile does not show. Played that way,
+//! the event is then placed by the Forced, on the bottom of the deck.
 //!
 //! The ruling (<https://arkhamdb.com/card/01014>) *"'Play' and 'Commit' are
 //! two different game terms. Wendy's Amulet allows you to 'play' the topmost
