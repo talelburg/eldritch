@@ -25,8 +25,9 @@
 //! could exhaust Scavenging for nothing.
 //!
 //! **The choice** is [`resolve_card_choice`](engine::resolve_card_choice),
-//! labelled by card name and un-anchored: a discard-pile card has no board
-//! surface for an option to sit on. The native asks before it writes, then
+//! labelled by card name and un-anchored: no per-card discard anchor exists
+//! (the discard pile anchors only as a whole), so the choice stays on the
+//! prompt strip. The native asks before it writes, then
 //! moves the chosen card with
 //! [`NativeCx::add_discarded_card_to_hand`]. A lone Item is taken without a
 //! prompt.

@@ -75,6 +75,18 @@ fn target_maps_each_variant() {
             hand_index: 2
         })
     );
+    // A play from the top of the discard pile sits on the pile, not on the
+    // card whose permission it is played under.
+    assert_eq!(
+        TurnAction::PlayCard {
+            investigator: inv,
+            source: PlaySource::TopOfDiscardPile {
+                permission: CardInstanceId(5)
+            }
+        }
+        .target(&state),
+        Some(OptionTarget::DiscardPile(inv))
+    );
     assert_eq!(
         TurnAction::ActivateAbility {
             investigator: inv,

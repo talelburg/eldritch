@@ -128,8 +128,13 @@ pub(crate) async fn click_tab(root: &Element, name: &str) {
 
 /// Click the one `sel` under `root` whose `name_sel` reads `name`.
 pub(crate) fn click_named(root: &Element, sel: &str, name_sel: &str, name: &str) {
+    click(&named(root, sel, name_sel, name));
+}
+
+/// The `sel` under `root` whose `name_sel` reads `name`.
+pub(crate) fn named(root: &Element, sel: &str, name_sel: &str, name: &str) -> Element {
     let all = root.query_selector_all(sel).expect("query");
-    let el = (0..all.length())
+    (0..all.length())
         .filter_map(|i| all.item(i))
         .filter_map(|node| node.dyn_into::<Element>().ok())
         .find(|el| {
@@ -138,8 +143,13 @@ pub(crate) fn click_named(root: &Element, sel: &str, name_sel: &str, name: &str)
                 .and_then(|n| n.text_content())
                 .is_some_and(|text| text == name)
         })
-        .unwrap_or_else(|| panic!("a {sel} named {name}"));
-    el.dyn_into::<HtmlElement>()
+        .unwrap_or_else(|| panic!("a {sel} named {name}"))
+}
+
+/// Click `el`. The page reacts on the next tick, which the caller awaits.
+pub(crate) fn click(el: &Element) {
+    el.clone()
+        .dyn_into::<HtmlElement>()
         .expect("an HTML element")
         .click();
 }

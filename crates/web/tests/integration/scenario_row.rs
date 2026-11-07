@@ -1,6 +1,7 @@
-//! Headless render test for the Act/Agenda cards, against the real corpus
-//! (`cards::TEST_REGISTRY`); mounts `act_agenda_view` directly (no investigator
-//! panel → no `TEST_INV` lookup).
+//! Headless render test for the scenario row (the victory display, the
+//! encounter discard, the encounter deck, and the Act/Agenda cards), against
+//! the real corpus (`cards::TEST_REGISTRY`); mounts `scenario_row_view`
+//! directly (no investigator panel → no `TEST_INV` lookup).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
@@ -16,18 +17,18 @@ use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::act_agenda;
 use web::interaction::PendingOptions;
 use web::registry::provide_cards;
+use web::scenario_row;
 use web::store::ClientState;
 use web::transport::OutboundTx;
-use web_sys::{Element, HtmlElement};
+use web_sys::Element;
 
 use crate::common;
 
 fn section_text() -> String {
     let nodes = document()
-        .query_selector_all(".act-agenda")
+        .query_selector_all(".scenario-row")
         .expect("query ok");
     nodes
         .item(nodes.length() - 1)
@@ -44,7 +45,7 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
 
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
-        act_agenda::act_agenda_view(&state)
+        scenario_row::scenario_row_view(&state)
     });
     task::tick().await;
 
@@ -81,7 +82,6 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     );
 }
 
-/// Hover `card` and return its popover's text, failing if none opens.
 /// The act card's clue line for `act`, staged by code under two seated
 /// investigators.
 async fn clue_line_of_act(act: &'static str) -> String {
@@ -93,7 +93,7 @@ async fn clue_line_of_act(act: &'static str) -> String {
         .build();
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
-        act_agenda::act_agenda_view(&state)
+        scenario_row::scenario_row_view(&state)
     });
     task::tick().await;
     act_card().text_content().unwrap_or_default()
@@ -124,6 +124,80 @@ async fn an_objective_act_shows_no_clue_line() {
     assert!(!text.contains("clues to advance"), "{text}");
 }
 
+#[wasm_bindgen_test]
+async fn the_row_reads_victory_display_encounter_discard_encounter_deck_agenda_act() {
+    let row = mount_row(ghoul_priest_defeated()).await;
+    assert_eq!(
+        common::texts_in(&row, ".zone-label, .deck-label, .card-kind"),
+        [
+            "Victory display",
+            "Encounter discard",
+            "Encounter",
+            "Agenda",
+            "Act"
+        ],
+    );
+}
+
+#[wasm_bindgen_test]
+async fn the_victory_display_holding_the_ghoul_priest_reads_vp_2() {
+    let row = mount_row(ghoul_priest_defeated()).await;
+    let victory = pile_named(&row, "Victory display");
+    assert_eq!(common::text_of(&victory, ".pile-top"), "Ghoul Priest");
+    assert_eq!(common::text_of(&victory, ".pile-total"), "VP 2");
+    let discard = pile_named(&row, "Encounter discard");
+    assert_eq!(common::text_of(&discard, ".pile-top"), "Ghoul Minion");
+    assert_eq!(common::text_of(&discard, ".pile-count"), "1");
+    // The engine anchors nothing on the encounter discard, so it offers nothing.
+    let top = common::one(&discard, ".pile-top");
+    assert!(
+        !top.class_name().contains("actionable"),
+        "the encounter discard's top card glows"
+    );
+    assert!(
+        top.query_selector(".menu-hit").expect("query").is_none(),
+        "the encounter discard's top card opens a menu"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn an_empty_victory_display_reads_a_dash() {
+    let row = mount_row(barrier_and_getting_out()).await;
+    let victory = pile_named(&row, "Victory display");
+    assert_eq!(common::text_of(&victory, ".pile-empty"), "—");
+    assert!(
+        victory
+            .query_selector(".pile-total")
+            .expect("query")
+            .is_none(),
+        "an empty victory display shows no total"
+    );
+}
+
+/// [`barrier_and_getting_out`] after the Ghoul Priest 01116 (Victory 2) has
+/// been defeated, with a Ghoul Minion 01160 on top of the encounter discard.
+fn ghoul_priest_defeated() -> GameState {
+    let mut state = barrier_and_getting_out();
+    state.encounter_discard = vec![CardCode::new("01160")];
+    state.victory_display = vec![CardCode::new("01116")];
+    state
+}
+
+/// Mount the scenario row for `state` and return it.
+async fn mount_row(state: GameState) -> Element {
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        scenario_row::scenario_row_view(&state)
+    });
+    task::tick().await;
+    common::last_mounted(".scenario-row")
+}
+
+/// The pile in `row` labelled `label`.
+fn pile_named(row: &Element, label: &str) -> Element {
+    common::named(row, ".pile", ".zone-label", label)
+}
+
 /// Act 01109 and agenda 01107 as the current cards, with 1 doom on the agenda
 /// and one investigator seated.
 fn barrier_and_getting_out() -> GameState {
@@ -146,7 +220,7 @@ fn act_card() -> Element {
         .expect("a .card--act")
 }
 
-/// Mount `act_agenda_view` (act 01109) with a store carrying `outcome`, a derived
+/// Mount `scenario_row_view` (act 01109) with a store carrying `outcome`, a derived
 /// `PendingOptions`, an `OutboundTx`, and a capturing channel.
 async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let state = barrier_and_getting_out();
@@ -163,7 +237,7 @@ async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMe
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));
-        act_agenda::act_agenda_view(&state)
+        scenario_row::scenario_row_view(&state)
     });
     task::tick().await;
     rx
@@ -178,19 +252,11 @@ async fn act_card_glows_and_advances_via_menu() {
     let mut rx = mount_with_prompt(outcome).await;
     let card = act_card();
     assert!(card.class_name().contains("actionable"), "act card glows");
-    card.query_selector(".menu-hit")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a .menu-hit")
-        .click();
+    common::click(&common::one(&card, ".menu-hit"));
     task::tick().await;
-    let item = card
-        .query_selector(".context-menu .menu-item")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a menu item");
+    let item = common::one(&card, ".context-menu .menu-item");
     assert_eq!(item.text_content().unwrap_or_default(), "Advance act");
-    item.click();
+    common::click(&item);
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
@@ -238,19 +304,11 @@ async fn agenda_card_glows_and_resolves_via_menu() {
         card.class_name().contains("actionable"),
         "agenda card glows"
     );
-    card.query_selector(".menu-hit")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a .menu-hit")
-        .click();
+    common::click(&common::one(&card, ".menu-hit"));
     task::tick().await;
-    let item = card
-        .query_selector(".context-menu .menu-item")
-        .expect("query")
-        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
-        .expect("a menu item");
+    let item = common::one(&card, ".context-menu .menu-item");
     assert_eq!(item.text_content().unwrap_or_default(), "Resolve");
-    item.click();
+    common::click(&item);
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
@@ -273,7 +331,7 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
     assert!(!agenda_card().class_name().contains("actionable"));
 }
 
-/// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
+/// Mount `scenario_row_view` with the given deck's leaving card mid-advance at
 /// `step`. Pushes an `AdvanceReverse` frame as the engine would.
 async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
     let builder = GameStateBuilder::new().with_registries(cards::TEST_REGISTRIES);
@@ -294,7 +352,7 @@ async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
         ]));
     mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
-        act_agenda::act_agenda_view(&state)
+        scenario_row::scenario_row_view(&state)
     });
     task::tick().await;
 }

@@ -16,8 +16,9 @@ use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
 use crate::interaction::{self, PendingOptions};
+use crate::pile::Pile;
 use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
-use crate::{act_agenda, map, registry, store};
+use crate::{map, registry, scenario_row, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the map and the dock when a game is present, else
@@ -42,7 +43,7 @@ pub fn BoardView() -> impl IntoView {
                     view! {
                         {board_menu()}
                         {resolution_banner(game)}
-                        {act_agenda::act_agenda_view(game)}
+                        {scenario_row::scenario_row_view(game)}
                     }
                 })
             })
@@ -197,6 +198,7 @@ fn investigator_panel(
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();
+    let discard = inv.discard.clone();
     let hand = hand_view(inv, held);
     let in_play: Vec<_> = inv
         .cards_in_play
@@ -266,10 +268,16 @@ fn investigator_panel(
                             investigator=inv_id
                             remaining=deck_remaining
                         />
-                        <div class="discard">
-                            <span class="zone-label">"Discard"</span>
-                            <span class="discard-count">{inv.discard.len()}</span>
-                        </div>
+                        // Open information, so every account and every
+                        // viewer sees it. The top is the card discarded last,
+                        // and a play from it (Wendy's Amulet 01014) is offered
+                        // there.
+                        <Pile
+                            cards=discard
+                            label="Discard"
+                            empty_text="empty"
+                            anchor=OptionTarget::DiscardPile(inv_id)
+                        />
                         // End turn lives on the investigator's own panel, in
                         // the same place all game — greyed out off-turn
                         // rather than vanishing.

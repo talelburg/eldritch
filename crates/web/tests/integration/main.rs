@@ -12,7 +12,6 @@
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-mod act_agenda;
 mod amulet_menu;
 mod board;
 mod board_is_the_input_surface;
@@ -35,11 +34,13 @@ mod map;
 mod map_node_layout;
 mod more_menu;
 mod panel_controls;
+mod pile;
 mod prompt_layout;
 mod prompt_strip;
 mod provisional_verdict;
 mod reassign;
 mod registry_smoke;
+mod scenario_row;
 mod sign_in;
 mod skill_test_result;
 mod skill_test_result_across_batches;

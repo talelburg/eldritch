@@ -2410,10 +2410,10 @@ pub enum CandidateSource {
     /// were in your hand."* Reaction windows only: under `glossary/As_If.md`
     /// the card counts as in hand for its own play and nothing else, so a
     /// forced run never reads it. Not an ability source, as
-    /// [`Hand`](Self::Hand) is not; the permission's instance is carried so
-    /// the option anchors on the card that grants it (the client renders no
-    /// discard pile) and so the lapse probe can ask whether that
-    /// permission still holds.
+    /// [`Hand`](Self::Hand) is not. The option anchors on the controller's
+    /// discard pile; the permission's instance is carried so the label can
+    /// name the card that grants it and so the lapse probe can ask whether
+    /// that permission still holds.
     TopOfDiscardPile {
         /// The in-play card whose permission the play is made under.
         permission: CardInstanceId,

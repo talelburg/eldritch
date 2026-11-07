@@ -122,8 +122,8 @@ pub(super) fn open_forced_resolution(
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
 /// code — every copy; a Fast event on top of the discard pile on the
-/// card whose permission it is played under, since the client renders no
-/// discard pile; everything else through the one
+/// controller's pile (its label names the card whose permission it is played
+/// under); everything else through the one
 /// [`AbilitySource`] → [`OptionTarget`] map, which the turn menu
 /// (`TurnAction::target`) shares.
 ///
@@ -138,7 +138,7 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
             investigator: cand.controller,
             code: cand.code.clone(),
         },
-        CandidateSource::TopOfDiscardPile { permission } => OptionTarget::CardInstance(permission),
+        CandidateSource::TopOfDiscardPile { .. } => OptionTarget::DiscardPile(cand.controller),
         CandidateSource::Ability(source) => source.into(),
     }
 }

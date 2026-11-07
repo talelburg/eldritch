@@ -27,22 +27,24 @@ use leptos::prelude::*;
 /// the pointer never covers its first line.
 const OFFSET: i32 = 14;
 
-/// Where a popover opens: the pointer, and which way from it.
+/// Where a popover opens: the pointer, and which way from it. Anything else
+/// opened beside the pointer can open the same way, from the click that
+/// opened it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Spot {
+pub(crate) struct Spot {
     x: i32,
     y: i32,
     /// The pointer is in the window's right half, so the popover opens to its
     /// left.
-    left: bool,
+    pub(crate) left: bool,
     /// The pointer is in the window's bottom half, so the popover opens above
     /// it.
-    up: bool,
+    pub(crate) up: bool,
 }
 
 impl Spot {
     /// The spot `ev`'s pointer marks in the window.
-    fn of(ev: &MouseEvent) -> Self {
+    pub(crate) fn of(ev: &MouseEvent) -> Self {
         let (x, y) = (ev.client_x(), ev.client_y());
         let window = window();
         // An unreadable size opens the popover below and right.
@@ -58,7 +60,7 @@ impl Spot {
     /// The popover's inline position: its corner nearest the pointer,
     /// [`OFFSET`] away from it, with `style.css`'s `opens-left` / `opens-up`
     /// moving the box itself to that corner's far side.
-    fn style(self) -> String {
+    pub(crate) fn style(self) -> String {
         let away = |at: i32, back: bool| if back { at - OFFSET } else { at + OFFSET };
         format!(
             "left:{}px;top:{}px;",

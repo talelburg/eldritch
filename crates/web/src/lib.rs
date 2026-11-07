@@ -3,7 +3,6 @@
 //! The binary (`main.rs`) is a thin entrypoint that mounts [`app::App`].
 //! Components live here so integration tests in `tests/` can import them.
 
-pub mod act_agenda;
 pub mod app;
 pub mod board;
 pub mod card;
@@ -17,9 +16,11 @@ pub mod interaction;
 pub mod map;
 pub mod more_menu;
 pub mod names;
+pub mod pile;
 pub mod popover;
 pub mod prompt_layout;
 pub mod registry;
+pub mod scenario_row;
 pub mod sign_in;
 pub mod skill_test_result;
 pub mod socket_ending;

@@ -410,12 +410,13 @@ fn candidate_anchor_maps_each_source() {
         anchor_of(CandidateSource::Ability(AbilitySource::Agenda)),
         OptionTarget::Agenda,
     );
-    // A play from the discard pile anchors to the card granting it.
+    // A play from the discard pile anchors to the controller's pile, not to
+    // the card granting it.
     assert_eq!(
         anchor_of(CandidateSource::TopOfDiscardPile {
             permission: CardInstanceId(6)
         }),
-        OptionTarget::CardInstance(CardInstanceId(6)),
+        OptionTarget::DiscardPile(InvestigatorId(2)),
     );
     assert_eq!(
         anchor_of(CandidateSource::Hand),

@@ -22,12 +22,12 @@ use game_core::engine::{board, ChoiceOption, InputRequest, OptionTarget, PromptN
 use game_core::state::{AdvanceDeck, GameState};
 use leptos::prelude::*;
 
-use crate::act_agenda::{self, Face};
-use crate::card;
+use crate::card::{self, Face};
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
 use crate::registry;
+use crate::scenario_row;
 use crate::store::{self, ClientState};
 
 /// The card a decision came from, as the modal names it.
@@ -126,11 +126,11 @@ fn decision_source(
     let (code, face) = match target {
         OptionTarget::Act => (
             game.act_deck.get(game.act_index)?.code.clone(),
-            act_agenda::deck_face(game, AdvanceDeck::Act),
+            scenario_row::deck_face(game, AdvanceDeck::Act),
         ),
         OptionTarget::Agenda => (
             game.agenda_deck.get(game.agenda_index)?.code.clone(),
-            act_agenda::deck_face(game, AdvanceDeck::Agenda),
+            scenario_row::deck_face(game, AdvanceDeck::Agenda),
         ),
         OptionTarget::CardInstance(instance_id) => (
             board::find_instance(game, *instance_id)?.0.code.clone(),
@@ -138,7 +138,7 @@ fn decision_source(
         ),
         _ => return None,
     };
-    let (name, text) = act_agenda::name_and_text_src(cards, &code, face);
+    let (name, text) = card::name_and_text_src(cards, &code, face);
     Some(DecisionSource { name, text })
 }
 

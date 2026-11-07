@@ -10,6 +10,7 @@
 use std::mem;
 
 use card_dsl::card_data::{CardKind, Class, SkillIcons, SkillKind, Skills, Slot};
+use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
@@ -723,6 +724,64 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
             }
         })
         .collect()
+}
+
+/// A header card's popover: the name and printed text of the face it is
+/// showing. The act, the agenda and a pile's cards show only their name on
+/// the board, so this is where their text is read.
+pub(crate) fn card_popover(name: &str, text: Option<&str>) -> impl IntoView {
+    let text = text.map(|t| render_segments(parse_card_text(t)));
+    view! {
+        <div class="popover-title">{name.to_owned()}</div>
+        {text.map(|t| view! { <div class="card-text">{t}</div> })}
+    }
+}
+
+/// Which face of a card to show.
+///
+/// During an advance an act or agenda flips from its front to its reverse
+/// (the "1b" side that carries the on-advance effect) once the flip is
+/// clicked. `pub` because it rides in the generated component props struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    /// The printed front (`name`/`text`).
+    Front,
+    /// The reverse (`back_name`/`back_text`).
+    Reverse,
+}
+
+/// Name (printed, or the raw code when no metadata) + raw ability text for a
+/// card code, on the given [`Face`]. The reverse falls back to the front name
+/// if a card carries no `back_name` (defensive — a real advancing act/agenda
+/// always prints one).
+///
+/// `pub(crate)` because the decision modal names the card it is printed on
+/// from the very same face the board is showing (ADR 0015) — the
+/// front/reverse choice is computed once, here, rather than re-derived per
+/// surface.
+pub(crate) fn name_and_text_src(
+    cards: &CardRegistry,
+    code: &CardCode,
+    face: Face,
+) -> (String, Option<String>) {
+    let meta = (cards.metadata_for)(code);
+    let (name_src, text_src) = match face {
+        Face::Front => (
+            meta.map(|m| m.name.clone()),
+            meta.and_then(|m| m.text.clone()),
+        ),
+        Face::Reverse => (
+            meta.and_then(|m| m.back_name.clone())
+                .or_else(|| meta.map(|m| m.name.clone())),
+            meta.and_then(|m| m.back_text.clone()),
+        ),
+    };
+    (name_src.unwrap_or_else(|| code.to_string()), text_src)
+}
+
+/// [`name_and_text_src`] read from the registry provided at mount.
+pub(crate) fn name_and_text(code: &CardCode, face: Face) -> (String, Option<String>) {
+    name_and_text_src(registry::use_cards(), code, face)
 }
 
 #[cfg(test)]
