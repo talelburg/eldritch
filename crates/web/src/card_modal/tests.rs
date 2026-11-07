@@ -1,5 +1,5 @@
 use game_core::engine::{ChoiceOption, Responder};
-use game_core::state::{DeckIndex, GameStateBuilder};
+use game_core::state::{DeckIndex, DiscardIndex, GameStateBuilder};
 use game_core::test_support::{self, seat};
 
 use super::*;
@@ -17,6 +17,7 @@ const DECK: [&str; 5] = [
 const GUTS: &str = "01089";
 const OLD_BOOK_OF_LORE: &str = "01031";
 const MEDICAL_TEXTS: &str = "01035";
+const MAGNIFYING_GLASS: &str = "01030";
 
 fn game() -> GameState {
     GameStateBuilder::new()
@@ -159,6 +160,76 @@ fn one_card_left_over_is_counted_in_the_singular() {
         modal.collapsed_label().as_deref(),
         Some("1 other card searched")
     );
+}
+
+/// The option `id` taking the card `index` cards above the bottom of
+/// Roland's discard pile.
+fn discarded(id: u32, index: u8) -> ChoiceOption {
+    ChoiceOption::new(OptionId(id), "a card").at(OptionTarget::DiscardCard {
+        investigator: ROLAND,
+        index: DiscardIndex(index),
+    })
+}
+
+/// The client of the account holding Roland, his discard pile `pile` (bottom
+/// first), with `request` live.
+fn holding_roland_with_discard(pile: &[&str], request: InputRequest) -> ClientState {
+    let game = GameStateBuilder::new()
+        .with_seat(seat(1).deck(DECK).discard(pile.iter().copied()))
+        .build();
+    ClientState {
+        game: Some(game),
+        outcome: Some(test_support::awaiting_request(request)),
+        ..Default::default()
+    }
+    .you_hold_every_investigator()
+}
+
+/// Scavenging 01073: *"Choose an \[\[Item\]\] card in your discard pile and
+/// add it to your hand."* The Items are shown with Take, top of the pile
+/// first, and the pile's other cards fold under a count.
+#[test]
+fn a_discard_pile_shows_its_items_with_take_and_collapses_the_rest() {
+    // Bottom first: Medical Texts, Guts, Magnifying Glass, Perception.
+    let pile = [MEDICAL_TEXTS, GUTS, MAGNIFYING_GLASS, "01090"];
+    let state = holding_roland_with_discard(
+        &pile,
+        search(
+            OptionTarget::DiscardPile(ROLAND),
+            vec![discarded(0, 0), discarded(1, 2)],
+        ),
+    );
+    let modal = live_card_modal(&state).expect("the card modal is up");
+    assert_eq!(modal.verb(), Verb::Take);
+    assert_eq!(modal.verb().label(), "Take");
+    assert_eq!(
+        modal.shown,
+        [offered(MAGNIFYING_GLASS, 1), offered(MEDICAL_TEXTS, 0)],
+        "the Items, top of the pile first",
+    );
+    assert_eq!(modal.collapsed, [code("01090"), code(GUTS)]);
+    assert_eq!(modal.collapsed_label().as_deref(), Some("2 other cards"));
+    assert!(modal_is_live(&state));
+}
+
+/// An anchor into someone else's pile names no card in the area: the prompt
+/// keeps its own surface.
+#[test]
+fn a_discard_anchor_into_another_pile_gets_no_modal() {
+    let pile = [MEDICAL_TEXTS, GUTS];
+    let someone_elses = holding_roland_with_discard(
+        &pile,
+        search(
+            OptionTarget::DiscardPile(ROLAND),
+            vec![
+                ChoiceOption::new(OptionId(0), "Medical Texts").at(OptionTarget::DiscardCard {
+                    investigator: InvestigatorId(2),
+                    index: DiscardIndex(0),
+                }),
+            ],
+        ),
+    );
+    assert_eq!(live_card_modal(&someone_elses), None);
 }
 
 fn looked_at(count: u8) -> OptionTarget {

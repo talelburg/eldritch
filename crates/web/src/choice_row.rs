@@ -3,11 +3,12 @@
 //!
 //! [`crate::prompt_layout::layout`] decides who gets the row
 //! ([`CardChoice::Row`](crate::prompt_layout::CardChoice::Row)); this module
-//! decides what it shows, from the choice's [`CardArea`] alone. A search keeps
+//! decides what it shows, from the choice's [`CardArea`]. A search keeps
 //! its cards hidden: `glossary/Search.md`, *"that player is permitted to look
 //! at all of the cards in the searched area without revealing those cards to
 //! the other players."* So the row of a search carries no card code, and none
-//! reaches the DOM.
+//! reaches the DOM. A discard pile is open information, so the row of a choice
+//! from one (Scavenging 01073) shows the offered cards face up.
 //!
 //! Scrying 01061's looked-at cards are hidden the same way, though looking at
 //! is not a search (FAQ 2.13, *"if an investigator "looks at" the top 3 cards
@@ -16,9 +17,11 @@
 //!
 //! [`ChoiceRow`] is pure and native-tested.
 
-use game_core::state::{GameState, InvestigatorId};
+use game_core::engine::InputRequest;
+use game_core::state::{CardCode, GameState, InvestigatorId};
 use leptos::prelude::*;
 
+use crate::card::Card;
 use crate::card_modal::CardArea;
 
 /// What the row shows: a caption and the cards under it.
@@ -59,13 +62,17 @@ pub enum RowCards {
     /// One face-down deck, standing for the whole of one. The caption carries
     /// its count.
     Deck,
+    /// These cards, face up: the cards on offer from an area that is open
+    /// information.
+    FaceUp(Vec<CardCode>),
 }
 
 impl ChoiceRow {
-    /// The row for a choice among `area`'s cards in `game`. The caption comes
-    /// from the area's kind, never the prompt's text.
+    /// The row for `request`'s choice among `area`'s cards in `game`. The
+    /// caption comes from the area's kind, never the prompt's text, and the
+    /// request is read only for an area whose cards are face up.
     #[must_use]
-    pub fn of(area: CardArea, game: &GameState) -> Self {
+    pub fn of(area: CardArea, request: &InputRequest, game: &GameState) -> Self {
         match area {
             CardArea::SearchedTopOfDeck { count, .. } => ChoiceRow {
                 caption: "being searched".to_owned(),
@@ -82,6 +89,10 @@ impl ChoiceRow {
             CardArea::LookedAtTopOfEncounterDeck { count } => ChoiceRow {
                 caption: "being looked at".to_owned(),
                 cards: RowCards::FaceDown(count, Back::Encounter),
+            },
+            CardArea::DiscardPile(_) => ChoiceRow {
+                caption: "being chosen from".to_owned(),
+                cards: RowCards::FaceUp(area.offered(request, game)),
             },
         }
     }
@@ -105,7 +116,8 @@ fn cards(count: usize) -> String {
 /// The choice row: its caption over its cards, with no controls.
 ///
 /// A face-down card is a `.deck-back`, as a hidden hand's is, so it names no
-/// card; an encounter card's is also an `.encounter-back`.
+/// card; an encounter card's is also an `.encounter-back`. A face-up card is
+/// the [`Card`] component, as the card modal's is.
 #[component]
 pub fn ChoiceRowView(row: ChoiceRow) -> impl IntoView {
     let cards = match row.cards {
@@ -114,6 +126,11 @@ pub fn ChoiceRowView(row: ChoiceRow) -> impl IntoView {
             .collect::<Vec<_>>()
             .into_any(),
         RowCards::Deck => view! { <div class="deck-back"></div> }.into_any(),
+        RowCards::FaceUp(codes) => codes
+            .into_iter()
+            .map(|code| view! { <Card code=code/> })
+            .collect::<Vec<_>>()
+            .into_any(),
     };
     view! {
         <div class="choice-row">

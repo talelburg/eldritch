@@ -187,11 +187,9 @@ fn strip_contents(
     // TODO(#1322): drop the `CommittedCard` arm once a committed-card surface
     // renders the option on its card.
     //
-    // A card outside play, anchored by its position, homes here the same way
-    // whenever the card modal isn't carrying it. The modal carries a search's
-    // cards and Scrying's looked-at cards, and is then their sole surface, as
-    // the decision modal is. Scavenging's discarded Items have no modal yet.
-    // TODO(#1378): drop the `DiscardCard` arm once Scavenging's modal lands.
+    // A card outside play, anchored by its position, never homes here: the
+    // card modal carries a search's cards, Scrying's looked-at cards and a
+    // discard pile's, and is then their sole surface, as the decision modal is.
     let card_modal_is_live = card_modal::modal_is_live(state);
     let option_btns: Vec<_> = request
         .options
@@ -200,12 +198,7 @@ fn strip_contents(
             !decision_is_live
                 && !card_modal_is_live
                 && share.carries(opt)
-                && matches!(
-                    opt.target,
-                    None | Some(
-                        OptionTarget::CommittedCard { .. } | OptionTarget::DiscardCard { .. }
-                    )
-                )
+                && matches!(opt.target, None | Some(OptionTarget::CommittedCard { .. }))
         })
         .cloned()
         .map(|opt: ChoiceOption| {

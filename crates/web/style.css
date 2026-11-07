@@ -89,7 +89,8 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 /* A hand this account does not hold: a face-down back and a count, nothing more. */
 .hand-hidden { display: flex; align-items: center; gap: 0.4em; }
 /* A card choice another account answers (`choice_row.rs`): a caption over the
-   cards, face down for a search, with no controls. */
+   cards, face down for a search and for a look, face up for a discard pile,
+   with no controls. */
 .choice-row {
     display: flex; align-items: center; gap: 0.5em; padding: 0.3em;
     border: 1px dashed #b8b8d0; border-radius: 4px;
