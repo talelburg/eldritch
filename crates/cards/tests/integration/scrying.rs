@@ -17,20 +17,19 @@
 //! time: each pick puts one of the remaining looked-at cards next in line from
 //! the top, and the last card needs no pick.
 //!
-//! Each per-card pick is sent raw: its options are cards **in a deck**, with no
-//! board anchor and neither of ADR 0015's natures, so no session step can name
-//! one and the pick is positional (Old Book of Lore's test does the same).
+//! Each per-card pick names its card by its position in the deck, the anchor
+//! the engine attaches to a card it offers from outside play, and the prompt
+//! names the looked-at cards as its area (ADR 0011).
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use card_dsl::card_data::UseKind;
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, PromptNature};
+use game_core::engine::{OptionTarget, PromptNature, Responder};
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
-    LocationId, Status,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, DeckIndex, GameStateBuilder,
+    InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{location, seat, uses, BoardLookup as _, Seat, TestSession};
 
@@ -87,12 +86,20 @@ fn activate(scrying: CardInstanceId) -> TurnAction {
     }
 }
 
-/// Put the `position`th of the cards still to be placed next from the top.
-fn place(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: INV,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
+/// The card `index` cards below the top of `investigator`'s deck: what a
+/// pick names to put that card next.
+fn deck_card(investigator: InvestigatorId, index: u8) -> OptionTarget {
+    OptionTarget::DeckCard {
+        investigator,
+        index: DeckIndex(index),
+    }
+}
+
+/// The card `index` cards below the top of the encounter deck.
+fn encounter_card(index: u8) -> OptionTarget {
+    OptionTarget::EncounterDeckCard {
+        index: DeckIndex(index),
+    }
 }
 
 fn codes(deck: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<CardCode> {
@@ -123,11 +130,38 @@ fn reordering_your_deck_puts_the_chosen_order_on_top() {
         ["Emergency Cache", "Guts", "Perception"],
         "the top 3 cards are looked at, and only those",
     );
+    assert_eq!(
+        s.offered_targets(),
+        [0, 1, 2].map(|i| Some(deck_card(INV, i))),
+        "each card is anchored by its position in the deck",
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::LookedAtTopOfDeck {
+            investigator: INV,
+            count: 3,
+        }),
+        "the prompt names the cards looked at, which are not searched",
+    );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
 
     // Perception goes on top, then Emergency Cache; Guts is left third.
-    let s = s.apply(place(2));
+    let s = s.pick(deck_card(INV, 2));
     assert_eq!(s.offered_labels(), ["Emergency Cache", "Guts"]);
-    let s = s.apply(place(0));
+    assert_eq!(
+        s.offered_targets(),
+        [1, 2].map(|i| Some(deck_card(INV, i))),
+        "the placed card is not offered again",
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::LookedAtTopOfDeck {
+            investigator: INV,
+            count: 3,
+        }),
+        "the area is still every card looked at, the placed one included",
+    );
+    let s = s.pick(deck_card(INV, 1));
 
     s.assert_at_turn_menu(INV);
     assert_eq!(
@@ -150,11 +184,20 @@ fn reordering_the_encounter_deck_works_the_same() {
         s.offered_labels(),
         ["Ancient Evils", "Crypt Chill", "Obscuring Fog"]
     );
+    assert_eq!(
+        s.offered_targets(),
+        [0, 1, 2].map(|i| Some(encounter_card(i))),
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::LookedAtTopOfEncounterDeck { count: 3 }),
+    );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
 
     // Crypt Chill on top, then Obscuring Fog; Ancient Evils is left third.
-    let s = s.apply(place(1));
+    let s = s.pick(encounter_card(1));
     assert_eq!(s.offered_labels(), ["Ancient Evils", "Obscuring Fog"]);
-    let s = s.apply(place(1));
+    let s = s.pick(encounter_card(2));
 
     s.assert_at_turn_menu(INV);
     assert_eq!(
@@ -175,7 +218,15 @@ fn a_deck_of_two_cards_takes_one_pick() {
 
     let s = session.take(&activate(scrying)).pick_nth(INVESTIGATOR_DECK);
     assert_eq!(s.offered_labels(), ["Guts", "Perception"]);
-    let s = s.apply(place(1));
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::LookedAtTopOfDeck {
+            investigator: INV,
+            count: 2,
+        }),
+        "the area is the 2 cards the deck holds, not the 3 printed",
+    );
+    let s = s.pick(deck_card(INV, 1));
 
     s.assert_at_turn_menu(INV);
     assert_eq!(
@@ -243,11 +294,23 @@ fn reordering_another_investigators_deck_leaves_yours_untouched() {
         ["Overpower", "Guts", "Perception"],
         "Roland's top 3 are looked at",
     );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::LookedAtTopOfDeck {
+            investigator: ROLAND,
+            count: 3,
+        }),
+    );
+    assert_eq!(
+        s.prompt().responder,
+        Responder::Investigator(INV),
+        "the seer looks, so the seer answers",
+    );
 
     // Perception goes on top, then Overpower; Guts is left third.
-    let s = s.apply(place(2));
+    let s = s.pick(deck_card(ROLAND, 2));
     assert_eq!(s.offered_labels(), ["Overpower", "Guts"]);
-    let s = s.apply(place(0));
+    let s = s.pick(deck_card(ROLAND, 1));
 
     s.assert_at_turn_menu(INV);
     assert_eq!(
@@ -280,8 +343,8 @@ fn picking_yourself_reorders_your_own_deck() {
     );
 
     // Guts on top, then Perception; Emergency Cache is left third.
-    let s = s.apply(place(1));
-    let s = s.apply(place(1));
+    let s = s.pick(deck_card(INV, 1));
+    let s = s.pick(deck_card(INV, 2));
 
     s.assert_at_turn_menu(INV);
     assert_eq!(

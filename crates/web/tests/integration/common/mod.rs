@@ -9,6 +9,7 @@ use game_core::state::GameState;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
+use protocol::live::LiveGame;
 use protocol::lobby::Member;
 use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
 use wasm_bindgen::JsCast as _;
@@ -54,6 +55,42 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
     (0..nodes.length())
         .filter_map(|i| nodes.item(i))
         .map(|node| node.text_content().unwrap_or_default())
+        .collect()
+}
+
+/// `names`, owned, to compare with what [`texts_in`] reads.
+pub(crate) fn names(names: &[&str]) -> Vec<String> {
+    names.iter().map(|n| (*n).to_owned()).collect()
+}
+
+/// How many elements under `root` match `sel`.
+pub(crate) fn count(root: &Element, sel: &str) -> u32 {
+    root.query_selector_all(sel).expect("query").length()
+}
+
+/// Whether nothing under `root` matches `sel`.
+pub(crate) fn absent(root: &Element, sel: &str) -> bool {
+    count(root, sel) == 0
+}
+
+/// The name of each card in the card modal's own row that has a verb button,
+/// with the button's text, in order. The "placed so far" row and the collapsed
+/// cards are not the modal's own row, and a card shown there without a verb is
+/// not offered.
+pub(crate) fn offered(root: &Element) -> Vec<(String, String)> {
+    let cards = root
+        .query_selector_all(".card-modal > .card-modal-row > .card-modal-card")
+        .expect("query");
+    (0..cards.length())
+        .filter_map(|i| cards.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .filter_map(|card| {
+            let verb = card.query_selector(".card-modal-verb").expect("query")?;
+            Some((
+                text_of(&card, ".card-name"),
+                verb.text_content().unwrap_or_default(),
+            ))
+        })
         .collect()
 }
 
@@ -395,4 +432,75 @@ pub(crate) async fn arrives(handle: &BoardHandle, message: ServerMessage) {
 /// A build id that is not this client's.
 pub(crate) fn another_build() -> String {
     format!("not-{}", protocol::build_id())
+}
+
+/// The in-process server: holds the authoritative live game, submits whatever
+/// the UI sends to it, and folds the result back into the store.
+pub(crate) struct Harness {
+    pub(crate) board: BoardHandle,
+    pub(crate) live: LiveGame,
+}
+
+impl Harness {
+    /// Mount the board plus the app's overlays against a fresh store seeded with
+    /// `state` and the engine's opening outcome for it.
+    pub(crate) async fn mount(state: GameState, outcome: EngineOutcome) -> Self {
+        // The real corpus, not the synthetic registry: the engine runs the
+        // real cards, and the board renders their faces.
+        let board = mount_board(hello(state.clone(), outcome.clone()), &cards::TEST_REGISTRY).await;
+        Self {
+            board,
+            live: LiveGame::new(
+                state.clone(),
+                outcome.clone(),
+                Vec::new(),
+                LogPosition::default(),
+                you_hold(Some(&state), Some(&outcome)),
+                YOU,
+                cards::TEST_REGISTRIES,
+            ),
+        }
+    }
+
+    /// Drain one submitted frame, submit it to the live game and commit it, and
+    /// fold the `Applied` back in — the transport's round trip, in-process.
+    pub(crate) async fn pump(&mut self) {
+        let ClientMessage::Submit { prompt, action } = self
+            .board
+            .rx
+            .try_recv()
+            .expect("the click submitted a frame")
+            .clone()
+        else {
+            panic!("the click submitted a frame other than a Submit");
+        };
+        let accepted = self
+            .live
+            .submit(YOU, prompt, action)
+            .unwrap_or_else(|refusal| {
+                panic!("the board offered something the server refuses: {refusal}")
+            });
+        let applied = self.live.commit(accepted).applied_for(YOU);
+        let store = self.board.store;
+        store.update(|s| store::reduce(s, ServerMessage::Applied(applied)));
+        task::tick().await;
+    }
+
+    pub(crate) fn state(&self) -> &GameState {
+        self.live.state()
+    }
+
+    pub(crate) fn find(&self, sel: &str) -> HtmlElement {
+        self.board
+            .root
+            .query_selector(sel)
+            .expect("query")
+            .and_then(|n| n.dyn_into::<HtmlElement>().ok())
+            .unwrap_or_else(|| panic!("no `{sel}` on the board"))
+    }
+
+    /// True iff nothing under the mounted root matches `sel`.
+    pub(crate) fn absent(&self, sel: &str) -> bool {
+        absent(&self.board.root, sel)
+    }
 }

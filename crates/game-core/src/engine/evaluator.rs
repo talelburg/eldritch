@@ -58,9 +58,10 @@ use crate::engine::{Cx, NativeCx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
-    AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    EffectBaseFrame, EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState, InvestigatorId,
-    Lifetime, LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
+    AbilitySource, AdvanceTrigger, Answerer, CardCode, CardInstanceId, Continuation, DamageSource,
+    DeckIndex, EffectBaseFrame, EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState,
+    InvestigatorId, Lifetime, LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest,
+    Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -1450,7 +1451,10 @@ fn draw_cards_effect(
 /// region (`scope`) ∩ `filter`, takes one eligible card to hand (Rules
 /// Reference p.18: obligated if any exist; 0 ⇒ find nothing), then shuffles
 /// the deck. The select is a pick among cards in a deck, so it goes through
-/// [`choice::resolve_card_choice`], as a native's would. A `Chosen` target is
+/// [`choice::resolve_card_choice`], as a native's would: each card anchored by
+/// its deck position, and the prompt by the searched area, the top N
+/// ([`OptionTarget::SearchedTopOfDeck`]) or the whole deck
+/// ([`OptionTarget::PlayerDeck`]). A `Chosen` target is
 /// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
 /// mutations and run after the pick resolves. A weakness taken then resolves
 /// as if drawn ([`cards::resolve_weakness_entering_hand`]), last.
@@ -1495,13 +1499,34 @@ fn apply_search_deck(
         .map(|(i, code)| (i, code.clone()))
         .collect();
 
-    // 3. Choice convention — but 0 ⇒ find nothing (not reject).
-    let eligible_codes: Vec<CardCode> = eligible.iter().map(|(_, c)| c.clone()).collect();
+    // 3. Choice convention — but 0 ⇒ find nothing (not reject). Each card is
+    //    anchored by its deck position, and the prompt by the searched area:
+    //    the region, which is already cut to the cards the deck holds.
+    let anchors: Vec<OptionTarget> = eligible
+        .iter()
+        .map(|(i, _)| OptionTarget::DeckCard {
+            investigator: who,
+            index: DeckIndex::new(*i),
+        })
+        .collect();
+    let area = match scope {
+        SearchScope::Top(_) => OptionTarget::SearchedTopOfDeck {
+            investigator: who,
+            count: u8::try_from(region).expect("a top-N region is at most N, a u8"),
+        },
+        SearchScope::EntireDeck => OptionTarget::PlayerDeck(who),
+    };
     let chosen_deck_index: Option<usize> = match choice::resolve_card_choice(
         cx.state,
         cx.cards,
         &eval_ctx,
-        &eligible_codes,
+        &anchors,
+        area,
+        // The searcher answers (`glossary/Search.md`: "that player is
+        // permitted to look at all of the cards in the searched area"), who is
+        // not the controller when Old Book of Lore 01031 chooses another
+        // investigator.
+        Answerer::Investigator(who),
         "Search: choose a card to take",
     ) {
         Grounded::Empty => None,

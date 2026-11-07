@@ -13,20 +13,20 @@
 //! > ***Item*** card that you've just committed to the same investigation
 //! > attempt.
 //!
-//! The Item is picked from a name-labelled choice, like Scrying 01061's deck
-//! picks: no per-card discard anchor exists (the pile anchors only as a
-//! whole), so the pick is sent raw by position.
+//! The Item is picked by its anchor, its position in the discard pile, and the
+//! prompt names the whole pile as its area, like Scrying 01061's deck picks
+//! (ADR 0011).
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionId;
+use game_core::engine::{OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    CardCode, ChaosBag, ChaosToken, DiscardIndex, GameStateBuilder, InvestigatorId, LocationId,
+    SkillKind,
 };
 use game_core::test_support::{location, seat, BoardLookup as _, Seat, TestSession};
 
@@ -68,17 +68,12 @@ fn investigate(session: TestSession, commit: &[&str]) -> TestSession {
         .commit(commit)
 }
 
-/// Take the `index`th Item offered from the discard pile.
-///
-/// Exempt from the anchor-pick rule, and sent raw: the choice's options are
-/// cards **in a discard pile**, with no board anchor and neither of ADR 0015's
-/// natures, which that ADR knowingly excludes and defers. No session step can
-/// name one, so the pick is positional.
-fn pick(index: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
+/// The card `index` cards above the bottom of the scavenger's discard pile.
+fn discarded(index: u8) -> OptionTarget {
+    OptionTarget::DiscardCard {
         investigator: INV,
-        response: InputResponse::PickSingle(OptionId(index)),
-    })
+        index: DiscardIndex(index),
+    }
 }
 
 fn codes(cards: &[&str]) -> Vec<CardCode> {
@@ -111,8 +106,19 @@ fn succeeding_by_two_offers_scavenging_and_takes_the_chosen_item_to_hand() {
         ["Flashlight", "Knife"],
         "only the Items in the discard pile are offered",
     );
+    assert_eq!(
+        choice.offered_targets(),
+        [Some(discarded(0)), Some(discarded(2))],
+        "each Item is anchored by its position in the pile",
+    );
+    assert_eq!(
+        choice.prompt().target,
+        Some(OptionTarget::DiscardPile(INV)),
+        "the choice is made among the whole pile",
+    );
+    assert_eq!(choice.prompt().responder, Responder::Investigator(INV));
 
-    let done = choice.apply(pick(1));
+    let done = choice.pick(discarded(2));
     done.assert_at_turn_menu(INV);
     let inv = &done.state().investigators[&INV];
     assert!(inv.hand.contains(&CardCode::new(KNIFE)), "Knife to hand");

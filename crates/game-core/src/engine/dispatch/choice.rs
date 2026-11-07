@@ -19,7 +19,7 @@ use crate::engine::outcome::{
 };
 use crate::engine::{board, Cx, EvalContext};
 use crate::state::{
-    CardCode, Continuation, EffectFrame, EffectPrompt, EnemyId, GameState, InvestigatorId,
+    Answerer, CardCode, Continuation, EffectFrame, EffectPrompt, EnemyId, GameState, InvestigatorId,
 };
 
 /// Outcome of applying the uniform resolve convention to a count of legal
@@ -146,48 +146,61 @@ pub fn resolve_grounded_choice<T: Clone>(
     }
 }
 
-/// Offer the controller a choice among cards **in a deck** or a discard pile,
-/// and hand back the picked card's index into `codes`.
+/// Offer `answerer` a choice among cards **outside play**, in a deck or a
+/// discard pile, and hand back the index into `anchors` of the card picked.
 ///
 /// It is the one way an evaluator arm or a card-local native picks a card that
-/// has no board surface to anchor on, such as a searched card, a card looked at
-/// on top of a deck, or Scavenging 01073's Item in the discard pile.
+/// is not on the board, such as a searched card, a card looked at on top of a
+/// deck, or Scavenging 01073's Item in the discard pile.
+///
+/// Each of `anchors` names one offered card by its position
+/// ([`OptionTarget::DeckCard`], [`OptionTarget::EncounterDeckCard`] or
+/// [`OptionTarget::DiscardCard`]), and its label is the card's name, derived
+/// from that anchor. `area` names the cards the choice is made among, such as
+/// the top 3 of a deck being searched, and it rides on the request as its
+/// target. A host renders the offered cards in its card modal, and reads the
+/// area's other cards from its own state (ADR 0011). The prompt stays a
+/// [`Selection`](PromptNature::Selection) (ADR 0015).
+///
+/// `answerer` is who picks: [`Answerer::Controller`] for the controller's own
+/// look or pile, and the searched investigator for a search, who may not be
+/// the controller.
 ///
 /// The rule is [`resolve_grounded_choice`]'s, so a threaded pick is checked
 /// first and a lone card is prompted only under
-/// `state.interactive_acknowledge`. The difference is the prompt: each
-/// option is labelled with its card's name and left un-anchored, so the host
-/// renders it in the prompt banner (ADR 0015 excludes deck cards from its two
-/// natures).
+/// `state.interactive_acknowledge`.
 ///
-/// `codes` must be read from `state` in a deterministic order, because a
+/// `anchors` must be read from `state` in a deterministic order, because a
 /// resumed node reads them again and indexes the same list by the pick. Like
 /// `resolve_grounded_choice`, it pushes nothing.
 pub fn resolve_card_choice(
     state: &GameState,
     cards: &CardRegistry,
     ctx: &EvalContext,
-    codes: &[CardCode],
+    anchors: &[OptionTarget],
+    area: OptionTarget,
+    answerer: Answerer,
     prompt: &str,
 ) -> Grounded<usize> {
     if let Some(OptionId(i)) = ctx.chosen_option() {
         let i = i as usize;
-        return if i < codes.len() {
+        return if i < anchors.len() {
             Grounded::Picked(i)
         } else {
             Grounded::Suspend(Suspension::reject(format!(
                 "{prompt}: pick {i} out of range (0..{})",
-                codes.len()
+                anchors.len()
             )))
         };
     }
-    match resolve_choice_count(codes.len(), state.interactive_acknowledge) {
+    match resolve_choice_count(anchors.len(), state.interactive_acknowledge) {
         ChoiceResolution::Empty => Grounded::Empty,
         ChoiceResolution::Auto(i) => Grounded::Picked(i),
-        ChoiceResolution::Suspend => {
-            let labels = codes.iter().map(|code| card_name(cards, code)).collect();
-            Grounded::Suspend(Suspension::ask(card_prompt(prompt, labels)))
-        }
+        ChoiceResolution::Suspend => Grounded::Suspend(Suspension::ask(EffectPrompt {
+            target: Some(area),
+            answered_by: answerer,
+            ..selection_prompt(state, cards, prompt, anchors)
+        })),
     }
 }
 
@@ -212,6 +225,7 @@ fn selection_prompt(
             .collect(),
         target: None,
         nature: PromptNature::Selection,
+        answered_by: Answerer::Controller,
     }
 }
 
@@ -267,9 +281,11 @@ pub(super) fn candidate_options<T>(
 /// label. A location or enemy reads as its name. A card (in play, in a
 /// threat area, an investigator card, in hand, committed to the in-flight skill
 /// test, the current act or agenda) reads
-/// as its card's name via [`card_name`]. An investigator's discard pile reads
+/// as its card's name via [`card_name`], and so does a card in a deck or a
+/// discard pile, read at its position. An investigator's discard pile reads
 /// as the name of the card on top of it. An investigator's other panel
-/// affordances read as the investigator's name.
+/// affordances, and the top of their deck as a prompt's area, read as the
+/// investigator's name.
 ///
 /// Total and panic-free. An anchor naming an entity that isn't in `state` is an
 /// engine bug, because every candidate is enumerated from `state`. It trips a
@@ -305,13 +321,41 @@ pub(crate) fn anchor_label(
             .map(|agenda| card_name(cards, &agenda.code)),
         OptionTarget::TurnControl(id)
         | OptionTarget::ResourcePool(id)
-        | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
+        | OptionTarget::PlayerDeck(id)
+        | OptionTarget::SearchedTopOfDeck {
+            investigator: id, ..
+        }
+        | OptionTarget::LookedAtTopOfDeck {
+            investigator: id, ..
+        } => state.investigators.get(id).map(|inv| inv.name.clone()),
+        OptionTarget::DeckCard {
+            investigator,
+            index,
+        } => state
+            .investigators
+            .get(investigator)
+            .and_then(|inv| inv.deck.get(index.to_usize()))
+            .map(|code| card_name(cards, code)),
+        OptionTarget::EncounterDeckCard { index } => state
+            .encounter_deck
+            .get(index.to_usize())
+            .map(|code| card_name(cards, code)),
+        OptionTarget::DiscardCard {
+            investigator,
+            index,
+        } => state
+            .investigators
+            .get(investigator)
+            .and_then(|inv| inv.discard.get(index.to_usize()))
+            .map(|code| card_name(cards, code)),
         OptionTarget::DiscardPile(id) => state
             .investigators
             .get(id)
             .and_then(|inv| inv.discard.last())
             .map(|code| card_name(cards, code)),
-        OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
+        OptionTarget::EncounterDeck | OptionTarget::LookedAtTopOfEncounterDeck { .. } => {
+            Some("Encounter deck".to_owned())
+        }
         OptionTarget::CommittedCard { index } => state
             .current_skill_test()
             .and_then(|test| test.committed.get(index.to_usize()))
@@ -373,7 +417,8 @@ pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
 /// substitution offer (Mind over Matter 01036), whose source has left play and
 /// so passes no anchor. Every other suspend keeps the
 /// [`Selection`](crate::engine::PromptNature::Selection) default, whether it is
-/// built by [`selection_prompt`], [`card_prompt`], or a builder of its own.
+/// built by [`selection_prompt`] (which [`resolve_card_choice`] builds on too),
+/// or a builder of its own.
 pub(crate) fn decision_prompt(
     text: impl Into<String>,
     labels: Vec<String>,
@@ -387,21 +432,7 @@ pub(crate) fn decision_prompt(
             .collect(),
         target: anchor,
         nature: PromptNature::Decision,
-    }
-}
-
-/// The prompt for a controller choice from one render label per offered
-/// option, each **un-anchored** (no board home, so the host renders it in the
-/// prompt banner). Used by [`resolve_card_choice`], whose options are cards in a
-/// deck with no board surface (ADR 0015 excludes them), labelled by
-/// [`card_name`]. A choice among board entities goes the other way: through
-/// [`resolve_grounded_choice`], with an anchor per option.
-fn card_prompt(text: impl Into<String>, labels: Vec<String>) -> EffectPrompt {
-    EffectPrompt {
-        text: text.into(),
-        options: labels.into_iter().map(|label| (label, None)).collect(),
-        target: None,
-        nature: PromptNature::Selection,
+        answered_by: Answerer::Controller,
     }
 }
 
@@ -929,11 +960,5 @@ mod tests {
                 candidates.len(),
             );
         }
-    }
-
-    #[test]
-    fn card_prompt_leaves_every_option_unanchored() {
-        let request = effect_request(&card_prompt("Pick", vec!["x".into(), "y".into()]));
-        assert!(request.options.iter().all(|o| o.target.is_none()));
     }
 }

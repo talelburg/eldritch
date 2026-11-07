@@ -38,11 +38,10 @@
 
 use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::board::NotLeft;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EliminationCause,
@@ -75,16 +74,6 @@ fn board(investigator: impl Into<Seat<AnyKind>>) -> TestSession {
         .with_seat(investigator)
         .open_turn(INV)
         .session()
-}
-
-/// Take the `position`th eligible card of a deck search. Sent raw for the
-/// reason `research_librarian.rs` gives: a deck search's options are cards in
-/// a deck, with no board anchor a session step could name.
-fn take_searched(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: INV,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
 }
 
 /// The Necronomicon is in `INV`'s threat area with 3 horror, owned by its
@@ -298,15 +287,14 @@ fn fetched_by_old_book_of_lore_the_revelation_still_fires() {
                 .deck([NECRONOMICON, GUTS, GUTS, GUTS]),
         );
     let book = session.state().in_play(INV, OLD_BOOK);
-    // Three eligible cards in the top 3: the pick suspends. The Necronomicon
-    // is the first of them, in deck order.
-    let session = session
-        .take(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(book),
-            address: AbilityAddress::Printed(0),
-        })
-        .apply(take_searched(0));
+    // Three eligible cards in the top 3: the pick suspends.
+    let session = session.take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(book),
+        address: AbilityAddress::Printed(0),
+    });
+    let necronomicon = session.state().deck_card(INV, NECRONOMICON);
+    let session = session.pick(necronomicon);
 
     session.assert_at_turn_menu(INV);
     assert_event!(

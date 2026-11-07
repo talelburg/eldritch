@@ -52,14 +52,14 @@ A **selection** keeps its context menu. A **decision** presents itself the momen
 
 **A third `InputKind` variant.** Rejected on the type level — a decision *is* a `PickSingle`. Kind says how you answer; nature says what you are answering. Collapsing them grows a case in every `match` on kind that does not care.
 
-**A bool.** Reads as `if request.is_decision` at the call site and leaves no room for a third nature, which the excluded case below may yet force.
+**A bool.** Reads as `if request.is_decision` at the call site and leaves no room for a third nature.
 
 ## Consequences
 
-**Search-deck prompts are knowingly excluded.** Old Book of Lore 01031 — *"That investigator searches the top 3 cards of his or her deck for a card, draws it, and shuffles the remaining cards into his or her deck."* — and Research Librarian 01032 — *"Search your deck for a \[\[Tome\]\] asset and add it to your hand. Shuffle your deck."* — suspend for a pick whose options are cards **in a deck**: entities with no board surface at all, which is neither of this ADR's two natures. They have the same defect and land on a prompt strip. Both are reachable in the running client — Roland's and Daisy's default decks (`cards::decks`) hold them — so the gap is live. Whether an off-board selection becomes a decision or earns a third nature is not decided here; #1135 settles it.
+**A choice among cards outside play is a selection.** Old Book of Lore 01031 — *"That investigator searches the top 3 cards of his or her deck for a card, draws it, and shuffles the remaining cards into his or her deck."* — and Research Librarian 01032 — *"Search your deck for a \[\[Tome\]\] asset and add it to your hand. Shuffle your deck."* — offer cards **in a deck**: not board entities, and not alternatives printed on one card. They are neither a decision nor a third nature (#1135): the player chooses between several cards, which is a selection, and what such a selection needs is a surface. Each card is anchored by its position and the prompt by the area it is chosen from, and the card modal renders them ([ADR 0011](0011-the-engine-names-the-surface-a-prompt-renders-on.md)). Scrying 01061's looked-at cards and Scavenging 01073's discarded Items are the same kind of selection.
 
 **The two modals cannot collide.** The skill-test result modal's liveness predicate requires the live prompt to be the un-anchored acknowledge `Confirm`; a decision is a `PickSingle`. Mutually exclusive by construction, including for a `ChooseOne` nested under a skill test that has already resolved — the case that put an empty batch under the result panel in #853.
 
 **The anchor stays, and stays liveness-checked.** The modal reads it to name its source card, so #845's degradation is still load-bearing: First Aid spending its *last* supply is discarded during cost payment, and an anchor pointing into the discard pile is a deadlock rather than a misplacement.
 
-*Folded: #782, #950.*
+*Folded: #782, #950, #1376.*

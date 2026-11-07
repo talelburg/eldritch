@@ -1,9 +1,11 @@
 use game_core::engine::{ChoiceOption, InputRequest, OptionId};
 use game_core::scenario::ScenarioEnding;
-use game_core::state::{GameState, GameStateBuilder};
+use game_core::state::{DeckIndex, GameState, GameStateBuilder};
 use game_core::test_support::{self, seat};
 use protocol::lobby::Member;
 use protocol::{Assignment, ServerMessage};
+
+use crate::choice_row::{Back, RowCards};
 
 use super::*;
 
@@ -383,6 +385,75 @@ fn the_open_turn_waits_without_its_prompt_text() {
         waiting_for(TAL, open_turn, ROLAND),
         "Waiting for Sam: Daisy Walker"
     );
+}
+
+/// A search of Roland's top 2, which Tal answers in the card modal.
+fn rolands_search() -> InputRequest {
+    let card = |id, index| {
+        ChoiceOption::new(OptionId(id), "a card").at(OptionTarget::DeckCard {
+            investigator: ROLAND,
+            index: DeckIndex(index),
+        })
+    };
+    InputRequest::pick_single(
+        "Search: choose a card to take",
+        vec![card(0, 0), card(1, 1)],
+    )
+    .at(OptionTarget::SearchedTopOfDeck {
+        investigator: ROLAND,
+        count: 2,
+    })
+    .answered_by(Responder::Investigator(ROLAND))
+}
+
+/// The card modal shows the prompt itself, so Tal's strip leaves it out, as it
+/// does for a decision.
+#[test]
+fn the_card_modal_keeps_the_prompt_text_off_the_answerers_strip() {
+    let search = rolands_search();
+    assert!(suppresses_text(&seen_by(TAL, search.clone()), &search));
+}
+
+/// A search is answered in the card modal by the account holding the
+/// searcher: Tal, for Roland's.
+#[test]
+fn the_account_answering_a_search_gets_the_card_modal() {
+    let placed = layout_of(&seen_by(TAL, rolands_search()));
+    assert_eq!(placed.card_choice, Some(CardChoice::Modal));
+    assert_eq!(placed.choice_row_on(ROLAND), None);
+}
+
+/// `glossary/Search.md`: *"that player is permitted to look at all of the
+/// cards in the searched area without revealing those cards to the other
+/// players."* Every other account, viewers included, gets the searched area
+/// as a row on the searcher's tab, face down, and no modal.
+#[test]
+fn every_other_account_gets_the_searched_area_as_a_row_on_the_searchers_tab() {
+    let row = ChoiceRow {
+        caption: "being searched".to_owned(),
+        cards: RowCards::FaceDown(2, Back::Player),
+    };
+    for you in [SAM, ALEX] {
+        let placed = layout_of(&seen_by(you, rolands_search()));
+        assert_eq!(
+            placed.card_choice,
+            Some(CardChoice::Row {
+                tab: ROLAND,
+                row: row.clone(),
+            }),
+            "{you:?}",
+        );
+        assert_eq!(placed.choice_row_on(ROLAND), Some(&row), "{you:?}");
+        assert_eq!(placed.choice_row_on(DAISY), None, "{you:?}");
+    }
+}
+
+/// A prompt that is no card choice places neither the modal nor a row.
+#[test]
+fn a_prompt_choosing_no_card_places_no_card_choice() {
+    for you in [TAL, SAM, ALEX] {
+        assert_eq!(layout_of(&seen_by(you, daisys_horror())).card_choice, None);
+    }
 }
 
 #[test]

@@ -18,14 +18,13 @@
 //! advancing, remove all doom from each card in play."*
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{board, OptionId, OptionTarget};
+use game_core::engine::{board, OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId,
-    LocationId,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, DeckIndex, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, doom, seat, BoardLookup as _, Seat, TestSession};
 
@@ -98,16 +97,6 @@ fn search(initiate: CardInstanceId) -> TurnAction {
         source: AbilitySource::InPlay(initiate),
         address: AbilityAddress::Printed(1),
     }
-}
-
-/// Take the `position`th eligible card of the search. Sent raw: a deck
-/// search's options are cards in a deck, with no board anchor (ADR 0015
-/// excludes them), so no session step can name one.
-fn take_searched(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: INV,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
 }
 
 /// *"**Forced** - After Arcane Initiate enters play: Place 1 doom on it."*
@@ -220,12 +209,64 @@ fn two_spells_prompt_a_pick_that_cannot_be_declined() {
     );
     let id = initiate(&s);
     let s = s.take(&search(id));
-    assert_eq!(s.prompt().options.len(), 2, "both Spells offered");
+    assert_eq!(
+        s.offered_targets(),
+        [0, 2].map(|i| Some(deck_card(i))),
+        "both Spells offered, each anchored by its position",
+    );
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::SearchedTopOfDeck {
+            investigator: INV,
+            count: 3,
+        }),
+        "the top 3 are searched",
+    );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
     assert!(!s.prompt().skippable, "finding is obligatory");
-    let s = s.apply(take_searched(0));
+    let card = s.state().deck_card(INV, SHRIVELLING);
+    let s = s.pick(card);
     s.assert_at_turn_menu(INV);
     assert_eq!(
         s.state().investigators[&INV].hand,
         vec![CardCode::new(SHRIVELLING)],
     );
+}
+
+/// One Spell in the top 3, in interactive play, where a lone option is still
+/// asked: the one Spell is offered, and the prompt still names all 3 cards as
+/// the area searched, so a host can show the 2 passed over.
+#[test]
+fn one_spell_in_interactive_play_is_offered_from_the_whole_top_three() {
+    let s = turn(
+        seat(1)
+            .in_play([INITIATE])
+            .deck([GUTS, DARK_MEMORY, GUTS, SHRIVELLING]),
+    )
+    .edit_state(|state| state.interactive_acknowledge = true);
+    let id = initiate(&s);
+    let s = s.take(&search(id));
+    assert_eq!(s.offered_targets(), [Some(deck_card(1))]);
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::SearchedTopOfDeck {
+            investigator: INV,
+            count: 3,
+        }),
+    );
+    assert_eq!(s.prompt().responder, Responder::Investigator(INV));
+    let s = s.pick(deck_card(1));
+    s.assert_at_turn_menu(INV);
+    assert_eq!(
+        s.state().investigators[&INV].hand,
+        vec![CardCode::new(DARK_MEMORY)],
+    );
+}
+
+/// The card `index` cards below the top of the initiate's deck.
+fn deck_card(index: u8) -> OptionTarget {
+    OptionTarget::DeckCard {
+        investigator: INV,
+        index: DeckIndex(index),
+    }
 }

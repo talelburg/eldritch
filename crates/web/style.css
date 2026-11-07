@@ -88,6 +88,14 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
 .dock .card-row > * { flex: none; }
 /* A hand this account does not hold: a face-down back and a count, nothing more. */
 .hand-hidden { display: flex; align-items: center; gap: 0.4em; }
+/* A card choice another account answers (`choice_row.rs`): a caption over the
+   cards, face down for a search and for a look, face up for a discard pile,
+   with no controls. */
+.choice-row {
+    display: flex; align-items: center; gap: 0.5em; padding: 0.3em;
+    border: 1px dashed #b8b8d0; border-radius: 4px;
+}
+.choice-row-cards { display: flex; gap: 0.3em; }
 /* A pile (`pile.rs`): its label, its top card as a header tile, and a count
    that opens the pile list. The tile is name-only and capped in width, so a
    long name ellipsizes rather than widening the dock's narrow pile column. */
@@ -566,6 +574,12 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
     background: repeating-linear-gradient(45deg, #2a2a4a, #2a2a4a 4px, #3a3a5e 4px, #3a3a5e 8px);
     border: 1px solid #1a1a2e;
 }
+/* An encounter card's back (#1379): the same size as a player card's, in the
+   encounter deck's own colours, so a face-down card says which deck it is from. */
+.deck-back.encounter-back {
+    background: repeating-linear-gradient(45deg, #3a2a1e, #3a2a1e 4px, #5a4030 4px, #5a4030 8px);
+    border-color: #2a1a10;
+}
 .deck-count { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .deck-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; }
 
@@ -770,6 +784,38 @@ html { font-size: clamp(13px, calc(0.35vw + 0.5vh + 6px), 22px); }
     padding: 0.5rem 1rem; font-weight: bold; cursor: pointer; text-align: left;
 }
 .decision-branch:hover { background: #333; }
+
+/* Card modal (#1376): a choice among cards outside play (a search's cards)
+   shows the cards themselves, each with its verb button under it. The same
+   scrim-and-panel shape and band as the decision modal; the two cannot be up
+   at once (a decision is never a choice among cards). Draggable, never
+   dismissed by the scrim: every exit is engine input. */
+.card-modal-backdrop { position: fixed; inset: 0; z-index: 28; }
+.card-modal {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 29;
+    cursor: grab; max-width: min(56rem, 92vw); max-height: 88vh; overflow-y: auto;
+    background: #fff; border: 2px solid #1a1a1a; border-radius: 6px; padding: 1rem 1.5rem;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+.card-modal .card-modal-prompt { margin: 0 0 0.6rem; font-weight: bold; text-align: center; }
+.card-modal-row { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; }
+.card-modal-card { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+.card-modal-verb {
+    background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
+    padding: 0.35rem 1.2rem; font-weight: bold; cursor: pointer;
+}
+.card-modal-verb:hover { background: #333; }
+.card-modal-others { margin-top: 0.75rem; }
+.card-modal-others > summary { cursor: pointer; margin-bottom: 0.5rem; }
+/* Scrying's cards placed so far (#1379), top first, above those still to place,
+   marked "top" so the order reads as the deck's. */
+.card-modal-placed {
+    display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem; border-bottom: 1px solid #ccc;
+}
+.card-modal-placed-label {
+    font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; flex: none;
+}
 
 /* Version-mismatch overlay (#770): the same scrim-and-card shape as the
    skill-test modal, stacked above every other overlay (including the pre-game

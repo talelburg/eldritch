@@ -35,14 +35,13 @@
 //!   investigating." No rulings.
 
 use cards::TEST_REGISTRIES;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, PhaseStep, Status,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, DeckIndex, EnemyId, GameStateBuilder,
+    InvestigatorId, LocationId, PhaseStep, Status,
 };
 use game_core::test_support::{
     self, act, seat, AnyKind, BoardLookup as _, Printed, Seat, TestSession,
@@ -125,19 +124,6 @@ fn daisy_fights_the_ghoul(daisy: Seat<Printed>) -> TestSession {
         .skip()
         .commit(&[])
         .skip()
-}
-
-/// Take the `position`th card of the searched top 3, as Daisy.
-///
-/// Exempt from the anchor-pick rule, and sent raw: a deck search's options
-/// are cards **in a deck**, with no board anchor and neither of ADR 0015's
-/// natures, which that ADR knowingly excludes and defers. No session step can
-/// name one, so the pick is positional (`old_book_of_lore.rs` does the same).
-fn take_searched(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        investigator: DAISY,
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
 }
 
 #[test]
@@ -298,7 +284,10 @@ fn an_action_ability_opens_the_window() {
             source: AbilitySource::InPlay(book),
             address: AbilityAddress::Printed(0),
         })
-        .apply(take_searched(0));
+        .pick(OptionTarget::DeckCard {
+            investigator: DAISY,
+            index: DeckIndex(0),
+        });
     assert_eq!(
         session.state().investigators[&DAISY].hand.len(),
         1,

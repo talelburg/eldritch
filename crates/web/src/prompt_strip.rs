@@ -35,7 +35,7 @@ use leptos::prelude::*;
 use crate::interaction::MultiSelect;
 use crate::prompt_layout::{self, AboveBoard, OpenTab};
 use crate::store::ClientState;
-use crate::{controls, decision, skill_test_result, store};
+use crate::{card_modal, controls, decision, skill_test_result, store};
 
 /// `investigator`'s strip, headed with their name: the dock renders it while
 /// their tab is open. It renders nothing unless the live prompt asks them and
@@ -186,11 +186,17 @@ fn strip_contents(
     // under the engine's label, which names the card.
     // TODO(#1322): drop the `CommittedCard` arm once a committed-card surface
     // renders the option on its card.
+    //
+    // A card outside play, anchored by its position, never homes here: the
+    // card modal carries a search's cards, Scrying's looked-at cards and a
+    // discard pile's, and is then their sole surface, as the decision modal is.
+    let card_modal_is_live = card_modal::modal_is_live(state);
     let option_btns: Vec<_> = request
         .options
         .iter()
         .filter(|opt| {
             !decision_is_live
+                && !card_modal_is_live
                 && share.carries(opt)
                 && matches!(opt.target, None | Some(OptionTarget::CommittedCard { .. }))
         })

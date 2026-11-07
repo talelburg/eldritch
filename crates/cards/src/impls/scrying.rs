@@ -27,9 +27,13 @@
 //! and moves the chosen one to position `k`
 //! ([`NativeCx::move_card_in_deck`]). The last card needs no pick, so there are
 //! two per deck, and a deck of fewer than 3 cards asks fewer: one pick for 2
-//! cards, none for 0 or 1. The cards are offered by name through
+//! cards, none for 0 or 1. The cards are offered through
 //! [`resolve_card_choice`](engine::resolve_card_choice), the deck search's
-//! choice, which is how they are looked at.
+//! choice, which is how they are looked at: each anchored by its position in
+//! the deck, and the prompt by every card looked at
+//! ([`OptionTarget::LookedAtTopOfDeck`] or
+//! [`OptionTarget::LookedAtTopOfEncounterDeck`]), which is not a search
+//! (FAQ 2.13 in `glossary/Search.md`).
 //!
 //! **The deck itself carries the order between picks.** Looking at a card does
 //! not move it, so the three stay in the deck, and there is no zone to hold
@@ -43,8 +47,8 @@
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost, LocationSet};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, Grounded, NativeCx};
-use game_core::state::{CardCode, Deck, GameState};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::state::{Answerer, Deck, DeckIndex, GameState};
 
 use crate::impls::CardRecord;
 
@@ -132,16 +136,35 @@ fn encounter_deck_second(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome 
 /// Pick which of the looked-at cards still unplaced goes `position` cards
 /// below the top, and move it there. Nothing to pick when one card or none is
 /// left.
+///
+/// Each card is anchored by its position in the deck, and the prompt by every
+/// card looked at, the placed ones included, so a host can show the order
+/// built so far.
 fn place_next(cx: &mut NativeCx, ctx: &EvalContext, deck: Deck, position: usize) -> EngineOutcome {
-    let unplaced = unplaced(cx.state(), deck, position);
-    if unplaced.len() < 2 {
+    let looked_at = looked_at(cx.state(), deck);
+    if looked_at.saturating_sub(position) < 2 {
         return EngineOutcome::Done;
     }
+    let unplaced: Vec<OptionTarget> = (position..looked_at)
+        .map(|i| OptionTarget::deck_card(deck, DeckIndex::new(i)))
+        .collect();
+    let area = OptionTarget::looked_at_top_of(
+        deck,
+        u8::try_from(looked_at).expect("Scrying looks at 3 cards at most"),
+    );
     let prompt = match position {
         0 => "Scrying: choose the card to put on top",
         _ => "Scrying: choose the card to put next",
     };
-    match engine::resolve_card_choice(cx.state(), cx.cards(), ctx, &unplaced, prompt) {
+    match engine::resolve_card_choice(
+        cx.state(),
+        cx.cards(),
+        ctx,
+        &unplaced,
+        area,
+        Answerer::Controller,
+        prompt,
+    ) {
         Grounded::Picked(i) => {
             cx.move_card_in_deck(deck, position + i, position);
             EngineOutcome::Done
@@ -151,27 +174,14 @@ fn place_next(cx: &mut NativeCx, ctx: &EvalContext, deck: Deck, position: usize)
     }
 }
 
-/// The looked-at cards from `position` down: positions `position..3` of
-/// `deck`, cut short by a deck of fewer than 3 cards.
-fn unplaced(state: &GameState, deck: Deck, position: usize) -> Vec<CardCode> {
-    let range = position..LOOKED_AT;
-    match deck {
-        Deck::Investigator(id) => state.investigators.get(&id).map_or_else(Vec::new, |inv| {
-            inv.deck
-                .iter()
-                .take(range.end)
-                .skip(range.start)
-                .cloned()
-                .collect()
-        }),
-        Deck::Encounter => state
-            .encounter_deck
-            .iter()
-            .take(range.end)
-            .skip(range.start)
-            .cloned()
-            .collect(),
-    }
+/// How many cards Scrying looks at in `deck`: 3, or fewer when the deck
+/// holds fewer.
+fn looked_at(state: &GameState, deck: Deck) -> usize {
+    let held = match deck {
+        Deck::Investigator(id) => state.investigators.get(&id).map_or(0, |inv| inv.deck.len()),
+        Deck::Encounter => state.encounter_deck.len(),
+    };
+    held.min(LOOKED_AT)
 }
 
 #[cfg(test)]

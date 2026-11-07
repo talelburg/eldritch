@@ -532,6 +532,23 @@ pub struct EffectPrompt {
     /// Whether the options are board entities or alternatives printed on one
     /// card (ADR 0015).
     pub nature: PromptNature,
+    /// Who answers (ADR 0019).
+    pub answered_by: Answerer,
+}
+
+/// Who answers an [`EffectPrompt`]. The prompt table resolves it to the
+/// request's `Responder::Investigator`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Answerer {
+    /// The controller of the frame's evaluation context: an effect's choice is
+    /// its controller's.
+    Controller,
+    /// A named investigator. A search is answered by the investigator whose
+    /// deck it searches (`glossary/Search.md`: *"that player is permitted to
+    /// look at all of the cards in the searched area"*), who may not be the
+    /// controller: Old Book of Lore 01031 lets its controller choose another
+    /// investigator.
+    Investigator(InvestigatorId),
 }
 
 /// The rest of an action once its costs are paid.

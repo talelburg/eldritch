@@ -12,7 +12,7 @@ Each prompt kind names one of three responders, read from its frame:
 
 | Responder | Prompt kinds |
 |---|---|
-| **One named investigator** | the open turn; a substitution; a slot make-room discard; an additional-action choice; a damage distribution; an attack-order pick; a hand-discard cost; an effect's choice (its controller); a forced acknowledge (its candidate's controller); each skill-test commit prompt (its committer: each helper at the performer's location, then the performer); the skill test's result pause (the performer); a share of a group clue spend on an act advance (its contributor); the head of the mulligan, hand-size and encounter-draw queues |
+| **One named investigator** | the open turn; a substitution; a slot make-room discard; an additional-action choice; a damage distribution; an attack-order pick; a hand-discard cost; an effect's choice (its controller; a search's choice, the investigator whose deck it searches); a forced acknowledge (its candidate's controller); each skill-test commit prompt (its committer: each helper at the performer's location, then the performer); the skill test's result pause (the performer); a share of a group clue spend on an act advance (its contributor); the head of the mulligan, hand-size and encounter-draw queues |
 | **The lead** | hunter direction ties; engagement ties; the turn choice; the advance acknowledge; the order of a 2+ forced run |
 | **Several answerers** | reaction windows and framework Fast windows. Each option names the investigator it is offered to. |
 

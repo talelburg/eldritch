@@ -21,8 +21,8 @@ pub(crate) mod staged;
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;
 pub use card::{
-    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UsageClock,
-    UseKind, Zone,
+    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DeckIndex, DiscardIndex,
+    DiscardPile, Owner, UsageClock, UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{
@@ -31,10 +31,10 @@ pub use chaos_bag::{
 pub use continuation::{
     AcknowledgeForcedFrame, ActionResolutionFrame, ActionResume, AdditionIndex,
     AdditionalActionChoiceFrame, AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger,
-    AssetEntry, Assignment, AttackLoopFrame, AttackLoopStage, CandidateSource, ClueAllocationFrame,
-    CommittedCard, CommittedCardDestination, CommittedIndex, Continuation, ContinuationStack,
-    DamageSource, DealDamageFrame, DealDamageStep, EffectBaseFrame, EffectFrame, EffectPrompt,
-    EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
+    Answerer, AssetEntry, Assignment, AttackLoopFrame, AttackLoopStage, CandidateSource,
+    ClueAllocationFrame, CommittedCard, CommittedCardDestination, CommittedIndex, Continuation,
+    ContinuationStack, DamageSource, DealDamageFrame, DealDamageStep, EffectBaseFrame, EffectFrame,
+    EffectPrompt, EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
     EncounterDisposition, EncounterDrawFrame, EnemyAttackSource, EnemyPhaseFrame, EnemyResume,
     EngagementTieFrame, FastWindowFrame, FastWindowKind, Frame, FrameActivity, FrameProfile,
     HandDiscardCostFrame, HandSizeDiscard, HunterChoice, InFlightSkillTest,

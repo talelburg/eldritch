@@ -63,10 +63,12 @@ fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
     assert_eq!(inv.deck.len(), 2);
 }
 
-/// The searched cards are offered by name, still un-anchored (ADR 0015):
-/// a deck card has no board home, so the options land in the prompt banner.
+/// Each searched card is anchored by its position in the deck and labelled
+/// with its name, and the prompt is anchored to the searched area (ADR 0011).
+/// The area is the top 3 cut to the 2 cards the deck holds, so a host shows
+/// no card that isn't there.
 #[test]
-fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
+fn search_deck_options_are_anchored_to_deck_positions_in_the_searched_area() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck([test_support::TEST_ASSET, test_support::TEST_TREACHERY]))
@@ -80,6 +82,10 @@ fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
         panic!("two eligible cards suspend for a pick, got {outcome:?}");
     };
+    let deck_card = |index| OptionTarget::DeckCard {
+        investigator: InvestigatorId(1),
+        index: DeckIndex(index),
+    };
     let offered: Vec<_> = request
         .options
         .iter()
@@ -87,7 +93,38 @@ fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
         .collect();
     assert_eq!(
         offered,
-        [("Test Asset", None), ("Test Treachery", None)],
-        "card names, no board anchor"
+        [
+            ("Test Asset", Some(deck_card(0))),
+            ("Test Treachery", Some(deck_card(1))),
+        ],
+    );
+    assert_eq!(
+        request.target,
+        Some(OptionTarget::SearchedTopOfDeck {
+            investigator: InvestigatorId(1),
+            count: 2,
+        }),
+    );
+}
+
+/// A whole-deck search names the whole deck as its area.
+#[test]
+fn an_entire_deck_search_is_anchored_to_the_whole_deck() {
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).deck([test_support::TEST_ASSET, test_support::TEST_TREACHERY]))
+        .build();
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &dsl::search_deck(InvestigatorTarget::You, SearchScope::EntireDeck, None),
+        ctx(1),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("two eligible cards suspend for a pick, got {outcome:?}");
+    };
+    assert_eq!(
+        request.target,
+        Some(OptionTarget::PlayerDeck(InvestigatorId(1)))
     );
 }
