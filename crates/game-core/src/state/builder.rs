@@ -42,7 +42,7 @@ use crate::state::{
     EncounterDrawFrame, Enemy, EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowFrame,
     FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume,
     Investigator, InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame,
-    Phase, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
+    Phase, RoundPosition, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -55,6 +55,14 @@ use crate::state::{
 /// [`open_turn`](GameStateBuilder::open_turn): it stages the Investigation
 /// phase anchor and the turn frame together, so no caller can build a turn
 /// without the anchor beneath it.
+///
+/// The [round position](GameState::round_position) is set only by `open_turn`,
+/// the one helper that stages a paused state. Every other state is built with
+/// none, and the engine sets it as it drives: the phase helpers
+/// ([`beginning_investigation_phase`](GameStateBuilder::beginning_investigation_phase)
+/// and the like) stage a state about to drive, and a state staged with
+/// [`with_open_window`](GameStateBuilder::with_open_window) reads as unset until
+/// the next step or window is entered.
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
@@ -76,6 +84,7 @@ pub struct GameStateBuilder {
     token_modifiers: TokenModifiers,
     phase: Phase,
     round: u32,
+    round_position: Option<RoundPosition>,
     active_investigator: Option<InvestigatorId>,
     seating: Vec<InvestigatorId>,
     lead: Option<InvestigatorId>,
@@ -125,6 +134,7 @@ impl GameStateBuilder {
             token_modifiers: TokenModifiers::default(),
             phase: Phase::Mythos,
             round: 0,
+            round_position: None,
             active_investigator: None,
             seating: Vec::new(),
             lead: None,
@@ -422,6 +432,7 @@ impl GameStateBuilder {
     ///
     /// Sets the Investigation phase, makes `investigator` active, stages the
     /// Investigation phase anchor at turn-begins and the open turn above it.
+    /// The round stands at step 2.2.1 ([`RoundPosition::TakeAction`]).
     /// A seating already set is kept; with none set, it defaults to
     /// `[investigator]`.
     ///
@@ -436,6 +447,7 @@ impl GameStateBuilder {
             self.seating = vec![investigator];
         }
         self.phase = Phase::Investigation;
+        self.round_position = Some(RoundPosition::TakeAction);
         self.active_investigator = Some(investigator);
         self.phase_anchor =
             Some(InvestigationPhaseFrame::at(InvestigationResume::TurnBegins).into());
@@ -706,6 +718,7 @@ impl GameStateBuilder {
             token_modifiers: self.token_modifiers,
             phase: self.phase,
             round: self.round,
+            round_position: self.round_position,
             active_investigator: self.active_investigator,
             lead: self.lead.or_else(|| self.seating.first().copied()),
             seating: self.seating,

@@ -14,6 +14,10 @@ _Avoid_: Faction (ArkhamDB's word for the same field; the rulebook says class, a
 One of the four segments of a game round: Mythos, Investigation, Enemy, Upkeep.
 _Avoid_: Round, step, stage. See **Project phase** below — the word is overloaded across the repo.
 
+**Round position**:
+Where the round stands: one of Appendix II's numbered steps (1.1 … 4.6) or one of its player windows. The Rules Reference's chart *"depicts the phases and steps of a game round"*; its grey boxes are *"framework events"* and its red boxes *"player windows"*. A reaction window or skill test opened inside a step leaves the round at that step. During setup there is none: the round has not begun.
+_Avoid_: "Step" alone, which reads as a skill-test step (ST.1 … ST.8) or as a synonym for **Phase**; "sub-step".
+
 **Fast**:
 A keyword ability. Per the Rules Reference: *"A fast card does not cost an action to be played and is not played using the 'Play' action."* A property of how a card is played, and the entry says nothing about abilities.
 

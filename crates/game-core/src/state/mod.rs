@@ -57,4 +57,4 @@ pub use investigator::{
     AdditionalActionGrant, EliminationCause, Investigator, InvestigatorId, Status,
 };
 pub use location::{Location, LocationId};
-pub use phase::Phase;
+pub use phase::{Phase, RoundPosition};

@@ -561,3 +561,32 @@ fn enemy_phase_resumes_via_skip_input() {
          window auto-skips"
     );
 }
+
+/// The lead answering a hunter's direction tie is at step 3.2, *"Hunter enemies
+/// move."*
+#[test]
+fn a_hunter_direction_tie_stands_at_3_2() {
+    let loc_a = location(1).connections(vec![LocationId(2), LocationId(3)]);
+    let loc_b = location(2).connections(vec![LocationId(1), LocationId(4)]);
+    let loc_c = location(3).connections(vec![LocationId(1), LocationId(4)]);
+    let loc_d = location(4).connections(vec![LocationId(2), LocationId(3)]);
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(loc_a)
+        .with_location(loc_b)
+        .with_location(loc_c)
+        .with_location(loc_d)
+        .with_seat(test_support::seat(1).at(LocationId(4)))
+        .with_enemy(enemy(1).hunter().at(LocationId(1)))
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::EndTurn);
+    assert_eq!(
+        session.offered_at(&OptionTarget::Location(LocationId(2))),
+        1
+    );
+    assert_eq!(
+        session.state().round_position,
+        Some(RoundPosition::HuntersMove)
+    );
+}
