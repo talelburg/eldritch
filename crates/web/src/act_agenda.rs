@@ -9,7 +9,7 @@
 //! when the live prompt anchors an option to them
 //! (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
-use card_dsl::card_data::ClueValue;
+use card_dsl::card_data::{CardKind, ClueValue};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionTarget;
 use game_core::state::{
@@ -241,4 +241,41 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     // than a "Confirm" with no referent.
     let encounter = controls::encounter_deck_view(game);
     view! { <section class="act-agenda">{act}{agenda}{encounter}</section> }
+}
+
+/// The victory points of the cards in a victory display: the sum of each
+/// card's printed Victory X. An enemy, a location and an act can print one; any
+/// other card, and a card with no metadata, counts 0.
+#[must_use]
+pub fn victory_total(cards: &CardRegistry, codes: &[CardCode]) -> u32 {
+    codes
+        .iter()
+        .filter_map(|code| (cards.metadata_for)(code))
+        .filter_map(|meta| match &meta.kind {
+            CardKind::Enemy { victory, .. }
+            | CardKind::Location { victory, .. }
+            | CardKind::Act { victory, .. } => *victory,
+            _ => None,
+        })
+        .map(u32::from)
+        .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use cards::TEST_REGISTRY;
+    use game_core::state::CardCode;
+
+    use super::victory_total;
+
+    #[test]
+    fn the_ghoul_priest_is_worth_two_victory_points() {
+        // Ghoul Priest 01116 prints Victory 2.
+        assert_eq!(victory_total(&TEST_REGISTRY, &[CardCode::new("01116")]), 2);
+    }
+
+    #[test]
+    fn a_card_with_no_metadata_is_worth_nothing() {
+        assert_eq!(victory_total(&TEST_REGISTRY, &[CardCode::new("_none")]), 0);
+    }
 }
