@@ -193,30 +193,13 @@ pub fn slot_chips(slots: &[Slot]) -> Vec<String> {
         .collect()
 }
 
-/// `(name, count)` for each non-zero skill icon, in canonical order.
-#[must_use]
-pub fn skill_chips(icons: &SkillIcons) -> Vec<(String, u8)> {
-    [
-        ("willpower", icons.willpower),
-        ("intellect", icons.intellect),
-        ("combat", icons.combat),
-        ("agility", icons.agility),
-        ("wild", icons.wild),
-    ]
-    .into_iter()
-    .filter(|&(_, n)| n > 0)
-    .map(|(name, n)| (name.to_string(), n))
-    .collect()
-}
-
 /// Render-ready normalization of a hand-eligible card's type data.
 pub struct CardFace {
     pub class_css: &'static str,
     /// `None` ⇒ no cost corner (Skill cards are committed, not played).
     pub cost_corner: Option<String>,
     pub slot_chips: Vec<String>,
-    pub skill_chips: Vec<(String, u8)>,
-    /// The icons `skill_chips` names, for a tile's icon stand-ins.
+    /// The card's skill icons, drawn on its tile and in its footer.
     pub skill_icons: SkillIcons,
     pub is_fast: bool,
 }
@@ -237,7 +220,6 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             class_css: class_css(*class),
             cost_corner: Some(cost_label(*cost)),
             slot_chips: slot_chips(slots),
-            skill_chips: skill_chips(skill_icons),
             skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
@@ -251,7 +233,6 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             class_css: class_css(*class),
             cost_corner: Some(cost_label(*cost)),
             slot_chips: Vec::new(),
-            skill_chips: skill_chips(skill_icons),
             skill_icons: *skill_icons,
             is_fast: *is_fast,
         }),
@@ -261,7 +242,6 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
             class_css: class_css(*class),
             cost_corner: None,
             slot_chips: Vec::new(),
-            skill_chips: skill_chips(skill_icons),
             skill_icons: *skill_icons,
             is_fast: false,
         }),
@@ -372,9 +352,8 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
                 class_css,
                 cost_corner,
                 slot_chips,
-                skill_chips,
+                skill_icons,
                 is_fast,
-                ..
             } = face;
             let cost_view = if is_in_play {
                 None
@@ -387,18 +366,7 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
                 .into_iter()
                 .map(|s| view! { <span class="chip chip--slot">{s}</span> })
                 .collect();
-            let skill_views: Vec<_> = skill_chips
-                .into_iter()
-                .map(|(name, n)| {
-                    let label = if n > 1 {
-                        format!("{name} ×{n}")
-                    } else {
-                        name.clone()
-                    };
-                    let cls = format!("chip chip--{name}");
-                    view! { <span class=cls>{label}</span> }
-                })
-                .collect();
+            let skill_views = icon_views(skill_icons);
             view! {
                 <div class=root_class>
                     <div class="card-head">
@@ -460,36 +428,36 @@ const SKILLS: [SkillKind; 4] = [
     SkillKind::Agility,
 ];
 
-/// A skill's name, as its icon's `title` and colour class, and the one-letter
-/// stand-in a tile shows for its icon until the game's own glyphs replace it.
-fn skill_label(skill: SkillKind) -> (&'static str, &'static str) {
+/// The markup token naming a skill's icon, which is also its colour class.
+fn skill_token(skill: SkillKind) -> &'static str {
     match skill {
-        SkillKind::Willpower => ("willpower", "W"),
-        SkillKind::Intellect => ("intellect", "I"),
-        SkillKind::Combat => ("combat", "C"),
-        SkillKind::Agility => ("agility", "A"),
+        SkillKind::Willpower => "willpower",
+        SkillKind::Intellect => "intellect",
+        SkillKind::Combat => "combat",
+        SkillKind::Agility => "agility",
     }
 }
 
-/// One icon's stand-in: `letter` on the colour of the icon `name`, named in
-/// its `title`.
-fn icon_view(name: &'static str, letter: &'static str) -> AnyView {
-    let class = format!("skill-icon skill-icon--{name}");
-    view! { <span class=class title=name>{letter}</span> }.into_any()
+/// One icon: the white glyph of `token` inside its `skill-icon--<token>`
+/// colour circle, named in the circle's `title`.
+fn icon_view(token: &'static str) -> AnyView {
+    let glyph = glyph::for_token(token).expect("the glyph table maps every skill icon");
+    let class = format!("skill-icon skill-icon--{token}");
+    view! { <span class=class title=glyph.name>{glyph::view(glyph)}</span> }.into_any()
 }
 
-/// One skill icon's stand-in.
+/// One skill's icon.
 fn skill_icon(skill: SkillKind) -> AnyView {
-    let (name, letter) = skill_label(skill);
-    icon_view(name, letter)
+    icon_view(skill_token(skill))
 }
 
-/// The stand-ins for every icon in `icons`, wild last, in printed order.
+/// Every icon in `icons`, one per icon printed (so two `[intellect]` are two
+/// circles), wild last, in printed order.
 fn icon_views(icons: SkillIcons) -> Vec<AnyView> {
     SKILLS
         .into_iter()
         .flat_map(|skill| (0..icons.matching(skill)).map(move |_| skill_icon(skill)))
-        .chain((0..icons.wild).map(|_| icon_view("wild", "?")))
+        .chain((0..icons.wild).map(|_| icon_view("wild")))
         .collect()
 }
 
@@ -800,25 +768,6 @@ mod tests {
     }
 
     #[test]
-    fn skill_chips_lists_nonzero_icons_in_order() {
-        let icons = SkillIcons {
-            willpower: 0,
-            intellect: 2,
-            combat: 1,
-            agility: 0,
-            wild: 1,
-        };
-        assert_eq!(
-            skill_chips(&icons),
-            vec![
-                ("intellect".to_string(), 2),
-                ("combat".to_string(), 1),
-                ("wild".to_string(), 1)
-            ]
-        );
-    }
-
-    #[test]
     fn card_face_asset_has_cost_slots_icons() {
         let kind = CardKind::Asset {
             class: Class::Guardian,
@@ -840,7 +789,7 @@ mod tests {
         assert_eq!(face.class_css, "card--guardian");
         assert_eq!(face.cost_corner.as_deref(), Some("3"));
         assert_eq!(face.slot_chips, vec!["Hand".to_string()]);
-        assert_eq!(face.skill_chips, vec![("combat".to_string(), 1)]);
+        assert_eq!(face.skill_icons.combat, 1);
     }
 
     #[test]

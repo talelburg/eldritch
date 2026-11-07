@@ -113,6 +113,11 @@ async fn renders_token_total_and_outcome_after_resolution() {
     let section = last_section().expect("the result modal renders after resolution");
     let text = section.text_content().unwrap_or_default();
     assert!(text.contains("Chaos token"), "shows the token line: {text}");
+    assert_eq!(
+        common::text_of(&section, ".str-token"),
+        "Chaos token: +1",
+        "a numeric token shows its signed value"
+    );
     assert!(text.contains("Total 5"), "shows total: {text}");
     assert!(text.contains("difficulty 3"), "shows difficulty: {text}");
     assert!(text.contains("Succeeded by 2"), "shows outcome: {text}");
@@ -183,15 +188,22 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
     task::tick().await;
 
     let section = last_section().expect("the result modal renders after resolution");
-    let token_line = section
-        .query_selector(".str-token")
-        .expect("query")
-        .expect("the modal has a token line")
-        .text_content()
-        .unwrap_or_default();
-    assert!(
-        token_line.contains("Tablet (-2)"),
-        "names the token revealed two batches earlier: {token_line}"
+    let line = common::one(&section, ".str-token");
+    let token_line = line.text_content().unwrap_or_default();
+    let tablet = common::one(&line, ".glyph.glyph--tablet");
+    assert_eq!(
+        tablet.text_content().as_deref(),
+        Some("o"),
+        "draws the tablet revealed two batches earlier as its glyph: {token_line}"
+    );
+    assert_eq!(
+        tablet.get_attribute("aria-label").as_deref(),
+        Some("tablet")
+    );
+    assert_eq!(
+        common::text_of(&line, ".str-resolution"),
+        "-2",
+        "with its modifier"
     );
     assert!(
         !token_line.contains('—'),

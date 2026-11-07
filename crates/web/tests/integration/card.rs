@@ -67,6 +67,16 @@ async fn asset_renders_cost_name_traits_text_icons() {
     };
     assert_eq!(glyph("action"), "t", "action glyph in the card text");
     assert_eq!(glyph("combat"), "h", "combat glyph in the card text");
+    // The footer's skill icon is the same glyph-in-colour-circle as the tile's,
+    // so a tile and its popover agree.
+    let footer = common::one(&common::last_mounted(".card"), ".card-footer");
+    let circle = common::one(&footer, ".skill-icon.skill-icon--combat");
+    assert_eq!(circle.get_attribute("title").as_deref(), Some("combat"));
+    assert_eq!(
+        common::text_of(&circle, ".glyph.glyph--combat"),
+        "h",
+        "combat glyph in the footer"
+    );
 }
 
 /// Every token the glyph table maps, its codepoint and its readable name,

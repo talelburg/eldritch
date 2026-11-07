@@ -181,8 +181,9 @@ async fn investigators_panel_renders_stats_and_hand() {
         common::text_of(&inv_el, ".investigator-card .tile-name"),
         "Roland Banks"
     );
-    // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2.
-    assert_eq!(common::text_of(&inv_el, ".inv-skills"), "W3I3C4A2");
+    // Roland's printed skills: willpower 3, intellect 3, combat 4, agility 2,
+    // each after its glyph (`f`, `g`, `h`, `i` in arkhamicons).
+    assert_eq!(common::text_of(&inv_el, ".inv-skills"), "f3g3h4i2");
     assert_eq!(common::text_of(&inv_el, ".inv-hp"), "health 7/9");
     assert_eq!(common::text_of(&inv_el, ".inv-san"), "sanity 4/5");
     // Meta cluster: actions as pips.
