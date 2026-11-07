@@ -15,7 +15,8 @@ use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::card::{Card, HandCardView};
+use web::card::{self, Card, HandCardView};
+use web::glyph;
 use web::interaction::{MultiSelect, PendingOptions};
 use web::registry::provide_cards;
 use web::store::ClientState;
@@ -57,14 +58,93 @@ async fn asset_renders_cost_name_traits_text_icons() {
     assert!(html.contains('3'), "cost missing: {html}");
     assert!(html.contains("Weapon"), "traits missing: {html}");
     assert!(html.contains("Fight."), "bold text missing: {html}");
-    // [combat] / [action] become chips; assert the chip class is present.
-    assert!(html.contains("chip--combat"), "combat chip missing: {html}");
-    // `chip--action` can only come from the card TEXT ([action]), not a footer
-    // skill chip — so it isolates the render_segments symbol→chip path.
-    assert!(
-        html.contains("chip--action"),
-        "action chip (from text) missing: {html}"
+    // `[action]` and `[combat]` in the text become glyphs. Scoped to
+    // `.card-text`, since the footer's skill chip also names combat.
+    let text = common::one(&common::last_mounted(".card"), ".card-text");
+    let glyph = |token: &str| {
+        let span = common::one(&text, &format!(".glyph.glyph--{token}"));
+        span.text_content().unwrap_or_default()
+    };
+    assert_eq!(glyph("action"), "t", "action glyph in the card text");
+    assert_eq!(glyph("combat"), "h", "combat glyph in the card text");
+}
+
+/// Every token the glyph table maps, its codepoint and its readable name,
+/// copied from `arkhamicons-config.json` rather than from the table, so a
+/// codepoint typo in the table fails here.
+const EXPECTED_GLYPHS: &[(&str, &str, &str)] = &[
+    ("willpower", "f", "willpower"),
+    ("intellect", "g", "intellect"),
+    ("combat", "h", "combat"),
+    ("agility", "i", "agility"),
+    ("wild", "j", "wild"),
+    ("action", "t", "action"),
+    ("reaction", "u", "reaction"),
+    ("fast", "v", "free triggered ability"),
+    ("free", "v", "free triggered ability"),
+    ("elder_sign", "k", "elder sign"),
+    ("skull", "m", "skull"),
+    ("cultist", "n", "cultist"),
+    ("tablet", "o", "tablet"),
+    ("elder_thing", "p", "elder thing"),
+    ("auto_fail", "q", "auto-fail"),
+    ("per_investigator", "r", "per investigator"),
+    ("guardian", ")", "guardian"),
+    ("seeker", "b", "seeker"),
+    ("mystic", "c", "mystic"),
+    ("rogue", "d", "rogue"),
+    ("survivor", "e", "survivor"),
+    ("curse", "y", "curse"),
+    ("bless", "z", "bless"),
+    ("codex", "\u{e901}", "codex"),
+];
+
+#[wasm_bindgen_test]
+async fn every_mapped_token_renders_its_glyph_in_card_text() {
+    let mapped: BTreeSet<&str> = glyph::GLYPHS.iter().map(|g| g.token).collect();
+    let expected: BTreeSet<&str> = EXPECTED_GLYPHS.iter().map(|(t, _, _)| *t).collect();
+    assert_eq!(
+        mapped, expected,
+        "the table maps exactly the expected tokens"
     );
+
+    for &(token, codepoint, name) in EXPECTED_GLYPHS {
+        let markup = format!("x [{token}] y");
+        let (_, container) = common::mount(move || {
+            view! { <div class="card-text">{card::render_segments(card::parse_card_text(&markup))}</div> }
+        });
+        task::tick().await;
+        let span = common::one(&container, ".glyph");
+        assert_eq!(
+            span.class_name(),
+            format!("glyph glyph--{token}"),
+            "[{token}] class"
+        );
+        assert_eq!(
+            span.text_content().unwrap_or_default(),
+            codepoint,
+            "[{token}] codepoint"
+        );
+        assert_eq!(
+            span.get_attribute("aria-label").as_deref(),
+            Some(name),
+            "[{token}] label"
+        );
+        assert_eq!(
+            span.get_attribute("title").as_deref(),
+            Some(name),
+            "[{token}] title"
+        );
+    }
+}
+
+#[wasm_bindgen_test]
+async fn unmapped_token_stays_a_red_unknown_token() {
+    let (_, container) = common::mount(|| {
+        view! { <div class="card-text">{card::render_segments(card::parse_card_text("[mystery]"))}</div> }
+    });
+    task::tick().await;
+    assert_eq!(common::text_of(&container, ".unknown-token"), "[mystery]");
 }
 
 #[wasm_bindgen_test]

@@ -26,6 +26,7 @@ Exposure is effectively zero at friends-only scale. These are what keep it there
 
 - **The repo is public** ([talelburg/eldritch](https://github.com/talelburg/eldritch)), **MIT-licensed**, carrying the unofficial-fan-tool disclaimer in `README.md`. It went public on 2026-05-02, when GitHub Free's branch protection turned out to require Pro on private repos — a state strategy had already pre-approved.
 - **Never re-host card art.** Link to ArkhamDB's image URLs — their CDN, their bandwidth, their takedown surface — with a text-only fallback when an image is missing.
+  - **The exception is the game's symbols.** The web client bundles ArkhamCards' `arkhamicons` font, whose repository has no licence, so the font is all rights reserved. It was chosen anyway on 2026-11-06: arkham.build ships the same glyphs, this project is played only among friends, and no licensed font covers the set (`AHLCGSymbol.ttf`, the OFL one, has no auto-fail glyph). Provenance: `crates/web/assets/fonts/SOURCE.md`.
 - **"Eldritch" is a deliberately non-infringing name.** Fantasy Flight's marks — "Arkham Horror" among them — stay out of the product name, the domain, and the UI chrome. Naming packs, scenarios, and cards by their real titles is unavoidable and fine; naming the *product* after them is not.
 - No embedded secrets, and no ownership-declaration UX — players are not asked to attest that they own the physical cards.
 

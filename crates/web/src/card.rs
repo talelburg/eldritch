@@ -15,6 +15,7 @@ use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
 
+use crate::glyph;
 use crate::interaction::{self, MultiSelect, PendingOptions};
 use crate::popover::{Hover, Popover};
 use crate::registry;
@@ -32,27 +33,6 @@ pub enum TextSegment {
     Italic(String),
     Unknown(String),
 }
-
-/// `ArkhamDB` game symbols we render as chips. Anything else in `[..]` is left
-/// verbatim (with brackets) so it pops out for us to add a mapping.
-const KNOWN_SYMBOLS: &[&str] = &[
-    "willpower",
-    "intellect",
-    "combat",
-    "agility",
-    "wild",
-    "action",
-    "reaction",
-    "fast",
-    "free",
-    "elder_sign",
-    "skull",
-    "cultist",
-    "tablet",
-    "auto_fail",
-    "bless",
-    "curse",
-];
 
 /// Translate `ArkhamDB` card-text markup into renderable segments.
 ///
@@ -146,9 +126,11 @@ fn read_until(chars: &[char], start: usize, pat: &str) -> Option<(String, usize)
     None
 }
 
-/// Classify a single-bracket token as a known `Symbol` or an `Unknown`.
+/// Classify a single-bracket token: a `Symbol` if [`glyph::GLYPHS`] maps it,
+/// otherwise an `Unknown`, left to render with its brackets so it pops out for
+/// us to add a mapping.
 fn symbol_or_unknown(inner: String) -> TextSegment {
-    if KNOWN_SYMBOLS.contains(&inner.as_str()) {
+    if glyph::for_token(&inner).is_some() {
         TextSegment::Symbol(inner)
     } else {
         TextSegment::Unknown(inner)
@@ -704,26 +686,30 @@ pub fn InPlayCardView(
     }
 }
 
-/// Render parsed card text to views (known symbols → chips; unknown tokens keep
-/// their brackets in a `.unknown-token` span so they pop out).
-pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
+/// Render parsed card text to views: a mapped symbol becomes its
+/// [`glyph::view`] span, and an unknown token keeps its brackets in a
+/// `.unknown-token` span so it pops out.
+pub fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
     segments
         .into_iter()
         .map(|seg| match seg {
             TextSegment::Text(s) => view! { {s} }.into_any(),
             TextSegment::LineBreak => view! { <br/> }.into_any(),
-            TextSegment::Symbol(tok) => {
-                let cls = format!("chip chip--{tok}");
-                view! { <span class=cls>{tok}</span> }.into_any()
-            }
+            TextSegment::Symbol(tok) => match glyph::for_token(&tok) {
+                Some(g) => glyph::view(g).into_any(),
+                None => unknown_token(&tok),
+            },
             TextSegment::Trait(t) => view! { <span class="card-trait-ref">{t}</span> }.into_any(),
             TextSegment::Bold(s) => view! { <b>{s}</b> }.into_any(),
             TextSegment::Italic(s) => view! { <i>{s}</i> }.into_any(),
-            TextSegment::Unknown(inner) => {
-                view! { <span class="unknown-token">{format!("[{inner}]")}</span> }.into_any()
-            }
+            TextSegment::Unknown(inner) => unknown_token(&inner),
         })
         .collect()
+}
+
+/// An unmapped `[token]`, brackets restored, in the red `.unknown-token` span.
+fn unknown_token(inner: &str) -> AnyView {
+    view! { <span class="unknown-token">{format!("[{inner}]")}</span> }.into_any()
 }
 
 /// A header card's popover: the name and printed text of the face it is

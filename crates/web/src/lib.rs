@@ -12,6 +12,7 @@ pub mod delete_game;
 pub mod drag;
 pub mod enemy_card;
 pub mod event_log;
+pub mod glyph;
 pub mod interaction;
 pub mod map;
 pub mod more_menu;
