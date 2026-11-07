@@ -267,8 +267,9 @@ pub(super) fn candidate_options<T>(
 /// label. A location or enemy reads as its name. A card (in play, in a
 /// threat area, an investigator card, in hand, committed to the in-flight skill
 /// test, the current act or agenda) reads
-/// as its card's name via [`card_name`]. An investigator's panel affordances
-/// read as the investigator's name.
+/// as its card's name via [`card_name`]. An investigator's discard pile reads
+/// as the name of the card on top of it. An investigator's other panel
+/// affordances read as the investigator's name.
 ///
 /// Total and panic-free. An anchor naming an entity that isn't in `state` is an
 /// engine bug, because every candidate is enumerated from `state`. It trips a
@@ -305,6 +306,11 @@ pub(crate) fn anchor_label(
         OptionTarget::TurnControl(id)
         | OptionTarget::ResourcePool(id)
         | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
+        OptionTarget::DiscardPile(id) => state
+            .investigators
+            .get(id)
+            .and_then(|inv| inv.discard.last())
+            .map(|code| card_name(cards, code)),
         OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
         OptionTarget::CommittedCard { index } => state
             .current_skill_test()
@@ -714,6 +720,28 @@ mod tests {
         assert_eq!(
             anchor_label(&state, &TEST_REGISTRY, &anchor),
             "Test Investigator"
+        );
+    }
+
+    #[test]
+    fn a_discard_pile_option_is_labelled_with_its_top_card_name() {
+        let mut state = labelled_board();
+        // Bottom first: the asset is on top.
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .discard = vec![
+            CardCode::new(test_support::TEST_TREACHERY),
+            CardCode::new(test_support::TEST_ASSET),
+        ];
+        assert_eq!(
+            anchor_label(
+                &state,
+                &TEST_REGISTRY,
+                &OptionTarget::DiscardPile(InvestigatorId(1))
+            ),
+            "Test Asset"
         );
     }
 

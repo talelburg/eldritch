@@ -14,8 +14,8 @@
 //! > attempt.
 //!
 //! The Item is picked from a name-labelled choice, like Scrying 01061's deck
-//! picks: a discard-pile card has no board surface to anchor on, so the pick is
-//! sent raw by position.
+//! picks: no per-card discard anchor exists (the pile anchors only as a
+//! whole), so the pick is sent raw by position.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 

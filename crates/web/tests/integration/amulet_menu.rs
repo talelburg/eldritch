@@ -1,7 +1,7 @@
-//! Wendy's Amulet 01014's discard-pile play reaches the board: the client
-//! renders no discard pile (TODO(#1101): show it), so the engine anchors the
-//! option on the Amulet, and the Amulet's in-play menu — [`InPlayCardView`],
-//! which reads its options through [`interaction::options_for`] — offers it.
+//! Wendy's Amulet 01014's discard-pile play reaches the board: the engine
+//! anchors the option on Wendy's discard pile, and the pile's top tile —
+//! [`Pile`], which reads its options through [`interaction::options_for`] —
+//! offers it.
 //!
 //! Picking that entry sends the option's id, as the menu does, and plays the
 //! top event.
@@ -13,14 +13,14 @@
 //! Host-only: the browser tests in this directory are wasm32-only, and this
 //! one needs no DOM.
 //!
-//! [`InPlayCardView`]: web::card::InPlayCardView
+//! [`Pile`]: web::pile::Pile
 #![cfg(not(target_arch = "wasm32"))]
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{location, seat, BoardLookup as _};
+use game_core::test_support::{location, seat};
 use web::interaction;
 
 const AMULET: &str = "01014";
@@ -33,7 +33,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
 #[test]
-fn the_amulets_menu_entry_plays_the_top_event() {
+fn the_discard_piles_menu_entry_plays_the_top_event() {
     let s = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(location(HERE))
@@ -45,11 +45,10 @@ fn the_amulets_menu_entry_plays_the_top_event() {
         )
         .open_turn(INV)
         .session();
-    let amulet = s.state().in_play(INV, AMULET);
 
-    let menu = interaction::options_for(&s.prompt().options, &OptionTarget::CardInstance(amulet));
+    let menu = interaction::options_for(&s.prompt().options, &OptionTarget::DiscardPile(INV));
     let [entry] = menu.as_slice() else {
-        panic!("one entry on the Amulet's menu: {menu:?}");
+        panic!("one entry on the discard pile's menu: {menu:?}");
     };
     assert_eq!(entry.label, "Play Emergency Cache (Wendy's Amulet)");
     let resources = s.state().investigators[&INV].resources;

@@ -103,6 +103,10 @@ pub enum OptionTarget {
     ResourcePool(InvestigatorId),
     /// An investigator's own player deck (Draw).
     PlayerDeck(InvestigatorId),
+    /// An investigator's own discard pile, as a whole: a play from the top of
+    /// the pile (Wendy's Amulet 01014) sits here. No per-card discard anchor
+    /// exists.
+    DiscardPile(InvestigatorId),
     /// The scenario's encounter deck (the Mythos step-1.4 draw).
     EncounterDeck,
     /// A card committed to the in-flight skill test, by its zero-based position

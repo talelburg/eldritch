@@ -19,14 +19,14 @@
 //! placement, and an event leaving play (Barricade 01038, which stays in play
 //! attached to a location). The play permission is tested from the turn menu
 //! and from a reaction window ("Look what I found!" 01079), each option
-//! anchored on the Amulet.
+//! anchored on Wendy's discard pile.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
-use game_core::engine::OptionId;
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
@@ -228,15 +228,19 @@ fn an_event_discarded_from_play_goes_to_the_bottom_of_the_deck() {
 
 // --- Playing the topmost event in the discard pile -----------------------
 
-/// The labels of the options anchored on the Amulet.
-fn labels_at_amulet(s: &TestSession) -> Vec<String> {
-    let amulet = s.state().card(INV, AMULET);
+/// The labels of the options anchored on `target`.
+fn labels_at(s: &TestSession, target: &OptionTarget) -> Vec<String> {
     s.prompt()
         .options
         .iter()
-        .filter(|o| o.target.as_ref() == Some(&amulet))
+        .filter(|o| o.target.as_ref() == Some(target))
         .map(|o| o.label.clone())
         .collect()
+}
+
+/// The labels of the options anchored on Wendy's discard pile.
+fn labels_at_discard_pile(s: &TestSession) -> Vec<String> {
+    labels_at(s, &OptionTarget::DiscardPile(INV))
 }
 
 #[test]
@@ -249,9 +253,14 @@ fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
             .deck([GUTS]),
     );
     assert_eq!(
-        labels_at_amulet(&s),
+        labels_at_discard_pile(&s),
         ["Play Emergency Cache (Wendy's Amulet)"],
-        "offered on the Amulet, naming the event",
+        "offered on her discard pile, naming the event and the Amulet",
+    );
+    assert!(
+        labels_at(&s, &s.state().card(INV, AMULET)).is_empty(),
+        "the Amulet itself offers no play: {:?}",
+        s.prompt(),
     );
     let (resources, actions) = {
         let inv = &s.state().investigators[&INV];
@@ -344,7 +353,7 @@ fn a_non_event_top_card_is_not_offered() {
             .in_play([AMULET])
             .discard([EMERGENCY_CACHE, GUTS]),
     );
-    assert!(labels_at_amulet(&s).is_empty(), "{:?}", s.prompt());
+    assert!(labels_at_discard_pile(&s).is_empty(), "{:?}", s.prompt());
 }
 
 #[test]
@@ -388,12 +397,11 @@ fn look_what_i_found_on_top_of_the_discard_pile_is_offered_in_its_window() {
     .take(&TurnAction::Investigate { investigator: INV })
     .commit(&[]);
     assert_eq!(
-        labels_at_amulet(&s),
+        labels_at_discard_pile(&s),
         ["Play \"Look what I found!\" (Wendy's Amulet)"],
     );
 
-    let amulet = s.state().card(INV, AMULET);
-    let s = s.pick(amulet);
+    let s = s.pick(OptionTarget::DiscardPile(INV));
 
     s.assert_at_turn_menu(INV);
     let inv = &s.state().investigators[&INV];

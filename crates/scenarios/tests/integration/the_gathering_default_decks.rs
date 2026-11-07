@@ -390,7 +390,7 @@ fn wendy_with_her_default_deck_plays_the_gathering_to_a_resolution() {
     investigation.assert_at_turn_menu(INV);
     assert_eq!(investigation.state().round, 2);
 
-    // --- Backstab from the top of her discard pile, offered on the Amulet:
+    // --- Backstab from the top of her discard pile, offered on the pile:
     // agility 4 + Numeric(0) against the Priest's fight 4 succeeds, and its 3
     // damage defeats the Priest. The reveal offers her reaction again, a new
     // test's: she passes it.

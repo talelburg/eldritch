@@ -115,8 +115,8 @@ pub enum PlaySource {
     /// The topmost card of the investigator's discard pile, under the play
     /// permission on the card instance `permission`: Wendy's Amulet 01014,
     /// *"You may play the topmost event in your discard pile as if it were in
-    /// your hand."* The permission is named so the option can anchor on the
-    /// card that grants it — the client renders no discard pile.
+    /// your hand."* The option anchors on the investigator's discard pile; the
+    /// permission is named so its label can name the card that grants it.
     TopOfDiscardPile {
         /// The in-play card whose permission the play is made under.
         permission: CardInstanceId,
@@ -172,8 +172,8 @@ impl TurnAction {
     ///
     /// A play from the discard pile names the event and the card whose
     /// permission it is played under — *"Play Emergency Cache (Wendy's
-    /// Amulet)"* — because it is anchored on that card, not on the event;
-    /// `cards` supplies both names.
+    /// Amulet)"* — because it is anchored on the discard pile, which shows the
+    /// event but not the permission; `cards` supplies both names.
     #[must_use]
     pub fn label(&self, state: &GameState, cards: &CardRegistry) -> String {
         let loc_name = |id: LocationId| {
@@ -260,12 +260,12 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            // On the permission's card: the client renders no discard pile,
-            // and ADR 0011 needs a surface it does render.
+            // On the pile the card is played from; the label names the
+            // permission's card (ADR 0011).
             TurnAction::PlayCard {
-                source: PlaySource::TopOfDiscardPile { permission },
-                ..
-            } => OptionTarget::CardInstance(*permission),
+                investigator,
+                source: PlaySource::TopOfDiscardPile { .. },
+            } => OptionTarget::DiscardPile(*investigator),
             // One map from a source to an anchor, shared with the forced /
             // reaction candidates' `candidate_anchor`. Its exhaustive `match`
             // lives in the `From` impl, so a new `AbilitySource` kind stops the
