@@ -19,10 +19,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, GameStateBuilder, LocationId, UseKind,
 };
-use game_core::test_support::{self, location, seat, uses, BoardLookup as _, TestSession};
+use game_core::test_support::{location, seat, uses, BoardLookup as _, TestSession};
 use wasm_bindgen_test::*;
 
-use crate::common::{self, BoardHandle, YOU};
+use crate::common::{self, YOU};
 use crate::lobby::SAM;
 use crate::tabs::{self, AGNES, ALEX, DAISY, ROLAND};
 
@@ -86,22 +86,6 @@ fn daisy_scries_rolands_deck() -> TestSession {
     session.pick(roland)
 }
 
-/// The board as `you` sees the prompt `session` rests at.
-async fn mount_as(you: protocol::AccountId, session: &TestSession) -> BoardHandle {
-    let outcome = test_support::awaiting_request(session.prompt().clone());
-    tabs::mount_table_at(you, session.state().clone(), outcome).await
-}
-
-/// How many `sel` there are under the board.
-fn count(handle: &BoardHandle, sel: &str) -> u32 {
-    handle.root.query_selector_all(sel).expect("query").length()
-}
-
-/// Whether `sel` is absent under the board.
-fn absent(handle: &BoardHandle, sel: &str) -> bool {
-    count(handle, sel) == 0
-}
-
 /// Tal and Alex see Roland's 3 looked-at cards face down on Daisy's tab, the
 /// chooser's, with player backs, no controls, no names, and no modal. Sam,
 /// who chooses, has the modal.
@@ -109,7 +93,7 @@ fn absent(handle: &BoardHandle, sel: &str) -> bool {
 async fn every_other_account_sees_a_scried_deck_face_down_on_the_choosers_tab() {
     let session = daisy_scries_rolands_deck();
     for you in [YOU, ALEX] {
-        let handle = mount_as(you, &session).await;
+        let handle = tabs::mount_as(you, &session).await;
         common::click_tab(&handle.root, "Daisy Walker").await;
 
         assert_eq!(
@@ -117,30 +101,38 @@ async fn every_other_account_sees_a_scried_deck_face_down_on_the_choosers_tab() 
             "being looked at",
             "{you:?}",
         );
-        assert_eq!(count(&handle, ".dock .choice-row .deck-back"), 3, "{you:?}");
+        assert_eq!(
+            common::count(&handle.root, ".dock .choice-row .deck-back"),
+            3,
+            "{you:?}"
+        );
         assert!(
-            absent(&handle, ".choice-row .encounter-back"),
+            common::absent(&handle.root, ".choice-row .encounter-back"),
             "{you:?}: a player deck's backs"
         );
-        assert!(absent(&handle, ".card-modal"), "{you:?}: no modal");
         assert!(
-            absent(&handle, ".choice-row button") && absent(&handle, ".choice-row .card-name"),
+            common::absent(&handle.root, ".card-modal"),
+            "{you:?}: no modal"
+        );
+        assert!(
+            common::absent(&handle.root, ".choice-row button")
+                && common::absent(&handle.root, ".choice-row .card-name"),
             "{you:?}: no controls and no card named",
         );
 
         common::click_tab(&handle.root, "Roland Banks").await;
         assert!(
-            absent(&handle, ".choice-row"),
+            common::absent(&handle.root, ".choice-row"),
             "{you:?}: only on the chooser's tab"
         );
     }
-    let sam = mount_as(SAM, &session).await;
+    let sam = tabs::mount_as(SAM, &session).await;
     assert_eq!(
-        count(&sam, ".card-modal .card-modal-verb"),
+        common::count(&sam.root, ".card-modal .card-modal-verb"),
         3,
         "Sam chooses"
     );
-    assert!(absent(&sam, ".choice-row"));
+    assert!(common::absent(&sam.root, ".choice-row"));
 }
 
 /// Scrying the encounter deck: everyone else sees encounter backs.
@@ -148,7 +140,7 @@ async fn every_other_account_sees_a_scried_deck_face_down_on_the_choosers_tab() 
 async fn every_other_account_sees_a_scried_encounter_deck_as_encounter_backs() {
     let session = daisy_scries(ENCOUNTER_DECK);
     for you in [YOU, ALEX] {
-        let handle = mount_as(you, &session).await;
+        let handle = tabs::mount_as(you, &session).await;
         common::click_tab(&handle.root, "Daisy Walker").await;
 
         assert_eq!(
@@ -157,11 +149,14 @@ async fn every_other_account_sees_a_scried_encounter_deck_as_encounter_backs() {
             "{you:?}",
         );
         assert_eq!(
-            count(&handle, ".dock .choice-row .encounter-back"),
+            common::count(&handle.root, ".dock .choice-row .encounter-back"),
             3,
             "{you:?}"
         );
-        assert!(absent(&handle, ".card-modal"), "{you:?}");
-        assert!(absent(&handle, ".choice-row .card-name"), "{you:?}");
+        assert!(common::absent(&handle.root, ".card-modal"), "{you:?}");
+        assert!(
+            common::absent(&handle.root, ".choice-row .card-name"),
+            "{you:?}"
+        );
     }
 }

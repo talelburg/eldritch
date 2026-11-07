@@ -17,11 +17,9 @@
 use game_core::engine::enumerate::TurnAction;
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameStateBuilder, LocationId};
 use game_core::test_support::{self, location, seat, BoardLookup as _, TestSession};
-use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web_sys::Element;
 
-use crate::common::{self, BoardHandle, Harness, YOU};
+use crate::common::{self, Harness, YOU};
 use crate::lobby::SAM;
 use crate::tabs::{self, AGNES, ALEX, DAISY, ROLAND};
 
@@ -72,38 +70,6 @@ fn roland_scavenges(session: TestSession) -> TestSession {
         .pick(scavenging)
 }
 
-/// The board as `you` sees the prompt `session` rests at.
-async fn mount_as(you: protocol::AccountId, session: &TestSession) -> BoardHandle {
-    let outcome = test_support::awaiting_request(session.prompt().clone());
-    tabs::mount_table_at(you, session.state().clone(), outcome).await
-}
-
-/// How many `sel` there are under `root`.
-fn count(root: &Element, sel: &str) -> u32 {
-    root.query_selector_all(sel).expect("query").length()
-}
-
-/// The name of each card in the modal's own row, with its verb button's text.
-fn offered(root: &Element) -> Vec<(String, String)> {
-    let cards = root
-        .query_selector_all(".card-modal > .card-modal-row > .card-modal-card")
-        .expect("query");
-    (0..cards.length())
-        .filter_map(|i| cards.item(i))
-        .filter_map(|node| node.dyn_into::<Element>().ok())
-        .map(|card| {
-            (
-                common::text_of(&card, ".card-name"),
-                common::text_of(&card, ".card-modal-verb"),
-            )
-        })
-        .collect()
-}
-
-fn named(names: &[&str]) -> Vec<String> {
-    names.iter().map(|n| (*n).to_owned()).collect()
-}
-
 /// Tal holds Roland, who chooses: the Items are in his modal with Take, top
 /// of the pile first, the rest of the pile folds under a count, and the prompt
 /// strip lists none of them. Take adds that Item to his hand.
@@ -115,7 +81,7 @@ async fn the_chooser_takes_an_item_from_the_modal() {
     let root = h.board.root.clone();
 
     assert_eq!(
-        offered(&root),
+        common::offered(&root),
         [
             ("Knife".to_owned(), "Take".to_owned()),
             ("Flashlight".to_owned(), "Take".to_owned()),
@@ -127,7 +93,7 @@ async fn the_chooser_takes_an_item_from_the_modal() {
     );
     assert_eq!(
         common::texts_in(&root, ".card-modal-others .card-name"),
-        named(&["Guts"]),
+        common::names(&["Guts"]),
     );
     assert!(
         h.absent(".prompt-strip .strip-option"),
@@ -155,12 +121,12 @@ async fn the_chooser_takes_an_item_from_the_modal() {
 async fn every_other_account_sees_the_items_face_up_on_rolands_tab() {
     let session = roland_scavenges(table());
     for you in [SAM, ALEX] {
-        let handle = mount_as(you, &session).await;
+        let handle = tabs::mount_as(you, &session).await;
         common::click_tab(&handle.root, "Roland Banks").await;
 
         assert_eq!(
             common::texts_in(&handle.root, ".dock .choice-row .card-name"),
-            named(&["Knife", "Flashlight"]),
+            common::names(&["Knife", "Flashlight"]),
             "{you:?}",
         );
         assert_eq!(
@@ -168,24 +134,32 @@ async fn every_other_account_sees_the_items_face_up_on_rolands_tab() {
             "being chosen from",
             "{you:?}",
         );
-        assert_eq!(count(&handle.root, ".choice-row button"), 0, "{you:?}");
-        assert_eq!(count(&handle.root, ".card-modal"), 0, "{you:?}: no modal");
+        assert_eq!(
+            common::count(&handle.root, ".choice-row button"),
+            0,
+            "{you:?}"
+        );
+        assert_eq!(
+            common::count(&handle.root, ".card-modal"),
+            0,
+            "{you:?}: no modal"
+        );
 
         common::click_tab(&handle.root, "Daisy Walker").await;
         assert_eq!(
-            count(&handle.root, ".choice-row"),
+            common::count(&handle.root, ".choice-row"),
             0,
             "{you:?}: only on Roland's tab"
         );
     }
-    let tal = mount_as(YOU, &session).await;
+    let tal = tabs::mount_as(YOU, &session).await;
     assert_eq!(
-        count(&tal.root, ".choice-row"),
+        common::count(&tal.root, ".choice-row"),
         0,
         "Tal chooses in the modal"
     );
     assert_eq!(
-        offered(&tal.root),
+        common::offered(&tal.root),
         [
             ("Knife".to_owned(), "Take".to_owned()),
             ("Flashlight".to_owned(), "Take".to_owned()),

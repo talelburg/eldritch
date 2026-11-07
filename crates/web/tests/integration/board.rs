@@ -65,11 +65,6 @@ fn roland(id: u32) -> Seat<Printed> {
     seat(id).as_card(ROLAND)
 }
 
-/// How many descendants of `el` match `sel`.
-fn count_in(el: &Element, sel: &str) -> u32 {
-    el.query_selector_all(sel).expect("query").length()
-}
-
 /// Mount the board on a `Hello` carrying `state` and return the root it
 /// mounted.
 async fn render_state(state: GameState) -> Element {
@@ -188,7 +183,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     assert_eq!(common::text_of(&inv_el, ".inv-san"), "sanity 4/5");
     // Meta cluster: actions as pips.
     assert_eq!(
-        count_in(&inv_el, ".inv-meta .inv-actions .pip"),
+        common::count(&inv_el, ".inv-meta .inv-actions .pip"),
         2,
         "two action pips: {html}"
     );
@@ -208,7 +203,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     // tell the zones apart — the counts and the per-zone text are what make
     // these assertions load-bearing.
     assert_eq!(
-        count_in(&inv_el, ".inv-zones-bottom .hand .tile"),
+        common::count(&inv_el, ".inv-zones-bottom .hand .tile"),
         2,
         "two hand cards: {html}"
     );
@@ -222,7 +217,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         "hand card name missing: {hand}"
     );
     assert_eq!(
-        count_in(&inv_el, ".inv-zones-top .in-play .tile"),
+        common::count(&inv_el, ".inv-zones-top .in-play .tile"),
         1,
         "one in-play card: {html}"
     );

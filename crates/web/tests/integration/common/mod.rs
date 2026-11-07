@@ -58,6 +58,42 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
         .collect()
 }
 
+/// `names`, owned, to compare with what [`texts_in`] reads.
+pub(crate) fn names(names: &[&str]) -> Vec<String> {
+    names.iter().map(|n| (*n).to_owned()).collect()
+}
+
+/// How many elements under `root` match `sel`.
+pub(crate) fn count(root: &Element, sel: &str) -> u32 {
+    root.query_selector_all(sel).expect("query").length()
+}
+
+/// Whether nothing under `root` matches `sel`.
+pub(crate) fn absent(root: &Element, sel: &str) -> bool {
+    count(root, sel) == 0
+}
+
+/// The name of each card in the card modal's own row that has a verb button,
+/// with the button's text, in order. The "placed so far" row and the collapsed
+/// cards are not the modal's own row, and a card shown there without a verb is
+/// not offered.
+pub(crate) fn offered(root: &Element) -> Vec<(String, String)> {
+    let cards = root
+        .query_selector_all(".card-modal > .card-modal-row > .card-modal-card")
+        .expect("query");
+    (0..cards.length())
+        .filter_map(|i| cards.item(i))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .filter_map(|card| {
+            let verb = card.query_selector(".card-modal-verb").expect("query")?;
+            Some((
+                text_of(&card, ".card-name"),
+                verb.text_content().unwrap_or_default(),
+            ))
+        })
+        .collect()
+}
+
 /// Inject `style.css` once per browser session, so measurements are taken
 /// against the stylesheet the app ships rather than an unstyled DOM.
 ///

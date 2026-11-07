@@ -77,31 +77,6 @@ fn shown_names(h: &Harness) -> Vec<String> {
     common::texts_in(&h.board.root, ".card-modal > .card-modal-row .card-name")
 }
 
-/// The name of each card in the modal's row that has a verb button, with the
-/// button's text.
-fn offered(h: &Harness) -> Vec<(String, String)> {
-    let cards = h
-        .board
-        .root
-        .query_selector_all(".card-modal > .card-modal-row > .card-modal-card")
-        .expect("query");
-    (0..cards.length())
-        .filter_map(|i| cards.item(i))
-        .filter_map(|node| node.dyn_into::<Element>().ok())
-        .filter_map(|card| {
-            let verb = card.query_selector(".card-modal-verb").expect("query")?;
-            Some((
-                common::text_of(&card, ".card-name"),
-                verb.text_content().unwrap_or_default(),
-            ))
-        })
-        .collect()
-}
-
-fn named(names: &[&str]) -> Vec<String> {
-    names.iter().map(|n| (*n).to_owned()).collect()
-}
-
 /// Old Book of Lore 01031: *"That investigator searches the top 3 cards of his
 /// or her deck for a card, draws it, and shuffles the remaining cards into his
 /// or her deck."* The 3 cards are in the modal with Draw, nowhere else, and
@@ -115,10 +90,10 @@ async fn old_book_of_lore_shows_the_top_three_with_draw_and_draws_the_one_clicke
 
     assert_eq!(
         shown_names(&h),
-        named(&["Beat Cop", "Magnifying Glass", "Emergency Cache"]),
+        common::names(&["Beat Cop", "Magnifying Glass", "Emergency Cache"]),
     );
     assert_eq!(
-        offered(&h),
+        common::offered(&h.board.root),
         [
             ("Beat Cop".to_owned(), "Draw".to_owned()),
             ("Magnifying Glass".to_owned(), "Draw".to_owned()),
@@ -162,9 +137,12 @@ async fn arcane_initiate_with_one_spell_shows_all_three_with_draw_on_the_spell()
 
     assert_eq!(
         shown_names(&h),
-        named(&["Guts", "Shrivelling", "Perception"]),
+        common::names(&["Guts", "Shrivelling", "Perception"]),
     );
-    assert_eq!(offered(&h), [("Shrivelling".to_owned(), "Draw".to_owned())],);
+    assert_eq!(
+        common::offered(&h.board.root),
+        [("Shrivelling".to_owned(), "Draw".to_owned())],
+    );
     assert!(h.absent(".prompt-strip .strip-option"));
 }
 
@@ -186,7 +164,7 @@ async fn research_librarian_shows_the_tomes_and_collapses_the_rest() {
     let h = mount(session.pick(librarian)).await;
 
     assert_eq!(
-        offered(&h),
+        common::offered(&h.board.root),
         [
             ("Old Book of Lore".to_owned(), "Draw".to_owned()),
             ("Medical Texts".to_owned(), "Draw".to_owned()),
@@ -198,7 +176,7 @@ async fn research_librarian_shows_the_tomes_and_collapses_the_rest() {
     );
     assert_eq!(
         common::texts_in(&h.board.root, ".card-modal-others .card-name"),
-        named(&["Guts", "Perception"]),
+        common::names(&["Guts", "Perception"]),
         "the rest of the deck can be looked at, with no Draw",
     );
     assert!(h.absent(".card-modal-others .card-modal-verb"));
@@ -239,7 +217,7 @@ async fn scrying_a_deck_places_each_card_next_and_shows_those_placed() {
     let mut h = mount(activate(session, SCRYING, 0).pick_nth(INVESTIGATOR_DECK)).await;
 
     assert_eq!(
-        offered(&h),
+        common::offered(&h.board.root),
         [
             ("Guts".to_owned(), "Place next".to_owned()),
             ("Perception".to_owned(), "Place next".to_owned()),
@@ -254,13 +232,13 @@ async fn scrying_a_deck_places_each_card_next_and_shows_those_placed() {
 
     place_next(&mut h, "Emergency Cache").await;
 
-    assert_eq!(placed_names(&h), named(&["Emergency Cache"]));
+    assert_eq!(placed_names(&h), common::names(&["Emergency Cache"]));
     assert_eq!(
         common::text_of(&h.board.root, ".card-modal-placed .card-modal-placed-label"),
         "top",
     );
     assert_eq!(
-        offered(&h),
+        common::offered(&h.board.root),
         [
             ("Guts".to_owned(), "Place next".to_owned()),
             ("Perception".to_owned(), "Place next".to_owned()),
@@ -291,7 +269,7 @@ async fn scrying_the_encounter_deck_shows_encounter_cards_by_name_and_text() {
 
     assert_eq!(
         shown_names(&h),
-        named(&["Ancient Evils", "Crypt Chill", "Obscuring Fog"]),
+        common::names(&["Ancient Evils", "Crypt Chill", "Obscuring Fog"]),
     );
     assert!(
         common::text_of(&h.board.root, ".card-modal-card .card-text")
@@ -301,8 +279,11 @@ async fn scrying_the_encounter_deck_shows_encounter_cards_by_name_and_text() {
     assert!(h.absent(".prompt-strip .strip-option"));
 
     place_next(&mut h, "Crypt Chill").await;
-    assert_eq!(placed_names(&h), named(&["Crypt Chill"]));
-    assert_eq!(shown_names(&h), named(&["Ancient Evils", "Obscuring Fog"]));
+    assert_eq!(placed_names(&h), common::names(&["Crypt Chill"]));
+    assert_eq!(
+        shown_names(&h),
+        common::names(&["Ancient Evils", "Obscuring Fog"])
+    );
 
     place_next(&mut h, "Obscuring Fog").await;
     assert!(h.absent(".card-modal"));

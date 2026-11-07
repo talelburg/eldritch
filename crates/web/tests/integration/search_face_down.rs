@@ -13,12 +13,10 @@
 
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::state::{AbilityAddress, AbilitySource, GameStateBuilder, LocationId};
-use game_core::test_support::{self, location, seat, BoardLookup as _, TestSession};
-use wasm_bindgen::JsCast as _;
+use game_core::test_support::{location, seat, BoardLookup as _, TestSession};
 use wasm_bindgen_test::*;
-use web_sys::Element;
 
-use crate::common::{self, BoardHandle, YOU};
+use crate::common::{self, YOU};
 use crate::lobby::SAM;
 use crate::tabs::{self, AGNES, ALEX, DAISY, ROLAND};
 
@@ -101,56 +99,21 @@ fn roland_plays_research_librarian() -> TestSession {
     session.pick(librarian)
 }
 
-/// The board as `you` sees the prompt `session` rests at.
-async fn mount_as(you: protocol::AccountId, session: &TestSession) -> BoardHandle {
-    let outcome = test_support::awaiting_request(session.prompt().clone());
-    tabs::mount_table_at(you, session.state().clone(), outcome).await
-}
-
-/// How many `sel` there are under the board.
-fn count(handle: &BoardHandle, sel: &str) -> u32 {
-    handle.root.query_selector_all(sel).expect("query").length()
-}
-
-/// The text of each verb button in the card modal, with the name of the card
-/// it is under.
-fn offered(handle: &BoardHandle) -> Vec<(String, String)> {
-    let cards = handle
-        .root
-        .query_selector_all(".card-modal .card-modal-card")
-        .expect("query");
-    (0..cards.length())
-        .filter_map(|i| cards.item(i))
-        .filter_map(|node| node.dyn_into::<Element>().ok())
-        .map(|card| {
-            (
-                common::text_of(&card, ".card-name"),
-                common::text_of(&card, ".card-modal-verb"),
-            )
-        })
-        .collect()
-}
-
-/// Whether `sel` is absent under the board.
-fn absent(handle: &BoardHandle, sel: &str) -> bool {
-    count(handle, sel) == 0
-}
-
 /// Tal holds Roland, who answers the search, so the 3 cards are face up in his
 /// modal, each with Draw, and no row stands in for them.
 #[wasm_bindgen_test]
 async fn the_account_answering_sees_the_three_face_up_with_draw() {
-    let handle = mount_as(YOU, &daisy_has_roland_search()).await;
+    let handle = tabs::mount_as(YOU, &daisy_has_roland_search()).await;
 
     assert_eq!(
-        offered(&handle),
+        common::offered(&handle.root),
         [
             ("Beat Cop".to_owned(), "Draw".to_owned()),
             ("Magnifying Glass".to_owned(), "Draw".to_owned()),
             ("Emergency Cache".to_owned(), "Draw".to_owned()),
         ],
     );
-    assert!(absent(&handle, ".choice-row"));
+    assert!(common::absent(&handle.root, ".choice-row"));
 }
 
 /// Sam, and a viewer, see three face-down cards on Roland's tab, being
@@ -159,7 +122,7 @@ async fn the_account_answering_sees_the_three_face_up_with_draw() {
 async fn every_other_account_sees_three_face_down_on_rolands_tab() {
     let session = daisy_has_roland_search();
     for you in [SAM, ALEX] {
-        let handle = mount_as(you, &session).await;
+        let handle = tabs::mount_as(you, &session).await;
         common::click_tab(&handle.root, "Roland Banks").await;
 
         assert_eq!(
@@ -167,16 +130,24 @@ async fn every_other_account_sees_three_face_down_on_rolands_tab() {
             "being searched",
             "{you:?}",
         );
-        assert_eq!(count(&handle, ".dock .choice-row .deck-back"), 3, "{you:?}");
-        assert!(absent(&handle, ".card-modal"), "{you:?}: no modal");
+        assert_eq!(
+            common::count(&handle.root, ".dock .choice-row .deck-back"),
+            3,
+            "{you:?}"
+        );
         assert!(
-            absent(&handle, ".choice-row button") && absent(&handle, ".choice-row .card-name"),
+            common::absent(&handle.root, ".card-modal"),
+            "{you:?}: no modal"
+        );
+        assert!(
+            common::absent(&handle.root, ".choice-row button")
+                && common::absent(&handle.root, ".choice-row .card-name"),
             "{you:?}: no controls and no card named",
         );
 
         common::click_tab(&handle.root, "Daisy Walker").await;
         assert!(
-            absent(&handle, ".choice-row"),
+            common::absent(&handle.root, ".choice-row"),
             "{you:?}: only on Roland's tab"
         );
     }
@@ -189,7 +160,7 @@ async fn every_other_account_sees_a_searched_deck_as_one_with_its_count() {
     let session = roland_plays_research_librarian();
     let deck = session.state().investigators[&ROLAND].deck.len();
     for you in [SAM, ALEX] {
-        let handle = mount_as(you, &session).await;
+        let handle = tabs::mount_as(you, &session).await;
         common::click_tab(&handle.root, "Roland Banks").await;
 
         assert_eq!(
@@ -197,12 +168,16 @@ async fn every_other_account_sees_a_searched_deck_as_one_with_its_count() {
             format!("being searched: {deck} cards"),
             "{you:?}",
         );
-        assert_eq!(count(&handle, ".dock .choice-row .deck-back"), 1, "{you:?}");
-        assert!(absent(&handle, ".card-modal"), "{you:?}");
+        assert_eq!(
+            common::count(&handle.root, ".dock .choice-row .deck-back"),
+            1,
+            "{you:?}"
+        );
+        assert!(common::absent(&handle.root, ".card-modal"), "{you:?}");
     }
-    let tal = mount_as(YOU, &session).await;
+    let tal = tabs::mount_as(YOU, &session).await;
     assert_eq!(
-        offered(&tal),
+        common::offered(&tal.root),
         [
             ("Medical Texts".to_owned(), "Draw".to_owned()),
             ("Old Book of Lore".to_owned(), "Draw".to_owned()),
