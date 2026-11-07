@@ -13,6 +13,8 @@ use game_core::state::GameState;
 use leptos::prelude::*;
 
 use crate::card::{HandCardView, InPlayCardView};
+use crate::card_modal::CardArea;
+use crate::choice_row::{ChoiceRow, ChoiceRowView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
 use crate::interaction::{self, PendingOptions};
@@ -121,12 +123,17 @@ fn Dock() -> impl IntoView {
     let panel = move |investigator: InvestigatorId| {
         move || {
             let state = store.get();
-            let (held, strip) =
-                placed.with(|p| (p.holds(investigator), p.dock_strip == Some(investigator)));
+            let (held, strip, row) = placed.with(|p| {
+                (
+                    p.holds(investigator),
+                    p.dock_strip == Some(investigator),
+                    p.choice_row_on(investigator),
+                )
+            });
             state.game.as_ref().and_then(|game| {
                 game.investigators
                     .get(&investigator)
-                    .map(|inv| investigator_panel(game, inv, held, strip))
+                    .map(|inv| investigator_panel(game, inv, held, strip, row))
             })
         }
     };
@@ -184,17 +191,21 @@ fn tabs_view(game: &GameState, placed: &PromptLayout) -> impl IntoView {
 }
 
 /// One investigator's panel in the dock, in two rows. Their prompt strip, when
-/// it is docked, heads it. The top row is the investigator: their card (which,
-/// with the tab, names them), their stats, deck, discard and End turn, then
-/// their cards in play, then their threat area with engaged enemies. The bottom
-/// row is their hand. Cards are tiles.
+/// it is docked, heads it, then the row of a card choice they make that
+/// another account answers (`row`, the area the choice is made among). The top
+/// row is the investigator: their card (which, with the tab, names them), their
+/// stats, deck, discard and End turn, then their cards in play, then their
+/// threat area with engaged enemies. The bottom row is their hand. Cards are
+/// tiles.
 fn investigator_panel(
     game: &GameState,
     inv: &Investigator,
     held: bool,
     strip: bool,
+    row: Option<CardArea>,
 ) -> impl IntoView {
     let strip = strip.then(|| prompt_strip(inv.id));
+    let row = row.map(|area| view! { <ChoiceRowView row=ChoiceRow::of(area, game)/> });
     let cards = registry::use_cards();
     let inv_id = inv.id;
     let deck_remaining = inv.deck.len();
@@ -236,6 +247,7 @@ fn investigator_panel(
     view! {
         <article class="investigator">
             {strip}
+            {row}
             <div class="inv-zones-top">
                 <div class="investigator-block">
                     <div class="investigator-card">

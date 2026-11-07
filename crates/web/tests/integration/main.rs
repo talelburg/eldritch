@@ -42,6 +42,7 @@ mod provisional_verdict;
 mod reassign;
 mod registry_smoke;
 mod scenario_row;
+mod search_face_down;
 mod sign_in;
 mod skill_test_result;
 mod skill_test_result_across_batches;

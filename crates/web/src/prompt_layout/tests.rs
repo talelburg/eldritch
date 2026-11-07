@@ -412,6 +412,45 @@ fn the_card_modal_keeps_the_prompt_text_off_the_answerers_strip() {
     assert!(suppresses_text(&seen_by(TAL, search.clone()), &search));
 }
 
+/// A search is answered in the card modal by the account holding the
+/// searcher: Tal, for Roland's.
+#[test]
+fn the_account_answering_a_search_gets_the_card_modal() {
+    let placed = layout_of(&seen_by(TAL, rolands_search()));
+    assert_eq!(placed.card_choice, Some(CardChoice::Modal));
+    assert_eq!(placed.choice_row_on(ROLAND), None);
+}
+
+/// `glossary/Search.md`: *"that player is permitted to look at all of the
+/// cards in the searched area without revealing those cards to the other
+/// players."* Every other account, viewers included, gets the searched area
+/// as a row on the searcher's tab, and no modal.
+#[test]
+fn every_other_account_gets_the_searched_area_as_a_row_on_the_searchers_tab() {
+    let area = CardArea::SearchedTopOfDeck {
+        investigator: ROLAND,
+        count: 2,
+    };
+    for you in [SAM, ALEX] {
+        let placed = layout_of(&seen_by(you, rolands_search()));
+        assert_eq!(
+            placed.card_choice,
+            Some(CardChoice::Row { tab: ROLAND, area }),
+            "{you:?}",
+        );
+        assert_eq!(placed.choice_row_on(ROLAND), Some(area), "{you:?}");
+        assert_eq!(placed.choice_row_on(DAISY), None, "{you:?}");
+    }
+}
+
+/// A prompt that is no card choice places neither the modal nor a row.
+#[test]
+fn a_prompt_choosing_no_card_places_no_card_choice() {
+    for you in [TAL, SAM, ALEX] {
+        assert_eq!(layout_of(&seen_by(you, daisys_horror())).card_choice, None);
+    }
+}
+
 #[test]
 fn an_investigator_no_account_holds_is_waited_for_as_someone() {
     let mut state = seen_by(ALEX, daisys_horror());

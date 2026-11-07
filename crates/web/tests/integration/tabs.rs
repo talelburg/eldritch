@@ -7,7 +7,7 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, location, seat};
 use leptos::prelude::*;
 use leptos::task;
@@ -70,6 +70,16 @@ pub(crate) async fn mount_table(
     game: GameStateBuilder,
     outcome: EngineOutcome,
 ) -> BoardHandle {
+    mount_table_at(you, game.build(), outcome).await
+}
+
+/// [`mount_table`] of a game already built, such as the state a test session
+/// rests at.
+pub(crate) async fn mount_table_at(
+    you: AccountId,
+    game: GameState,
+    outcome: EngineOutcome,
+) -> BoardHandle {
     let mut client = ClientState {
         game_id: Some(GameId::new("g-table")),
         ..ClientState::default()
@@ -81,7 +91,7 @@ pub(crate) async fn mount_table(
         members: members(),
         assigned: Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)]),
         prompt: LogPosition(0),
-        state: Box::new(game.build()),
+        state: Box::new(game),
         outcome,
         events: Vec::new(),
     })

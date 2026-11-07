@@ -6,14 +6,19 @@
 //! [`ClientState`] and the open tab, so a reassignment moves the placement on
 //! the next read. It also lays out the tabs over the dock: one per
 //! investigator, in seating order, with its marks, and which is open.
+//!
+//! A choice among cards outside play goes in the card modal for the account
+//! answering it, and as a row on the chooser's tab for everyone else
+//! ([`CardChoice`]).
 
 use game_core::engine::{self, EngineOutcome, InputRequest, OptionTarget, Responder};
 use game_core::state::investigator::InvestigatorId;
 use leptos::prelude::*;
 use protocol::{AccountId, LogPosition};
 
+use crate::card_modal::{self, CardArea};
+use crate::decision;
 use crate::store::{self, ClientState};
-use crate::{card_modal, decision};
 
 /// Every placement the live prompt gets on this client.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -30,6 +35,29 @@ pub struct PromptLayout {
     /// The investigator whose strip goes in the dock: the open tab's, when the
     /// prompt asks them and this account holds them.
     pub dock_strip: Option<InvestigatorId>,
+    /// Where a choice among cards outside play goes, when the live prompt is
+    /// one: see [`CardChoice`].
+    pub card_choice: Option<CardChoice>,
+}
+
+/// Where a choice among cards outside play goes, for this client's account.
+///
+/// `glossary/Search.md`: *"that player is permitted to look at all of the
+/// cards in the searched area without revealing those cards to the other
+/// players."* Every client holds the full state, so the hiding is the
+/// client's: only the account answering sees the cards in the modal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardChoice {
+    /// The card modal: this account answers the choice.
+    Modal,
+    /// A row on the chooser's tab, with no controls: every other account,
+    /// viewers included. The [`area`](CardArea) says what the row shows.
+    Row {
+        /// The chooser: the investigator answering the prompt.
+        tab: InvestigatorId,
+        /// The cards the choice is made among.
+        area: CardArea,
+    },
 }
 
 /// One investigator's tab over the dock.
@@ -201,6 +229,16 @@ impl PromptLayout {
             .any(|tab| tab.investigator == investigator && tab.held)
     }
 
+    /// The area whose row goes on `investigator`'s tab, when the live card
+    /// choice is theirs and another account answers it.
+    #[must_use]
+    pub fn choice_row_on(&self, investigator: InvestigatorId) -> Option<CardArea> {
+        match self.card_choice {
+            Some(CardChoice::Row { tab, area }) if tab == investigator => Some(area),
+            _ => None,
+        }
+    }
+
     fn placed(&self, placement: Placement) -> Vec<InvestigatorId> {
         self.investigators
             .iter()
@@ -252,9 +290,13 @@ pub fn WaitingAboveBoard() -> impl IntoView {
 /// keeps the one settled, and before that, at load, opens its active
 /// investigator, else its first in seating order. A prompt is new when it sits
 /// at a position other than [`OpenTab::prompt`].
+///
+/// A choice among cards outside play goes in the card modal for the account
+/// answering it, and as a row on the chooser's tab for every other account.
 #[must_use]
 pub fn layout(state: &ClientState, open_tab: OpenTab) -> PromptLayout {
     let mut placed = placements(state);
+    placed.card_choice = card_choice(state);
     placed.tabs = tabs(state, &placed);
     let opened = next_open(state, &placed, open_tab);
     placed.open_investigator = opened;
@@ -377,6 +419,22 @@ fn placements(state: &ClientState) -> PromptLayout {
         investigators,
         above_board,
         ..PromptLayout::default()
+    }
+}
+
+/// Where the live card choice goes: see [`CardChoice`]. The chooser is the
+/// investigator the prompt names to answer it; a card choice asks no one else.
+fn card_choice(state: &ClientState) -> Option<CardChoice> {
+    if card_modal::modal_is_live(state) {
+        return Some(CardChoice::Modal);
+    }
+    let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
+        return None;
+    };
+    let area = CardArea::of(request)?;
+    match request.responder {
+        Responder::Investigator(tab) => Some(CardChoice::Row { tab, area }),
+        _ => None,
     }
 }
 

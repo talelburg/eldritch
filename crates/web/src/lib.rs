@@ -7,6 +7,7 @@ pub mod app;
 pub mod board;
 pub mod card;
 pub mod card_modal;
+pub mod choice_row;
 pub mod controls;
 pub mod decision;
 pub mod delete_game;
