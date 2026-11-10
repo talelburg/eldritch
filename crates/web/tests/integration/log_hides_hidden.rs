@@ -76,9 +76,14 @@ const ROLANDS_DECK: [&str; 6] = [
     OLD_BOOK_OF_LORE,
 ];
 
+/// Agnes's deck, top first: three cards, so a search of her top 3 is a choice
+/// (a lone candidate is taken without a prompt).
+const AGNESS_DECK: [&str; 3] = [PERCEPTION, GUTS, EMERGENCY_CACHE];
+
 /// The table in the Study, Roland holding [`ROLANDS_DECK`] and `rolands_hand`,
-/// Daisy with Old Book of Lore and a charged Scrying in play, and the
-/// encounter deck holding Ancient Evils, Crypt Chill and Obscuring Fog.
+/// Agnes holding [`AGNESS_DECK`], Daisy with Old Book of Lore and a charged
+/// Scrying in play, and the encounter deck holding Ancient Evils, Crypt Chill
+/// and Obscuring Fog.
 fn table(rolands_hand: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
@@ -91,7 +96,7 @@ fn table(rolands_hand: &[&str]) -> GameStateBuilder {
                 .hand(rolands_hand.iter().copied())
                 .resources(5),
         )
-        .with_seat(seat(AGNES.0).as_card("01004").at(STUDY).deck([GUTS]))
+        .with_seat(seat(AGNES.0).as_card("01004").at(STUDY).deck(AGNESS_DECK))
         .with_seat(
             seat(DAISY.0)
                 .as_card("01002")
@@ -481,7 +486,8 @@ async fn old_book_of_lore_names_the_card_only_to_the_searchers_holder() {
 }
 
 /// Tal holds Agnes as well as Roland, as one account holds every investigator
-/// in a solo game. Daisy's Old Book of Lore has Agnes draw Guts from her deck,
+/// in a solo game. Daisy's Old Book of Lore has Agnes draw Perception from
+/// her top 3,
 /// so Tal's log names it, though Roland didn't look. Sam's and Alex's don't.
 #[wasm_bindgen_test]
 async fn a_card_searched_by_an_accounts_other_investigator_is_named_to_that_account() {
@@ -500,7 +506,8 @@ async fn a_card_searched_by_an_accounts_other_investigator_is_named_to_that_acco
 
     let tal = table.tal.log_text();
     assert!(
-        tal.contains("Agnes Baker: Guts") && tal.contains(&format!("code: CardCode(\"{GUTS}\")")),
+        tal.contains("Agnes Baker: Perception")
+            && tal.contains(&format!("code: CardCode(\"{PERCEPTION}\")")),
         "Tal holds Agnes, so his log names the card: {tal}"
     );
     for (who, client) in [("Sam", &table.sam), ("Alex", &table.alex)] {
@@ -513,8 +520,8 @@ async fn a_card_searched_by_an_accounts_other_investigator_is_named_to_that_acco
             "{who}'s log says Agnes took a card: {log}"
         );
         assert!(
-            !log.contains("Guts") && !log.contains(GUTS),
-            "{who}'s log names neither Guts nor its code: {log}"
+            !log.contains("Perception") && !log.contains(PERCEPTION),
+            "{who}'s log names neither Perception nor its code: {log}"
         );
     }
 }
