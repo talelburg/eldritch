@@ -9,7 +9,9 @@ use crate::{card, store};
 /// Read-only event log in a drawer. Closed, it is only its toggle, so the board
 /// keeps the whole screen; open, it lies over the board's left side. Renders
 /// every accumulated `LogBatch` oldest-first (newest at the bottom); a header
-/// line per batch then one Debug line per event. The body stays rendered while
+/// line per batch then one Debug line per event, each as this account may
+/// read it ([`ClientState::log_header`](store::ClientState::log_header),
+/// [`ClientState::log_line`](store::ClientState::log_line)). The body stays rendered while
 /// closed, only hidden, so opening the drawer shows the log as it already is.
 /// On wasm, auto-scrolls to the bottom as the log grows.
 #[component]
@@ -37,25 +39,28 @@ pub fn EventLogView() -> impl IntoView {
         });
     }
 
+    // Every line is rendered for the account as it stands: a reassignment
+    // re-renders the log, so a hidden card follows its investigator's holder.
     let batches = move || {
-        store
-            .get()
-            .log
-            .into_iter()
-            .map(|batch| {
-                let events: Vec<_> = batch
-                    .events
-                    .iter()
-                    .map(|e| view! { <div class="log-event">{format!("{e:?}")}</div> })
-                    .collect();
-                view! {
-                    <div class="log-batch">
-                        <div class="log-action">"▸ "{card::render_label(&batch.header)}</div>
-                        {events}
-                    </div>
-                }
-            })
-            .collect::<Vec<_>>()
+        store.with(|s| {
+            s.log
+                .iter()
+                .map(|batch| {
+                    let events: Vec<_> = batch
+                        .events
+                        .iter()
+                        .map(|e| view! { <div class="log-event">{s.log_line(e)}</div> })
+                        .collect();
+                    let header = s.log_header(&batch.header);
+                    view! {
+                        <div class="log-batch">
+                            <div class="log-action">"▸ "{card::render_label(&header)}</div>
+                            {events}
+                        </div>
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
     };
 
     view! {

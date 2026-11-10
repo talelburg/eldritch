@@ -16,10 +16,24 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
 use web::event_log::EventLogView;
-use web::store::{self, ClientState, LogBatch};
+use web::store::{self, Answered, BatchHeader, ClientState, LogBatch};
 use web_sys::{Element, HtmlElement};
 
 use crate::common::{self, WarnCapture};
+
+/// A batch seat 1's move to the Cellar caused, carrying `ScenarioStarted`.
+fn moved_to_cellar() -> LogBatch {
+    LogBatch {
+        header: BatchHeader::Answer {
+            by: InvestigatorId(1),
+            what: Answered::Pick {
+                label: "Move to Cellar".into(),
+                hidden: false,
+            },
+        },
+        events: vec![Event::ScenarioStarted],
+    }
+}
 
 #[wasm_bindgen_test]
 async fn renders_batches_with_headers_and_event_debug() {
@@ -28,12 +42,7 @@ async fn renders_batches_with_headers_and_event_debug() {
         provide_context(store);
         leptos::view! { <EventLogView/> }
     });
-    store.update(|s| {
-        s.log.push(LogBatch {
-            header: "Move to Cellar".into(),
-            events: vec![Event::ScenarioStarted],
-        });
-    });
+    store.update(|s| s.log.push(moved_to_cellar()));
     task::tick().await;
 
     let logs = document().query_selector_all(".event-log").expect("query");
@@ -52,14 +61,23 @@ async fn renders_batches_with_headers_and_event_debug() {
 }
 
 /// A batch whose pick names an option labelled with a card-text symbol token
-/// draws the token as the game's glyph in its header. The store keeps the
-/// header as the string the pick produced, investigator's name first.
+/// draws the token as the game's glyph in its header, investigator's name
+/// first.
 #[wasm_bindgen_test]
 async fn a_symbol_token_in_a_picked_label_renders_as_its_glyph() {
     let (store, container) = common::mount(|| leptos::view! { <EventLogView/> });
+    let mut daisy = test_support::test_investigator(3);
+    daisy.name = "Daisy Walker".into();
     store.update(|s| {
+        s.game = Some(GameStateBuilder::new().with_investigator(daisy).build());
         s.log.push(LogBatch {
-            header: format!("Daisy Walker: {}", common::INTELLECT_LABEL),
+            header: BatchHeader::Answer {
+                by: InvestigatorId(3),
+                what: Answered::Pick {
+                    label: common::INTELLECT_LABEL.into(),
+                    hidden: false,
+                },
+            },
             events: vec![Event::ScenarioStarted],
         });
     });
@@ -230,12 +248,7 @@ async fn next_animation_frame() {
 async fn the_scroll_to_the_newest_line_logs_no_untracked_read_warning() {
     let warnings = WarnCapture::start();
     let (store, _container) = common::mount(|| leptos::view! { <EventLogView/> });
-    store.update(|s| {
-        s.log.push(LogBatch {
-            header: "Move to Cellar".into(),
-            events: vec![Event::ScenarioStarted],
-        });
-    });
+    store.update(|s| s.log.push(moved_to_cellar()));
     task::tick().await;
     next_animation_frame().await;
 

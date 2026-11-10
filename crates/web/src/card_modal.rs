@@ -149,6 +149,22 @@ impl CardArea {
         }
     }
 
+    /// Whether the area's cards are seen only by the investigator choosing
+    /// among them: a searched or looked-at deck. Everyone else sees them face
+    /// down on the board, and unnamed in the event log. A discard pile is
+    /// open information (`glossary/Discard_Piles.md`: *"Each discard pile is
+    /// open information"*).
+    #[must_use]
+    pub fn is_hidden(self) -> bool {
+        match self {
+            CardArea::SearchedTopOfDeck { .. }
+            | CardArea::SearchedDeck(_)
+            | CardArea::LookedAtTopOfDeck { .. }
+            | CardArea::LookedAtTopOfEncounterDeck { .. } => true,
+            CardArea::DiscardPile(_) => false,
+        }
+    }
+
     /// What an offered card's button does.
     #[must_use]
     pub fn verb(self) -> Verb {
