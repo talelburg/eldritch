@@ -2,8 +2,8 @@
 //!
 //! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01086):
 //!
-//! > [action]: <b>Fight.</b> You get +1 [combat] for this attack.
-//! > [action] Discard Knife: <b>Fight.</b> You get +2 [combat] for this
+//! > \[action\]: <b>Fight.</b> You get +1 \[combat\] for this attack.
+//! > \[action\] Discard Knife: <b>Fight.</b> You get +2 \[combat\] for this
 //! > attack. This attack deals +1 damage.
 //!
 //! Both abilities print the Fight designator, so the word alone would label
