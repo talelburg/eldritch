@@ -175,9 +175,9 @@ fn daisy_chooses_her_share_of_the_barrier_at_round_end() {
 }
 
 /// Daisy starts Trapped's advance on Roland's turn, from the player window
-/// after his action (#1328). `glossary/Clues.md`: *"during any investigator's
-/// turn the investigators may, as a group, spend the requisite number of clues
-/// […] to advance the act deck. This is normally done as a [free] player
+/// after his action. `glossary/Clues.md`: *"during any investigator's turn the
+/// investigators may, as a group, spend the requisite number of clues […] to
+/// advance the act deck. This is normally done as a [free] player
 /// ability."* She is the initiator, so Roland is asked first and Daisy covers
 /// the rest. Trapped's reverse, *"Place each investigator in the Hallway.
 /// Remove the Study from the game."*, moves them both, and Roland's menu comes

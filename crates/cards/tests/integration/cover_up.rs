@@ -612,8 +612,8 @@ fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() 
     );
 
     // The Investigate leaves the group at the act's threshold, so the turn's
-    // player window offers the advance (#1328); the co-located investigator
-    // takes it there.
+    // player window offers the advance; the co-located investigator takes it
+    // there.
     let session = session.pick_for(OTHER, OptionTarget::Act);
     assert_eq!(
         traumas(&session),

@@ -1237,17 +1237,16 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     EngineOutcome::Done
 }
 
-/// Returns `true` if any investigator has at least one playable Fast
-/// option in the current state — a Fast card in hand, a non-exhausted 0-action
-/// Activated ability on a card in play, or, in the turn's player window, an
-/// affordable act advance. Used by [`open_fast_window`] to short-circuit windows where nobody
-/// can act.
+/// Returns `true` if any investigator has at least one playable Fast option in
+/// the current state — a Fast card in hand, a non-exhausted 0-action Activated
+/// ability on a card in play, or, in the turn's player window, an affordable
+/// act advance. Used by [`open_fast_window`] to short-circuit windows where
+/// nobody can act.
 ///
 /// Eligibility uses the extracted [`check_play_card`] /
 /// [`check_activate_ability`] / [`act_agenda::check_advance_act`] validators so
 /// the gate is exactly the existing `PlayCard` / `ActivateAbility` /
-/// `AdvanceAct` gate — no parallel
-/// implementation, no drift.
+/// `AdvanceAct` gate — no parallel implementation, no drift.
 pub(super) fn any_fast_play_eligible(state: &GameState, cards: &CardRegistry) -> bool {
     !enumerate_fast_plays(state, cards).is_empty()
 }
@@ -1305,9 +1304,9 @@ pub(super) fn fast_window_request(
 /// applies to the right window.
 ///
 /// Returns the plays as [`TurnAction`]s in deterministic (investigator,
-/// hand-index / ability-index) order, the advances after them — the same shape the open-turn menu
-/// dispatches via `dispatch_turn_action`, so the fast-window prompt reuses
-/// that dispatch path verbatim.
+/// hand-index / ability-index) order, the advances after them — the same shape
+/// the open-turn menu dispatches via `dispatch_turn_action`, so the fast-window
+/// prompt reuses that dispatch path verbatim.
 pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let mut out = Vec::new();
     for &inv_id in state.investigators.keys() {
@@ -1360,11 +1359,12 @@ pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> V
 /// This is normally done as a [free] player ability."* `glossary/Ability.md`:
 /// *"A [free] triggered ability may be triggered as a player ability during any
 /// player window."* The 2.1 window comes before any turn, so it is left out by
-/// the rule. The skill-test windows are left out by decision (#1328): an
-/// advance there could remove the location a test is running at.
+/// the rule. The skill-test windows are left out by decision: an advance there
+/// could remove the location a test is running at.
 ///
-/// Whoever picks the option is the initiator of the group's spend (#153), so
-/// every Active investigator is offered it, whatever their clues.
+/// Whoever picks the option is the initiator of the group's spend, the one
+/// asked last, so every Active investigator is offered it, whatever their
+/// clues.
 fn push_turn_window_advances(state: &GameState, cards: &CardRegistry, out: &mut Vec<TurnAction>) {
     let in_turn_window = matches!(
         state.top_window(),
