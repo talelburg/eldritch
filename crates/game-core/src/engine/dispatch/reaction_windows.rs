@@ -17,7 +17,7 @@ use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::legality::{self, check_activate_ability, check_play_card};
 use crate::engine::dispatch::{
-    cards, choice, coordinator, cursor, phases, prompt, skill_test, trigger_scan,
+    act_agenda, cards, choice, coordinator, cursor, phases, prompt, skill_test, trigger_scan,
 };
 use crate::engine::enumerate::{self, PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
@@ -1238,14 +1238,15 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
 }
 
 /// Returns `true` if any investigator has at least one playable Fast
-/// option in the current state — either a Fast card in hand or a
-/// non-exhausted 0-action Activated ability on a card in play.
-/// Used by [`open_fast_window`] to short-circuit windows where nobody
+/// option in the current state — a Fast card in hand, a non-exhausted 0-action
+/// Activated ability on a card in play, or, in the turn's player window, an
+/// affordable act advance. Used by [`open_fast_window`] to short-circuit windows where nobody
 /// can act.
 ///
 /// Eligibility uses the extracted [`check_play_card`] /
-/// [`check_activate_ability`] validators so the gate is exactly the
-/// existing `PlayCard` / `ActivateAbility` gate — no parallel
+/// [`check_activate_ability`] / [`act_agenda::check_advance_act`] validators so
+/// the gate is exactly the existing `PlayCard` / `ActivateAbility` /
+/// `AdvanceAct` gate — no parallel
 /// implementation, no drift.
 pub(super) fn any_fast_play_eligible(state: &GameState, cards: &CardRegistry) -> bool {
     !enumerate_fast_plays(state, cards).is_empty()
@@ -1298,11 +1299,13 @@ pub(super) fn fast_window_request(
 /// Collect every fast play currently eligible across all investigators: Fast
 /// cards in hand ([`check_play_card`] `Ok` + `is_fast`) and 0-action
 /// [`Trigger::Activated`] abilities on cards in play ([`check_activate_ability`]
-/// `Ok`). MUST be called with the `FastWindow` on top of the stack so
-/// `check_play_card`'s `permits_fast` gate applies to the right window.
+/// `Ok`), then, in the turn's player window, the act advance for each Active
+/// investigator ([`push_turn_window_advances`]). MUST be called with the
+/// `FastWindow` on top of the stack so `check_play_card`'s `permits_fast` gate
+/// applies to the right window.
 ///
 /// Returns the plays as [`TurnAction`]s in deterministic (investigator,
-/// hand-index / ability-index) order — the same shape the open-turn menu
+/// hand-index / ability-index) order, the advances after them — the same shape the open-turn menu
 /// dispatches via `dispatch_turn_action`, so the fast-window prompt reuses
 /// that dispatch path verbatim.
 pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
@@ -1343,7 +1346,40 @@ pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> V
             }
         }
     }
+    push_turn_window_advances(state, cards, &mut out);
     out
+}
+
+/// Append one [`TurnAction::AdvanceAct`] per Active investigator, in player
+/// order, when the open window is the turn's player window and the group
+/// affords the current act through the menu's own check
+/// ([`act_agenda::check_advance_act`]).
+///
+/// `glossary/Clues.md`: *"during any investigator's turn the investigators may,
+/// as a group, spend the requisite number of clues […] to advance the act deck.
+/// This is normally done as a [free] player ability."* `glossary/Ability.md`:
+/// *"A [free] triggered ability may be triggered as a player ability during any
+/// player window."* The 2.1 window comes before any turn, so it is left out by
+/// the rule. The skill-test windows are left out by decision (#1328): an
+/// advance there could remove the location a test is running at.
+///
+/// Whoever picks the option is the initiator of the group's spend (#153), so
+/// every Active investigator is offered it, whatever their clues.
+fn push_turn_window_advances(state: &GameState, cards: &CardRegistry, out: &mut Vec<TurnAction>) {
+    let in_turn_window = matches!(
+        state.top_window(),
+        Some(Continuation::FastWindow(FastWindowFrame {
+            kind: FastWindowKind::Phase(PhaseStep::TurnPlayerWindow),
+            ..
+        }))
+    );
+    if in_turn_window && act_agenda::check_advance_act(state, cards).is_ok() {
+        out.extend(
+            cursor::player_order(state)
+                .into_iter()
+                .map(|investigator| TurnAction::AdvanceAct { investigator }),
+        );
+    }
 }
 
 #[cfg(test)]

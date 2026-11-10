@@ -174,6 +174,56 @@ fn daisy_chooses_her_share_of_the_barrier_at_round_end() {
     assert_eq!(clues(&session, ROLAND, DAISY), (0, 2));
 }
 
+/// Daisy starts Trapped's advance on Roland's turn, from the player window
+/// after his action (#1328). `glossary/Clues.md`: *"during any investigator's
+/// turn the investigators may, as a group, spend the requisite number of clues
+/// […] to advance the act deck. This is normally done as a [free] player
+/// ability."* She is the initiator, so Roland is asked first and Daisy covers
+/// the rest. Trapped's reverse, *"Place each investigator in the Hallway.
+/// Remove the Study from the game."*, moves them both, and Roland's menu comes
+/// back once the window closes: The Barrier advances only at round end, so the
+/// window has nothing left to offer.
+#[test]
+fn daisy_starts_trapped_from_the_window_after_rolands_action() {
+    let mut state = seated_pair();
+    give_clues(&mut state, ROLAND, 3);
+    give_clues(&mut state, DAISY, 3);
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::Resource {
+        investigator: ROLAND,
+    });
+    assert_eq!(
+        session.offered_at(&OptionTarget::Act),
+        2,
+        "one advance each"
+    );
+
+    let session = session.pick_for(DAISY, OptionTarget::Act);
+    assert_eq!(session.prompt().responder, Responder::Investigator(ROLAND));
+    assert_eq!(
+        session.offered_labels(),
+        [
+            "Contribute 1 clue",
+            "Contribute 2 clues",
+            "Contribute 3 clues"
+        ]
+    );
+
+    // Roland puts in 1, so Daisy gives her 3.
+    let session = session.pick_nth(0);
+    assert_event!(session.events(), Event::ActAdvanced { .. });
+    assert_eq!(clues(&session, ROLAND, DAISY), (2, 0));
+    let state = session.state();
+    assert_eq!(state.act_deck[state.act_index].code.as_str(), "01109");
+    for investigator in [ROLAND, DAISY] {
+        assert_eq!(
+            state.investigators[&investigator].current_location,
+            engine::location_id_by_code(state, HALLWAY),
+            "{investigator:?} is in the Hallway"
+        );
+    }
+    session.assert_at_turn_menu(ROLAND);
+}
+
 fn clues(session: &TestSession, a: InvestigatorId, b: InvestigatorId) -> (u8, u8) {
     let investigators = &session.state().investigators;
     (investigators[&a].clues, investigators[&b].clues)
