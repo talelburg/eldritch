@@ -48,8 +48,8 @@ use crate::state::{
 /// under a substitution prompt, who the lead is now.
 ///
 /// A prompt asked of one investigator doesn't start with that investigator's
-/// name: the client heads it with the responder's name already, so the text
-/// would repeat it (#1354). Debug builds check this. A group decision (the
+/// name: the client's prompt strip is headed with the responder's name, so the
+/// text would repeat it. Debug builds check this. A group decision (the
 /// lead's, or several answerers') isn't checked, since its text may name an
 /// investigator other than whoever answers.
 pub(crate) fn request(
@@ -61,7 +61,7 @@ pub(crate) fn request(
         debug_assert!(
             !names_its_addressee(state, &request, responder),
             "a prompt asked of an investigator starts with their name, which the \
-             strip already shows: {:?}",
+             prompt strip already shows: {:?}",
             request.prompt
         );
         request.answered_by(responder)

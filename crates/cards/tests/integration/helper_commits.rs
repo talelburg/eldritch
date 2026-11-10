@@ -108,8 +108,8 @@ fn hand_card(holder: InvestigatorId, hand_index: u8) -> OptionTarget {
 }
 
 /// The helper's prompt is Daisy's, not Roland's: Roland can't answer it. Its
-/// text names Roland, whose test it is, and not Daisy: the strip already names
-/// her.
+/// text names Roland, whose test it is, and not Daisy: the prompt strip already
+/// names her.
 #[test]
 fn a_helpers_prompt_is_addressed_to_the_helper() {
     let session = rolands_test_with_daisy_holding(&[UNEXPECTED_COURAGE]);

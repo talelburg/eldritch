@@ -87,8 +87,8 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
-| #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1354 | A prompt asked of one investigator no longer starts with their name, which the strip already shows: six prompts drop the prefix, the attack-order pick and the Mythos encounter draw speak in the second person, and the hand-discard cost names the card it pays for at the end; a debug-build check in `prompt::request` keeps it so, PR #1389 |
+| #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1361 | An ability option is labelled by its card and action designator, or "Activate" and the card, with a verbatim distinguisher where two abilities on one card would read alike; option labels draw symbol tokens as glyphs, PR #1384; slices #1382, #1383 |
 | #1362 | The board and the event log log no "outside a reactive tracking context" warning: a board component body reads the live prompt's options, the multi-select flag and the decision-live flag untracked, since its parent rebuilds it on every store change, PR #1385 |
 | #1364 | The game's symbols drawn as glyphs from the vendored `arkhamicons` font, in card text, on tile and card-face skill icons, and as the result modal's drawn token, PR #1374; slices #1372, #1373 |

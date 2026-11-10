@@ -556,8 +556,8 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
 
 /// A hand-discard cost asks which hand card to discard, on the cards in hand,
 /// and names the card whose cost it pays at the end rather than in front: the
-/// one card that prints the cost is Wendy Adams 01005, whose name the strip
-/// already shows.
+/// one card that prints the cost is Wendy Adams 01005, whose name the prompt
+/// strip already shows.
 #[test]
 fn a_staged_hand_discard_cost_asks_which_hand_card() {
     let session = GameStateBuilder::new()
@@ -794,8 +794,8 @@ fn a_staged_encounter_draw_asks_the_head_of_its_queue() {
 }
 
 /// A substitution offer staged above its skill test is asked of its
-/// investigator and names the two skills, with no wire hint. The strip names
-/// the investigator, so the text doesn't.
+/// investigator and names the two skills, with no wire hint. The prompt strip
+/// names the investigator, so the text doesn't.
 #[test]
 fn a_staged_substitution_asks_its_investigator_and_names_the_skills() {
     let session = table(&[])
@@ -817,7 +817,7 @@ fn a_staged_substitution_asks_its_investigator_and_names_the_skills() {
 }
 
 /// The Mythos encounter draw is asked of its drawer, as an instruction: the
-/// strip names the drawer, so the text doesn't.
+/// prompt strip names the drawer, so the text doesn't.
 #[test]
 fn a_staged_encounter_draw_asks_its_drawer() {
     let session = table(&[])

@@ -95,7 +95,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 /// What a [`HandDiscardCostFrame`] asks: which of the investigator's hand cards
 /// that are not weaknesses to discard. It names the card whose cost is paid
 /// last, not first: the one card printing the cost is Wendy Adams 01005, an
-/// investigator card, and a leading name would repeat the strip's. One of the
+/// investigator card, and a leading name would repeat the prompt strip's. One of the
 /// [prompt table](prompt::request)'s helpers.
 pub(super) fn request(
     state: &GameState,
