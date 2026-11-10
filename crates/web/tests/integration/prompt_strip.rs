@@ -393,6 +393,19 @@ async fn an_unanchored_pick_single_still_reaches_the_strip() {
     }
 }
 
+/// A strip option's label draws its card-text symbol token as the game's
+/// glyph, and not as the bracketed token.
+#[wasm_bindgen_test]
+async fn a_symbol_token_in_an_option_label_renders_as_its_glyph() {
+    let outcome = test_support::awaiting_pick_single_with(
+        "Choose one",
+        vec![ChoiceOption::new(OptionId(0), common::INTELLECT_LABEL)],
+    );
+    let _rx = mount(outcome, &[]).await;
+    let option = common::one(&last_strip(), ".strip-option");
+    common::assert_shows_intellect_label(&option, "");
+}
+
 /// Regression for #549: a skippable window's options render as strip buttons
 /// (not only Pass), so a Board/Global option such as the round-end advance is
 /// reachable.

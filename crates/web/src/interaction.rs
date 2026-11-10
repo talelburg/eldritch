@@ -18,6 +18,8 @@ use leptos::prelude::{RwSignal, Signal};
 use web_sys::MouseEvent;
 
 #[cfg(target_arch = "wasm32")]
+use crate::card;
+#[cfg(target_arch = "wasm32")]
 use crate::controls;
 #[cfg(target_arch = "wasm32")]
 use crate::decision;
@@ -171,7 +173,7 @@ pub fn ContextMenu(
                                 open.set(None);
                             }
                         >
-                            {label}
+                            {card::render_label(&label)}
                         </button>
                     }
                 })

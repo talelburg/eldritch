@@ -54,6 +54,10 @@ const FILLER: &str = "_sp_filler";
 /// `Forced - When the round ends: Gain 1 resource.` — a forced ability a
 /// round-end run resolves.
 const FORCED_ROUND_END: &str = "_sp_forced_round_end";
+/// `When the round ends: Gain 1 resource.` / `When the round ends: Gain 2
+/// resources.` — two reactions a round-end window offers together, told apart
+/// by their distinguishers.
+const TWIN_ROUND_END: &str = "_sp_twin_round_end";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -101,6 +105,23 @@ fn registries() -> Registries {
             .with_card(asset(ROUND_END, "Round End", vec![], None))
             .with_card(asset(FILLER, "Filler", vec![], None))
             .with_card(asset(FORCED_ROUND_END, "Forced Round End", vec![], None))
+            .with_card(asset(TWIN_ROUND_END, "Twin Round End", vec![], None))
+            .with_abilities(TWIN_ROUND_END, || {
+                vec![
+                    dsl::reaction_on_event(
+                        EventPattern::RoundEnded,
+                        EventTiming::When,
+                        dsl::gain_resources(InvestigatorTarget::You, 1),
+                    )
+                    .distinguished_as("Gain 1 resource"),
+                    dsl::reaction_on_event(
+                        EventPattern::RoundEnded,
+                        EventTiming::When,
+                        dsl::gain_resources(InvestigatorTarget::You, 2),
+                    )
+                    .distinguished_as("Gain 2 resources"),
+                ]
+            })
             .with_abilities(ROUND_END, || {
                 vec![dsl::reaction_on_event(
                     EventPattern::RoundEnded,
@@ -663,6 +684,38 @@ fn a_staged_reaction_window_offers_its_candidate_to_its_controller() {
     assert_eq!(
         session.prompt().options[0].label,
         "Resolve reaction: Round End"
+    );
+}
+
+/// Two reactions on one card that answer the same window read differently: each
+/// in-place option carries its ability's distinguisher after an em dash, so a
+/// saved game finds each pick by its label (ADR 0022).
+#[test]
+fn a_staged_reaction_window_tells_two_reactions_on_one_card_apart() {
+    let card = STAGED;
+    let candidate = |ability| {
+        ResolutionCandidate::new(
+            CardCode::new(TWIN_ROUND_END),
+            INV,
+            AbilityAddress::Printed(ability),
+            CandidateSource::Ability(AbilitySource::InPlay(card)),
+        )
+    };
+    let session = table_with(seat(1).at(HERE).in_play_as(card, TWIN_ROUND_END))
+        .with_frame(TimingPointWindowFrame {
+            event: TimingEvent::RoundEnded,
+            bucket: EventTiming::When,
+            mode: TimingMode::Reaction,
+            candidates: vec![candidate(0), candidate(1)],
+            passed: Vec::new(),
+        })
+        .session();
+    assert_eq!(
+        session.offered_labels(),
+        [
+            "Resolve reaction: Twin Round End — Gain 1 resource",
+            "Resolve reaction: Twin Round End — Gain 2 resources",
+        ]
     );
 }
 

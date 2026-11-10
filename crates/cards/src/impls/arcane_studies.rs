@@ -35,12 +35,14 @@ pub fn abilities() -> Vec<Ability> {
             0,
             vec![Cost::Resources(1)],
             dsl::modify(Stat::Willpower, 1, ModifierScope::ThisSkillTest),
-        ),
+        )
+        .distinguished_as("+1 [willpower]"),
         // Index 1: +1 intellect for this skill test.
         dsl::activated(
             0,
             vec![Cost::Resources(1)],
             dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
-        ),
+        )
+        .distinguished_as("+1 [intellect]"),
     ]
 }

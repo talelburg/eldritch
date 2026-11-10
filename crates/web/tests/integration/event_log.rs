@@ -49,6 +49,24 @@ async fn renders_batches_with_headers_and_event_debug() {
     );
 }
 
+/// A batch whose pick names an option labelled with a card-text symbol token
+/// draws the token as the game's glyph in its header. The store keeps the
+/// header as the string the pick produced, investigator's name first.
+#[wasm_bindgen_test]
+async fn a_symbol_token_in_a_picked_label_renders_as_its_glyph() {
+    let (store, container) = common::mount(|| leptos::view! { <EventLogView/> });
+    store.update(|s| {
+        s.log.push(LogBatch {
+            header: format!("Daisy Walker: {}", common::INTELLECT_LABEL),
+            events: vec![Event::ScenarioStarted],
+        });
+    });
+    task::tick().await;
+
+    let header = common::one(&container, ".log-action");
+    common::assert_shows_intellect_label(&header, "▸ Daisy Walker: ");
+}
+
 #[wasm_bindgen_test]
 async fn log_drawer_starts_closed_and_opens_from_its_toggle() {
     let store = RwSignal::new(ClientState::default());

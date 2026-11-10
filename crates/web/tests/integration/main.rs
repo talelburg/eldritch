@@ -22,6 +22,7 @@ mod card_modal;
 #[cfg(target_arch = "wasm32")]
 mod common;
 mod context_menu;
+mod decision_modal;
 mod delete_game;
 mod encounter_deck;
 mod enemy_card;

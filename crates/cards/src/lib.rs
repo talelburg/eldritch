@@ -202,7 +202,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use card_dsl::dsl::NativeKind;
+    use card_dsl::dsl::{ActionDesignator, Effect, NativeKind, Trigger};
     use game_core::state::Act;
 
     use super::*;
@@ -490,6 +490,168 @@ mod tests {
                 earlier < later,
                 "the `cards!` list is out of alphabetical order: `{earlier}` comes before `{later}`"
             );
+        }
+    }
+
+    // ---- option labels: distinguishers -------------------------------------
+    //
+    // A saved game finds each logged pick by its label (ADR 0022), and two
+    // abilities on one card that could be offered in one prompt would share a
+    // label unless their distinguishers (`GLOSSARY.md`) differ.
+
+    /// One ability list a prompt can offer from: a card's front, its back, or
+    /// one grant's abilities. `printed` is the text the list's distinguishers
+    /// quote — the side's text, which for a grant is the granting side's.
+    struct AbilityList {
+        name: String,
+        abilities: Vec<Ability>,
+        printed: Option<&'static str>,
+    }
+
+    /// Every ability list of `record`: its front, its back, and each grant
+    /// either side prints. A grant is always a top-level ability's effect, so
+    /// this reaches every granted list.
+    ///
+    /// An act or agenda models its *"1b"* advance effect in its front list
+    /// although that text is printed on its back; no such ability carries a
+    /// distinguisher, so the front text is the one checked.
+    fn ability_lists(record: &CardRecord) -> Vec<AbilityList> {
+        let meta = by_code(record.code).expect("every implemented card has metadata");
+        let mut sides = vec![("front", (record.abilities)(), meta.text.as_deref())];
+        if let Some(back) = record.back_abilities {
+            sides.push(("back", back(), meta.back_text.as_deref()));
+        }
+        let mut lists = Vec::new();
+        for (side, abilities, printed) in sides {
+            for (index, ability) in abilities.iter().enumerate() {
+                if let Effect::Grant { abilities, .. } = &ability.effect {
+                    lists.push(AbilityList {
+                        name: format!("{} {side} #{index} grant", record.code),
+                        abilities: abilities.clone(),
+                        printed,
+                    });
+                }
+            }
+            lists.push(AbilityList {
+                name: format!("{} {side}", record.code),
+                abilities,
+                printed,
+            });
+        }
+        lists
+    }
+
+    /// The uniqueness rule: the index pairs in `abilities` that a prompt would
+    /// offer under one label. Two abilities collide when both are offered
+    /// (activated, or a reaction or forced ability), their triggers are equal,
+    /// their designators print the same word (or neither prints one), and
+    /// they do not both carry distinguishers that differ. A colliding pair
+    /// needs a distinguisher on each ability, so both options say what they
+    /// do. Constant, on-play, revelation and result abilities are never
+    /// offered and never collide.
+    ///
+    /// This mirrors how game-core composes a label, in
+    /// `enumerate::activation_label` and `with_distinguisher`; the two change
+    /// together.
+    fn label_collisions(abilities: &[Ability]) -> Vec<(usize, usize)> {
+        let offered = |a: &Ability| {
+            matches!(
+                a.trigger,
+                Trigger::Activated { .. } | Trigger::OnEvent { .. }
+            )
+        };
+        let word = |a: &Ability| a.designator.as_ref().map(ActionDesignator::word);
+        let distinct = |a: &Ability, b: &Ability| match (&a.distinguisher, &b.distinguisher) {
+            (Some(x), Some(y)) => x != y,
+            _ => false,
+        };
+        let mut collisions = Vec::new();
+        for (i, a) in abilities.iter().enumerate() {
+            for (j, b) in abilities.iter().enumerate().skip(i + 1) {
+                if offered(a)
+                    && offered(b)
+                    && a.trigger == b.trigger
+                    && word(a) == word(b)
+                    && !distinct(a, b)
+                {
+                    collisions.push((i, j));
+                }
+            }
+        }
+        collisions
+    }
+
+    #[test]
+    fn no_two_abilities_on_one_card_would_share_a_label() {
+        for record in impls::ALL {
+            for list in ability_lists(record) {
+                assert_eq!(
+                    label_collisions(&list.abilities),
+                    [],
+                    "{}: these abilities would be offered under one label; give each a \
+                     distinguisher quoted from its printed text",
+                    list.name,
+                );
+            }
+        }
+    }
+
+    /// The rule above has teeth: Knife 01086's two Fights collide unless each
+    /// carries a distinguisher and the two differ — when they are equal, when
+    /// one is removed, and when both are.
+    #[test]
+    fn knifes_fights_collide_without_two_distinct_distinguishers() {
+        let pristine = (impls::knife::CARD.abilities)();
+        assert_eq!(label_collisions(&pristine), []);
+
+        let mut knife = pristine.clone();
+        knife[1].distinguisher = knife[0].distinguisher.clone();
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+
+        let mut knife = pristine.clone();
+        knife[0].distinguisher = None;
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+
+        let mut knife = pristine;
+        knife[0].distinguisher = None;
+        knife[1].distinguisher = None;
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+    }
+
+    #[test]
+    fn every_distinguisher_is_quoted_from_its_sides_printed_text() {
+        for record in impls::ALL {
+            for list in ability_lists(record) {
+                for (index, ability) in list.abilities.iter().enumerate() {
+                    let Some(distinguisher) = &ability.distinguisher else {
+                        continue;
+                    };
+                    assert!(
+                        list.printed
+                            .is_some_and(|printed| printed.contains(distinguisher.as_str())),
+                        "{} #{index}: distinguisher {distinguisher:?} is not in the printed \
+                         text {:?}",
+                        list.name,
+                        list.printed,
+                    );
+                }
+            }
+        }
+    }
+
+    /// The client renders an option label as card text, where `[token]` is a
+    /// glyph and `<b>` is bold; a card name a label carries must not read as
+    /// either.
+    #[test]
+    fn no_card_name_contains_markup() {
+        for card in all() {
+            for name in std::iter::once(&card.name).chain(card.back_name.as_ref()) {
+                assert!(
+                    !name.contains(['[', ']', '<', '>']),
+                    "{}: name {name:?} would render as markup in an option label",
+                    card.code,
+                );
+            }
         }
     }
 

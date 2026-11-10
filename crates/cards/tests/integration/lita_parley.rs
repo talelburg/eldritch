@@ -158,6 +158,18 @@ fn an_investigator_in_the_parlor_is_offered_litas_parley() {
     );
 }
 
+/// The Parley is labelled with the name of the card that gains it, the one the
+/// player clicks — Lita, not the Parlor that prints the grant.
+#[test]
+fn litas_parley_is_labelled_with_her_name() {
+    let session = board(ChaosToken::Numeric(0)).session();
+    assert!(
+        session.offered_labels().contains(&"Lita Chantler: Parley"),
+        "offered: {:?}",
+        session.offered_labels()
+    );
+}
+
 /// An investigator elsewhere is not: the grant rides in on the co-location
 /// bullet, and Lita is at the Parlor.
 #[test]

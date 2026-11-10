@@ -122,6 +122,18 @@ fn standing_at_the_parlor_offers_the_resign_action() {
     );
 }
 
+/// The option names the location the player clicks and the designator it
+/// prints: the Parlor 01115's *"\[action\] <b>Resign.</b>"*.
+#[test]
+fn the_resign_action_is_labelled_with_the_location_and_designator() {
+    let session = board(false).session();
+    assert!(
+        session.offered_labels().contains(&"Parlor: Resign"),
+        "offered: {:?}",
+        session.offered_labels()
+    );
+}
+
 /// *"the investigator is eliminated by resignation … not considered to have
 /// been defeated"* — the status and the cause say resignation, not defeat.
 #[test]

@@ -84,6 +84,18 @@ fn activate(board: GameStateBuilder) -> TestSession {
 }
 
 #[test]
+fn the_turn_menu_labels_flashlight_by_its_name_and_designator() {
+    let session = board(2, 4, true).session();
+    assert!(
+        session
+            .offered_labels()
+            .contains(&"Flashlight: Investigate"),
+        "offered: {:?}",
+        session.offered_labels()
+    );
+}
+
+#[test]
 fn minus_two_shroud_turns_a_failing_investigation_into_a_success() {
     // Intellect 2 + 0 = 2. Base difficulty (shroud 4) would fail; the -2
     // brings it to 2 → success by 0, discovering the location's clue.

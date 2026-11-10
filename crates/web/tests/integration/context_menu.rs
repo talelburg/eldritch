@@ -21,12 +21,23 @@ use web_sys::{Element, HtmlElement, NodeList};
 
 use crate::common;
 
-/// Mount a `ContextMenu` with one `Location(10)`-anchored option, a store whose
-/// live prompt (asked of seat 1) offers it, an outbound channel, and the given
-/// initial `open` state. Returns the `open` signal and the receiver for
-/// submitted frames.
+/// Mount a `ContextMenu` with one `Location(10)`-anchored "Investigate"
+/// option, a store whose live prompt (asked of seat 1) offers it, an outbound
+/// channel, and the given initial `open` state. Returns the `open` signal and
+/// the receiver for submitted frames.
 async fn mount(
     open_initial: bool,
+) -> (
+    RwSignal<Option<(i32, i32)>>,
+    UnboundedReceiver<ClientMessage>,
+) {
+    mount_labelled(open_initial, "Investigate").await
+}
+
+/// [`mount`], with the one option labelled `label`.
+async fn mount_labelled(
+    open_initial: bool,
+    label: &str,
 ) -> (
     RwSignal<Option<(i32, i32)>>,
     UnboundedReceiver<ClientMessage>,
@@ -35,8 +46,7 @@ async fn mount(
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let options =
-        vec![ChoiceOption::new(OptionId(0), "Investigate")
-            .at(OptionTarget::Location(LocationId(10)))];
+        vec![ChoiceOption::new(OptionId(0), label).at(OptionTarget::Location(LocationId(10)))];
     let store = RwSignal::new(ClientState::default());
     store.update(|s| {
         s.outcome = Some(test_support::awaiting_pick_single_with(
@@ -79,6 +89,18 @@ async fn open_menu_renders_a_button_per_option() {
             .unwrap_or_default(),
         "Investigate"
     );
+}
+
+/// A label's card-text symbol token is drawn as the game's glyph, as the
+/// card's own text is, and not printed as the bracketed token.
+#[wasm_bindgen_test]
+async fn a_symbol_token_in_a_label_renders_as_its_glyph() {
+    let _ = mount_labelled(true, common::INTELLECT_LABEL).await;
+    let item = menu_items()
+        .item(0)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("a .menu-item");
+    common::assert_shows_intellect_label(&item, "");
 }
 
 #[wasm_bindgen_test]

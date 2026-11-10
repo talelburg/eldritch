@@ -94,6 +94,26 @@ fn test_buying_nothing(session: TestSession, skill: SkillKind, difficulty: i8) -
 }
 
 #[test]
+fn the_fast_window_labels_each_ability_by_its_stat() {
+    let session = with_hyperawareness(5).test_skill(INV, SkillKind::Intellect, 4);
+
+    let labels: Vec<&str> = session
+        .offered_labels()
+        .into_iter()
+        .filter(|label| label.contains("Hyperawareness"))
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "Activate Hyperawareness — +1 [intellect]",
+            "Activate Hyperawareness — +1 [agility]",
+        ],
+        "offered: {:?}",
+        session.offered_labels()
+    );
+}
+
+#[test]
 fn intellect_ability_buffs_the_intellect_test_it_is_bought_during() {
     // 3 intellect + 1 (the recorded row) + 0 (token) = 4 vs difficulty 4 →
     // succeed by 0. The base 3-intellect investigator would fail without it.
