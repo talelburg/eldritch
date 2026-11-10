@@ -91,6 +91,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1361 | An ability option is labelled by its card and action designator, or "Activate" and the card, with a verbatim distinguisher where two abilities on one card would read alike; option labels draw symbol tokens as glyphs, PR #1384; slices #1382, #1383 |
 | #1362 | The board and the event log log no "outside a reactive tracking context" warning: a board component body reads the live prompt's options, the multi-select flag and the decision-live flag untracked, since its parent rebuilds it on every store change, PR #1385 |
 | #1364 | The game's symbols drawn as glyphs from the vendored `arkhamicons` font, in card text, on tile and card-face skill icons, and as the result modal's drawn token, PR #1374; slices #1372, #1373 |
+| #1381 | The event log names a searched or looked-at card, a mulligan's set-aside cards and a weakness set aside from an opening hand only to the account holding the investigator who looked; every other account and every viewer reads "a card", a mulligan's count or a masked code, decided at render against who holds the investigator now, PR #1388; slices #1386, #1387 |
 
 ## Ordering
 
