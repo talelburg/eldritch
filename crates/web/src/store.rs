@@ -13,6 +13,7 @@ use protocol::{
     SignInMethod, SignedIn,
 };
 
+use crate::card_modal::CardArea;
 use crate::names;
 use crate::socket_ending::SocketEnding;
 
@@ -99,13 +100,61 @@ const SAVE_ERROR: &str = "Couldn't save, try again.";
 const CLIENT_BUG: &str = "Something went wrong. Reload if it keeps happening.";
 
 /// One applied submit's worth of events, for the event-log view.
+///
+/// It keeps what caused it rather than a rendered header, so the log decides
+/// what to print when it draws the batch: a card only the investigator who
+/// looked may see is named only to the account holding them *then*
+/// ([`ClientState::log_header`], [`ClientState::log_line`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogBatch {
-    /// Who answered and what, e.g. "Agnes Baker: Fight: Ghoul Priest", or
-    /// "Setup" for the batch a `Hello` carries.
-    pub header: String,
+    /// What caused the batch.
+    pub header: BatchHeader,
     /// The events emitted by that submit, in order.
     pub events: Vec<Event>,
+}
+
+/// What caused a [`LogBatch`]: setup, or an answer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BatchHeader {
+    /// The batch a `Hello` carries: scenario setup's events.
+    Setup,
+    /// An answer `by` gave to a prompt.
+    Answer {
+        /// The investigator who answered.
+        by: InvestigatorId,
+        /// What they answered.
+        what: Answered,
+    },
+}
+
+/// What an answer in the log answered, decided when its batch arrives from
+/// the prompt it answered.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answered {
+    /// One option picked, by its label.
+    Pick {
+        /// The picked option's label.
+        label: String,
+        /// Whether the option is a card in an area only the investigator
+        /// answering looks at: a searched or looked-at deck
+        /// ([`CardArea::is_hidden`]).
+        hidden: bool,
+    },
+    /// Several options picked at once, by their labels, under what the pick
+    /// did.
+    PickMultiple {
+        /// What the pick did.
+        picking: MultiPick,
+        /// Each picked option's label, in order.
+        labels: Vec<String>,
+    },
+    /// A pass.
+    Pass,
+    /// The Mythos draw: the `Confirm` anchored to the encounter deck
+    /// (ADR 0011).
+    DrawEncounterCard,
+    /// Any other `Confirm`.
+    Confirm,
 }
 
 /// The chaos token a reveal drew, with how it resolved — the pair
@@ -530,7 +579,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.log = Vec::new();
             if !events.is_empty() {
                 state.log.push(LogBatch {
-                    header: "Setup".to_string(),
+                    header: BatchHeader::Setup,
                     events,
                 });
             }
@@ -567,7 +616,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             let picking = MultiPick::answered_on(state.game.as_ref());
             state.game = Some(*s);
             state.prompt = prompt;
-            let header = batch_header(state, answered.as_ref(), picking, by, &response);
+            let header = BatchHeader::Answer {
+                by,
+                what: Answered::of(answered.as_ref(), picking, &response),
+            };
             // Walk the batch in order, latching what the result panel renders
             // from. Order matters within a batch as much as across batches:
             // `SkillTestStarted` clears the *previous* test's token and result,
@@ -766,7 +818,7 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
 /// hand-size discard and a commit all arrive as the same
 /// [`LoggedResponse::PickMultiple`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MultiPick {
+pub enum MultiPick {
     /// Cards committed to a skill test.
     Commit,
     /// Cards set aside and redrawn in a setup mulligan.
@@ -793,49 +845,101 @@ impl MultiPick {
     }
 }
 
-/// The event-log header for an answer `by` gave with `response`, to the prompt
-/// `answered` (the outcome the client held before the answer applied), named
-/// from `state`'s game, the one the answer produced: who answered, then what
-/// they answered.
-///
-/// A pick names its option, and a multi-pick names each of its options under
-/// what `picking` says it did. A `Confirm` carries nothing, so it is named by
-/// the prompt it confirmed: the Mythos draw is the `Confirm` anchored to the
-/// encounter deck (ADR 0011).
-fn batch_header(
-    state: &ClientState,
-    answered: Option<&EngineOutcome>,
-    picking: MultiPick,
-    by: InvestigatorId,
-    response: &LoggedResponse,
-) -> String {
-    let what = match response {
-        LoggedResponse::PickSingle { option } => option.label.clone(),
-        LoggedResponse::PickMultiple { options } => {
-            let names: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
-            match (picking, names.is_empty()) {
-                (MultiPick::Commit, true) => "Commit no cards".into(),
-                (MultiPick::Mulligan, true) => "Keep opening hand".into(),
-                (MultiPick::Commit, false) => format!("Commit {}", names.join(", ")),
-                (MultiPick::Mulligan, false) => format!("Mulligan {}", names.join(", ")),
-                // Never empty: the engine asks for exactly the excess, which is
-                // at least one card.
-                (MultiPick::HandSizeDiscard, _) => format!("Discard {}", names.join(", ")),
-                (MultiPick::Unrecognised, true) => "Pick no cards".into(),
-                (MultiPick::Unrecognised, false) => format!("Pick {}", names.join(", ")),
+impl Answered {
+    /// What `response` answered to the prompt `answered` (the outcome the
+    /// client held before the answer applied).
+    ///
+    /// A pick is hidden when the prompt chose among the cards of a searched
+    /// or looked-at deck, the area the board shows face down to everyone else
+    /// ([`CardArea::of`]). A multi-pick is what `picking` says it did. A
+    /// `Confirm` carries nothing, so it is told by the prompt it confirmed:
+    /// the Mythos draw is the `Confirm` anchored to the encounter deck
+    /// (ADR 0011).
+    fn of(answered: Option<&EngineOutcome>, picking: MultiPick, response: &LoggedResponse) -> Self {
+        let request = match answered {
+            Some(EngineOutcome::AwaitingInput { request, .. }) => Some(request),
+            _ => None,
+        };
+        match response {
+            LoggedResponse::PickSingle { option } => Answered::Pick {
+                label: option.label.clone(),
+                hidden: request
+                    .and_then(CardArea::of)
+                    .is_some_and(CardArea::is_hidden),
+            },
+            LoggedResponse::PickMultiple { options } => Answered::PickMultiple {
+                picking,
+                labels: options.iter().map(|o| o.label.clone()).collect(),
+            },
+            LoggedResponse::Skip => Answered::Pass,
+            LoggedResponse::Confirm => {
+                if request.is_some_and(|r| r.target == Some(OptionTarget::EncounterDeck)) {
+                    Answered::DrawEncounterCard
+                } else {
+                    Answered::Confirm
+                }
             }
         }
-        LoggedResponse::Skip => "Pass".into(),
-        LoggedResponse::Confirm => match answered {
-            Some(EngineOutcome::AwaitingInput { request, .. })
-                if request.target == Some(OptionTarget::EncounterDeck) =>
-            {
-                "Draw encounter card".into()
+    }
+
+    /// The answer as the log prints it, naming every card.
+    fn named(&self) -> String {
+        match self {
+            Answered::Pick { label, .. } => label.clone(),
+            Answered::PickMultiple { picking, labels } => {
+                let names = labels.join(", ");
+                match (picking, labels.is_empty()) {
+                    (MultiPick::Commit, true) => "Commit no cards".into(),
+                    (MultiPick::Mulligan, true) => "Keep opening hand".into(),
+                    (MultiPick::Commit, false) => format!("Commit {names}"),
+                    (MultiPick::Mulligan, false) => format!("Mulligan {names}"),
+                    // Never empty: the engine asks for exactly the excess,
+                    // which is at least one card.
+                    (MultiPick::HandSizeDiscard, _) => format!("Discard {names}"),
+                    (MultiPick::Unrecognised, true) => "Pick no cards".into(),
+                    (MultiPick::Unrecognised, false) => format!("Pick {names}"),
+                }
             }
-            _ => "Confirm".into(),
-        },
-    };
-    format!("{}: {what}", state.investigator_name(by))
+            Answered::Pass => "Pass".into(),
+            Answered::DrawEncounterCard => "Draw encounter card".into(),
+            Answered::Confirm => "Confirm".into(),
+        }
+    }
+}
+
+impl ClientState {
+    /// `header` as this account's event log prints it: "Setup", or who
+    /// answered then what they answered, e.g. "Agnes Baker: Fight: Ghoul
+    /// Priest".
+    ///
+    /// A hidden pick names its card only when this account holds the
+    /// investigator who picked it, and reads "a card" otherwise.
+    #[must_use]
+    pub fn log_header(&self, header: &BatchHeader) -> String {
+        match header {
+            BatchHeader::Setup => "Setup".into(),
+            BatchHeader::Answer { by, what } => {
+                let what = match what {
+                    Answered::Pick { hidden: true, .. } if !self.holds(*by) => "a card".into(),
+                    what => what.named(),
+                };
+                format!("{}: {what}", self.investigator_name(*by))
+            }
+        }
+    }
+
+    /// `event` as this account's event log prints it: its `Debug` form, with
+    /// the code of a card searched into the hand of an investigator this
+    /// account doesn't hold masked as `<hidden>`.
+    #[must_use]
+    pub fn log_line(&self, event: &Event) -> String {
+        match event {
+            Event::CardSearchedToHand { investigator, .. } if !self.holds(*investigator) => {
+                format!("CardSearchedToHand {{ investigator: {investigator:?}, code: <hidden> }}")
+            }
+            event => format!("{event:?}"),
+        }
+    }
 }
 
 /// The single reactive store handed through Leptos context.
@@ -1044,10 +1148,22 @@ mod tests {
         );
     }
 
-    /// The header of the one batch an `Applied` logged.
-    fn only_header(s: &ClientState) -> &str {
+    /// The header of the one batch an `Applied` logged, as the log prints
+    /// it.
+    fn only_header(s: &ClientState) -> String {
         assert_eq!(s.log.len(), 1, "one batch logged");
-        &s.log[0].header
+        s.log_header(&s.log[0].header)
+    }
+
+    /// A batch an answer caused, carrying `events`: seat 1 confirmed.
+    fn answered_batch(events: Vec<Event>) -> LogBatch {
+        LogBatch {
+            header: BatchHeader::Answer {
+                by: InvestigatorId(1),
+                what: Answered::Confirm,
+            },
+            events,
+        }
     }
 
     /// A `Hello` naming the prompt at log position `prompt`, carrying setup's
@@ -1769,10 +1885,7 @@ mod tests {
     #[test]
     fn hello_clears_log() {
         let mut s = ClientState::default();
-        s.log.push(LogBatch {
-            header: "old".into(),
-            events: Vec::new(),
-        });
+        s.log.push(answered_batch(Vec::new()));
         reduce(&mut s, hello_at(0, Vec::new()));
         assert!(s.log.is_empty());
     }
@@ -1782,7 +1895,7 @@ mod tests {
         let mut s = ClientState::default();
         reduce(&mut s, hello_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1, "one Setup batch expected");
-        assert_eq!(s.log[0].header, "Setup");
+        assert_eq!(s.log[0].header, BatchHeader::Setup);
         assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
     }
 
@@ -1797,14 +1910,11 @@ mod tests {
     fn hello_with_events_clears_prior_batches_first() {
         let mut s = ClientState::default();
         // Seed a prior action batch.
-        s.log.push(LogBatch {
-            header: "prior action".into(),
-            events: vec![Event::ScenarioStarted],
-        });
+        s.log.push(answered_batch(vec![Event::ScenarioStarted]));
         // Hello with setup events: prior batch gone, Setup batch present.
         reduce(&mut s, hello_at(0, vec![Event::ScenarioStarted]));
         assert_eq!(s.log.len(), 1, "only the Setup batch should remain");
-        assert_eq!(s.log[0].header, "Setup");
+        assert_eq!(s.log[0].header, BatchHeader::Setup);
     }
 
     #[test]
