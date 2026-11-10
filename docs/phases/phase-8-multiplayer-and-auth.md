@@ -87,6 +87,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1274 | A sign-in returns to the page it started from, through any provider, the dev picker and "Try again"; a `return_to` that isn't a path on this site lands on `/`, PR #1350 |
 | #1278 | Phase-doc sync with #1237, PR #1279 |
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
+| #1354 | A prompt asked of one investigator no longer starts with their name, which the strip already shows: six prompts drop the prefix, the attack-order pick and the Mythos encounter draw speak in the second person, and the hand-discard cost names the card it pays for at the end; a debug-build check in `prompt::request` keeps it so, PR #1389 |
 | #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1361 | An ability option is labelled by its card and action designator, or "Activate" and the card, with a verbatim distinguisher where two abilities on one card would read alike; option labels draw symbol tokens as glyphs, PR #1384; slices #1382, #1383 |
 | #1362 | The board and the event log log no "outside a reactive tracking context" warning: a board component body reads the live prompt's options, the multi-select flag and the decision-live flag untracked, since its parent rebuilds it on every store change, PR #1385 |
@@ -144,12 +145,11 @@ follows #65 (✅ PR #1321), which records each card's committer. #1360
 (✅ PR #1367, the round band lit Investigation during the setup mulligan), #1361
 (✅ PR #1384, activated abilities labelled by index, not by card) and #1362
 (✅ PR #1385, untracked signal reads in the card views and the event log) are
-standalone. #1364 (✅ PR #1374),
-the game's symbols as glyphs from the `arkhamicons` font, follows #863
-(✅ PR #1359). #1381 (✅ PR #1388, the event log hides a searched or looked-at card, a
-mulligan's cards and a weakness set aside at setup from the other accounts)
-follows #1243 (✅ PR #1380). #1354 (prompts stop prefixing the
-investigator's name) follows #1242 (✅ PR #1353).
+standalone. #1364 (✅ PR #1374), the game's symbols as glyphs from the
+`arkhamicons` font, follows #863 (✅ PR #1359). #1381 (✅ PR #1388, the event log
+hides a searched or looked-at card, a mulligan's cards and a weakness set aside
+at setup from the other accounts) follows #1243 (✅ PR #1380). #1354 (✅ PR #1389,
+prompts stop prefixing the investigator's name) follows #1242 (✅ PR #1353).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
 full history in `Hello`. #1232 follows #1230 (✅ PR #1297), #1140 (✅ PR #1290)

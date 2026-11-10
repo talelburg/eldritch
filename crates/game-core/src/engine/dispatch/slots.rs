@@ -410,12 +410,11 @@ pub(super) fn slot_discard_request(
         let deficit = slot_deficit(state, cards, investigator, &card.code);
         make_room_candidates(state, cards, investigator, &card.code, &deficit)
     });
-    let who = choice::investigator_name(state, investigator);
     let prompt = frame.card.as_ref().map_or_else(
-        || format!("{who}: choose an asset to discard to make room."),
+        || "Choose an asset to discard to make room.".to_owned(),
         |card| {
             format!(
-                "{who}: choose an asset to discard to make room for {}.",
+                "Choose an asset to discard to make room for {}.",
                 choice::card_name(cards, &card.code),
             )
         },
