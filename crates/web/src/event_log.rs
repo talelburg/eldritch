@@ -28,7 +28,9 @@ pub fn EventLogView() -> impl IntoView {
             let _ = store.with(|s| s.log.len());
             let _ = open.get();
             request_animation_frame(move || {
-                if let Some(el) = scroll_ref.get() {
+                // Untracked: a DOM handle, read outside any reactive scope, that
+                // nothing should react to.
+                if let Some(el) = scroll_ref.get_untracked() {
                     el.set_scroll_top(el.scroll_height());
                 }
             });

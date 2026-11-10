@@ -13,7 +13,7 @@ use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
 
-use crate::interaction::{self, PendingOptions};
+use crate::interaction;
 use crate::popover::{Hover, Popover};
 use crate::prompt_layout::OpenTabSignal;
 use crate::{card, names, registry};
@@ -326,9 +326,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
     // The live prompt's options, for glow + per-node context menus.
     // Absent (native / no prompt) → empty → no node is actionable.
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_untracked();
     let open_tab_signal = use_context::<OpenTabSignal>();
 
     let nodes: Vec<_> = game

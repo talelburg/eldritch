@@ -16,7 +16,7 @@ use crate::card::{HandCardView, InPlayCardView};
 use crate::choice_row::{ChoiceRow, ChoiceRowView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
-use crate::interaction::{self, PendingOptions};
+use crate::interaction;
 use crate::pile::Pile;
 use crate::prompt_layout::{self, OpenTabSignal, Placement, PromptLayout};
 use crate::{map, registry, scenario_row, store};
@@ -147,9 +147,7 @@ fn Dock() -> impl IntoView {
 /// The tabs over the dock, from `placed`'s: see [`Dock`].
 fn tabs_view(game: &GameState, placed: &PromptLayout) -> impl IntoView {
     let open_tab_signal = use_context::<OpenTabSignal>();
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_untracked();
     placed
         .tabs
         .iter()

@@ -24,7 +24,7 @@ use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use protocol::ClientMessage;
 
-use crate::interaction::{self, ConfirmAnchor, PendingOptions};
+use crate::interaction::{self, ConfirmAnchor};
 #[cfg(target_arch = "wasm32")]
 use crate::store;
 #[cfg(target_arch = "wasm32")]
@@ -33,9 +33,7 @@ use crate::transport::OutboundTx;
 /// The first option the live prompt anchors to `target`, else `None`. The three
 /// named controls carry at most one option each, so "the option" is well-defined.
 fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_untracked();
     interaction::options_for(&pending, target)
         .into_iter()
         .next()

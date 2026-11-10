@@ -1,18 +1,23 @@
 //! Shared helpers for the web crate's browser tests.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::{EngineOutcome, Responder};
 use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
+use js_sys::{Object, Reflect};
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
 use protocol::lobby::Member;
 use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
-use wasm_bindgen::JsCast as _;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast as _, JsValue};
 use web::app::{self, MainColumn};
 use web::delete_game::DeleteGame;
 use web::registry;
@@ -524,5 +529,67 @@ impl Harness {
     /// True iff nothing under the mounted root matches `sel`.
     pub(crate) fn absent(&self, sel: &str) -> bool {
         absent(&self.board.root, sel)
+    }
+}
+
+/// The words every Leptos "signal read outside a reactive tracking context"
+/// warning carries.
+const UNTRACKED_READ_WARNING: &str = "outside a reactive tracking context";
+
+/// A recorder standing in for the global `console.warn` until it is dropped,
+/// which puts the original back.
+///
+/// Leptos raises its debug-build diagnostics through `console.warn`, so a test
+/// that holds one sees every warning the views it mounts log.
+pub(crate) struct WarnCapture {
+    console: Object,
+    original: JsValue,
+    messages: Rc<RefCell<Vec<String>>>,
+    _recorder: Closure<dyn Fn(JsValue)>,
+}
+
+impl WarnCapture {
+    /// Swap the recorder in for `console.warn`.
+    pub(crate) fn start() -> Self {
+        let console: Object = Reflect::get(&js_sys::global(), &"console".into())
+            .expect("a global console")
+            .unchecked_into();
+        let original = Reflect::get(&console, &"warn".into()).expect("console.warn exists");
+        let messages = Rc::new(RefCell::new(Vec::new()));
+        let sink = Rc::clone(&messages);
+        let recorder = Closure::<dyn Fn(JsValue)>::new(move |message: JsValue| {
+            sink.borrow_mut().push(
+                message
+                    .as_string()
+                    .unwrap_or_else(|| format!("{message:?}")),
+            );
+        });
+        Reflect::set(&console, &"warn".into(), recorder.as_ref()).expect("replace console.warn");
+        Self {
+            console,
+            original,
+            messages,
+            _recorder: recorder,
+        }
+    }
+
+    /// Every message recorded so far that reports a signal read outside a
+    /// reactive tracking context, cut to its first sentence: where the read
+    /// is, and where the signal was defined.
+    pub(crate) fn untracked_reads(&self) -> Vec<String> {
+        self.messages
+            .borrow()
+            .iter()
+            .filter_map(|m| {
+                let end = m.find(UNTRACKED_READ_WARNING)?;
+                Some(m[..end].trim_end().to_owned())
+            })
+            .collect()
+    }
+}
+
+impl Drop for WarnCapture {
+    fn drop(&mut self) {
+        let _ = Reflect::set(&self.console, &"warn".into(), &self.original);
     }
 }

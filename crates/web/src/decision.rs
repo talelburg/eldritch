@@ -110,9 +110,15 @@ pub struct DecisionLive(pub Signal<bool>);
 ///
 /// Absent context reads as `false` — a view mounted without [`DecisionLive`]
 /// (an isolated component test) keeps its context menus.
+///
+/// Read **untracked**: the context-menu layer calls this from the body of every
+/// card component offering a menu, and each is rebuilt from scratch on every
+/// store change, from which the flag derives. See
+/// [`pending_options_untracked`](crate::interaction::pending_options_untracked)
+/// for that contract.
 #[must_use]
 pub fn menus_are_suppressed() -> bool {
-    use_context::<DecisionLive>().is_some_and(|d| d.0.get())
+    use_context::<DecisionLive>().is_some_and(|d| d.0.get_untracked())
 }
 
 /// Resolve a decision's anchor to the card it names. `None` for an anchor that
