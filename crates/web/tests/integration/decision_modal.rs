@@ -33,5 +33,5 @@ async fn a_symbol_token_in_a_branch_label_renders_as_its_glyph() {
     });
     task::tick().await;
     let branch = common::one(&container, ".decision-modal .decision-branch");
-    common::assert_shows_intellect_label(&branch);
+    common::assert_shows_intellect_label(&branch, "");
 }

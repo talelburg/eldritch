@@ -64,17 +64,7 @@ async fn a_symbol_token_in_a_picked_label_renders_as_its_glyph() {
     task::tick().await;
 
     let header = common::one(&container, ".log-action");
-    let glyph = common::one(&header, ".glyph.glyph--intellect");
-    assert_eq!(
-        glyph.text_content().as_deref(),
-        Some("g"),
-        "the intellect glyph"
-    );
-    assert_eq!(
-        header.text_content().unwrap_or_default(),
-        "▸ Daisy Walker: Activate Hyperawareness — +1 g",
-        "the header's text around the glyph is kept, and no literal token"
-    );
+    common::assert_shows_intellect_label(&header, "▸ Daisy Walker: ");
 }
 
 #[wasm_bindgen_test]

@@ -403,7 +403,7 @@ async fn a_symbol_token_in_an_option_label_renders_as_its_glyph() {
     );
     let _rx = mount(outcome, &[]).await;
     let option = common::one(&last_strip(), ".strip-option");
-    common::assert_shows_intellect_label(&option);
+    common::assert_shows_intellect_label(&option, "");
 }
 
 /// Regression for #549: a skippable window's options render as strip buttons

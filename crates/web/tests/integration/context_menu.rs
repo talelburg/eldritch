@@ -100,7 +100,7 @@ async fn a_symbol_token_in_a_label_renders_as_its_glyph() {
         .item(0)
         .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .menu-item");
-    common::assert_shows_intellect_label(&item);
+    common::assert_shows_intellect_label(&item, "");
 }
 
 #[wasm_bindgen_test]

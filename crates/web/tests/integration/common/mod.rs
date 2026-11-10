@@ -62,9 +62,11 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
 /// 01034's first ability is labelled.
 pub(crate) const INTELLECT_LABEL: &str = "Activate Hyperawareness — +1 [intellect]";
 
-/// Assert `el` shows [`INTELLECT_LABEL`] with its `[intellect]` token drawn as
-/// the intellect glyph (codepoint `g`) and not printed as the token.
-pub(crate) fn assert_shows_intellect_label(el: &Element) {
+/// Assert `el` shows `prefix` then [`INTELLECT_LABEL`], with the label's
+/// `[intellect]` token drawn as the intellect glyph (codepoint `g`) and not
+/// printed as the token. `prefix` is whatever `el` renders ahead of the label,
+/// such as a log header's marker and investigator name, or `""`.
+pub(crate) fn assert_shows_intellect_label(el: &Element, prefix: &str) {
     let glyph = one(el, ".glyph.glyph--intellect");
     assert_eq!(
         glyph.text_content().as_deref(),
@@ -73,7 +75,7 @@ pub(crate) fn assert_shows_intellect_label(el: &Element) {
     );
     assert_eq!(
         el.text_content().unwrap_or_default(),
-        "Activate Hyperawareness — +1 g",
+        format!("{prefix}Activate Hyperawareness — +1 g"),
         "the label's text around the glyph is kept, and no literal token"
     );
 }
