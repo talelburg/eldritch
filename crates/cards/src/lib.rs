@@ -202,7 +202,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use card_dsl::dsl::NativeKind;
+    use card_dsl::dsl::{ActionDesignator, Effect, NativeKind, Trigger};
     use game_core::state::Act;
 
     use super::*;
@@ -516,7 +516,6 @@ mod tests {
     /// although that text is printed on its back; no such ability carries a
     /// distinguisher, so the front text is the one checked.
     fn ability_lists(record: &CardRecord) -> Vec<AbilityList> {
-        use card_dsl::dsl::Effect;
         let meta = by_code(record.code).expect("every implemented card has metadata");
         let mut sides = vec![("front", (record.abilities)(), meta.text.as_deref())];
         if let Some(back) = record.back_abilities {
@@ -546,10 +545,15 @@ mod tests {
     /// offer under one label. Two abilities collide when both are offered
     /// (activated, or a reaction or forced ability), their triggers are equal,
     /// their designators print the same word (or neither prints one), and
-    /// their distinguishers are equal (or both absent). Constant, on-play,
-    /// revelation and result abilities are never offered and never collide.
+    /// they do not both carry distinguishers that differ. A colliding pair
+    /// needs a distinguisher on each ability, so both options say what they
+    /// do. Constant, on-play, revelation and result abilities are never
+    /// offered and never collide.
+    ///
+    /// This mirrors how game-core composes a label, in
+    /// `enumerate::activation_label` and `with_distinguisher`; the two change
+    /// together.
     fn label_collisions(abilities: &[Ability]) -> Vec<(usize, usize)> {
-        use card_dsl::dsl::{ActionDesignator, Trigger};
         let offered = |a: &Ability| {
             matches!(
                 a.trigger,
@@ -557,6 +561,10 @@ mod tests {
             )
         };
         let word = |a: &Ability| a.designator.as_ref().map(ActionDesignator::word);
+        let distinct = |a: &Ability, b: &Ability| match (&a.distinguisher, &b.distinguisher) {
+            (Some(x), Some(y)) => x != y,
+            _ => false,
+        };
         let mut collisions = Vec::new();
         for (i, a) in abilities.iter().enumerate() {
             for (j, b) in abilities.iter().enumerate().skip(i + 1) {
@@ -564,7 +572,7 @@ mod tests {
                     && offered(b)
                     && a.trigger == b.trigger
                     && word(a) == word(b)
-                    && a.distinguisher == b.distinguisher
+                    && !distinct(a, b)
                 {
                     collisions.push((i, j));
                 }
@@ -588,14 +596,23 @@ mod tests {
         }
     }
 
-    /// The rule above has teeth: Knife 01086's two Fights collide once one of
-    /// them loses its distinguisher.
+    /// The rule above has teeth: Knife 01086's two Fights collide unless each
+    /// carries a distinguisher and the two differ — when they are equal, when
+    /// one is removed, and when both are.
     #[test]
-    fn a_fight_pair_without_distinguishers_collides() {
-        let mut knife = (impls::knife::CARD.abilities)();
-        assert_eq!(label_collisions(&knife), []);
-        knife[1].distinguisher = Some("+1 [combat]".to_owned());
+    fn knifes_fights_collide_without_two_distinct_distinguishers() {
+        let pristine = (impls::knife::CARD.abilities)();
+        assert_eq!(label_collisions(&pristine), []);
+
+        let mut knife = pristine.clone();
+        knife[1].distinguisher = knife[0].distinguisher.clone();
         assert_eq!(label_collisions(&knife), [(0, 1)]);
+
+        let mut knife = pristine.clone();
+        knife[0].distinguisher = None;
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+
+        let mut knife = pristine;
         knife[0].distinguisher = None;
         knife[1].distinguisher = None;
         assert_eq!(label_collisions(&knife), [(0, 1)]);
