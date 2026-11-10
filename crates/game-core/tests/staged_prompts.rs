@@ -379,10 +379,7 @@ fn a_staged_slot_discard_asks_which_occupier_makes_room() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!(
-            "{}: choose an asset to discard to make room for Lamp.",
-            session.state().name_of(INV)
-        )
+        "Choose an asset to discard to make room for Lamp."
     );
     let torch = OptionTarget::CardInstance(session.state().in_play(INV, TORCH));
     let grip = OptionTarget::CardInstance(session.state().in_play(INV, GRIP));
@@ -413,10 +410,7 @@ fn a_staged_additional_action_choice_asks_which_pays() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!(
-            "{}: choose which additional action to use for this action.",
-            session.state().name_of(INV)
-        )
+        "Choose which additional action to use for this action."
     );
     let labels: Vec<&str> = session
         .prompt()
@@ -448,10 +442,7 @@ fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!(
-            "{} is engaged with 2 enemies: choose which attacks next.",
-            session.state().name_of(INV)
-        )
+        "You are engaged with 2 enemies: choose which attacks next."
     );
     assert_eq!(
         anchors(&session),
@@ -554,10 +545,7 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!(
-            "{}: assign 1 damage to which target? (1 damage / 0 horror left)",
-            session.state().name_of(INV)
-        )
+        "Assign 1 damage to which target? (1 damage / 0 horror left)"
     );
     let soaker = OptionTarget::CardInstance(session.state().in_play(INV, SOAKER));
     let me = session.state().investigators[&INV].card_anchor();
@@ -566,7 +554,10 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
     assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
-/// A hand-discard cost asks which hand card to discard, on the cards in hand.
+/// A hand-discard cost asks which hand card to discard, on the cards in hand,
+/// and names the card whose cost it pays at the end rather than in front: the
+/// one card that prints the cost is Wendy Adams 01005, whose name the strip
+/// already shows.
 #[test]
 fn a_staged_hand_discard_cost_asks_which_hand_card() {
     let session = GameStateBuilder::new()
@@ -580,6 +571,11 @@ fn a_staged_hand_discard_cost_asks_which_hand_card() {
         })
         .session();
     assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        "Choose a card from your hand to discard to pay for Torch. \
+         Weaknesses can't be chosen."
+    );
     assert_eq!(
         anchors(&session),
         [
@@ -797,10 +793,11 @@ fn a_staged_encounter_draw_asks_the_head_of_its_queue() {
     assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
 }
 
-/// A substitution offer staged above its skill test names the investigator it
-/// asks and the two skills, with no wire hint.
+/// A substitution offer staged above its skill test is asked of its
+/// investigator and names the two skills, with no wire hint. The strip names
+/// the investigator, so the text doesn't.
 #[test]
-fn a_staged_substitution_names_the_investigator_and_the_skills() {
+fn a_staged_substitution_asks_its_investigator_and_names_the_skills() {
     let session = table(&[])
         .with_frame(test_support::test_skill_test(
             SkillTestId(0),
@@ -814,26 +811,23 @@ fn a_staged_substitution_names_the_investigator_and_the_skills() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!(
-            "{}: use Intellect in place of Combat for this test?",
-            session.state().name_of(INV)
-        )
+        "Use Intellect in place of Combat for this test?"
     );
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
-/// The Mythos encounter draw names its drawer.
+/// The Mythos encounter draw is asked of its drawer, as an instruction: the
+/// strip names the drawer, so the text doesn't.
 #[test]
-fn a_staged_encounter_draw_names_its_drawer() {
+fn a_staged_encounter_draw_asks_its_drawer() {
     let session = table(&[])
         .with_frame(Continuation::EncounterDraw(EncounterDrawFrame {
             remaining: vec![INV],
         }))
         .session();
     assert_reads_as_a_game(&session);
-    assert_eq!(
-        session.prompt().prompt,
-        format!("{} draws an encounter card.", session.state().name_of(INV))
-    );
+    assert_eq!(session.prompt().prompt, "Draw an encounter card.");
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// The mulligan and the hand-size discard read as a game.

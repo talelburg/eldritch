@@ -9,17 +9,14 @@ use crate::action::InputResponse;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{
-    choice, cursor, engagement, hunters, prompt, reaction_windows, skill_test,
-};
+use crate::engine::dispatch::{cursor, engagement, hunters, prompt, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy, FastWindowKind,
-    GameState, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame, Status,
-    TiedEngagement, Zone,
+    InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame, Status, TiedEngagement, Zone,
 };
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
@@ -639,20 +636,14 @@ pub(crate) fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
 /// What the topmost
 /// [`Continuation::EncounterDraw`](crate::state::Continuation::EncounterDraw)
 /// frame asks of its current drawer (`remaining[0]`): a binary
-/// [`Confirm`](InputResponse::Confirm) (the draw carries no choice). One of the
+/// [`Confirm`](InputResponse::Confirm) (the draw carries no choice). The text
+/// doesn't name the drawer, who answers it under their own name. One of the
 /// [prompt table](prompt::request)'s helpers.
-pub(super) fn encounter_draw_request(state: &GameState) -> InputRequest {
-    let drawer = state
-        .current_encounter_drawer()
-        .expect("encounter_draw_request: no EncounterDraw frame on the stack");
+pub(super) fn encounter_draw_request() -> InputRequest {
     // Anchored to the encounter deck, which is what distinguishes this prompt
     // from the cosmetic skill-test acknowledge on the wire — both are
     // option-less `Confirm`s otherwise (ADR 0011).
-    InputRequest::confirm(format!(
-        "{} draws an encounter card.",
-        choice::investigator_name(state, drawer),
-    ))
-    .at(OptionTarget::EncounterDeck)
+    InputRequest::confirm("Draw an encounter card.").at(OptionTarget::EncounterDeck)
 }
 
 /// Resume the Mythos step-1.4 encounter-draw loop, driving the topmost

@@ -46,12 +46,38 @@ use crate::state::{
 /// Reads `state` as well as the frame where the question depends on the board:
 /// the turn menu's legal actions, a window's resolution options, the skill-test
 /// under a substitution prompt, who the lead is now.
+///
+/// A prompt asked of one investigator doesn't start with that investigator's
+/// name: the client heads it with the responder's name already, so the text
+/// would repeat it (#1354). Debug builds check this. A group decision (the
+/// lead's, or several answerers') isn't checked, since its text may name an
+/// investigator other than whoever answers.
 pub(crate) fn request(
     frame: &Continuation,
     state: &GameState,
     cards: &CardRegistry,
 ) -> Option<InputRequest> {
-    table(frame, state, cards).map(|(request, responder)| request.answered_by(responder))
+    table(frame, state, cards).map(|(request, responder)| {
+        debug_assert!(
+            !names_its_addressee(state, &request, responder),
+            "a prompt asked of an investigator starts with their name, which the \
+             strip already shows: {:?}",
+            request.prompt
+        );
+        request.answered_by(responder)
+    })
+}
+
+/// Whether `request`'s text starts with the name of the one investigator
+/// `responder` names. `false` for a group decision.
+fn names_its_addressee(state: &GameState, request: &InputRequest, responder: Responder) -> bool {
+    let Responder::Investigator(id) = responder else {
+        return false;
+    };
+    state
+        .investigators
+        .get(&id)
+        .is_some_and(|inv| request.prompt.starts_with(inv.name.as_str()))
 }
 
 /// The prompt table: what `frame` asks and who answers it (ADR 0019), or
@@ -144,7 +170,7 @@ fn table(
         }
         .map(|request| (request, Responder::Investigator(test.investigator))),
         Continuation::SubstitutionPrompt(substitution) => Some((
-            skill_test::substitution_request(state, substitution),
+            skill_test::substitution_request(state),
             Responder::Investigator(substitution.investigator),
         )),
         Continuation::HunterMove(choice) => {
@@ -175,7 +201,7 @@ fn table(
             )
         }),
         Continuation::EncounterDraw(queue) => {
-            head(&queue.remaining).map(|head| (encounter::encounter_draw_request(state), head))
+            head(&queue.remaining).map(|head| (encounter::encounter_draw_request(), head))
         }
         Continuation::SlotDiscard(slot) => Some((
             slots::slot_discard_request(state, cards, slot),
@@ -201,7 +227,7 @@ fn table(
             ..
         }) => match stage {
             AttackLoopStage::PickOrder => Some((
-                combat::order_pick_request(state, cards, *investigator, remaining_attackers),
+                combat::order_pick_request(state, cards, remaining_attackers),
                 Responder::Investigator(*investigator),
             )),
             AttackLoopStage::Attacking => None,

@@ -107,11 +107,21 @@ fn hand_card(holder: InvestigatorId, hand_index: u8) -> OptionTarget {
     }
 }
 
-/// The helper's prompt is Daisy's, not Roland's: Roland can't answer it.
+/// The helper's prompt is Daisy's, not Roland's: Roland can't answer it. Its
+/// text names Roland, whose test it is, and not Daisy: the strip already names
+/// her.
 #[test]
 fn a_helpers_prompt_is_addressed_to_the_helper() {
     let session = rolands_test_with_daisy_holding(&[UNEXPECTED_COURAGE]);
     assert_eq!(session.prompt().responder, Responder::Investigator(DAISY));
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "Commit up to one card to {}'s Intellect test (difficulty 5). \
+             An empty selection commits no cards.",
+            session.state().name_of(ROLAND)
+        )
+    );
     session.assert_rejects(|s| {
         s.answer_as(
             ROLAND,

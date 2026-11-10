@@ -776,10 +776,7 @@ pub(in crate::engine::dispatch) fn additional_action_request(
         })
         .collect();
     InputRequest::pick_single(
-        format!(
-            "{}: choose which additional action to use for this action.",
-            choice::investigator_name(state, frame.investigator),
-        ),
+        "Choose which additional action to use for this action.",
         options,
     )
 }

@@ -93,7 +93,9 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// What a [`HandDiscardCostFrame`] asks: which of the investigator's hand cards
-/// that are not weaknesses to discard. One of the
+/// that are not weaknesses to discard. It names the card whose cost is paid
+/// last, not first: the one card printing the cost is Wendy Adams 01005, an
+/// investigator card, and a leading name would repeat the strip's. One of the
 /// [prompt table](prompt::request)'s helpers.
 pub(super) fn request(
     state: &GameState,
@@ -107,7 +109,7 @@ pub(super) fn request(
         .collect();
     InputRequest::pick_single(
         format!(
-            "{}: choose a card from your hand to discard. Weaknesses can't be chosen.",
+            "Choose a card from your hand to discard to pay for {}. Weaknesses can't be chosen.",
             choice::card_name(cards, code),
         ),
         choice::candidate_options(state, cards, &anchors, OptionTarget::clone),

@@ -13,7 +13,7 @@
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
+use game_core::engine::{OptionTarget, Responder};
 use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, CommittedIndex, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
@@ -81,6 +81,11 @@ fn two_fearless_committed() -> TestSession {
 #[test]
 fn two_identical_copies_are_two_distinct_options() {
     let session = two_fearless_committed();
+    assert_eq!(
+        session.prompt().prompt,
+        "Choose which result of the skill test to apply next."
+    );
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
     assert_eq!(
         session.offered_targets(),
         [

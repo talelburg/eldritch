@@ -519,11 +519,7 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
 ///
 /// If no skill test is in flight. The frame is pushed above the test it
 /// substitutes in, so one always is.
-pub(super) fn substitution_request(
-    state: &GameState,
-    frame: &SubstitutionPromptFrame,
-) -> InputRequest {
-    let investigator = frame.investigator;
+pub(super) fn substitution_request(state: &GameState) -> InputRequest {
     let skill = state
         .current_skill_test()
         .expect("substitution_request: a substitution prompt sits above its skill test")
@@ -531,10 +527,7 @@ pub(super) fn substitution_request(
     let use_skill = skill_name(SkillKind::Intellect); // sole substitution in scope
     let skill = skill_name(skill);
     choice::effect_request(&choice::decision_prompt(
-        format!(
-            "{}: use {use_skill} in place of {skill} for this test?",
-            choice::investigator_name(state, investigator),
-        ),
+        format!("Use {use_skill} in place of {skill} for this test?"),
         vec![format!("Use {use_skill}"), format!("Keep {skill}")],
         None,
     ))
@@ -1588,10 +1581,7 @@ pub(super) fn result_order_request(state: &GameState, cards: &CardRegistry) -> I
         })
         .collect();
     InputRequest::pick_single(
-        format!(
-            "{}: choose which result of the skill test to apply next.",
-            choice::investigator_name(state, test.investigator),
-        ),
+        "Choose which result of the skill test to apply next.",
         options,
     )
 }
@@ -1917,8 +1907,7 @@ pub(super) fn helper_commit_request(
         .expect("helper_commit_request: in-flight test must exist");
     let candidates = helper_candidates(state, cards, helper);
     let ask = format!(
-        "{}: commit up to one card to {}'s {} test (difficulty {}).",
-        choice::investigator_name(state, helper),
+        "Commit up to one card to {}'s {} test (difficulty {}).",
         choice::investigator_name(state, test.investigator),
         skill_name(test.skill),
         current_difficulty(state, cards),

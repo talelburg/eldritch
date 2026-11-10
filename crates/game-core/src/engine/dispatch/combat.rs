@@ -877,10 +877,7 @@ pub(super) fn distribution_request(
     let damage_point = rd > 0;
     let targets = eligible_targets(&soakers, assignment, damage_point);
     let kind = if damage_point { "damage" } else { "horror" };
-    let prompt = format!(
-        "{}: assign 1 {kind} to which target? ({rd} damage / {rh} horror left)",
-        choice::investigator_name(state, *investigator),
-    );
+    let prompt = format!("Assign 1 {kind} to which target? ({rd} damage / {rh} horror left)");
     InputRequest::pick_single(
         prompt,
         soak_options(
@@ -1184,12 +1181,10 @@ fn suspend_order_pick(
 pub(super) fn order_pick_request(
     state: &GameState,
     cards: &CardRegistry,
-    investigator: InvestigatorId,
     attackers: &[EnemyId],
 ) -> InputRequest {
     let prompt = format!(
-        "{} is engaged with {} enemies: choose which attacks next.",
-        choice::investigator_name(state, investigator),
+        "You are engaged with {} enemies: choose which attacks next.",
         attackers.len()
     );
     let options = choice::candidate_options(state, cards, attackers, |e| OptionTarget::Enemy(*e));
