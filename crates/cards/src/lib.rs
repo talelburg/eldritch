@@ -549,14 +549,14 @@ mod tests {
     /// their distinguishers are equal (or both absent). Constant, on-play,
     /// revelation and result abilities are never offered and never collide.
     fn label_collisions(abilities: &[Ability]) -> Vec<(usize, usize)> {
-        use card_dsl::dsl::Trigger;
+        use card_dsl::dsl::{ActionDesignator, Trigger};
         let offered = |a: &Ability| {
             matches!(
                 a.trigger,
                 Trigger::Activated { .. } | Trigger::OnEvent { .. }
             )
         };
-        let word = |a: &Ability| a.designator.as_ref().map(|d| d.word());
+        let word = |a: &Ability| a.designator.as_ref().map(ActionDesignator::word);
         let mut collisions = Vec::new();
         for (i, a) in abilities.iter().enumerate() {
             for (j, b) in abilities.iter().enumerate().skip(i + 1) {
