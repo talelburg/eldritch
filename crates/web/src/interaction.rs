@@ -25,6 +25,8 @@ use crate::card;
 use crate::controls;
 #[cfg(target_arch = "wasm32")]
 use crate::decision;
+#[cfg(target_arch = "wasm32")]
+use crate::store;
 use crate::store::ClientState;
 
 /// The live prompt's options this account may pick. Pure.
@@ -117,6 +119,30 @@ pub fn options_for_hand_card(
         .collect()
 }
 
+/// The labels a board context menu shows for `options`, in order. Pure.
+///
+/// A menu whose entries name more than one investigator suffixes each named
+/// entry with its investigator's name from `name_of` ("Advance act — Roland
+/// Banks"), so a player holding two seats can tell which one an entry answers
+/// as. A menu whose entries all name one investigator, or none, keeps its
+/// labels.
+#[must_use]
+pub fn menu_labels(
+    options: &[ChoiceOption],
+    name_of: impl Fn(InvestigatorId) -> String,
+) -> Vec<String> {
+    let named: BTreeSet<InvestigatorId> = options.iter().filter_map(|o| o.investigator).collect();
+    options
+        .iter()
+        .map(|o| match o.investigator {
+            Some(investigator) if named.len() > 1 => {
+                format!("{} — {}", o.label, name_of(investigator))
+            }
+            _ => o.label.clone(),
+        })
+        .collect()
+}
+
 /// Context newtype carrying the derived pending-options signal, so any entity
 /// reads it without prop-drilling. A distinct type so it can't collide with
 /// other `Signal` contexts.
@@ -174,6 +200,10 @@ pub fn ContextMenu(
     options: Vec<ChoiceOption>,
     open: RwSignal<Option<(i32, i32)>>,
 ) -> impl IntoView {
+    let store = store::use_store();
+    let labels = menu_labels(&options, |id| {
+        store.with_untracked(|s| s.investigator_name(id))
+    });
     view! {
         {move || {
             let Some((x, y)) = open.get() else {
@@ -181,9 +211,9 @@ pub fn ContextMenu(
             };
             let buttons: Vec<_> = options
                 .iter()
-                .cloned()
-                .map(|opt| {
-                    let ChoiceOption { id, label, .. } = opt;
+                .zip(labels.iter().cloned())
+                .map(|(opt, label)| {
+                    let id = opt.id;
                     view! {
                         <button
                             class="menu-item"
@@ -414,5 +444,44 @@ mod tests {
         let got = options_for_hand_card(&opts, inv, 0, &code);
         let ids: Vec<u32> = got.iter().map(|o| o.id.0).collect();
         assert_eq!(ids, vec![0, 1]); // exact index 0 + matching code; not index 5 / other code
+    }
+
+    /// "Advance act" on the act, offered to `investigator`.
+    fn advance_for(id: u32, investigator: InvestigatorId) -> ChoiceOption {
+        let mut option = ChoiceOption::new(OptionId(id), "Advance act").at(OptionTarget::Act);
+        option.investigator = Some(investigator);
+        option
+    }
+
+    fn roland_or_daisy(id: InvestigatorId) -> String {
+        match id.0 {
+            1 => "Roland Banks".to_owned(),
+            2 => "Daisy Walker".to_owned(),
+            _ => unreachable!("only Roland and Daisy are seated"),
+        }
+    }
+
+    #[test]
+    fn a_menu_naming_two_investigators_suffixes_each_entry_with_its_name() {
+        let options = [
+            advance_for(0, InvestigatorId(1)),
+            advance_for(1, InvestigatorId(2)),
+        ];
+        assert_eq!(
+            menu_labels(&options, roland_or_daisy),
+            ["Advance act — Roland Banks", "Advance act — Daisy Walker"]
+        );
+    }
+
+    #[test]
+    fn a_menu_naming_one_investigator_keeps_its_labels() {
+        let options = [advance_for(0, InvestigatorId(2))];
+        assert_eq!(menu_labels(&options, roland_or_daisy), ["Advance act"]);
+    }
+
+    #[test]
+    fn a_menu_naming_no_investigator_keeps_its_labels() {
+        let options = [loose(0), loose(1)];
+        assert_eq!(menu_labels(&options, roland_or_daisy), ["opt0", "opt1"]);
     }
 }

@@ -129,9 +129,9 @@ with it (all ✅ PR #1297).
   (✅ PR #1326) and #1061 (✅ PR #1326) follow #1086 (✅ PR #1311) and pair
   on one choose-and-keep primitive, specced in #1323 (✅ PR #1326).
 - After the wire break: #153 (✅ PR #1327) and #146 (✅ PR #1332). #153 also
-  follows #573 (✅ PR #1298). #1328, any investigator starting the act advance
-  in the player window during a turn, follows #146 (✅ PR #1332) and #153
-  (✅ PR #1327).
+  follows #573 (✅ PR #1298). #1328 (✅ PR #1390), any investigator starting
+  the act advance in the player window during a turn, follows #146 (✅ PR
+  #1332) and #153 (✅ PR #1327).
 
 **4. The lobby: #1236 (✅ PR #1271) + #1224 (✅ PR #1264) + #1230 (✅ PR #1297) →
 #1239 (✅ PR #1339) → #1240 (✅ PR #1344) and #1241 (✅ PR #1349).** #1274
