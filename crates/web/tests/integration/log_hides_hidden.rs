@@ -7,6 +7,11 @@
 //! that player is permitted to look at all of the cards in the searched area
 //! without revealing those cards to the other players."*
 //!
+//! The same holds for the cards Scrying looks at, the cards a mulligan sets
+//! aside, and a weakness set aside from an opening hand: the board shows each
+//! face down, or not at all, to every account but the one holding the
+//! investigator, and the log names them to that account alone.
+//!
 //! Each game is seated as [`tabs::mount_table`]'s: Tal, [`YOU`], holds Roland
 //! Banks and Agnes Baker, Sam holds Daisy Walker, and Alex is a viewer. Each
 //! prompt is the engine's own, reached through a test session, and the answer
@@ -15,12 +20,15 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{EngineOutcome, OptionTarget};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
+use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, DeckIndex, DiscardIndex, GameStateBuilder,
-    InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DeckIndex, DiscardIndex,
+    GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, location, seat, BoardLookup as _, TestSession};
+use game_core::test_support::{
+    self, location, seat, uses, BoardLookup as _, SeatCard, TestSession,
+};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
@@ -44,7 +52,15 @@ const BEAT_COP: &str = "01018";
 const MAGNIFYING_GLASS: &str = "01030";
 const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";
+const PERCEPTION: &str = "01090";
+/// Daisy Walker's signature weakness.
+const THE_NECRONOMICON: &str = "01009";
 const SCAVENGING: &str = "01073";
+const SCRYING: &str = "01061";
+/// The encounter deck, top first, for Scrying to look at.
+const ANCIENT_EVILS: &str = "01166";
+const CRYPT_CHILL: &str = "01167";
+const OBSCURING_FOG: &str = "01168";
 /// Items, for Scavenging to take back.
 const FLASHLIGHT: &str = "01087";
 const KNIFE: &str = "01086";
@@ -61,7 +77,8 @@ const ROLANDS_DECK: [&str; 6] = [
 ];
 
 /// The table in the Study, Roland holding [`ROLANDS_DECK`] and `rolands_hand`,
-/// and Daisy with Old Book of Lore in play.
+/// Daisy with Old Book of Lore and a charged Scrying in play, and the
+/// encounter deck holding Ancient Evils, Crypt Chill and Obscuring Fog.
 fn table(rolands_hand: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(cards::TEST_REGISTRIES)
@@ -80,9 +97,13 @@ fn table(rolands_hand: &[&str]) -> GameStateBuilder {
                 .as_card("01002")
                 .at(STUDY)
                 .deck([GUTS])
-                .in_play([OLD_BOOK_OF_LORE]),
+                .in_play([
+                    SeatCard::from(OLD_BOOK_OF_LORE),
+                    SeatCard::from((SCRYING, uses(UseKind::Charges, 3))),
+                ]),
         )
         .with_seating([ROLAND, DAISY, AGNES])
+        .with_encounter_deck([ANCIENT_EVILS, CRYPT_CHILL, OBSCURING_FOG])
 }
 
 /// Daisy reads Old Book of Lore 01031 and chooses Roland: *"Choose an
@@ -148,6 +169,87 @@ fn roland_scavenges() -> TestSession {
         .pick(scavenging)
 }
 
+/// Daisy activates Scrying 01061: *"Look at the top 3 cards of any
+/// investigator's deck or the encounter deck. Return them to the top of that
+/// deck in any order."* She picks the deck branch `branch` (the investigator's
+/// deck first, the encounter deck second), and the session rests at the next
+/// prompt.
+fn daisy_scries(branch: usize) -> TestSession {
+    let session = table(&[]).open_turn(DAISY).session();
+    let scrying = session.state().in_play(DAISY, SCRYING);
+    session
+        .take(&TurnAction::ActivateAbility {
+            investigator: DAISY,
+            source: AbilitySource::InPlay(scrying),
+            address: AbilityAddress::Printed(0),
+        })
+        .pick_nth(branch)
+}
+
+/// Daisy scries Roland's deck: the session rests at her first placement pick
+/// among his top 3, Beat Cop, Magnifying Glass and Emergency Cache.
+fn daisy_scries_rolands_deck() -> TestSession {
+    let session = daisy_scries(0);
+    let roland = session.state().investigator_card(ROLAND);
+    session.pick(roland)
+}
+
+/// Daisy scries the encounter deck: the session rests at her first placement
+/// pick among Ancient Evils, Crypt Chill and Obscuring Fog.
+fn daisy_scries_the_encounter_deck() -> TestSession {
+    daisy_scries(1)
+}
+
+/// Setup's mulligan, Daisy asked first, with Guts, Perception and Emergency
+/// Cache in her opening hand. The session rests at her mulligan.
+fn daisy_mulligans() -> TestSession {
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_location(location(STUDY).as_card("01111"))
+        .with_seat(seat(ROLAND.0).as_card("01001").at(STUDY).deck([GUTS]))
+        .with_seat(seat(AGNES.0).as_card("01004").at(STUDY).deck([GUTS]))
+        .with_seat(
+            seat(DAISY.0)
+                .as_card("01002")
+                .at(STUDY)
+                .hand([GUTS, PERCEPTION, EMERGENCY_CACHE])
+                .deck([MEDICAL_TEXTS, BEAT_COP, OLD_BOOK_OF_LORE]),
+        )
+        .with_seating([ROLAND, DAISY, AGNES])
+        .with_mulligan_remaining([DAISY, ROLAND, AGNES])
+        .build();
+    TestSession::new(state, cards::TEST_REGISTRIES)
+}
+
+/// The anchor of the card `index` in Daisy's hand.
+fn daisys_hand_card(hand_index: u8) -> OptionTarget {
+    OptionTarget::HandCard {
+        investigator: DAISY,
+        hand_index,
+    }
+}
+
+/// The anchor of the card `index` from the top of the encounter deck.
+fn encounter_deck_card(index: usize) -> OptionTarget {
+    OptionTarget::EncounterDeckCard {
+        index: DeckIndex::new(index),
+    }
+}
+
+/// Assert `client`'s log says Daisy placed `picks` cards without naming any
+/// of `names`.
+fn assert_hides_placements(client: &Client, who: &str, picks: usize, names: &[&str]) {
+    let log = client.log_text();
+    assert_eq!(
+        log.matches("Daisy Walker: a card").count(),
+        picks,
+        "{who}: each placement pick reads as a card: {log}"
+    );
+    for name in names {
+        assert!(!log.contains(name), "{who}: the log names no {name}: {log}");
+    }
+}
+
 /// One account's client: its board, and its event log over the same store.
 struct Client {
     board: BoardHandle,
@@ -199,22 +301,24 @@ impl Table {
     /// Mount the table as each of Tal, Sam and Alex, at the prompt `session`
     /// rests at.
     async fn at(session: &TestSession) -> Self {
-        let outcome = test_support::awaiting_request(session.prompt().clone());
-        let live = LiveGame::new(
-            session.state().clone(),
-            outcome,
-            Vec::new(),
-            LogPosition(0),
-            Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)]),
-            YOU,
-            cards::TEST_REGISTRIES,
-        );
         Self {
-            live,
+            live: live_game(session, Vec::new()),
             tal: Client::at(YOU, session).await,
             sam: Client::at(SAM, session).await,
             alex: Client::at(ALEX, session).await,
         }
+    }
+
+    /// [`Table::at`], the server's game having emitted `setup` while it was
+    /// set up. Each account's client receives the `Hello` the server sends
+    /// it, whose setup batch carries those events.
+    async fn set_up_with(session: &TestSession, setup: Vec<Event>) -> Self {
+        let mut table = Self::at(session).await;
+        table.live = live_game(session, setup);
+        for (you, client) in table.each() {
+            common::arrives(&client.board, table.live.hello_for(you)).await;
+        }
+        table
     }
 
     /// `investigator`, held by `account`, picks the live prompt's option
@@ -226,18 +330,56 @@ impl Table {
         investigator: InvestigatorId,
         target: OptionTarget,
     ) {
+        let option = self.option_anchored_to(&target);
+        self.answer(account, investigator, InputResponse::PickSingle(option))
+            .await;
+    }
+
+    /// `investigator`, held by `account`, picks together the live prompt's
+    /// options anchored to `targets`, as a mulligan does.
+    async fn pick_several(
+        &mut self,
+        account: AccountId,
+        investigator: InvestigatorId,
+        targets: &[OptionTarget],
+    ) {
+        let selected = targets
+            .iter()
+            .map(|target| self.option_anchored_to(target))
+            .collect();
+        self.answer(
+            account,
+            investigator,
+            InputResponse::PickMultiple { selected },
+        )
+        .await;
+    }
+
+    /// The id of the live prompt's option anchored to `target`.
+    fn option_anchored_to(&self, target: &OptionTarget) -> OptionId {
         let EngineOutcome::AwaitingInput { request, .. } = self.live.outcome() else {
             panic!("the game awaits no prompt");
         };
-        let option = request
+        request
             .options
             .iter()
-            .find(|option| option.target.as_ref() == Some(&target))
+            .find(|option| option.target.as_ref() == Some(target))
             .unwrap_or_else(|| panic!("no option anchored to {target:?}"))
-            .id;
+            .id
+    }
+
+    /// `investigator`, held by `account`, answers the live prompt with
+    /// `response`. The server commits it, and each account's client receives
+    /// the `Applied` it is sent.
+    async fn answer(
+        &mut self,
+        account: AccountId,
+        investigator: InvestigatorId,
+        response: InputResponse,
+    ) {
         let action = PlayerAction::ResolveInput {
             investigator,
-            response: InputResponse::PickSingle(option),
+            response,
         };
         let accepted = self
             .live
@@ -263,6 +405,20 @@ impl Table {
     fn each(&self) -> [(AccountId, &Client); 3] {
         [(YOU, &self.tal), (SAM, &self.sam), (ALEX, &self.alex)]
     }
+}
+
+/// The in-process server's game at the prompt `session` rests at, seated as
+/// the table is, with `setup` the events its setup emitted.
+fn live_game(session: &TestSession, setup: Vec<Event>) -> LiveGame {
+    LiveGame::new(
+        session.state().clone(),
+        test_support::awaiting_request(session.prompt().clone()),
+        setup,
+        LogPosition(0),
+        Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)]),
+        YOU,
+        cards::TEST_REGISTRIES,
+    )
 }
 
 /// The anchor of the card `index` from the top of Roland's deck.
@@ -382,6 +538,110 @@ async fn a_pick_from_a_discard_pile_is_named_to_everyone() {
         assert!(
             log.contains("Roland Banks: Flashlight"),
             "{who}'s log names the Item: {log}"
+        );
+    }
+}
+
+/// Daisy scries Roland's deck, putting Emergency Cache on top and Magnifying
+/// Glass next. Sam, who holds Daisy, reads both placements by name. Tal reads
+/// neither, though it is Roland's deck: only Daisy looked. Nor does Alex.
+#[wasm_bindgen_test]
+async fn a_scry_of_another_investigators_deck_names_the_cards_only_to_the_scriers_holder() {
+    let mut table = Table::at(&daisy_scries_rolands_deck()).await;
+
+    table.pick(SAM, DAISY, rolands_deck_card(2)).await;
+    table.pick(SAM, DAISY, rolands_deck_card(2)).await;
+
+    let sam = table.sam.log_text();
+    assert!(
+        sam.contains("Daisy Walker: Emergency Cache")
+            && sam.contains("Daisy Walker: Magnifying Glass"),
+        "Sam's log names each placement: {sam}"
+    );
+    let looked_at = ["Beat Cop", "Magnifying Glass", "Emergency Cache"];
+    assert_hides_placements(&table.tal, "Tal", 2, &looked_at);
+    assert_hides_placements(&table.alex, "Alex", 2, &looked_at);
+}
+
+/// Daisy scries the encounter deck, putting Obscuring Fog on top and Crypt
+/// Chill next. Only Sam's log names them.
+#[wasm_bindgen_test]
+async fn a_scry_of_the_encounter_deck_names_the_cards_only_to_the_scriers_holder() {
+    let mut table = Table::at(&daisy_scries_the_encounter_deck()).await;
+
+    table.pick(SAM, DAISY, encounter_deck_card(2)).await;
+    table.pick(SAM, DAISY, encounter_deck_card(2)).await;
+
+    let sam = table.sam.log_text();
+    assert!(
+        sam.contains("Daisy Walker: Obscuring Fog") && sam.contains("Daisy Walker: Crypt Chill"),
+        "Sam's log names each placement: {sam}"
+    );
+    let looked_at = ["Ancient Evils", "Crypt Chill", "Obscuring Fog"];
+    assert_hides_placements(&table.tal, "Tal", 2, &looked_at);
+    assert_hides_placements(&table.alex, "Alex", 2, &looked_at);
+}
+
+/// Daisy drew The Necronomicon, her weakness, into her opening hand, so setup
+/// set it aside to shuffle back into her deck (Rules Reference setup step 8).
+/// The setup batch names it in Sam's log only, and masks its code in Tal's
+/// and Alex's.
+#[wasm_bindgen_test]
+async fn a_weakness_set_aside_at_setup_is_named_only_to_its_holder() {
+    let table = Table::set_up_with(
+        &daisy_mulligans(),
+        vec![Event::WeaknessSetAside {
+            investigator: DAISY,
+            code: CardCode::new(THE_NECRONOMICON),
+        }],
+    )
+    .await;
+
+    let sam = table.sam.log_text();
+    assert!(
+        sam.contains(&format!("code: CardCode(\"{THE_NECRONOMICON}\")")),
+        "Sam's setup batch names the weakness: {sam}"
+    );
+    for (who, client) in [("Tal", &table.tal), ("Alex", &table.alex)] {
+        let log = client.log_text();
+        assert!(
+            log.contains("WeaknessSetAside { investigator: InvestigatorId(3), code: <hidden> }"),
+            "{who}'s setup batch keeps the line with its code masked: {log}"
+        );
+        assert!(
+            !log.contains(THE_NECRONOMICON),
+            "{who}'s log names no weakness: {log}"
+        );
+    }
+}
+
+/// Daisy mulligans Guts and Perception. Sam's log names them. Tal's and
+/// Alex's count them, as the board shows them Daisy's hand: face down.
+/// `glossary/Mulligan.md`: *"These cards are set aside, and an equivalent
+/// number of cards are drawn and added to the player's starting hand. The
+/// set-aside cards are then shuffled back into the player's deck."*
+#[wasm_bindgen_test]
+async fn a_mulligan_names_the_cards_only_to_the_holder_and_counts_them_to_everyone_else() {
+    let mut table = Table::at(&daisy_mulligans()).await;
+
+    table
+        .pick_several(SAM, DAISY, &[daisys_hand_card(0), daisys_hand_card(1)])
+        .await;
+
+    let sam = table.sam.log_text();
+    assert!(
+        sam.contains("Daisy Walker: Mulligan Guts, Perception"),
+        "Sam's log names the cards: {sam}"
+    );
+    for (who, client) in [("Tal", &table.tal), ("Alex", &table.alex)] {
+        let log = client.log_text();
+        assert!(
+            log.contains("Daisy Walker: Mulligan 2 cards"),
+            "{who}'s log counts the cards: {log}"
+        );
+        assert!(
+            !log.contains("Guts") && !log.contains("Perception"),
+            "{who}'s log names neither card: {log}"
         );
     }
 }

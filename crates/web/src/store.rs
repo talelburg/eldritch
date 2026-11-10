@@ -819,7 +819,9 @@ fn lobby_refusal_text(lobby: Option<&LobbyView>, reason: LobbyRefusal) -> String
 pub enum MultiPick {
     /// Cards committed to a skill test.
     Commit,
-    /// Cards set aside and redrawn in a setup mulligan.
+    /// Cards set aside and redrawn in a setup mulligan. Always hidden: they
+    /// came from a hand the other accounts see face down, and go back into
+    /// the deck unseen.
     Mulligan,
     /// Cards discarded down to the Upkeep hand size.
     HandSizeDiscard,
@@ -910,8 +912,10 @@ impl ClientState {
     /// answered then what they answered, e.g. "Agnes Baker: Fight: Ghoul
     /// Priest".
     ///
-    /// A hidden pick names its card only when this account holds the
-    /// investigator who picked it, and reads "a card" otherwise.
+    /// A hidden pick names its card, and a mulligan the cards it set aside,
+    /// only when this account holds the investigator who answered. Otherwise
+    /// a hidden pick reads "a card", and a mulligan counts its cards, e.g.
+    /// "Mulligan 2 cards": the other accounts see that hand face down.
     #[must_use]
     pub fn log_header(&self, header: &BatchHeader) -> String {
         match header {
@@ -919,6 +923,13 @@ impl ClientState {
             BatchHeader::Answer { by, what } => {
                 let what = match what {
                     Answered::Pick { hidden: true, .. } if !self.holds(*by) => "a card".into(),
+                    Answered::PickMultiple {
+                        picking: MultiPick::Mulligan,
+                        labels,
+                    } if !labels.is_empty() && !self.holds(*by) => match labels.len() {
+                        1 => "Mulligan 1 card".into(),
+                        n => format!("Mulligan {n} cards"),
+                    },
                     what => what.named(),
                 };
                 format!("{}: {what}", self.investigator_name(*by))
@@ -928,12 +939,17 @@ impl ClientState {
 
     /// `event` as this account's event log prints it: its `Debug` form, with
     /// the code of a card searched into the hand of an investigator this
-    /// account doesn't hold masked as `<hidden>`.
+    /// account doesn't hold masked as `<hidden>`, and so too a weakness set
+    /// aside from such an investigator's opening hand, which goes back into
+    /// their deck unseen.
     #[must_use]
     pub fn log_line(&self, event: &Event) -> String {
         match event {
             Event::CardSearchedToHand { investigator, .. } if !self.holds(*investigator) => {
                 format!("CardSearchedToHand {{ investigator: {investigator:?}, code: <hidden> }}")
+            }
+            Event::WeaknessSetAside { investigator, .. } if !self.holds(*investigator) => {
+                format!("WeaknessSetAside {{ investigator: {investigator:?}, code: <hidden> }}")
             }
             event => format!("{event:?}"),
         }
@@ -1752,9 +1768,10 @@ mod tests {
         }
     }
 
+    /// The account holding seat 1 reads which cards it mulliganed.
     #[test]
     fn a_mulligan_is_logged_with_the_cards_it_redrew() {
-        let mut s = picking_over(mulliganing());
+        let mut s = picking_over(mulliganing()).you_hold_every_investigator();
         reduce(
             &mut s,
             applied_by(
@@ -1768,6 +1785,23 @@ mod tests {
             only_header(&s),
             "Test Investigator 1: Mulligan Guts, Overpower"
         );
+    }
+
+    /// An account not holding seat 1 reads how many cards it mulliganed, in
+    /// the singular for one.
+    #[test]
+    fn another_accounts_mulligan_of_one_card_is_logged_as_a_count() {
+        let mut s = picking_over(mulliganing());
+        reduce(
+            &mut s,
+            applied_by(
+                1,
+                LoggedResponse::PickMultiple {
+                    options: vec![option(0, "Guts")],
+                },
+            ),
+        );
+        assert_eq!(only_header(&s), "Test Investigator 1: Mulligan 1 card");
     }
 
     #[test]

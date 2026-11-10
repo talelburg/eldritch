@@ -145,8 +145,9 @@ follows #65 (✅ PR #1321), which records each card's committer. #1360
 (✅ PR #1385, untracked signal reads in the card views and the event log) are
 standalone. #1364 (✅ PR #1374),
 the game's symbols as glyphs from the `arkhamicons` font, follows #863
-(✅ PR #1359). #1381 (the event log hides a searched card from the other
-accounts) follows #1243 (✅ PR #1380). #1354 (prompts stop prefixing the
+(✅ PR #1359). #1381 (the event log hides a searched or looked-at card, a
+mulligan's cards and a weakness set aside at setup from the other accounts)
+follows #1243 (✅ PR #1380). #1354 (prompts stop prefixing the
 investigator's name) follows #1242 (✅ PR #1353).
 
 **6. Reconnect and presence.** #587 and #582, after #1230 (✅ PR #1297), put the
