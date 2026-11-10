@@ -63,6 +63,12 @@ pub(crate) fn table() -> GameStateBuilder {
         .with_seating([ROLAND, DAISY, AGNES])
 }
 
+/// The table's assignment: Tal holds Roland and Agnes, and Sam holds Daisy.
+/// Alex holds nobody.
+pub(crate) fn assignment() -> Assignment {
+    Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)])
+}
+
 /// The board as `you` sees it after the `Hello` of `game` with `outcome`
 /// live: Tal holding Roland and Agnes, and Sam holding Daisy.
 pub(crate) async fn mount_table(
@@ -89,7 +95,7 @@ pub(crate) async fn mount_table_at(
         you,
         creator: YOU,
         members: members(),
-        assigned: Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)]),
+        assigned: assignment(),
         prompt: LogPosition(0),
         state: Box::new(game),
         outcome,

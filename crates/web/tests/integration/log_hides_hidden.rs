@@ -111,16 +111,22 @@ fn table(rolands_hand: &[&str]) -> GameStateBuilder {
 /// of his or her deck for a card, draws it…"* The session rests at Roland's
 /// pick among his top 3.
 fn daisy_has_roland_search() -> TestSession {
+    daisy_has_search(ROLAND)
+}
+
+/// Daisy reads Old Book of Lore and chooses `searcher`. The session rests at
+/// `searcher`'s pick among their top 3.
+fn daisy_has_search(searcher: InvestigatorId) -> TestSession {
     let session = table(&[]).open_turn(DAISY).session();
     let book = session.state().in_play(DAISY, OLD_BOOK_OF_LORE);
-    let roland = session.state().investigator_card(ROLAND);
+    let chosen = session.state().investigator_card(searcher);
     session
         .take(&TurnAction::ActivateAbility {
             investigator: DAISY,
             source: AbilitySource::InPlay(book),
             address: AbilityAddress::Printed(0),
         })
-        .pick(roland)
+        .pick(chosen)
 }
 
 /// Roland plays Research Librarian 01032: *"Search your deck for a \[\[Tome\]\]
@@ -221,7 +227,7 @@ fn daisy_mulligans() -> TestSession {
     TestSession::new(state, cards::TEST_REGISTRIES)
 }
 
-/// The anchor of the card `index` in Daisy's hand.
+/// The anchor of the card `hand_index` in Daisy's hand.
 fn daisys_hand_card(hand_index: u8) -> OptionTarget {
     OptionTarget::HandCard {
         investigator: DAISY,
@@ -301,24 +307,29 @@ impl Table {
     /// Mount the table as each of Tal, Sam and Alex, at the prompt `session`
     /// rests at.
     async fn at(session: &TestSession) -> Self {
-        Self {
-            live: live_game(session, Vec::new()),
-            tal: Client::at(YOU, session).await,
-            sam: Client::at(SAM, session).await,
-            alex: Client::at(ALEX, session).await,
-        }
+        Self::over(live_game(session, Vec::new()), session).await
     }
 
     /// [`Table::at`], the server's game having emitted `setup` while it was
     /// set up. Each account's client receives the `Hello` the server sends
     /// it, whose setup batch carries those events.
     async fn set_up_with(session: &TestSession, setup: Vec<Event>) -> Self {
-        let mut table = Self::at(session).await;
-        table.live = live_game(session, setup);
+        let table = Self::over(live_game(session, setup), session).await;
         for (you, client) in table.each() {
             common::arrives(&client.board, table.live.hello_for(you)).await;
         }
         table
+    }
+
+    /// Each account's client at the prompt `session` rests at, beside `live`,
+    /// the server's game.
+    async fn over(live: LiveGame, session: &TestSession) -> Self {
+        Self {
+            live,
+            tal: Client::at(YOU, session).await,
+            sam: Client::at(SAM, session).await,
+            alex: Client::at(ALEX, session).await,
+        }
     }
 
     /// `investigator`, held by `account`, picks the live prompt's option
@@ -415,7 +426,7 @@ fn live_game(session: &TestSession, setup: Vec<Event>) -> LiveGame {
         test_support::awaiting_request(session.prompt().clone()),
         setup,
         LogPosition(0),
-        Assignment::from_iter([(ROLAND, YOU), (AGNES, YOU), (DAISY, SAM)]),
+        tabs::assignment(),
         YOU,
         cards::TEST_REGISTRIES,
     )
@@ -467,6 +478,45 @@ async fn old_book_of_lore_names_the_card_only_to_the_searchers_holder() {
     );
     assert_hides(&table.sam, "Sam", "Magnifying Glass", MAGNIFYING_GLASS);
     assert_hides(&table.alex, "Alex", "Magnifying Glass", MAGNIFYING_GLASS);
+}
+
+/// Tal holds Agnes as well as Roland, as one account holds every investigator
+/// in a solo game. Daisy's Old Book of Lore has Agnes draw Guts from her deck,
+/// so Tal's log names it, though Roland didn't look. Sam's and Alex's don't.
+#[wasm_bindgen_test]
+async fn a_card_searched_by_an_accounts_other_investigator_is_named_to_that_account() {
+    let mut table = Table::at(&daisy_has_search(AGNES)).await;
+
+    table
+        .pick(
+            YOU,
+            AGNES,
+            OptionTarget::DeckCard {
+                investigator: AGNES,
+                index: DeckIndex::new(0),
+            },
+        )
+        .await;
+
+    let tal = table.tal.log_text();
+    assert!(
+        tal.contains("Agnes Baker: Guts") && tal.contains(&format!("code: CardCode(\"{GUTS}\")")),
+        "Tal holds Agnes, so his log names the card: {tal}"
+    );
+    for (who, client) in [("Sam", &table.sam), ("Alex", &table.alex)] {
+        let log = client.log_text();
+        assert!(
+            log.contains("Agnes Baker: a card")
+                && log.contains(
+                    "CardSearchedToHand { investigator: InvestigatorId(2), code: <hidden> }"
+                ),
+            "{who}'s log says Agnes took a card: {log}"
+        );
+        assert!(
+            !log.contains("Guts") && !log.contains(GUTS),
+            "{who}'s log names neither Guts nor its code: {log}"
+        );
+    }
 }
 
 /// The log follows who holds Roland now: once Tal reassigns him to Sam, Sam's
