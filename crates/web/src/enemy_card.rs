@@ -98,7 +98,7 @@ fn enemy_face(enemy: &Enemy) -> impl IntoView {
 )]
 #[component]
 pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::Enemy(enemy.id));
     let actionable = !menu_opts.is_empty();
     let open = RwSignal::new(None::<(i32, i32)>);

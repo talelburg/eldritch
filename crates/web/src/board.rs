@@ -147,7 +147,7 @@ fn Dock() -> impl IntoView {
 /// The tabs over the dock, from `placed`'s: see [`Dock`].
 fn tabs_view(game: &GameState, placed: &PromptLayout) -> impl IntoView {
     let open_tab_signal = use_context::<OpenTabSignal>();
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     placed
         .tabs
         .iter()

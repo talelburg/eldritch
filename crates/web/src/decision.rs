@@ -114,7 +114,7 @@ pub struct DecisionLive(pub Signal<bool>);
 /// Read **untracked**: the context-menu layer calls this from the body of every
 /// card component offering a menu, and each is rebuilt from scratch on every
 /// store change, from which the flag derives. See
-/// [`pending_options_snapshot`](crate::interaction::pending_options_snapshot)
+/// [`pending_options_untracked`](crate::interaction::pending_options_untracked)
 /// for that contract.
 #[must_use]
 pub fn menus_are_suppressed() -> bool {

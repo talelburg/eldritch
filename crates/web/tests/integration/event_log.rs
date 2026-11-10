@@ -1,6 +1,6 @@
-//! Headless render test for `EventLogView`: seed the store with one
-//! `LogBatch` and assert the panel renders the batch header and an event's
-//! `Debug` text.
+//! Headless tests for `EventLogView`: what the drawer renders from the store's
+//! log batches, where it stacks, and that its scroll to the newest line logs
+//! no Leptos warning.
 //!
 //! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
@@ -9,15 +9,17 @@ use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Res
 use game_core::event::Event;
 use game_core::state::{GameStateBuilder, InvestigatorId};
 use game_core::test_support;
+use js_sys::Promise;
 use leptos::prelude::*;
 use leptos::task;
 use wasm_bindgen::JsCast as _;
+use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
 use web::event_log::EventLogView;
 use web::store::{self, ClientState, LogBatch};
 use web_sys::{Element, HtmlElement};
 
-use crate::common;
+use crate::common::{self, WarnCapture};
 
 #[wasm_bindgen_test]
 async fn renders_batches_with_headers_and_event_debug() {
@@ -213,22 +215,20 @@ async fn a_hello_from_this_build_logs_its_setup() {
 /// Resolve on the next animation frame, after every callback the page queued
 /// for it before this one.
 async fn next_animation_frame() {
-    let frame = js_sys::Promise::new(&mut |resolve, _| {
+    let frame = Promise::new(&mut |resolve, _| {
         window()
             .request_animation_frame(&resolve)
             .expect("request an animation frame");
     });
-    wasm_bindgen_futures::JsFuture::from(frame)
-        .await
-        .expect("the frame resolves");
+    JsFuture::from(frame).await.expect("the frame resolves");
 }
 
-/// The deferred scroll to the newest line reads its node reference inside an
-/// animation-frame callback, outside any tracking context, and must not log
-/// Leptos's untracked-read warning (#1362).
+/// Regression for #1362: the deferred scroll to the newest line reads its node
+/// reference inside an animation-frame callback, outside any tracking context,
+/// and must not log Leptos's untracked-read warning.
 #[wasm_bindgen_test]
 async fn the_scroll_to_the_newest_line_logs_no_untracked_read_warning() {
-    let warnings = common::WarnCapture::start();
+    let warnings = WarnCapture::start();
     let (store, _container) = common::mount(|| leptos::view! { <EventLogView/> });
     store.update(|s| {
         s.log.push(LogBatch {

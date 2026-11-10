@@ -123,10 +123,10 @@ pub fn options_for_hand_card(
 #[derive(Clone)]
 pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 
-/// The live prompt's options, read from [`PendingOptions`] as an **untracked**
-/// snapshot; empty when no board context is provided.
+/// The live prompt's options, read from [`PendingOptions`] **untracked**, as
+/// they stand at mount; empty when no board context is provided.
 ///
-/// The snapshot is right for a board component body, and calling this is how
+/// That one-off read is right for a board component body, and calling this is how
 /// one reads the options. A board component is rebuilt from scratch on every
 /// store change, because its parent (the dock panel, the map, the header) is a
 /// reactive closure over the store, and the options are derived purely from the
@@ -135,7 +135,7 @@ pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 /// tracking context" warning on every mount. A caller not rebuilt by such a
 /// parent must read the signal tracked instead.
 #[must_use]
-pub fn pending_options_snapshot() -> Vec<ChoiceOption> {
+pub fn pending_options_untracked() -> Vec<ChoiceOption> {
     use_context::<PendingOptions>()
         .map(|p| p.0.get_untracked())
         .unwrap_or_default()

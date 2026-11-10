@@ -89,6 +89,7 @@ Gathering together, and any of them can drop and reconnect mid-game.
 | #1323 | Choose an investigator and keep the choice: one card-effect primitive whose pick later steps read, across a skill test and a native's suspends, PR #1326; slices #1324, #1325 |
 | #1360 | The round band lights nothing during the setup mulligan, with #534, PR #1367 |
 | #1361 | An ability option is labelled by its card and action designator, or "Activate" and the card, with a verbatim distinguisher where two abilities on one card would read alike; option labels draw symbol tokens as glyphs, PR #1384; slices #1382, #1383 |
+| #1362 | The board and the event log log no "outside a reactive tracking context" warning: a board component body reads the live prompt's options, the multi-select flag and the decision-live flag untracked, since its parent rebuilds it on every store change, PR #1385 |
 | #1364 | The game's symbols drawn as glyphs from the vendored `arkhamicons` font, in card text, on tile and card-face skill icons, and as the result modal's drawn token, PR #1374; slices #1372, #1373 |
 
 ## Ordering
@@ -140,8 +141,9 @@ with it (all ✅ PR #1297).
 (✅ PR #1380) and #1322.** #1322, the board surface for committed cards, also
 follows #65 (✅ PR #1321), which records each card's committer. #1360
 (✅ PR #1367, the round band lit Investigation during the setup mulligan), #1361
-(✅ PR #1384, activated abilities labelled by index, not by card) and #1362 (untracked signal
-reads in the card views and the event log) are standalone. #1364 (✅ PR #1374),
+(✅ PR #1384, activated abilities labelled by index, not by card) and #1362
+(✅ PR #1385, untracked signal reads in the card views and the event log) are
+standalone. #1364 (✅ PR #1374),
 the game's symbols as glyphs from the `arkhamicons` font, follows #863
 (✅ PR #1359). #1381 (the event log hides a searched card from the other
 accounts) follows #1243 (✅ PR #1380). #1354 (prompts stop prefixing the

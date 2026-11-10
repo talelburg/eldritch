@@ -555,10 +555,10 @@ fn tile_with_popover(
 /// card the pick may not take — renders inert.
 #[component]
 pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> impl IntoView {
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     if let Some(ms) = use_context::<MultiSelect>() {
-        // Untracked for the reason `pending_options_snapshot` gives: the hand
+        // Untracked for the reason `pending_options_untracked` gives: the hand
         // is rebuilt on every store change, and the flag derives from the store.
         if ms.active.get_untracked() {
             let hover = Hover::new();
@@ -618,7 +618,7 @@ pub fn InPlayCardView(
 ) -> impl IntoView {
     let code = instance.code.clone();
     let instance_id = instance.instance_id;
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::CardInstance(instance_id));
     let actionable = !menu_opts.is_empty();
     let open = RwSignal::new(None::<(i32, i32)>);

@@ -1,18 +1,23 @@
 //! Shared helpers for the web crate's browser tests.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::{EngineOutcome, Responder};
 use game_core::event::Event;
 use game_core::state::investigator::InvestigatorId;
 use game_core::state::GameState;
+use js_sys::{Object, Reflect};
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::live::LiveGame;
 use protocol::lobby::Member;
 use protocol::{AccountId, Assignment, ClientMessage, GameId, LogPosition, ServerMessage};
-use wasm_bindgen::JsCast as _;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast as _, JsValue};
 use web::app::{self, MainColumn};
 use web::delete_game::DeleteGame;
 use web::registry;
@@ -529,7 +534,7 @@ impl Harness {
 
 /// The words every Leptos "signal read outside a reactive tracking context"
 /// warning carries.
-pub(crate) const UNTRACKED_READ_WARNING: &str = "outside a reactive tracking context";
+const UNTRACKED_READ_WARNING: &str = "outside a reactive tracking context";
 
 /// A recorder standing in for the global `console.warn` until it is dropped,
 /// which puts the original back.
@@ -537,32 +542,29 @@ pub(crate) const UNTRACKED_READ_WARNING: &str = "outside a reactive tracking con
 /// Leptos raises its debug-build diagnostics through `console.warn`, so a test
 /// that holds one sees every warning the views it mounts log.
 pub(crate) struct WarnCapture {
-    console: js_sys::Object,
-    original: wasm_bindgen::JsValue,
-    messages: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
-    _recorder: wasm_bindgen::closure::Closure<dyn Fn(wasm_bindgen::JsValue)>,
+    console: Object,
+    original: JsValue,
+    messages: Rc<RefCell<Vec<String>>>,
+    _recorder: Closure<dyn Fn(JsValue)>,
 }
 
 impl WarnCapture {
     /// Swap the recorder in for `console.warn`.
     pub(crate) fn start() -> Self {
-        let console: js_sys::Object = js_sys::Reflect::get(&js_sys::global(), &"console".into())
+        let console: Object = Reflect::get(&js_sys::global(), &"console".into())
             .expect("a global console")
             .unchecked_into();
-        let original = js_sys::Reflect::get(&console, &"warn".into()).expect("console.warn exists");
-        let messages = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let sink = std::rc::Rc::clone(&messages);
-        let recorder = wasm_bindgen::closure::Closure::<dyn Fn(wasm_bindgen::JsValue)>::new(
-            move |message: wasm_bindgen::JsValue| {
-                sink.borrow_mut().push(
-                    message
-                        .as_string()
-                        .unwrap_or_else(|| format!("{message:?}")),
-                );
-            },
-        );
-        js_sys::Reflect::set(&console, &"warn".into(), recorder.as_ref())
-            .expect("replace console.warn");
+        let original = Reflect::get(&console, &"warn".into()).expect("console.warn exists");
+        let messages = Rc::new(RefCell::new(Vec::new()));
+        let sink = Rc::clone(&messages);
+        let recorder = Closure::<dyn Fn(JsValue)>::new(move |message: JsValue| {
+            sink.borrow_mut().push(
+                message
+                    .as_string()
+                    .unwrap_or_else(|| format!("{message:?}")),
+            );
+        });
+        Reflect::set(&console, &"warn".into(), recorder.as_ref()).expect("replace console.warn");
         Self {
             console,
             original,
@@ -588,6 +590,6 @@ impl WarnCapture {
 
 impl Drop for WarnCapture {
     fn drop(&mut self) {
-        let _ = js_sys::Reflect::set(&self.console, &"warn".into(), &self.original);
+        let _ = Reflect::set(&self.console, &"warn".into(), &self.original);
     }
 }

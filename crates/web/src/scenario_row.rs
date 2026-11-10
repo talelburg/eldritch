@@ -72,7 +72,7 @@ pub fn clue_line(act: &Act, game: &GameState) -> Option<String> {
 #[component]
 pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView {
     let (name, text) = card::name_and_text(&act.code, face);
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::Act);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
@@ -130,7 +130,7 @@ pub fn ActCard(act: Act, clue_text: Option<String>, face: Face) -> impl IntoView
 pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     let (name, text) = card::name_and_text(&agenda.code, face);
     let threshold = agenda.doom_threshold;
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::Agenda);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]

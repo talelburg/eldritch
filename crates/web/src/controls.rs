@@ -33,7 +33,7 @@ use crate::transport::OutboundTx;
 /// The first option the live prompt anchors to `target`, else `None`. The three
 /// named controls carry at most one option each, so "the option" is well-defined.
 fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     interaction::options_for(&pending, target)
         .into_iter()
         .next()

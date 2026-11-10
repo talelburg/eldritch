@@ -92,7 +92,7 @@ pub fn Pile(
 /// The pile's top card, `code`: a header tile that, while options are
 /// anchored on `anchor`, glows and opens their context menu on a click.
 fn top_card(code: &CardCode, anchor: Option<OptionTarget>) -> impl IntoView {
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let menu_opts = anchor
         .map(|anchor| interaction::options_for(&pending, &anchor))
         .unwrap_or_default();

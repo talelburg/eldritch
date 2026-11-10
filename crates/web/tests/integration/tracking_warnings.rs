@@ -1,10 +1,10 @@
-//! A realistic board mounts and rebuilds without one Leptos warning that a
-//! signal was read "outside a reactive tracking context".
+//! Regression for #1362: a realistic board mounts and rebuilds without one
+//! Leptos warning that a signal was read "outside a reactive tracking context".
 //!
 //! Every board component is rebuilt whenever the store changes, so its body
 //! reads the live prompt's options, the multi-select flag and the decision-live
-//! flag as a snapshot, untracked. A tracked read there logs the warning on
-//! every mount (#1362). Leptos raises it only in debug wasm builds, which is
+//! flag untracked, as they stand at mount. A tracked read there logs the
+//! warning on every mount. Leptos raises it only in debug wasm builds, which is
 //! what `wasm-pack test` runs.
 //!
 //! Known limit: this sees only the components the fixture mounts.

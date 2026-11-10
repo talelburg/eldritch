@@ -326,7 +326,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
     // The live prompt's options, for glow + per-node context menus.
     // Absent (native / no prompt) → empty → no node is actionable.
-    let pending = interaction::pending_options_snapshot();
+    let pending = interaction::pending_options_untracked();
     let open_tab_signal = use_context::<OpenTabSignal>();
 
     let nodes: Vec<_> = game
