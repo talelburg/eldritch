@@ -189,6 +189,18 @@ fn the_parley_is_offered_with_4_resources() {
     assert!(enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&action));
 }
 
+/// The Parley names the enemy it is printed on and the designator: Mob
+/// Enforcer 01101's *"\[action\] Spend 4 resources: <b>Parley.</b>"*.
+#[test]
+fn the_parley_is_labelled_with_the_enemy_and_designator() {
+    let session = drawn_by_its_bearer(4);
+    assert!(
+        session.offered_labels().contains(&"Mob Enforcer: Parley"),
+        "offered: {:?}",
+        session.offered_labels()
+    );
+}
+
 /// The line `A - B - C - D`, Mob Enforcer at `enforcer_at` (unengaged and
 /// ready, owned by its bearer — what a draw mints), its bearer at `bearer_at`
 /// and the other investigator at `other_at`, on `turn`'s turn — the round's

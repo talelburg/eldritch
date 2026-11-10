@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use card_dsl::dsl::Ability;
+
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
@@ -14,8 +16,8 @@ use crate::engine::dispatch::{act_agenda, choice, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source, board};
 use crate::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, Investigator,
-    InvestigatorId, InvestigatorTurnFrame, LocationId,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, EnemyId, GameState,
+    Investigator, InvestigatorId, InvestigatorTurnFrame, LocationId,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -217,17 +219,9 @@ impl TurnAction {
                     .and_then(|inv| source.card(inv));
                 format!("Play {}", card_name(cards, card))
             }
-            // A granted ability says so rather than printing an index that
-            // belongs to a different card.
-            TurnAction::ActivateAbility { address, .. } => match address {
-                AbilityAddress::Printed(index) => format!("Activate ability {index}"),
-                AbilityAddress::Granted { granter, .. } => {
-                    format!(
-                        "Activate ability granted by {}",
-                        card_name(cards, Some(granter))
-                    )
-                }
-            },
+            TurnAction::ActivateAbility {
+                source, address, ..
+            } => activation_label(state, cards, *source, address),
             TurnAction::AdvanceAct { .. } => "Advance act".into(),
         }
     }
@@ -293,6 +287,51 @@ pub(crate) fn play_under_permission_label(
         card_name(cards, card),
         card_name(cards, granter)
     )
+}
+
+/// The label of the ability at `address` on `source`: the source card's name
+/// and the ability's designator word — *"Flashlight: Investigate"* — or
+/// *"Activate X"* where the ability prints none — then its distinguisher, if it
+/// has one ([`with_distinguisher`]).
+///
+/// The name is the **source's**, the card the player clicks: for a granted
+/// ability that is the recipient (Lita Chantler 01117), not the granting card
+/// (the Parlor 01115). The designator and distinguisher are the ability's own,
+/// granted or printed.
+fn activation_label(
+    state: &GameState,
+    cards: &CardRegistry,
+    source: AbilitySource,
+    address: &AbilityAddress,
+) -> String {
+    let code = ability_source::source_card(state, source).map(|card| card.code().clone());
+    let name = card_name(cards, code.as_ref());
+    let ability = code.as_ref().and_then(|code| {
+        abilities_in_effect::resolve(
+            state,
+            cards,
+            CandidateSource::Ability(source),
+            code,
+            address,
+        )
+    });
+    let label = match ability.as_ref().and_then(|a| a.designator.as_ref()) {
+        Some(designator) => format!("{name}: {}", designator.word()),
+        None => format!("Activate {name}"),
+    };
+    with_distinguisher(label, ability.as_ref())
+}
+
+/// `label` with `ability`'s distinguisher appended after an em dash — *"Knife:
+/// Fight — Discard Knife"* — or `label` unchanged when it has none. Shared by
+/// the activation label and the reaction window's in-place ability label, so
+/// two abilities on one card that could share a prompt never share a label: a
+/// saved game finds each logged pick by its label (ADR 0022).
+pub(crate) fn with_distinguisher(label: String, ability: Option<&Ability>) -> String {
+    match ability.and_then(|a| a.distinguisher.as_deref()) {
+        Some(distinguisher) => format!("{label} — {distinguisher}"),
+        None => label,
+    }
 }
 
 /// The name a menu label shows for `card`: [`choice::card_name`], and

@@ -178,7 +178,19 @@ fn build_resolution_options(
                         permission,
                     )
                 }
-                CandidateSource::Ability(_) => format!("Resolve reaction: {}", name()),
+                // Two abilities on one card answering the same window are told
+                // apart by their distinguishers.
+                CandidateSource::Ability(_) => enumerate::with_distinguisher(
+                    format!("Resolve reaction: {}", name()),
+                    abilities_in_effect::resolve(
+                        state,
+                        cards,
+                        cand.source,
+                        &cand.code,
+                        &cand.address,
+                    )
+                    .as_ref(),
+                ),
             };
             let option = ChoiceOption::new(id, label).at(candidate_anchor(cand));
             // A reaction is offered to its controller, and several may answer

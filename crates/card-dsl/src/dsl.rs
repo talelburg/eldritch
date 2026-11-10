@@ -270,6 +270,26 @@ pub enum ActionDesignator {
 }
 
 impl ActionDesignator {
+    /// The bold word the designator prints — *"Fight"*, *"Evade"*,
+    /// *"Investigate"*, *"Move"*, *"Parley"* or *"Resign"* — which is also its
+    /// **kind**: two designators of one kind print the same word whatever
+    /// modification each carries (Knife 01086's two Fights).
+    ///
+    /// [`AutomaticEvade`](Self::AutomaticEvade) reads *"Evade"*: Cunning
+    /// Distraction 01078 prints *"**Evade.** Automatically evade all enemies at
+    /// your location."*
+    #[must_use]
+    pub fn word(&self) -> &'static str {
+        match self {
+            Self::Fight { .. } => "Fight",
+            Self::Evade { .. } | Self::AutomaticEvade => "Evade",
+            Self::Move => "Move",
+            Self::Investigate { .. } => "Investigate",
+            Self::Parley => "Parley",
+            Self::Resign => "Resign",
+        }
+    }
+
     /// The [`ActionClass`] this designator performs, for the rules keyed on
     /// action *kind* rather than on the basic action. `None` for the three
     /// designators no `ActionClass` variant names.
@@ -1690,6 +1710,14 @@ pub struct Ability {
     /// [`AbilityZone::InPlay`] for every ability [`Self::with_active_in`] does
     /// not move; required on the wire.
     pub active_in: AbilityZone,
+    /// The **distinguisher** (`GLOSSARY.md`): a verbatim fragment of this
+    /// ability's printed text that tells it apart from a sibling offered in the
+    /// same prompt — Knife 01086's *"Discard Knife"*. The engine appends it to
+    /// the option's label after an em dash. `None` for an ability with no such
+    /// sibling, which is nearly all of them; set with
+    /// [`Self::distinguished_as`]. Stays implicitly optional on the wire, like
+    /// `usage_limit`.
+    pub distinguisher: Option<String>,
 }
 
 /// The zone a card's ability is live in — see [`Ability::active_in`].
@@ -1748,6 +1776,16 @@ impl Ability {
     #[must_use]
     pub fn with_active_in(mut self, zone: AbilityZone) -> Self {
         self.active_in = zone;
+        self
+    }
+
+    /// Attach a distinguisher (see [`Self::distinguisher`]): a fragment quoted
+    /// word for word from this ability's printed text. Builder-style sugar,
+    /// chainable off any constructor. The `cards` crate's corpus test checks
+    /// the quote is printed and that it tells the ability's siblings apart.
+    #[must_use]
+    pub fn distinguished_as(mut self, fragment: impl Into<String>) -> Self {
+        self.distinguisher = Some(fragment.into());
         self
     }
 
@@ -3626,6 +3664,7 @@ pub fn constant(effect: Effect) -> Ability {
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3645,6 +3684,7 @@ pub fn on_play(effect: Effect) -> Ability {
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3743,6 +3783,7 @@ fn on_skill_test_resolution(
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3768,6 +3809,7 @@ pub fn on_event(
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3801,6 +3843,7 @@ pub fn revelation(effect: Effect) -> Ability {
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3826,6 +3869,7 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3856,6 +3900,7 @@ pub fn activated_as(
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 
@@ -3889,6 +3934,7 @@ pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
         usage_limit: None,
         eligibility: None,
         active_in: AbilityZone::InPlay,
+        distinguisher: None,
     }
 }
 

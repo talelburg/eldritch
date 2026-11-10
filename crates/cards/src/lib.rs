@@ -493,6 +493,151 @@ mod tests {
         }
     }
 
+    // ---- option labels: distinguishers -------------------------------------
+    //
+    // A saved game finds each logged pick by its label (ADR 0022), and two
+    // abilities on one card that could be offered in one prompt would share a
+    // label unless their distinguishers (`GLOSSARY.md`) differ.
+
+    /// One ability list a prompt can offer from: a card's front, its back, or
+    /// one grant's abilities. `printed` is the text the list's distinguishers
+    /// quote — the side's text, which for a grant is the granting side's.
+    struct AbilityList {
+        name: String,
+        abilities: Vec<Ability>,
+        printed: Option<&'static str>,
+    }
+
+    /// Every ability list of `record`: its front, its back, and each grant
+    /// either side prints. A grant is always a top-level ability's effect, so
+    /// this reaches every granted list.
+    ///
+    /// An act or agenda models its *"1b"* advance effect in its front list
+    /// although that text is printed on its back; no such ability carries a
+    /// distinguisher, so the front text is the one checked.
+    fn ability_lists(record: &CardRecord) -> Vec<AbilityList> {
+        use card_dsl::dsl::Effect;
+        let meta = by_code(record.code).expect("every implemented card has metadata");
+        let mut sides = vec![("front", (record.abilities)(), meta.text.as_deref())];
+        if let Some(back) = record.back_abilities {
+            sides.push(("back", back(), meta.back_text.as_deref()));
+        }
+        let mut lists = Vec::new();
+        for (side, abilities, printed) in sides {
+            for (index, ability) in abilities.iter().enumerate() {
+                if let Effect::Grant { abilities, .. } = &ability.effect {
+                    lists.push(AbilityList {
+                        name: format!("{} {side} #{index} grant", record.code),
+                        abilities: abilities.clone(),
+                        printed,
+                    });
+                }
+            }
+            lists.push(AbilityList {
+                name: format!("{} {side}", record.code),
+                abilities,
+                printed,
+            });
+        }
+        lists
+    }
+
+    /// The uniqueness rule: the index pairs in `abilities` that a prompt would
+    /// offer under one label. Two abilities collide when both are offered
+    /// (activated, or a reaction or forced ability), their triggers are equal,
+    /// their designators print the same word (or neither prints one), and
+    /// their distinguishers are equal (or both absent). Constant, on-play,
+    /// revelation and result abilities are never offered and never collide.
+    fn label_collisions(abilities: &[Ability]) -> Vec<(usize, usize)> {
+        use card_dsl::dsl::Trigger;
+        let offered = |a: &Ability| {
+            matches!(
+                a.trigger,
+                Trigger::Activated { .. } | Trigger::OnEvent { .. }
+            )
+        };
+        let word = |a: &Ability| a.designator.as_ref().map(|d| d.word());
+        let mut collisions = Vec::new();
+        for (i, a) in abilities.iter().enumerate() {
+            for (j, b) in abilities.iter().enumerate().skip(i + 1) {
+                if offered(a)
+                    && offered(b)
+                    && a.trigger == b.trigger
+                    && word(a) == word(b)
+                    && a.distinguisher == b.distinguisher
+                {
+                    collisions.push((i, j));
+                }
+            }
+        }
+        collisions
+    }
+
+    #[test]
+    fn no_two_abilities_on_one_card_would_share_a_label() {
+        for record in impls::ALL {
+            for list in ability_lists(record) {
+                assert_eq!(
+                    label_collisions(&list.abilities),
+                    [],
+                    "{}: these abilities would be offered under one label; give each a \
+                     distinguisher quoted from its printed text",
+                    list.name,
+                );
+            }
+        }
+    }
+
+    /// The rule above has teeth: Knife 01086's two Fights collide once one of
+    /// them loses its distinguisher.
+    #[test]
+    fn a_fight_pair_without_distinguishers_collides() {
+        let mut knife = (impls::knife::CARD.abilities)();
+        assert_eq!(label_collisions(&knife), []);
+        knife[1].distinguisher = Some("+1 [combat]".to_owned());
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+        knife[0].distinguisher = None;
+        knife[1].distinguisher = None;
+        assert_eq!(label_collisions(&knife), [(0, 1)]);
+    }
+
+    #[test]
+    fn every_distinguisher_is_quoted_from_its_sides_printed_text() {
+        for record in impls::ALL {
+            for list in ability_lists(record) {
+                for (index, ability) in list.abilities.iter().enumerate() {
+                    let Some(distinguisher) = &ability.distinguisher else {
+                        continue;
+                    };
+                    assert!(
+                        list.printed
+                            .is_some_and(|printed| printed.contains(distinguisher.as_str())),
+                        "{} #{index}: distinguisher {distinguisher:?} is not in the printed \
+                         text {:?}",
+                        list.name,
+                        list.printed,
+                    );
+                }
+            }
+        }
+    }
+
+    /// The client renders an option label as card text, where `[token]` is a
+    /// glyph and `<b>` is bold; a card name a label carries must not read as
+    /// either.
+    #[test]
+    fn no_card_name_contains_markup() {
+        for card in all() {
+            for name in std::iter::once(&card.name).chain(card.back_name.as_ref()) {
+                assert!(
+                    !name.contains(['[', ']', '<', '>']),
+                    "{}: name {name:?} would render as markup in an option label",
+                    card.code,
+                );
+            }
+        }
+    }
+
     #[test]
     fn an_unknown_code_or_tag_resolves_to_none_in_every_slot() {
         let code = CardCode::new("99999");

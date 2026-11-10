@@ -44,7 +44,8 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 pub fn abilities() -> Vec<Ability> {
     vec![
         // [action]: Fight. You get +1 [combat] for this attack.
-        dsl::activated_as(dsl::fight(1u8, 0u8), 1, vec![], dsl::seq([])),
+        dsl::activated_as(dsl::fight(1u8, 0u8), 1, vec![], dsl::seq([]))
+            .distinguished_as("+1 [combat]"),
         // [action] Discard Knife: Fight. You get +2 [combat] for this attack.
         // This attack deals +1 damage.
         dsl::activated_as(
@@ -52,7 +53,8 @@ pub fn abilities() -> Vec<Ability> {
             1,
             vec![Cost::DiscardSelf],
             dsl::seq([]),
-        ),
+        )
+        .distinguished_as("Discard Knife"),
     ]
 }
 
