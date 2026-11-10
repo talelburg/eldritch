@@ -147,6 +147,9 @@ pub enum Answered {
         picking: MultiPick,
         /// Each picked option's label, in order.
         labels: Vec<String>,
+        /// Whether the picked cards are seen only by the investigator
+        /// answering: a mulligan's, from a hand the others see face down.
+        hidden: bool,
     },
     /// A pass.
     Pass,
@@ -851,8 +854,8 @@ impl Answered {
     ///
     /// A pick is hidden when the prompt chose among the cards of a searched
     /// or looked-at deck, the area the board shows face down to everyone else
-    /// ([`CardArea::of`]). A multi-pick is what `picking` says it did. A
-    /// `Confirm` carries nothing, so it is told by the prompt it confirmed:
+    /// ([`CardArea::of`]). A multi-pick is what `picking` says it did, and
+    /// hidden when it is a mulligan. A `Confirm` carries nothing, so it is told by the prompt it confirmed:
     /// the Mythos draw is the `Confirm` anchored to the encounter deck
     /// (ADR 0011).
     fn of(answered: Option<&EngineOutcome>, picking: MultiPick, response: &LoggedResponse) -> Self {
@@ -870,6 +873,7 @@ impl Answered {
             LoggedResponse::PickMultiple { options } => Answered::PickMultiple {
                 picking,
                 labels: options.iter().map(|o| o.label.clone()).collect(),
+                hidden: picking == MultiPick::Mulligan,
             },
             LoggedResponse::Skip => Answered::Pass,
             LoggedResponse::Confirm => {
@@ -882,12 +886,26 @@ impl Answered {
         }
     }
 
-    /// The answer as the log prints it, naming every card.
-    fn named(&self) -> String {
+    /// The answer as the log prints it to a reader who `sees_hidden` cards or
+    /// doesn't. Unseen, a hidden pick reads "a card", and a hidden multi-pick
+    /// counts its cards, e.g. "Mulligan 2 cards".
+    fn printed(&self, sees_hidden: bool) -> String {
         match self {
+            Answered::Pick { hidden: true, .. } if !sees_hidden => "a card".into(),
             Answered::Pick { label, .. } => label.clone(),
-            Answered::PickMultiple { picking, labels } => {
-                let names = labels.join(", ");
+            Answered::PickMultiple {
+                picking,
+                labels,
+                hidden,
+            } => {
+                let names = if *hidden && !sees_hidden {
+                    match labels.len() {
+                        1 => "1 card".into(),
+                        n => format!("{n} cards"),
+                    }
+                } else {
+                    labels.join(", ")
+                };
                 match (picking, labels.is_empty()) {
                     (MultiPick::Commit, true) => "Commit no cards".into(),
                     (MultiPick::Mulligan, true) => "Keep opening hand".into(),
@@ -920,20 +938,11 @@ impl ClientState {
     pub fn log_header(&self, header: &BatchHeader) -> String {
         match header {
             BatchHeader::Setup => "Setup".into(),
-            BatchHeader::Answer { by, what } => {
-                let what = match what {
-                    Answered::Pick { hidden: true, .. } if !self.holds(*by) => "a card".into(),
-                    Answered::PickMultiple {
-                        picking: MultiPick::Mulligan,
-                        labels,
-                    } if !labels.is_empty() && !self.holds(*by) => match labels.len() {
-                        1 => "Mulligan 1 card".into(),
-                        n => format!("Mulligan {n} cards"),
-                    },
-                    what => what.named(),
-                };
-                format!("{}: {what}", self.investigator_name(*by))
-            }
+            BatchHeader::Answer { by, what } => format!(
+                "{}: {}",
+                self.investigator_name(*by),
+                what.printed(self.holds(*by))
+            ),
         }
     }
 
@@ -944,14 +953,15 @@ impl ClientState {
     /// their deck unseen.
     #[must_use]
     pub fn log_line(&self, event: &Event) -> String {
+        let line = format!("{event:?}");
         match event {
-            Event::CardSearchedToHand { investigator, .. } if !self.holds(*investigator) => {
-                format!("CardSearchedToHand {{ investigator: {investigator:?}, code: <hidden> }}")
+            Event::CardSearchedToHand { investigator, code }
+            | Event::WeaknessSetAside { investigator, code }
+                if !self.holds(*investigator) =>
+            {
+                line.replace(&format!("{code:?}"), "<hidden>")
             }
-            Event::WeaknessSetAside { investigator, .. } if !self.holds(*investigator) => {
-                format!("WeaknessSetAside {{ investigator: {investigator:?}, code: <hidden> }}")
-            }
-            event => format!("{event:?}"),
+            _ => line,
         }
     }
 }
@@ -983,7 +993,7 @@ mod tests {
     use game_core::engine::{ChoiceOption, OptionId};
     use game_core::event::FailureReason;
     use game_core::scenario::ScenarioId;
-    use game_core::state::{GameStateBuilder, SkillTestId};
+    use game_core::state::{CardCode, GameStateBuilder, SkillTestId};
     use game_core::test_support;
     use protocol::lobby::{Lobby, Member};
     use protocol::logged_answer::LoggedOption;
@@ -1802,6 +1812,49 @@ mod tests {
             ),
         );
         assert_eq!(only_header(&s), "Test Investigator 1: Mulligan 1 card");
+    }
+
+    /// The engine sets aside a weakness drawn into a mulligan's redraw, so
+    /// `WeaknessSetAside` also arrives in an answer's batch, not only in
+    /// setup's: it is masked there too, for an account not holding seat 1.
+    #[test]
+    fn a_weakness_set_aside_in_a_mulligan_batch_is_masked_for_another_account() {
+        let weakness = Event::WeaknessSetAside {
+            investigator: InvestigatorId(1),
+            // Cover Up, a weakness.
+            code: CardCode::new("01007"),
+        };
+        for (you, line) in [
+            (
+                ACCOUNT_1,
+                "WeaknessSetAside { investigator: InvestigatorId(1), code: CardCode(\"01007\") }",
+            ),
+            (
+                ACCOUNT_2,
+                "WeaknessSetAside { investigator: InvestigatorId(1), code: <hidden> }",
+            ),
+        ] {
+            let mut s = ClientState {
+                game: Some(mulliganing()),
+                ..signed_in_holding(you, test_support::awaiting_commit_input("Pick", &[0]))
+            };
+            reduce(
+                &mut s,
+                ServerMessage::Applied(Applied {
+                    answered: LogPosition(0),
+                    by: InvestigatorId(1),
+                    response: LoggedResponse::PickMultiple {
+                        options: vec![option(0, "Guts")],
+                    },
+                    prompt: LogPosition(1),
+                    state: Box::new(two_seats()),
+                    events: vec![weakness.clone()],
+                    outcome: EngineOutcome::Done,
+                }),
+            );
+            assert_eq!(s.log.len(), 1, "one batch logged");
+            assert_eq!(s.log_line(&s.log[0].events[0]), line, "as {you:?}");
+        }
     }
 
     #[test]

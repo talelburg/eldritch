@@ -69,32 +69,46 @@ pub enum RowCards {
 
 impl ChoiceRow {
     /// The row for `request`'s choice among `area`'s cards in `game`. The
-    /// caption comes from the area's kind, never the prompt's text, and the
-    /// request is read only for an area whose cards are face up.
+    /// caption comes from the area's kind, never the prompt's text. Whether
+    /// the cards lie face down is [`CardArea::is_hidden`], the classification
+    /// the event log hides by, and the request is read only for an area whose
+    /// cards are face up.
     #[must_use]
     pub fn of(area: CardArea, request: &InputRequest, game: &GameState) -> Self {
-        match area {
-            CardArea::SearchedTopOfDeck { count, .. } => ChoiceRow {
-                caption: "being searched".to_owned(),
-                cards: RowCards::FaceDown(count, Back::Player),
-            },
-            CardArea::SearchedDeck(investigator) => ChoiceRow {
-                caption: format!("being searched: {}", cards(deck_size(game, investigator))),
-                cards: RowCards::Deck,
-            },
-            CardArea::LookedAtTopOfDeck { count, .. } => ChoiceRow {
-                caption: "being looked at".to_owned(),
-                cards: RowCards::FaceDown(count, Back::Player),
-            },
-            CardArea::LookedAtTopOfEncounterDeck { count } => ChoiceRow {
-                caption: "being looked at".to_owned(),
-                cards: RowCards::FaceDown(count, Back::Encounter),
-            },
-            CardArea::DiscardPile(_) => ChoiceRow {
-                caption: "being chosen from".to_owned(),
-                cards: RowCards::FaceUp(area.offered(request, game)),
-            },
+        let caption = match area {
+            CardArea::SearchedTopOfDeck { .. } => "being searched".to_owned(),
+            CardArea::SearchedDeck(investigator) => {
+                format!("being searched: {}", cards(deck_size(game, investigator)))
+            }
+            CardArea::LookedAtTopOfDeck { .. } | CardArea::LookedAtTopOfEncounterDeck { .. } => {
+                "being looked at".to_owned()
+            }
+            CardArea::DiscardPile(_) => "being chosen from".to_owned(),
+        };
+        let laid_out = if area.is_hidden() {
+            face_down(area)
+        } else {
+            RowCards::FaceUp(area.offered(request, game))
+        };
+        ChoiceRow {
+            caption,
+            cards: laid_out,
         }
+    }
+}
+
+/// `area`'s cards laid face down: the top few each on its own back, or a
+/// whole deck or pile as one.
+fn face_down(area: CardArea) -> RowCards {
+    let back = match area.investigator() {
+        Some(_) => Back::Player,
+        None => Back::Encounter,
+    };
+    match area {
+        CardArea::SearchedTopOfDeck { count, .. }
+        | CardArea::LookedAtTopOfDeck { count, .. }
+        | CardArea::LookedAtTopOfEncounterDeck { count } => RowCards::FaceDown(count, back),
+        CardArea::SearchedDeck(_) | CardArea::DiscardPile(_) => RowCards::Deck,
     }
 }
 
