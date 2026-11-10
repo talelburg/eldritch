@@ -54,6 +54,7 @@ mod status_bar;
 mod store;
 mod tabs;
 mod tiles;
+mod tracking_warnings;
 mod turn_tracker;
 mod unresumable;
 mod version_mismatch;

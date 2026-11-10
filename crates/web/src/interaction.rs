@@ -11,9 +11,11 @@ use std::collections::BTreeSet;
 use game_core::action::InputResponse;
 use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{CardCode, InvestigatorId};
+#[cfg(not(target_arch = "wasm32"))]
+use leptos::prelude::GetUntracked as _;
 #[cfg(target_arch = "wasm32")]
 use leptos::prelude::*;
-use leptos::prelude::{RwSignal, Signal};
+use leptos::prelude::{use_context, RwSignal, Signal};
 #[cfg(target_arch = "wasm32")]
 use web_sys::MouseEvent;
 
@@ -120,6 +122,24 @@ pub fn options_for_hand_card(
 /// other `Signal` contexts.
 #[derive(Clone)]
 pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
+
+/// The live prompt's options, read from [`PendingOptions`] as an **untracked**
+/// snapshot; empty when no board context is provided.
+///
+/// The snapshot is right for a board component body, and calling this is how
+/// one reads the options. A board component is rebuilt from scratch on every
+/// store change, because its parent (the dock panel, the map, the header) is a
+/// reactive closure over the store, and the options are derived purely from the
+/// store. So they can't change without that rebuild, and a tracked read there
+/// would subscribe nothing: it would only log Leptos's "outside a reactive
+/// tracking context" warning on every mount. A caller not rebuilt by such a
+/// parent must read the signal tracked instead.
+#[must_use]
+pub fn pending_options_snapshot() -> Vec<ChoiceOption> {
+    use_context::<PendingOptions>()
+        .map(|p| p.0.get_untracked())
+        .unwrap_or_default()
+}
 
 /// Multi-select (`PickMultiple`) UI state, shared so hand cards toggle it and the
 /// prompt strip reads it. `active` is true iff a `PickMultiple` prompt is live.

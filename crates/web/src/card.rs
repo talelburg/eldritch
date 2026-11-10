@@ -16,7 +16,7 @@ use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
 
 use crate::glyph::{self, Glyph};
-use crate::interaction::{self, MultiSelect, PendingOptions};
+use crate::interaction::{self, MultiSelect};
 use crate::popover::{Hover, Popover};
 use crate::registry;
 
@@ -555,12 +555,12 @@ fn tile_with_popover(
 /// card the pick may not take — renders inert.
 #[component]
 pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> impl IntoView {
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_snapshot();
     let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     if let Some(ms) = use_context::<MultiSelect>() {
-        if ms.active.get() {
+        // Untracked for the reason `pending_options_snapshot` gives: the hand
+        // is rebuilt on every store change, and the flag derives from the store.
+        if ms.active.get_untracked() {
             let hover = Hover::new();
             let Some(id) = menu_opts.first().map(|opt| opt.id.0) else {
                 return view! {
@@ -618,9 +618,7 @@ pub fn InPlayCardView(
 ) -> impl IntoView {
     let code = instance.code.clone();
     let instance_id = instance.instance_id;
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_snapshot();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::CardInstance(instance_id));
     let actionable = !menu_opts.is_empty();
     let open = RwSignal::new(None::<(i32, i32)>);

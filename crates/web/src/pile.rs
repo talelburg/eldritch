@@ -31,7 +31,7 @@ use leptos::ev::{self, MouseEvent};
 use leptos::prelude::*;
 
 use crate::card::{self, Face};
-use crate::interaction::{self, PendingOptions};
+use crate::interaction;
 use crate::popover::{Hover, Popover, Spot};
 
 /// A pile: `label`, then its top card and a count that opens the pile list,
@@ -92,9 +92,7 @@ pub fn Pile(
 /// The pile's top card, `code`: a header tile that, while options are
 /// anchored on `anchor`, glows and opens their context menu on a click.
 fn top_card(code: &CardCode, anchor: Option<OptionTarget>) -> impl IntoView {
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_snapshot();
     let menu_opts = anchor
         .map(|anchor| interaction::options_for(&pending, &anchor))
         .unwrap_or_default();

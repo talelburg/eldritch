@@ -11,7 +11,7 @@ use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
 use leptos::prelude::*;
 
-use crate::interaction::{self, PendingOptions};
+use crate::interaction;
 use crate::popover::{Hover, Popover};
 use crate::{card, registry};
 
@@ -98,9 +98,7 @@ fn enemy_face(enemy: &Enemy) -> impl IntoView {
 )]
 #[component]
 pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
+    let pending = interaction::pending_options_snapshot();
     let menu_opts = interaction::options_for(&pending, &OptionTarget::Enemy(enemy.id));
     let actionable = !menu_opts.is_empty();
     let open = RwSignal::new(None::<(i32, i32)>);

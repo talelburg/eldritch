@@ -209,3 +209,35 @@ async fn a_hello_from_this_build_logs_its_setup() {
     assert!(text.contains("Setup"), "setup batch header: {text}");
     assert!(text.contains("ScenarioStarted"), "setup event: {text}");
 }
+
+/// Resolve on the next animation frame, after every callback the page queued
+/// for it before this one.
+async fn next_animation_frame() {
+    let frame = js_sys::Promise::new(&mut |resolve, _| {
+        window()
+            .request_animation_frame(&resolve)
+            .expect("request an animation frame");
+    });
+    wasm_bindgen_futures::JsFuture::from(frame)
+        .await
+        .expect("the frame resolves");
+}
+
+/// The deferred scroll to the newest line reads its node reference inside an
+/// animation-frame callback, outside any tracking context, and must not log
+/// Leptos's untracked-read warning (#1362).
+#[wasm_bindgen_test]
+async fn the_scroll_to_the_newest_line_logs_no_untracked_read_warning() {
+    let warnings = common::WarnCapture::start();
+    let (store, _container) = common::mount(|| leptos::view! { <EventLogView/> });
+    store.update(|s| {
+        s.log.push(LogBatch {
+            header: "Move to Cellar".into(),
+            events: vec![Event::ScenarioStarted],
+        });
+    });
+    task::tick().await;
+    next_animation_frame().await;
+
+    assert_eq!(warnings.untracked_reads(), Vec::<String>::new());
+}

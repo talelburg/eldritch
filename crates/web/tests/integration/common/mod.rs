@@ -526,3 +526,68 @@ impl Harness {
         absent(&self.board.root, sel)
     }
 }
+
+/// The words every Leptos "signal read outside a reactive tracking context"
+/// warning carries.
+pub(crate) const UNTRACKED_READ_WARNING: &str = "outside a reactive tracking context";
+
+/// A recorder standing in for the global `console.warn` until it is dropped,
+/// which puts the original back.
+///
+/// Leptos raises its debug-build diagnostics through `console.warn`, so a test
+/// that holds one sees every warning the views it mounts log.
+pub(crate) struct WarnCapture {
+    console: js_sys::Object,
+    original: wasm_bindgen::JsValue,
+    messages: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    _recorder: wasm_bindgen::closure::Closure<dyn Fn(wasm_bindgen::JsValue)>,
+}
+
+impl WarnCapture {
+    /// Swap the recorder in for `console.warn`.
+    pub(crate) fn start() -> Self {
+        let console: js_sys::Object = js_sys::Reflect::get(&js_sys::global(), &"console".into())
+            .expect("a global console")
+            .unchecked_into();
+        let original = js_sys::Reflect::get(&console, &"warn".into()).expect("console.warn exists");
+        let messages = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&messages);
+        let recorder = wasm_bindgen::closure::Closure::<dyn Fn(wasm_bindgen::JsValue)>::new(
+            move |message: wasm_bindgen::JsValue| {
+                sink.borrow_mut().push(
+                    message
+                        .as_string()
+                        .unwrap_or_else(|| format!("{message:?}")),
+                );
+            },
+        );
+        js_sys::Reflect::set(&console, &"warn".into(), recorder.as_ref())
+            .expect("replace console.warn");
+        Self {
+            console,
+            original,
+            messages,
+            _recorder: recorder,
+        }
+    }
+
+    /// Every message recorded so far that reports a signal read outside a
+    /// reactive tracking context, cut to its first sentence: where the read
+    /// is, and where the signal was defined.
+    pub(crate) fn untracked_reads(&self) -> Vec<String> {
+        self.messages
+            .borrow()
+            .iter()
+            .filter_map(|m| {
+                let end = m.find(UNTRACKED_READ_WARNING)?;
+                Some(m[..end].trim_end().to_owned())
+            })
+            .collect()
+    }
+}
+
+impl Drop for WarnCapture {
+    fn drop(&mut self) {
+        let _ = js_sys::Reflect::set(&self.console, &"warn".into(), &self.original);
+    }
+}
