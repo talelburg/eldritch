@@ -642,8 +642,9 @@ fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
 ///
 /// The previous player window is the one after 2.2, so the record `take` left
 /// is cleared and [`PhaseStep::TurnPlayerWindow`] opens again above the turn.
-/// Every investigator holding an eligible fast play answers it, and it does not
-/// appear when nobody does. It closes back to this turn: the menu, or, if the
+/// Every investigator holding an eligible fast play answers it, as does every
+/// Active investigator while the group affords the act, and it does not appear
+/// when nobody does. It closes back to this turn: the menu, or, if the
 /// action ended the turn by eliminating the active investigator, the rotation
 /// (2.2.2). That is why the record is read ahead of `ending`.
 ///

@@ -611,9 +611,10 @@ fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() 
         "and they discovered nothing",
     );
 
-    let session = session.take(&TurnAction::AdvanceAct {
-        investigator: OTHER,
-    });
+    // The Investigate leaves the group at the act's threshold, so the turn's
+    // player window offers the advance; the co-located investigator takes it
+    // there.
+    let session = session.pick_for(OTHER, OptionTarget::Act);
     assert_eq!(
         traumas(&session),
         vec![(INV, TraumaKind::Mental)],
