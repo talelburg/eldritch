@@ -58,6 +58,26 @@ pub(crate) fn texts_in(within: &Element, sel: &str) -> Vec<String> {
         .collect()
 }
 
+/// An option label carrying a card-text symbol token, as Hyperawareness
+/// 01034's first ability is labelled.
+pub(crate) const INTELLECT_LABEL: &str = "Activate Hyperawareness — +1 [intellect]";
+
+/// Assert `el` shows [`INTELLECT_LABEL`] with its `[intellect]` token drawn as
+/// the intellect glyph (codepoint `g`) and not printed as the token.
+pub(crate) fn assert_shows_intellect_label(el: &Element) {
+    let glyph = one(el, ".glyph.glyph--intellect");
+    assert_eq!(
+        glyph.text_content().as_deref(),
+        Some("g"),
+        "the intellect glyph"
+    );
+    assert_eq!(
+        el.text_content().unwrap_or_default(),
+        "Activate Hyperawareness — +1 g",
+        "the label's text around the glyph is kept, and no literal token"
+    );
+}
+
 /// `names`, owned, to compare with what [`texts_in`] reads.
 pub(crate) fn names(names: &[&str]) -> Vec<String> {
     names.iter().map(|n| (*n).to_owned()).collect()

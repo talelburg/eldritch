@@ -200,7 +200,7 @@ pub fn DecisionView() -> impl IntoView {
                                 }
                             }
                         >
-                            {label}
+                            {card::render_label(&label)}
                         </button>
                     }
                 })

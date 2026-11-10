@@ -171,7 +171,7 @@ pub fn ContextMenu(
                                 open.set(None);
                             }
                         >
-                            {label}
+                            {crate::card::render_label(&label)}
                         </button>
                     }
                 })

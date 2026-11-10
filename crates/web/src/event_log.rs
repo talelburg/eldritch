@@ -4,7 +4,7 @@
 use leptos::html::Div;
 use leptos::prelude::*;
 
-use crate::store;
+use crate::{card, store};
 
 /// Read-only event log in a drawer. Closed, it is only its toggle, so the board
 /// keeps the whole screen; open, it lies over the board's left side. Renders
@@ -48,7 +48,7 @@ pub fn EventLogView() -> impl IntoView {
                     .collect();
                 view! {
                     <div class="log-batch">
-                        <div class="log-action">{format!("▸ {}", batch.header)}</div>
+                        <div class="log-action">"▸ "{card::render_label(&batch.header)}</div>
                         {events}
                     </div>
                 }

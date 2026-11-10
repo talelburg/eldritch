@@ -655,6 +655,14 @@ pub fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
         .collect()
 }
 
+/// Render an option label — the engine's `ChoiceOption` label, or a log
+/// header built from one — as card text, so a symbol token such as
+/// `[intellect]` in an ability's distinguisher draws as the game's glyph. A
+/// label with no markup renders as its plain text.
+pub fn render_label(label: &str) -> Vec<AnyView> {
+    render_segments(parse_card_text(label))
+}
+
 /// An unmapped `[token]`, brackets restored, in the red `.unknown-token` span.
 fn unknown_token(inner: &str) -> AnyView {
     view! { <span class="unknown-token">{format!("[{inner}]")}</span> }.into_any()
