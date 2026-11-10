@@ -35,7 +35,7 @@ use leptos::prelude::*;
 use crate::interaction::MultiSelect;
 use crate::prompt_layout::{self, AboveBoard, OpenTab};
 use crate::store::ClientState;
-use crate::{card_modal, controls, decision, skill_test_result, store};
+use crate::{card, card_modal, controls, decision, skill_test_result, store};
 
 /// `investigator`'s strip, headed with their name: the dock renders it while
 /// their tab is open. It renders nothing unless the live prompt asks them and
@@ -204,6 +204,7 @@ fn strip_contents(
         .map(|opt: ChoiceOption| {
             let ChoiceOption { id, label, .. } = opt;
             let pick = move |_| controls::submit(InputResponse::PickSingle(id));
+            let label = card::render_label(&label);
             view! { <button class="strip-option" on:click=pick>{label}</button> }
         })
         .collect();
