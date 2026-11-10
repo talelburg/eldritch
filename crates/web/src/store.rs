@@ -616,10 +616,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             let picking = MultiPick::answered_on(state.game.as_ref());
             state.game = Some(*s);
             state.prompt = prompt;
-            let header = BatchHeader::Answer {
-                by,
-                what: Answered::of(answered.as_ref(), picking, &response),
-            };
+            let what = Answered::of(answered.as_ref(), picking, &response);
             // Walk the batch in order, latching what the result panel renders
             // from. Order matters within a batch as much as across batches:
             // `SkillTestStarted` clears the *previous* test's token and result,
@@ -678,6 +675,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     _ => {}
                 }
             }
+            let header = BatchHeader::Answer { by, what };
             state.log.push(LogBatch { header, events });
         }
         ServerMessage::Members(members) => state.members = members,
